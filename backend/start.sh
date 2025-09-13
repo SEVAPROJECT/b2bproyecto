@@ -22,6 +22,13 @@ mkdir -p uploads/provider_documents
 
 echo "📁 Directorios de upload creados"
 
+# Verificar que Python puede importar la aplicación
+echo "🔍 Verificando importación de la aplicación..."
+python test_app.py || {
+    echo "❌ Error al verificar la aplicación"
+    exit 1
+}
+
 # Iniciar la aplicación
 echo "🎯 Iniciando uvicorn..."
 exec uvicorn app.main:app \
