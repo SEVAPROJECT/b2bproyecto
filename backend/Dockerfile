@@ -17,8 +17,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copiar el código del backend
 COPY . .
 
-# Hacer ejecutable el script de inicio
-RUN chmod +x start.sh
+# Hacer ejecutable los scripts
+RUN chmod +x start.sh start_simple.sh test_app.py simple_app.py
 
 # Puerto por defecto (se usará PORT en runtime)
 EXPOSE 8000
