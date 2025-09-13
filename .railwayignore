@@ -1,0 +1,41 @@
+# Ignorar archivos de desarrollo
+.git/
+.gitignore
+README.md
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Ignorar archivos de frontend (se despliega por separado)
+frontend/
+supabase/
+
+# Ignorar archivos temporales del backend
+backend/venv/
+backend/temp_uploads/
+backend/uploads/
+backend/test/
+backend/tests/
+backend/migrations/
+backend/*.sql
+backend/alembic.ini
+backend/alembic copy.ini
+backend/railway.json
+
+# Ignorar archivos de configuración local
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Ignorar archivos de cache y logs
+*.log
+*.pyc
+__pycache__/
+.pytest_cache/
+.mypy_cache/
