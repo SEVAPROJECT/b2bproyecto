@@ -9,9 +9,6 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Crear usuario no-root para seguridad
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
 # Copiar requirements e instalar dependencias
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -20,18 +17,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copiar el código del backend
 COPY backend/ .
 
-# Cambiar ownership de los archivos al usuario appuser
-RUN chown -R appuser:appuser /app
-
-# Cambiar al usuario no-root
-USER appuser
+# Hacer ejecutable el script de inicio
+RUN chmod +x start.sh
 
 # Puerto por defecto (se usará PORT en runtime)
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8000}/ || exit 1
+HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Usar /bin/sh -c para permitir expandir ${PORT}
-CMD ["/bin/sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+# Usar el script de inicio
+CMD ["./start.sh"]

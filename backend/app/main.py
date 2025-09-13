@@ -67,3 +67,8 @@ app.include_router(direct_password_reset_router, prefix="/api/v1")
 @app.get("/")
 def read_root():
     return {"Hello": "World", "message": "SEVA B2B API está funcionando"}
+
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "message": "API is running"}
