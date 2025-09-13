@@ -183,9 +183,33 @@ if direct_password_reset_router:
 # endpoint (una ruta) para la URL raíz ("/")
 @app.get("/")
 def read_root():
-    return {"Hello": "World", "message": "SEVA B2B API está funcionando", "status": "ok"}
+    return {
+        "Hello": "World", 
+        "message": "SEVA B2B API está funcionando", 
+        "status": "ok",
+        "version": "1.0.0",
+        "timestamp": "2024-01-01T00:00:00Z"
+    }
 
 # Health check endpoint
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "message": "API is running", "version": "1.0.0"}
+    return {
+        "status": "healthy", 
+        "message": "API is running", 
+        "version": "1.0.0",
+        "timestamp": "2024-01-01T00:00:00Z"
+    }
+
+# Endpoint de diagnóstico
+@app.get("/diagnostic")
+def diagnostic():
+    import os
+    return {
+        "status": "ok",
+        "port": os.getenv("PORT", "8000"),
+        "environment": os.getenv("NODE_ENV", "development"),
+        "supabase_configured": bool(os.getenv("SUPABASE_URL")),
+        "idrive_configured": bool(os.getenv("AWS_ACCESS_KEY_ID")),
+        "message": "Backend funcionando correctamente"
+    }
