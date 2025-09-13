@@ -22,10 +22,33 @@ mkdir -p uploads/provider_documents
 
 echo "📁 Directorios de upload creados"
 
-# Verificar que Python puede importar la aplicación
+# Verificar Python y dependencias básicas
+echo "🔍 Verificando Python..."
+python --version
+
+echo "🔍 Verificando dependencias básicas..."
+python -c "import sys; print(f'Python path: {sys.path}')"
+
+# Intentar importar la aplicación paso a paso
+echo "🔍 Verificando importación de FastAPI..."
+python -c "import fastapi; print('✅ FastAPI OK')" || {
+    echo "❌ Error con FastAPI"
+    exit 1
+}
+
+echo "🔍 Verificando importación de Uvicorn..."
+python -c "import uvicorn; print('✅ Uvicorn OK')" || {
+    echo "❌ Error con Uvicorn"
+    exit 1
+}
+
 echo "🔍 Verificando importación de la aplicación..."
-python test_app.py || {
-    echo "❌ Error al verificar la aplicación"
+python -c "from app.main import app; print('✅ App importada OK')" || {
+    echo "❌ Error al importar la aplicación"
+    echo "🔍 Listando archivos en app/"
+    ls -la app/
+    echo "🔍 Listando archivos en app/main.py"
+    ls -la app/main.py || echo "main.py no encontrado"
     exit 1
 }
 

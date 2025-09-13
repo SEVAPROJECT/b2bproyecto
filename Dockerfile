@@ -17,8 +17,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copiar el código del backend
 COPY backend/ .
 
-# Hacer ejecutable el script de inicio y el script de prueba
-RUN chmod +x start.sh test_app.py
+# Hacer ejecutable los scripts
+RUN chmod +x start.sh start_simple.sh test_app.py simple_app.py
 
 # Puerto por defecto (se usará PORT en runtime)
 EXPOSE 8000
@@ -27,5 +27,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Usar el script de inicio
+# Usar el script de inicio original con manejo de errores mejorado
 CMD ["./start.sh"]
