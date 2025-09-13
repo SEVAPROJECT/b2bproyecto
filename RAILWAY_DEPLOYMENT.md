@@ -20,7 +20,7 @@ Tu proyecto está configurado para desplegar **2 servicios** en el mismo proyect
 1. En Railway, haz clic en **"New Service"**
 2. Selecciona **"GitHub Repo"**
 3. Elige tu repositorio
-4. Railway detectará automáticamente el `railway.toml` y usará el Dockerfile del backend
+4. Railway detectará automáticamente el `railway.toml` y usará el Dockerfile de la raíz
 5. No necesitas configurar un directorio raíz específico
 
 ### 3. **Configurar el Servicio Frontend**
