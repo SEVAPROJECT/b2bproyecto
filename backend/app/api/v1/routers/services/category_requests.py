@@ -1,0 +1,346 @@
+# app/api/v1/routers/services/category_requests.py
+
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text
+from sqlalchemy.orm import selectinload
+
+from app.api.v1.dependencies.database_supabase import get_async_db
+from app.models.publicar_servicio.solicitud_categoria import SolicitudCategoria
+from app.models.publicar_servicio.category import Categoria
+from app.models.empresa.perfil_empresa import PerfilEmpresa
+from app.models.perfil import UserModel
+from app.schemas.publicar_servicio.solicitud_categoria import (
+    SolicitudCategoriaIn,
+    SolicitudCategoriaOut,
+    SolicitudCategoriaWithDetails,
+    SolicitudCategoriaUpdate,
+    SolicitudCategoriaDecision
+)
+from app.api.v1.dependencies.auth_user import get_current_user
+
+router = APIRouter(prefix="/category-requests", tags=["Solicitudes de Categorías"])
+
+@router.post(
+    "/",
+    response_model=SolicitudCategoriaOut,
+    status_code=status.HTTP_201_CREATED,
+    description="Crear una nueva solicitud de categoría"
+)
+async def create_category_request(
+    request: SolicitudCategoriaIn,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Permite a un proveedor crear una solicitud para agregar una nueva categoría.
+    """
+    try:
+        # Obtener el perfil de empresa del usuario
+        perfil_query = select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
+        perfil_result = await db.execute(perfil_query)
+        perfil = perfil_result.scalars().first()
+
+        if not perfil:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Perfil de empresa no encontrado"
+            )
+
+        # Verificar que no existe una categoría con el mismo nombre
+        categoria_existente = await db.execute(
+            select(Categoria).where(Categoria.nombre.ilike(request.nombre_categoria))
+        )
+        if categoria_existente.scalars().first():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ya existe una categoría con ese nombre"
+            )
+
+        # Verificar que no existe una solicitud pendiente con el mismo nombre
+        solicitud_existente = await db.execute(
+            select(SolicitudCategoria).where(
+                SolicitudCategoria.nombre_categoria.ilike(request.nombre_categoria),
+                SolicitudCategoria.estado_aprobacion == 'pendiente'
+            )
+        )
+        if solicitud_existente.scalars().first():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ya existe una solicitud pendiente para esta categoría"
+            )
+
+        # Crear la nueva solicitud
+        nueva_solicitud = SolicitudCategoria(
+            id_perfil=perfil.id_perfil,
+            nombre_categoria=request.nombre_categoria,
+            descripcion=request.descripcion,
+            estado_aprobacion='pendiente'
+        )
+
+        db.add(nueva_solicitud)
+        await db.commit()
+        await db.refresh(nueva_solicitud)
+
+        return nueva_solicitud
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al crear la solicitud: {str(e)}"
+        )
+
+@router.get(
+    "/",
+    response_model=List[SolicitudCategoriaWithDetails],
+    status_code=status.HTTP_200_OK,
+    description="Obtener solicitudes de categorías del proveedor actual"
+)
+async def get_my_category_requests(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Obtiene las solicitudes de categorías del proveedor actual.
+    """
+    try:
+        # Obtener el perfil de empresa del usuario
+        perfil_query = select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
+        perfil_result = await db.execute(perfil_query)
+        perfil = perfil_result.scalars().first()
+
+        if not perfil:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Perfil de empresa no encontrado"
+            )
+
+        # Obtener las solicitudes del proveedor
+        query = select(
+            SolicitudCategoria.id_solicitud,
+            SolicitudCategoria.id_perfil,
+            SolicitudCategoria.nombre_categoria,
+            SolicitudCategoria.descripcion,
+            SolicitudCategoria.estado_aprobacion,
+            SolicitudCategoria.comentario_admin,
+            SolicitudCategoria.created_at,
+            PerfilEmpresa.razon_social.label('nombre_empresa'),
+            UserModel.nombre_persona.label('nombre_contacto')
+        ).select_from(SolicitudCategoria)\
+         .join(PerfilEmpresa, SolicitudCategoria.id_perfil == PerfilEmpresa.id_perfil)\
+         .join(UserModel, PerfilEmpresa.user_id == UserModel.id)\
+         .where(SolicitudCategoria.id_perfil == perfil.id_perfil)\
+         .order_by(SolicitudCategoria.created_at.desc())
+
+        result = await db.execute(query)
+        rows = result.fetchall()
+
+        # Formatear respuesta
+        formatted_requests = []
+        for row in rows:
+            formatted_requests.append({
+                'id_solicitud': row.id_solicitud,
+                'id_perfil': row.id_perfil,
+                'nombre_categoria': row.nombre_categoria,
+                'descripcion': row.descripcion,
+                'estado_aprobacion': row.estado_aprobacion,
+                'comentario_admin': row.comentario_admin,
+                'created_at': row.created_at,
+                'nombre_empresa': row.nombre_empresa,
+                'nombre_contacto': row.nombre_contacto,
+                'email_contacto': None  # Email no disponible en el modelo actual
+            })
+
+        return formatted_requests
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener las solicitudes: {str(e)}"
+        )
+
+@router.get(
+    "/admin/todas",
+    response_model=List[SolicitudCategoriaWithDetails],
+    status_code=status.HTTP_200_OK,
+    description="Obtener TODAS las solicitudes de categorías para administradores"
+)
+async def get_all_category_requests_for_admin(
+    limit: int = Query(100, description="Límite de solicitudes a retornar"),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Obtiene todas las solicitudes de categorías para administradores.
+    """
+    try:
+        # Obtener todas las solicitudes con información completa
+        query = select(
+            SolicitudCategoria.id_solicitud,
+            SolicitudCategoria.id_perfil,
+            SolicitudCategoria.nombre_categoria,
+            SolicitudCategoria.descripcion,
+            SolicitudCategoria.estado_aprobacion,
+            SolicitudCategoria.comentario_admin,
+            SolicitudCategoria.created_at,
+            PerfilEmpresa.razon_social.label('nombre_empresa'),
+            UserModel.nombre_persona.label('nombre_contacto')
+        ).select_from(SolicitudCategoria)\
+         .join(PerfilEmpresa, SolicitudCategoria.id_perfil == PerfilEmpresa.id_perfil)\
+         .join(UserModel, PerfilEmpresa.user_id == UserModel.id)\
+         .order_by(SolicitudCategoria.created_at.desc())
+
+        if limit > 0:
+            query = query.limit(limit)
+
+        result = await db.execute(query)
+        rows = result.fetchall()
+
+        # Formatear respuesta
+        formatted_requests = []
+        for row in rows:
+            formatted_requests.append({
+                'id_solicitud': row.id_solicitud,
+                'id_perfil': row.id_perfil,
+                'nombre_categoria': row.nombre_categoria,
+                'descripcion': row.descripcion,
+                'estado_aprobacion': row.estado_aprobacion,
+                'comentario_admin': row.comentario_admin,
+                'created_at': row.created_at,
+                'nombre_empresa': row.nombre_empresa,
+                'nombre_contacto': row.nombre_contacto,
+                'email_contacto': None  # Email no disponible en el modelo actual
+            })
+
+        return formatted_requests
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener las solicitudes: {str(e)}"
+        )
+
+@router.put(
+    "/{request_id}/approve",
+    status_code=status.HTTP_200_OK,
+    description="Aprobar una solicitud de categoría y crear la categoría"
+)
+async def approve_category_request(
+    request_id: int,
+    decision: SolicitudCategoriaDecision,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Aprueba una solicitud de categoría y crea automáticamente la categoría correspondiente.
+    """
+    try:
+        async with db.begin():
+            # Obtener la solicitud
+            request_result = await db.execute(
+                select(SolicitudCategoria).where(SolicitudCategoria.id_solicitud == request_id)
+            )
+            request = request_result.scalars().first()
+
+            if not request:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Solicitud no encontrada"
+                )
+
+            if request.estado_aprobacion != 'pendiente':
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="La solicitud ya ha sido procesada"
+                )
+
+            # Verificar que no existe una categoría con el mismo nombre
+            categoria_existente = await db.execute(
+                select(Categoria).where(Categoria.nombre.ilike(request.nombre_categoria))
+            )
+            if categoria_existente.scalars().first():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Ya existe una categoría con ese nombre"
+                )
+
+            # Crear la nueva categoría
+            nueva_categoria = Categoria(
+                nombre=request.nombre_categoria,
+                estado=True
+            )
+
+            db.add(nueva_categoria)
+            await db.flush()
+
+            # Actualizar la solicitud
+            request.estado_aprobacion = 'aprobada'
+            request.comentario_admin = decision.comentario
+
+            return {
+                "message": "Solicitud aprobada y categoría creada exitosamente",
+                "categoria_id": nueva_categoria.id_categoria,
+                "categoria_nombre": nueva_categoria.nombre
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al aprobar la solicitud: {str(e)}"
+        )
+
+@router.put(
+    "/{request_id}/reject",
+    status_code=status.HTTP_200_OK,
+    description="Rechazar una solicitud de categoría"
+)
+async def reject_category_request(
+    request_id: int,
+    decision: SolicitudCategoriaDecision,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Rechaza una solicitud de categoría.
+    """
+    try:
+        # Obtener la solicitud
+        request_result = await db.execute(
+            select(SolicitudCategoria).where(SolicitudCategoria.id_solicitud == request_id)
+        )
+        request = request_result.scalars().first()
+
+        if not request:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Solicitud no encontrada"
+            )
+
+        if request.estado_aprobacion != 'pendiente':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La solicitud ya ha sido procesada"
+            )
+
+        # Actualizar la solicitud
+        request.estado_aprobacion = 'rechazada'
+        request.comentario_admin = decision.comentario
+
+        await db.commit()
+
+        return {"message": "Solicitud rechazada exitosamente"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al rechazar la solicitud: {str(e)}"
+        )
