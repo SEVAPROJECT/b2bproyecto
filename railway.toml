@@ -1,4 +1,4 @@
-# Configuración para servicios múltiples en Railway
+# Configuración para el servicio backend
 [build]
 builder = "dockerfile"
 dockerfilePath = "backend/Dockerfile"
