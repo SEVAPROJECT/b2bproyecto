@@ -528,13 +528,13 @@ const ProviderMyRequestsPage: React.FC = () => {
 
                 {/* Contador de resultados */}
                 <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
-                    <div className="flex items-center justify-between">
-                        <div>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="text-center sm:text-left">
                             <h3 className="text-lg font-medium text-gray-900">
                                 Total: {filteredRequests.length} solicitudes
                             </h3>
                         </div>
-                        <div className="text-right">
+                        <div className="text-center sm:text-right">
                             <div className="text-sm text-gray-500">
                                 {filteredRequests.length > 0 && (
                                     <span className="text-gray-600">
@@ -563,9 +563,9 @@ const ProviderMyRequestsPage: React.FC = () => {
                                 
                                 return (
                                 <div key={request.id_solicitud} className={`p-4 hover:bg-gray-50 transition-colors duration-200 ${isOptimistic ? 'bg-blue-50 border-l-4 border-blue-400' : ''}`}>
-                                    <div className="flex items-center space-x-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
                                         {/* Icono del tipo de solicitud */}
-                                        <div className="flex-shrink-0">
+                                        <div className="flex-shrink-0 mx-auto sm:mx-0">
                                             <div className={`h-16 w-16 rounded-lg border flex items-center justify-center ${isOptimistic ? 'bg-blue-100 border-blue-200' : 'bg-gray-100 border-gray-200'}`}>
                                                 {isOptimistic ? (
                                                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
@@ -576,23 +576,25 @@ const ProviderMyRequestsPage: React.FC = () => {
                                         </div>
 
                                         {/* Información principal */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between">
+                                        <div className="flex-1 min-w-0 text-center sm:text-left">
+                                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center space-x-2">
-                                                        <h3 className="text-lg font-semibold text-gray-900 truncate">{getRequestName(request)}</h3>
-                                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                            {getRequestTypeLabel(request)}
-                                                        </span>
-                                                        {isOptimistic && (
-                                                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                                                Enviando...
+                                                    <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+                                                        <h3 className="text-lg font-semibold text-gray-900 break-words">{getRequestName(request)}</h3>
+                                                        <div className="flex flex-wrap justify-center sm:justify-start gap-2">
+                                                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                                {getRequestTypeLabel(request)}
                                                             </span>
-                                                        )}
+                                                            {isOptimistic && (
+                                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                                    Enviando...
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    <p className="text-sm text-gray-600 truncate mt-1">{request.descripcion}</p>
+                                                    <p className="text-sm text-gray-600 mt-1 break-words">{request.descripcion}</p>
                                                 </div>
-                                                <div className="flex items-center space-x-2">
+                                                <div className="flex justify-center sm:justify-end">
                                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(request.estado_aprobacion)}`}>
                                                         {getStatusText(request.estado_aprobacion)}
                                                     </span>
@@ -600,22 +602,22 @@ const ProviderMyRequestsPage: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        {/* Información compacta horizontal */}
-                                        <div className="flex items-center space-x-6 text-sm">
+                                        {/* Información compacta - responsive */}
+                                        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6 text-sm">
                                             {/* Categoría - Solo para servicios */}
                                             {request.tipo === 'servicio' && (
-                                                <div className="text-center min-w-0">
+                                                <div className="text-center">
                                                     <p className="text-xs font-medium text-gray-500 mb-1">📂 Categoría</p>
-                                                    <p className="font-semibold text-blue-600 truncate">
+                                                    <p className="font-semibold text-blue-600 break-words">
                                                         {request.nombre_categoria || 'No especificado'}
                                                     </p>
                                                 </div>
                                             )}
 
                                             {/* Empresa */}
-                                            <div className="text-center min-w-0">
+                                            <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">🏢 Empresa</p>
-                                                <p className="font-semibold text-gray-600 truncate">
+                                                <p className="font-semibold text-gray-600 break-words">
                                                     {request.nombre_empresa || 'No especificado'}
                                                 </p>
                                             </div>

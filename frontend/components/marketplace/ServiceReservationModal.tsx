@@ -239,6 +239,15 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                                 </div>
                                             )}
                                             
+                                            {service.barrio && (
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-slate-500">🏘️</span>
+                                                    <span className="text-slate-700">
+                                                        <span className="font-medium">Barrio:</span> {service.barrio}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            
                                             <div className="flex items-center gap-3">
                                                 <span className="text-slate-500">✅</span>
                                                 <span className="text-slate-700">

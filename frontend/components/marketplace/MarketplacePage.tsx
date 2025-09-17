@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { MagnifyingGlassIcon, SparklesIcon, ExclamationCircleIcon } from '../icons';
 import MarketplaceServiceCard from './MarketplaceServiceCard';
 import ServiceReservationModal from './ServiceReservationModal';
@@ -25,6 +25,7 @@ const MarketplacePage: React.FC = () => {
     const [isSearching, setIsSearching] = useState(false);
     const [usingMockData, setUsingMockData] = useState(false);
     const [dataVersion, setDataVersion] = useState(Date.now()); // Para forzar recarga
+    const dataLoadedRef = useRef(false); // Para evitar cargas duplicadas
 
     // Estados de filtros
     const [searchQuery, setSearchQuery] = useState('');
@@ -54,6 +55,8 @@ const MarketplacePage: React.FC = () => {
 
     // Cargar datos iniciales
     const loadInitialData = useCallback(async () => {
+        if (dataLoadedRef.current) return; // Evitar cargas duplicadas
+        
         try {
             setIsLoading(true);
             setError(null);
@@ -85,6 +88,11 @@ const MarketplacePage: React.FC = () => {
                         codigo_iso_moneda: firstService.codigo_iso_moneda,
                         simbolo_moneda: firstService.simbolo_moneda,
                         precio: firstService.precio,
+                        departamento: firstService.departamento,
+                        ciudad: firstService.ciudad,
+                        barrio: firstService.barrio,
+                        barrio_type: typeof firstService.barrio,
+                        barrio_length: firstService.barrio ? firstService.barrio.length : 'N/A',
                         servicio_completo: firstService
                     });
                 }
@@ -115,255 +123,12 @@ const MarketplacePage: React.FC = () => {
                     throw new Error('Estructura de datos incorrecta');
                 }
             } catch (apiError) {
-                console.warn('⚠️ Error con API real, usando datos mock:', apiError);
-                
-                // Datos mock realistas para desarrollo
-                const mockCategories: any[] = [
-                    {
-                        id_categoria: 1,
-                        nombre: 'Diseño Gráfico',
-                        descripcion: 'Servicios de diseño visual y creativo',
-                        icono: '🎨',
-                        activo: true,
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_categoria: 2,
-                        nombre: 'Desarrollo Web',
-                        descripcion: 'Desarrollo de sitios web y aplicaciones',
-                        icono: '💻',
-                        activo: true,
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_categoria: 3,
-                        nombre: 'Marketing Digital',
-                        descripcion: 'Estrategias de marketing online',
-                        icono: '📈',
-                        activo: true,
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_categoria: 4,
-                        nombre: 'Consultoría',
-                        descripcion: 'Servicios de consultoría empresarial',
-                        icono: '💼',
-                        activo: true,
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    }
-                ];
-                
-                const mockServices: any[] = [
-                    // Servicios en PYG - Asunción
-                    {
-                        id_servicio: 1,
-                        nombre: 'Diseño de Logo Profesional',
-                        descripcion: 'Creación de identidad visual completa para tu empresa',
-                        precio: 150000,
-                        moneda: 'PYG',
-                        id_categoria: 1,
-                        razon_social: 'Creative Studio Paraguay',
-                        departamento: 'Asunción',
-                        ciudad: 'Asunción',
-                        created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_servicio: 2,
-                        nombre: 'Campaña de Marketing Digital',
-                        descripcion: 'Estrategia completa de marketing en redes sociales',
-                        precio: 300000,
-                        moneda: 'PYG',
-                        id_categoria: 3,
-                        razon_social: 'Digital Marketing Pro',
-                        departamento: 'Asunción',
-                        ciudad: 'Asunción',
-                        created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_servicio: 3,
-                        nombre: 'SEO y Posicionamiento',
-                        descripcion: 'Optimización para motores de búsqueda',
-                        precio: 400000,
-                        moneda: 'PYG',
-                        id_categoria: 3,
-                        razon_social: 'SEO Paraguay',
-                        departamento: 'Asunción',
-                        ciudad: 'Asunción',
-                        created_at: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    
-                    // Servicios en PYG - Central
-                    {
-                        id_servicio: 4,
-                        nombre: 'Desarrollo de Sitio Web',
-                        descripcion: 'Sitio web responsivo y moderno para tu negocio',
-                        precio: 800000,
-                        moneda: 'PYG',
-                        id_categoria: 2,
-                        razon_social: 'Web Solutions Paraguay',
-                        departamento: 'Central',
-                        ciudad: 'San Lorenzo',
-                        created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_servicio: 5,
-                        nombre: 'Consultoría Empresarial',
-                        descripcion: 'Asesoramiento estratégico para el crecimiento de tu empresa',
-                        precio: 500000,
-                        moneda: 'PYG',
-                        id_categoria: 4,
-                        razon_social: 'Business Consultants Paraguay',
-                        departamento: 'Central',
-                        ciudad: 'Fernando de la Mora',
-                        created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_servicio: 6,
-                        nombre: 'Diseño de App Móvil',
-                        descripcion: 'Diseño de interfaz para aplicaciones móviles',
-                        precio: 1200000,
-                        moneda: 'PYG',
-                        id_categoria: 1,
-                        razon_social: 'Mobile Design Studio',
-                        departamento: 'Central',
-                        ciudad: 'Lambaré',
-                        created_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_servicio: 7,
-                        nombre: 'Servicio de Contabilidad',
-                        descripcion: 'Servicios contables y fiscales para empresas',
-                        precio: 250000,
-                        moneda: 'PYG',
-                        id_categoria: 4,
-                        razon_social: 'Contadores del Paraguay',
-                        departamento: 'Central',
-                        ciudad: 'Capiatá',
-                        created_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    
-                    // Servicios en USD - Alto Paraná
-                    {
-                        id_servicio: 8,
-                        nombre: 'Servicio Internacional en Dólares',
-                        descripcion: 'Servicio de ejemplo con precio en dólares',
-                        precio: 500,
-                        moneda: 'USD',
-                        id_categoria: 1,
-                        razon_social: 'International Services Paraguay',
-                        departamento: 'Alto Paraná',
-                        ciudad: 'Ciudad del Este',
-                        created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_servicio: 9,
-                        nombre: 'Consultoría Internacional',
-                        descripcion: 'Consultoría empresarial para mercados internacionales',
-                        precio: 1200,
-                        moneda: 'USD',
-                        id_categoria: 4,
-                        razon_social: 'Global Business Solutions',
-                        departamento: 'Alto Paraná',
-                        ciudad: 'Ciudad del Este',
-                        created_at: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    
-                    // Servicios en BRL - Itapúa
-                    {
-                        id_servicio: 10,
-                        nombre: 'Servicio en Reales Brasileños',
-                        descripcion: 'Servicio de ejemplo con precio en reales brasileños',
-                        precio: 2000,
-                        moneda: 'BRL',
-                        id_categoria: 2,
-                        razon_social: 'Brazilian Services Paraguay',
-                        departamento: 'Itapúa',
-                        ciudad: 'Encarnación',
-                        created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_servicio: 11,
-                        nombre: 'Marketing para Mercado Brasileño',
-                        descripcion: 'Estrategias de marketing para el mercado brasileño',
-                        precio: 3500,
-                        moneda: 'BRL',
-                        id_categoria: 3,
-                        razon_social: 'Marketing Brasil Paraguay',
-                        departamento: 'Itapúa',
-                        ciudad: 'Encarnación',
-                        created_at: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    
-                    // Servicios en PYG - Otros departamentos
-                    {
-                        id_servicio: 12,
-                        nombre: 'Servicio en Caaguazú',
-                        descripcion: 'Servicio de ejemplo en el departamento de Caaguazú',
-                        precio: 180000,
-                        moneda: 'PYG',
-                        id_categoria: 2,
-                        razon_social: 'Servicios del Interior',
-                        departamento: 'Caaguazú',
-                        ciudad: 'Coronel Oviedo',
-                        created_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_servicio: 13,
-                        nombre: 'Servicio en Guairá',
-                        descripcion: 'Servicio de ejemplo en el departamento de Guairá',
-                        precio: 220000,
-                        moneda: 'PYG',
-                        id_categoria: 1,
-                        razon_social: 'Arte y Diseño Guairá',
-                        departamento: 'Guairá',
-                        ciudad: 'Villarrica',
-                        created_at: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    },
-                    {
-                        id_servicio: 14,
-                        nombre: 'Servicio en Cordillera',
-                        descripcion: 'Servicio de ejemplo en el departamento de Cordillera',
-                        precio: 190000,
-                        moneda: 'PYG',
-                        id_categoria: 4,
-                        razon_social: 'Consultores de Cordillera',
-                        departamento: 'Cordillera',
-                        ciudad: 'Caacupé',
-                        created_at: new Date(Date.now() - 11 * 24 * 60 * 60 * 1000).toISOString(),
-                        updated_at: new Date().toISOString()
-                    }
-                ];
-                
-                setCategories(mockCategories);
-                setServices(mockServices);
-                setUsingMockData(true);
-                setDataVersion(Date.now()); // Forzar recarga
-                console.log('✅ Datos mock aplicados - Total servicios:', mockServices.length);
-                console.log('📊 Ejemplos de servicios:', mockServices.slice(0, 3).map(s => ({
-                    id: s.id_servicio,
-                    nombre: s.nombre,
-                    moneda: s.moneda,
-                    razon_social: s.razon_social,
-                    departamento: s.departamento,
-                    ciudad: s.ciudad
-                })));
+                console.error('❌ Error con API real:', apiError);
+                setError('No se pudo conectar con el servidor. Por favor, verifica que el backend esté funcionando.');
+                setServices([]);
+                setCategories([]);
+                setUsingMockData(false);
+                return;
             }
             
         } catch (err) {
@@ -371,12 +136,13 @@ const MarketplacePage: React.FC = () => {
             setError('Error al cargar los datos. Por favor, intentá nuevamente.');
         } finally {
             setIsLoading(false);
+            dataLoadedRef.current = true;
         }
     }, []);
 
     useEffect(() => {
         loadInitialData();
-    }, [loadInitialData]);
+    }, []); // Solo ejecutar una vez al montar
 
     // Función para manejar búsqueda
     const handleSearch = useCallback(() => {
@@ -437,8 +203,13 @@ const MarketplacePage: React.FC = () => {
 
     // Filtrar servicios
     const filteredServices = useMemo(() => {
-        let filtered = [...services];
-        console.log('🔍 Aplicando filtros - Servicios iniciales:', services.length);
+        // Eliminar duplicados basándose en el ID del servicio
+        const uniqueServices = services.filter((service, index, self) => 
+            index === self.findIndex(s => s.id_servicio === service.id_servicio)
+        );
+        
+        let filtered = [...uniqueServices];
+        console.log('🔍 Aplicando filtros - Servicios iniciales:', services.length, 'Únicos:', uniqueServices.length);
         console.log('🎯 Filtros activos:', {
             currencyFilter,
             departmentFilter,
@@ -656,7 +427,10 @@ const MarketplacePage: React.FC = () => {
     // Paginación
     const paginatedServices = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
-        return filteredServices.slice(startIndex, startIndex + itemsPerPage);
+        const paginated = filteredServices.slice(startIndex, startIndex + itemsPerPage);
+        console.log('📄 Paginación - Servicios filtrados:', filteredServices.length, 'Paginados:', paginated.length);
+        console.log('📄 IDs paginados:', paginated.map(s => s.id_servicio));
+        return paginated;
     }, [filteredServices, currentPage, itemsPerPage]);
 
     const totalPages = Math.ceil(filteredServices.length / itemsPerPage);
@@ -1040,28 +814,30 @@ const MarketplacePage: React.FC = () => {
                             </div>
                         )}
                         
-                        {/* Estadísticas de resultados - más compactas */}
-                        <div className="mb-3 sm:mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2 sm:p-3 bg-white rounded-lg border border-primary-200">
-                            <div className="flex items-center gap-3">
+                        {/* Estadísticas de resultados - mejoradas */}
+                        <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-white rounded-lg border border-primary-200 shadow-sm">
+                            <div className="flex items-center gap-4">
                                 <div className="text-center sm:text-left">
-                                    <p className="text-base sm:text-lg font-semibold text-primary-600">
+                                    <p className="text-xl sm:text-2xl font-bold text-primary-600">
                                         {paginatedServices.length}
                                     </p>
-                                    <p className="text-xs text-primary-500">servicios</p>
+                                    <p className="text-sm text-primary-500 font-medium">servicios encontrados</p>
                                 </div>
                                 {filteredServices.length > itemsPerPage && (
-                                    <div className="hidden sm:block text-center">
-                                        <p className="text-base font-semibold text-primary-600">{currentPage}</p>
-                                        <p className="text-xs text-primary-500">de {totalPages}</p>
+                                    <div className="hidden sm:block text-center bg-primary-50 px-4 py-2 rounded-lg border border-primary-200">
+                                        <p className="text-lg font-bold text-primary-700">{currentPage}</p>
+                                        <p className="text-sm text-primary-600 font-medium">de {totalPages}</p>
                                     </div>
                                 )}
                             </div>
 
                             {/* Información adicional en móviles */}
                             <div className="sm:hidden text-center">
-                                <p className="text-xs text-primary-500">
-                                    Página {currentPage} de {totalPages}
-                                </p>
+                                <div className="inline-flex items-center bg-primary-50 px-3 py-1 rounded-full border border-primary-200">
+                                    <p className="text-sm text-primary-600 font-medium">
+                                        Página {currentPage} de {totalPages}
+                                    </p>
+                                </div>
                             </div>
                         </div>
 
@@ -1102,16 +878,16 @@ const MarketplacePage: React.FC = () => {
                                     ))}
                                 </div>
 
-                                {/* Paginación más compacta */}
+                                {/* Paginación mejorada */}
                                 {totalPages > 1 && (
-                                    <div className="mt-4 sm:mt-6">
+                                    <div className="mt-6 sm:mt-8">
                                         {/* Paginación completa para desktop */}
                                         <div className="hidden sm:flex justify-center">
-                                            <nav className="flex items-center gap-2">
+                                            <nav className="flex items-center gap-3">
                                                 <button
                                                     onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                                                     disabled={currentPage === 1}
-                                                    className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                                                 >
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -1119,29 +895,31 @@ const MarketplacePage: React.FC = () => {
                                                     Anterior
                                                 </button>
                                                 
-                                                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                                    const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
-                                                    if (pageNum > totalPages) return null;
-                                                    
-                                                    return (
-                                                        <button
-                                                            key={pageNum}
-                                                            onClick={() => setCurrentPage(pageNum)}
-                                                            className={`px-3 py-2 text-sm border rounded-lg transition-colors ${
-                                                                currentPage === pageNum
-                                                                    ? 'bg-primary-600 text-white border-primary-600'
-                                                                    : 'text-slate-600 border-slate-300 hover:bg-slate-100'
-                                                            }`}
-                                                        >
-                                                            {pageNum}
-                                                        </button>
-                                                    );
-                                                })}
+                                                <div className="flex items-center gap-2">
+                                                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                                        const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+                                                        if (pageNum > totalPages) return null;
+                                                        
+                                                        return (
+                                                            <button
+                                                                key={pageNum}
+                                                                onClick={() => setCurrentPage(pageNum)}
+                                                                className={`px-4 py-2 text-sm font-medium border rounded-lg transition-all duration-200 min-w-[44px] ${
+                                                                    currentPage === pageNum
+                                                                        ? 'bg-primary-600 text-white border-primary-600 shadow-md'
+                                                                        : 'text-slate-600 border-slate-300 hover:bg-slate-50 hover:border-slate-400'
+                                                                }`}
+                                                            >
+                                                                {pageNum}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
                                                 
                                                 <button
                                                     onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                                                     disabled={currentPage === totalPages}
-                                                    className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                                                 >
                                                     Siguiente
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1153,21 +931,21 @@ const MarketplacePage: React.FC = () => {
 
                                         {/* Paginación simplificada para móviles */}
                                         <div className="sm:hidden flex justify-center">
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg p-2 shadow-sm">
                                                 <button
                                                     onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                                                     disabled={currentPage === 1}
-                                                    className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                                                 >
                                                     ←
                                                 </button>
-                                                <span className="px-4 py-2 text-sm text-slate-600">
+                                                <div className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-50 rounded-md min-w-[80px] text-center">
                                                     {currentPage} de {totalPages}
-                                                </span>
+                                                </div>
                                                 <button
                                                     onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                                                     disabled={currentPage === totalPages}
-                                                    className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                                                 >
                                                     →
                                                 </button>

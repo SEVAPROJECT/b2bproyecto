@@ -3,11 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { MainLayout } from '../../components/layouts';
 import { Button, Alert } from '../../components/ui';
+import { EyeIcon, EyeSlashIcon } from '../../components/icons';
 
 const LoginPage: React.FC = () => {
     const navigate = useNavigate();
     const { login, isLoading, error } = useAuth();
     const [formData, setFormData] = useState({ email: '', password: '' });
+    const [passwordVisible, setPasswordVisible] = useState(false);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -65,17 +67,31 @@ const LoginPage: React.FC = () => {
                             <label htmlFor="password" className="block text-sm sm:text-base font-medium text-slate-700">
                                 Contraseña
                             </label>
-                            <input
-                                type="password"
-                                name="password"
-                                id="password"
-                                value={formData.password}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 sm:px-4 sm:py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
-                                placeholder="Tu contraseña"
-                                required
-                                autoComplete="current-password"
-                            />
+                            <div className="relative">
+                                <input
+                                    type={passwordVisible ? "text" : "password"}
+                                    name="password"
+                                    id="password"
+                                    value={formData.password}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-2 sm:px-4 sm:py-3 pr-12 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
+                                    placeholder="Tu contraseña"
+                                    required
+                                    autoComplete="current-password"
+                                />
+                                <button 
+                                    type="button" 
+                                    onClick={() => setPasswordVisible(!passwordVisible)}
+                                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-700 transition-colors duration-200 touch-manipulation min-h-[44px] min-w-[44px]"
+                                    aria-label={passwordVisible ? "Ocultar contraseña" : "Mostrar contraseña"}
+                                >
+                                    {passwordVisible ? (
+                                        <EyeSlashIcon className="h-5 w-5" /> 
+                                    ) : (
+                                        <EyeIcon className="h-5 w-5" />
+                                    )}
+                                </button>
+                            </div>
                         </div>
                         <div className="space-y-3">
                         <Button 

@@ -10,7 +10,7 @@ import {
     UploadCloudIcon
 } from '../../components/icons';
 import { AuthContext } from '../../contexts/AuthContext';
-import { categoriesAPI, providerServicesAPI, servicesAPI, categoryRequestsAPI } from '../../services/api';
+import { categoriesAPI, providerServicesAPI, servicesAPI, categoryRequestsAPI, serviceRequestsAPI } from '../../services/api';
 
 // Funciones auxiliares
 const formatNumber = (num: number): string => {
@@ -19,6 +19,49 @@ const formatNumber = (num: number): string => {
         minimumFractionDigits: 0,
         maximumFractionDigits: 2
     });
+};
+
+// Función para formatear precio con puntos de mil mientras se escribe
+const formatPriceInput = (value: string): string => {
+    // Remover todos los caracteres no numéricos excepto punto y coma
+    const cleanValue = value.replace(/[^\d.,]/g, '');
+    
+    // Si está vacío, retornar vacío
+    if (!cleanValue) return '';
+    
+    // Si el valor ya tiene puntos, removerlos todos y reformatear
+    const numericOnly = cleanValue.replace(/\./g, '');
+    
+    // Separar parte entera y decimal
+    const parts = numericOnly.split(',');
+    const integerPart = parts[0];
+    const decimalPart = parts[1];
+    
+    // Formatear la parte entera con puntos de mil usando una función más simple
+    const formatWithDots = (num: string): string => {
+        return num.replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.');
+    };
+    
+    const formattedInteger = formatWithDots(integerPart);
+    
+    // Reconstruir el valor - usar punto para decimales también
+    if (decimalPart !== undefined) {
+        return `${formattedInteger}.${decimalPart}`;
+    }
+    
+    return formattedInteger;
+};
+
+// Función para parsear el precio formateado a número
+const parsePriceInput = (formattedValue: string): number => {
+    if (!formattedValue) return 0;
+    
+    // Remover todos los puntos de mil (separadores de miles)
+    const withoutThousandsSeparators = formattedValue.replace(/\.(?=\d{3})/g, '');
+    
+    // Parsear el número resultante
+    const parsed = parseFloat(withoutThousandsSeparators);
+    return isNaN(parsed) ? 0 : parsed;
 };
 
 const getTariffsSummary = (tarifas: any[], rateTypes: any[] = []): string => {
@@ -218,10 +261,13 @@ const ProviderMyServicesPage: React.FC = () => {
         setEditForm({
             nombre: service.nombre || '',
             descripcion: service.descripcion || '',
-            precio: service.precio ? service.precio.toString() : '',
-            id_moneda: service.id_moneda || defaultCurrencyId,
+            precio: service.precio ? formatPriceInput(service.precio.toString()) : '',
+            id_moneda: defaultCurrencyId, // Siempre usar Guaraní por defecto al editar
             imagen: service.imagen || '',
-            tarifas: service.tarifas || []
+            tarifas: (service.tarifas || []).map(tarifa => ({
+                ...tarifa,
+                monto: tarifa.monto ? formatPriceInput(tarifa.monto.toString()) : ''
+            }))
         });
 
         // Inicializar vista previa si hay imagen existente
@@ -371,10 +417,10 @@ const ProviderMyServicesPage: React.FC = () => {
             // Preparar datos para envío, convirtiendo precio y montos a números
             const serviceData = {
                 ...editForm,
-                precio: parseFloat(editForm.precio.toString().replace(',', '.')) || 0,
+                precio: parsePriceInput(editForm.precio),
                 tarifas: editForm.tarifas.map(tarifa => ({
                     ...tarifa,
-                    monto: parseFloat(tarifa.monto.toString().replace(',', '.')) || 0
+                    monto: parsePriceInput(tarifa.monto.toString())
                 }))
             };
 
@@ -468,11 +514,17 @@ const ProviderMyServicesPage: React.FC = () => {
     };
 
     const handleRequestNewService = () => {
+        console.log('🔍 handleRequestNewService llamado');
+        console.log('📂 Categoría seleccionada:', selectedCategory);
+        
         if (!selectedCategory) {
+            console.log('❌ No hay categoría seleccionada');
             setError('Por favor selecciona una categoría primero');
             setTimeout(() => setError(null), 3000);
             return;
         }
+        
+        console.log('✅ Mostrando formulario de solicitud');
         setShowNewServiceRequest(true);
         setNewServiceRequest({
             nombre: '',
@@ -529,7 +581,11 @@ const ProviderMyServicesPage: React.FC = () => {
     };
 
     const handleSubmitNewServiceRequest = async () => {
+        console.log('🔍 handleSubmitNewServiceRequest llamado');
+        console.log('📝 Datos del formulario:', newServiceRequest);
+        
         if (!newServiceRequest.nombre.trim() || !newServiceRequest.descripcion.trim()) {
+            console.log('❌ Campos requeridos faltantes');
             setError('Por favor completa todos los campos requeridos');
             setTimeout(() => setError(null), 3000);
             return;
@@ -537,20 +593,30 @@ const ProviderMyServicesPage: React.FC = () => {
 
         try {
             const accessToken = localStorage.getItem('access_token');
-            if (!accessToken) return;
+            if (!accessToken) {
+                console.log('❌ No hay access token');
+                return;
+            }
 
-            await serviceRequestsAPI.proposeService({
-                nombre: newServiceRequest.nombre.trim(),
+            console.log('🚀 Enviando solicitud...');
+            const payload = {
+                nombre_servicio: newServiceRequest.nombre.trim(),
                 descripcion: newServiceRequest.descripcion.trim(),
-                id_categoria: newServiceRequest.id_categoria
-            }, accessToken);
+                id_categoria: newServiceRequest.id_categoria,
+                comentario_admin: null
+            };
+            console.log('📦 Payload:', payload);
 
+            await serviceRequestsAPI.proposeService(payload, accessToken);
+
+            console.log('✅ Solicitud enviada exitosamente');
             setSuccess('Solicitud de nuevo servicio enviada exitosamente');
             setShowNewServiceRequest(false);
             setNewServiceRequest({ nombre: '', descripcion: '', id_categoria: 0 });
             setTimeout(() => setSuccess(null), 3000);
 
         } catch (err: any) {
+            console.log('❌ Error al enviar solicitud:', err);
             setError(err.detail || 'Error al enviar solicitud de nuevo servicio');
             setTimeout(() => setError(null), 3000);
         }
@@ -726,13 +792,13 @@ const ProviderMyServicesPage: React.FC = () => {
 
                 {/* Contador de resultados */}
                 <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
-                    <div className="flex items-center justify-between">
-                        <div>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="text-center sm:text-left">
                             <h3 className="text-lg font-medium text-gray-900">
                                 Total: {filteredServices.length} servicios
                             </h3>
                         </div>
-                        <div className="text-right">
+                        <div className="text-center sm:text-right">
                             <div className="text-sm text-gray-500">
                                 {filteredServices.length > 0 && (
                                     <span className="text-gray-600">
@@ -762,9 +828,9 @@ const ProviderMyServicesPage: React.FC = () => {
                         <div className="divide-y divide-gray-200">
                             {filteredServices.map((service) => (
                                 <div key={service.id_servicio} className="p-4 hover:bg-gray-50 transition-colors duration-200">
-                                    <div className="flex items-center space-x-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
                                         {/* Imagen del servicio */}
-                                        <div className="flex-shrink-0">
+                                        <div className="flex-shrink-0 mx-auto sm:mx-0">
                                             {service.imagen ? (
                                                 <img
                                                     src={`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}${service.imagen}`}
@@ -783,46 +849,13 @@ const ProviderMyServicesPage: React.FC = () => {
                                         </div>
 
                                         {/* Información principal */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex-1 min-w-0">
-                                                    <h3 className="text-lg font-semibold text-gray-900 truncate">{service.nombre}</h3>
-                                                    <p className="text-sm text-gray-600 truncate mt-1">{service.descripcion}</p>
-                                                </div>
-                                                <div className="flex items-center space-x-2">
-                                                    <button
-                                                        onClick={() => handleToggleServiceStatus(service.id_servicio, service.estado)}
-                                                        className={`inline-flex items-center px-3 py-1.5 border shadow-sm text-sm font-medium rounded-md transition-colors ${
-                                                            service.estado
-                                                                ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500'
-                                                                : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
-                                                        }`}
-                                                    >
-                                                        {service.estado ? (
-                                                            <>
-                                                                <XMarkIcon className="h-4 w-4 mr-1" />
-                                                                Desactivar
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <PlusIcon className="h-4 w-4 mr-1" />
-                                                                Activar
-                                                            </>
-                                                        )}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleEditService(service)}
-                                                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-                                                    >
-                                                        <PencilIcon className="h-4 w-4 mr-1" />
-                                                        Editar
-                                                    </button>
-                                                </div>
-                                            </div>
+                                        <div className="flex-1 min-w-0 text-center sm:text-left">
+                                            <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
+                                            <p className="text-sm text-gray-600 mt-1 break-words">{service.descripcion}</p>
                                         </div>
 
-                                        {/* Información compacta horizontal */}
-                                        <div className="flex items-center space-x-6 text-sm">
+                                        {/* Información compacta - responsive */}
+                                        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6 text-sm">
                                             {/* Precio */}
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">💰 Precio</p>
@@ -832,9 +865,9 @@ const ProviderMyServicesPage: React.FC = () => {
                                             </div>
 
                                             {/* Categoría */}
-                                            <div className="text-center min-w-0">
+                                            <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">📂 Categoría</p>
-                                                <p className="font-semibold text-blue-600 truncate">
+                                                <p className="font-semibold text-blue-600 break-words">
                                                     {categories.find(c => c.id_categoria === service.id_categoria)?.nombre || 'No especificado'}
                                                 </p>
                                             </div>
@@ -858,6 +891,40 @@ const ProviderMyServicesPage: React.FC = () => {
                                                     {service.tarifas?.length || 0}
                                                 </p>
                                             </div>
+                                        </div>
+
+                                        {/* Botones de acción - responsive */}
+                                        <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 mt-4 sm:mt-0">
+                                            <button
+                                                onClick={() => handleToggleServiceStatus(service.id_servicio, service.estado)}
+                                                className={`w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border shadow-sm text-sm font-medium rounded-md transition-colors ${
+                                                    service.estado
+                                                        ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500'
+                                                        : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
+                                                }`}
+                                            >
+                                                {service.estado ? (
+                                                    <>
+                                                        <XMarkIcon className="h-4 w-4 mr-1" />
+                                                        <span className="hidden sm:inline">Desactivar</span>
+                                                        <span className="sm:hidden">Desactivar</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <PlusIcon className="h-4 w-4 mr-1" />
+                                                        <span className="hidden sm:inline">Activar</span>
+                                                        <span className="sm:hidden">Activar</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={() => handleEditService(service)}
+                                                className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                                            >
+                                                <PencilIcon className="h-4 w-4 mr-1" />
+                                                <span className="hidden sm:inline">Editar</span>
+                                                <span className="sm:hidden">Editar</span>
+                                            </button>
                                         </div>
                                     </div>
 
@@ -929,9 +996,13 @@ const ProviderMyServicesPage: React.FC = () => {
                                     <input
                                         type="text"
                                         value={editForm.nombre}
-                                        onChange={(e) => setEditForm(prev => ({ ...prev, nombre: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                                        readOnly
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600 cursor-not-allowed"
+                                        title="El nombre del servicio no se puede editar"
                                     />
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        El nombre del servicio no se puede modificar una vez creado
+                                    </p>
                                 </div>
 
                                 {/* Descripción */}
@@ -957,11 +1028,10 @@ const ProviderMyServicesPage: React.FC = () => {
                                             type="text"
                                             value={editForm.precio}
                                             onChange={(e) => {
-                                                const value = e.target.value;
-                                                // Permitir solo números, punto y coma
-                                                if (value === '' || /^[0-9]*[.,]?[0-9]*$/.test(value)) {
-                                                    setEditForm(prev => ({ ...prev, precio: value }));
-                                                }
+                                                const inputValue = e.target.value;
+                                                // Formatear el precio con puntos de mil mientras se escribe
+                                                const formattedValue = formatPriceInput(inputValue);
+                                                setEditForm(prev => ({ ...prev, precio: formattedValue }));
                                             }}
                                             placeholder="0"
                                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -1087,11 +1157,10 @@ const ProviderMyServicesPage: React.FC = () => {
                                                         type="text"
                                                         value={tarifa.monto || ''}
                                                         onChange={(e) => {
-                                                            const value = e.target.value;
-                                                            // Permitir solo números, punto y coma
-                                                            if (value === '' || /^[0-9]*[.,]?[0-9]*$/.test(value)) {
-                                                                updateTarifa(index, 'monto', value);
-                                                            }
+                                                            const inputValue = e.target.value;
+                                                            // Formatear el monto con puntos de mil mientras se escribe
+                                                            const formattedValue = formatPriceInput(inputValue);
+                                                            updateTarifa(index, 'monto', formattedValue);
                                                         }}
                                                         placeholder="0"
                                                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -1399,7 +1468,12 @@ const ProviderMyServicesPage: React.FC = () => {
                                 </button>
                                 {showNewServiceRequest && (
                                     <button
-                                        onClick={handleSubmitNewServiceRequest}
+                                        onClick={() => {
+                                            console.log('🔘 Botón Enviar Solicitud clickeado');
+                                            console.log('📝 Estado showNewServiceRequest:', showNewServiceRequest);
+                                            console.log('📝 Datos newServiceRequest:', newServiceRequest);
+                                            handleSubmitNewServiceRequest();
+                                        }}
                                         disabled={!newServiceRequest.nombre.trim() || !newServiceRequest.descripcion.trim()}
                                         className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >

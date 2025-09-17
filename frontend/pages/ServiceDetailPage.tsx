@@ -29,7 +29,25 @@ const ServiceDetailPage: React.FC = () => {
                 return;
             }
 
-            const serviceData = await servicesAPI.getServiceById(parseInt(id!), token);
+            // Obtener todos los servicios con información del proveedor y filtrar por ID
+            const allServices = await servicesAPI.getServicesWithProviders(token);
+            const serviceData = allServices.find(service => service.id_servicio === parseInt(id!));
+            
+            if (!serviceData) {
+                setError('Servicio no encontrado');
+                return;
+            }
+            
+            // Debug: verificar datos del servicio
+            console.log('🔍 ServiceDetailPage - Datos del servicio:', {
+                id: serviceData.id_servicio,
+                nombre: serviceData.nombre,
+                departamento: serviceData.departamento,
+                ciudad: serviceData.ciudad,
+                barrio: serviceData.barrio,
+                razon_social: serviceData.razon_social
+            });
+            
             setService(serviceData);
         } catch (err: any) {
             setError(err.message || 'Error al cargar el servicio');
@@ -126,7 +144,13 @@ const ServiceDetailPage: React.FC = () => {
                                     <div className="space-y-2 text-sm">
                                         <div className="flex items-center text-gray-600">
                                             <MapPinIcon className="w-4 h-4 mr-2" />
-                                            <span>{service.ciudad || 'Ciudad no especificada'}</span>
+                                            <span>
+                                                {service.departamento && service.ciudad ? 
+                                                    `${service.departamento}, ${service.ciudad}` :
+                                                    service.ciudad || service.departamento || 'Ubicación no especificada'
+                                                }
+                                                {service.barrio && `, ${service.barrio}`}
+                                            </span>
                                         </div>
                                         <div className="text-gray-600">
                                             <span className="font-medium">Estado:</span> {service.estado ? 'Activo' : 'Inactivo'}

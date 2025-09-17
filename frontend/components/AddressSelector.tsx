@@ -50,6 +50,21 @@ export const AddressSelector: React.FC<AddressSelectorProps> = ({
         loadDepartamentos();
     }, []);
 
+    // Cargar ciudades y barrios cuando se inicializa con valores
+    useEffect(() => {
+        if (initialValues.departamento && initialValues.departamento.id_departamento) {
+            console.log('🔄 Cargando ciudades para departamento inicial:', initialValues.departamento.nombre);
+            loadCiudades(initialValues.departamento.id_departamento);
+        }
+    }, [initialValues.departamento]);
+
+    useEffect(() => {
+        if (initialValues.ciudad && initialValues.ciudad.id_ciudad) {
+            console.log('🔄 Cargando barrios para ciudad inicial:', initialValues.ciudad.nombre);
+            loadBarrios(initialValues.ciudad.id_ciudad);
+        }
+    }, [initialValues.ciudad]);
+
     // Cargar departamentos
     const loadDepartamentos = async () => {
         try {

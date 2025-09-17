@@ -291,6 +291,12 @@ const AdminServiceRequestsPage: React.FC = () => {
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) return;
 
+            // Validar que el comentario sea requerido
+            if (!comment.trim()) {
+                setError('El comentario es obligatorio para rechazar una solicitud. Por favor, explica el motivo del rechazo.');
+                return;
+            }
+
             await serviceRequestsAPI.rejectRequest(requestId, comment, accessToken);
             
             // Actualizar estado local sin recargar
@@ -443,13 +449,13 @@ const AdminServiceRequestsPage: React.FC = () => {
 
                 {/* Contador de resultados */}
                 <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
-                    <div className="flex items-center justify-between">
-                        <div>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="text-center sm:text-left">
                             <h3 className="text-lg font-medium text-gray-900">
                                 Total: {filteredRequests.length} solicitudes
                             </h3>
                         </div>
-                        <div className="text-right">
+                        <div className="text-center sm:text-right">
                             <div className="text-sm text-gray-500">
                                 {filteredRequests.length > 0 && (
                                     <span className="text-gray-600">
@@ -480,11 +486,11 @@ const AdminServiceRequestsPage: React.FC = () => {
                             <div className="space-y-4">
                                 {filteredRequests.map((request) => (
                                     <div key={request.id_solicitud} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                                        <div className="flex items-start justify-between">
-                                        <div className="flex-1">
-                                                <div className="flex items-center space-x-3 mb-2">
-                                            <h3 className="text-lg font-medium text-gray-900">{request.nombre_servicio}</h3>
-                                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between space-y-4 sm:space-y-0">
+                                        <div className="flex-1 min-w-0">
+                                                <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-3 mb-2">
+                                                    <h3 className="text-lg font-medium text-gray-900 break-words">{request.nombre_servicio}</h3>
+                                                    <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
                                                         request.estado_aprobacion === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
                                                         request.estado_aprobacion === 'aprobada' ? 'bg-green-100 text-green-800' :
                                                         'bg-red-100 text-red-800'
@@ -493,16 +499,16 @@ const AdminServiceRequestsPage: React.FC = () => {
                                                     </span>
                                                 </div>
                                                 
-                                                <p className="text-gray-600 mb-2">{request.descripcion}</p>
+                                                <p className="text-gray-600 mb-2 break-words">{request.descripcion}</p>
                                                 
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-500">
-                                                    <div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 text-sm text-gray-500">
+                                                    <div className="break-words">
                                                         <span className="font-medium">Empresa:</span> {request.nombre_empresa || 'No especificada'}
                                                     </div>
-                                                    <div>
-                                                    <span className="font-medium">Contacto:</span> {request.nombre_contacto || 'No especificado'}
+                                                    <div className="break-words">
+                                                        <span className="font-medium">Contacto:</span> {request.nombre_contacto || 'No especificado'}
                                                     </div>
-                                                    <div>
+                                                    <div className="break-words sm:col-span-2 lg:col-span-1">
                                                         <span className="font-medium">Email:</span> 
                                                         {loadingEmails && request.email_contacto === 'Cargando...' ? (
                                                             <span className="text-blue-600"> Cargando...</span>
@@ -512,18 +518,18 @@ const AdminServiceRequestsPage: React.FC = () => {
                                                     </div>
                                                 </div>
                                                 
-                                                <div className="mt-2 text-sm text-gray-500">
+                                                <div className="mt-2 text-sm text-gray-500 break-words">
                                                     <span className="font-medium">Categoría:</span> {request.nombre_categoria || 'No especificada'} | 
                                                     <span className="font-medium ml-2">Fecha:</span> {new Date(request.created_at).toLocaleDateString('es-ES')}
                                                 </div>
                                             </div>
                                             
-                                            <div className="flex space-x-2 ml-4">
+                                            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 sm:ml-4">
                                                 {request.estado_aprobacion === 'pendiente' && (
                                                     <>
                                             <button
                                                 onClick={() => handleApprove(request.id_solicitud)}
-                                                            className="flex items-center px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                                                            className="w-full sm:w-auto flex items-center justify-center px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
                                             >
                                                             <CheckCircleIcon className="w-4 h-4 mr-1" />
                                                 Aprobar
@@ -533,7 +539,7 @@ const AdminServiceRequestsPage: React.FC = () => {
                                                     setSelectedRequest(request);
                                                     setShowRejectModal(true);
                                                 }}
-                                                            className="flex items-center px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                                                            className="w-full sm:w-auto flex items-center justify-center px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
                                             >
                                                             <XMarkIcon className="w-4 h-4 mr-1" />
                                                 Rechazar
@@ -554,7 +560,7 @@ const AdminServiceRequestsPage: React.FC = () => {
                                                         });
                                                         setShowEditModal(true);
                                                     }}
-                                                    className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                                                    className="w-full sm:w-auto flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                                                 >
                                                     <PencilIcon className="w-4 h-4 mr-1" />
                                                     Editar
@@ -579,7 +585,7 @@ const AdminServiceRequestsPage: React.FC = () => {
                         </p>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Comentario (opcional)
+                                Comentario <span className="text-red-500">*</span>
                             </label>
                             <textarea
                                 value={rejectComment}
@@ -587,6 +593,7 @@ const AdminServiceRequestsPage: React.FC = () => {
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 rows={3}
                                 placeholder="Motivo del rechazo..."
+                                required
                             />
                         </div>
                         <div className="flex space-x-3">
@@ -601,7 +608,8 @@ const AdminServiceRequestsPage: React.FC = () => {
                             </button>
                             <button
                                 onClick={() => handleReject(selectedRequest.id_solicitud, rejectComment)}
-                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                                disabled={!rejectComment.trim()}
+                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                             >
                                 Rechazar
                             </button>

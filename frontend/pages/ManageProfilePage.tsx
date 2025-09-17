@@ -256,7 +256,7 @@ const ManageProfilePage: React.FC = () => {
                                 <p className="text-sm sm:text-base text-gray-600">{user?.email}</p>
                                 <p className="text-xs sm:text-sm text-gray-500">Rol: {getRoleInSpanish(user?.role || '')}</p>
                                 {user?.companyName && (
-                                    <p className="text-xs sm:text-sm text-gray-500">Empresa: {user.companyName}</p>
+                                    <p className="text-xs sm:text-sm text-gray-500">Razón social de la empresa: {user.companyName}</p>
                                 )}
                             </div>
                         </div>
@@ -322,7 +322,7 @@ const ManageProfilePage: React.FC = () => {
 
                             {/* Empresa - No editable */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Empresa</label>
+                                <label className="block text-sm font-medium text-gray-700">Razón social de la empresa</label>
                                 <input
                                     type="text"
                                     value={formData.companyName || 'No especificada'}
@@ -341,7 +341,7 @@ const ManageProfilePage: React.FC = () => {
                                     disabled
                                     className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm sm:text-base bg-gray-50 text-gray-500"
                                 />
-                                <p className="mt-1 text-xs text-gray-500">Registro Único de Contribuyentes</p>
+                                <p className="mt-1 text-xs text-gray-500">Registro Único de Contribuyente de la empresa asociada</p>
                             </div>
 
                             {/* Rol - No editable */}

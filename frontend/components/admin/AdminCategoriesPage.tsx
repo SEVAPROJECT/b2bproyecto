@@ -56,7 +56,7 @@ const AdminCategoriesPage: React.FC = () => {
             setNewCategoryName('');
             setShowCreateForm(false);
             loadCategories();
-            setTimeout(() => setSuccess(null), 3000);
+            setTimeout(() => setSuccess(null), 13000);
         } catch (err: any) {
             setError(err.detail || 'Error al crear categoría');
             setTimeout(() => setError(null), 3000);
@@ -83,7 +83,7 @@ const AdminCategoriesPage: React.FC = () => {
             setEditingCategoryId(null);
             setEditingCategoryName('');
             loadCategories();
-            setTimeout(() => setSuccess(null), 3000);
+            setTimeout(() => setSuccess(null), 13000);
         } catch (err: any) {
             setError(err.detail || 'Error al actualizar categoría');
             setTimeout(() => setError(null), 3000);
@@ -129,7 +129,7 @@ const AdminCategoriesPage: React.FC = () => {
             }, accessToken);
 
             setSuccess(`Categoría ${newStatus ? 'activada' : 'desactivada'} exitosamente`);
-            setTimeout(() => setSuccess(null), 1500);
+            setTimeout(() => setSuccess(null), 11500);
 
         } catch (err: any) {
             // Revertir el cambio si la API falla

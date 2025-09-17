@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { memo } from 'react';
 import { StarIcon, BuildingStorefrontIcon, ClockIcon, LockClosedIcon } from '../icons';
 import { BackendService, BackendCategory } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,28 +11,28 @@ interface MarketplaceServiceCardProps {
     isAuthenticated?: boolean;
 }
 
-const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = ({ service, category, onViewProviders, isAuthenticated: propIsAuthenticated }) => {
+const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ service, category, onViewProviders, isAuthenticated: propIsAuthenticated }) => {
     const { user, isAuthenticated: contextIsAuthenticated } = useAuth();
     const isAuthenticated = propIsAuthenticated !== undefined ? propIsAuthenticated : contextIsAuthenticated;
     
-    // Debug: verificar autenticación
-    console.log('🔐 Auth debug:', {
-        user: user,
-        contextIsAuthenticated: contextIsAuthenticated,
-        propIsAuthenticated: propIsAuthenticated,
-        finalIsAuthenticated: isAuthenticated
-    });
+    // Debug: verificar autenticación (comentado para evitar spam)
+    // console.log('🔐 Auth debug:', {
+    //     user: user,
+    //     contextIsAuthenticated: contextIsAuthenticated,
+    //     propIsAuthenticated: propIsAuthenticated,
+    //     finalIsAuthenticated: isAuthenticated
+    // });
     
-    // Debug: verificar estructura del servicio
-    console.log('🃏 Service data:', {
-        id: service.id_servicio,
-        nombre: service.nombre,
-        razon_social: service.razon_social,
-        departamento: service.departamento,
-        ciudad: service.ciudad,
-        precio: service.precio,
-        moneda: (service as any).moneda
-    });
+    // Debug: verificar estructura del servicio (comentado para evitar spam)
+    // console.log('🃏 Service data:', {
+    //     id: service.id_servicio,
+    //     nombre: service.nombre,
+    //     razon_social: service.razon_social,
+    //     departamento: service.departamento,
+    //     ciudad: service.ciudad,
+    //     precio: service.precio,
+    //     moneda: (service as any).moneda
+    // });
     const getImageUrl = (imagePath: string | null) => {
         if (!imagePath) return null;
         const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
@@ -231,6 +231,6 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = ({ service
 
         </div>
     );
-};
+});
 
 export default MarketplaceServiceCard;

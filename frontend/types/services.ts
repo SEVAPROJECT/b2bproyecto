@@ -36,6 +36,7 @@ export interface BackendService {
     email_contacto: string | null;
     departamento: string | null;
     ciudad: string | null;
+    barrio: string | null;
     imagen: string | null;
     estado: boolean;
     created_at: string;

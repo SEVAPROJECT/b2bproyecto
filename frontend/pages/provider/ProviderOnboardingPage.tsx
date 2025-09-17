@@ -6,6 +6,7 @@ import { ClockIcon, CheckCircleIcon, ExclamationCircleIcon, SparklesIcon } from 
 import { AddressSelector } from '../../components/AddressSelector';
 import { providersAPI, adminAPI } from '../../services/api';
 import { ProviderOnboardingData } from '../../types/provider';
+import { locationsAPI, Departamento, Ciudad, Barrio } from '../../services/locations';
 
 // Debug: verificar que providersAPI se importa correctamente
 console.log('🔍 providersAPI importado:', providersAPI);
@@ -202,11 +203,28 @@ const Step1_CompanyData: React.FC<{data: ProviderOnboardingData, setData: React.
 };
 
 const Step2_Address: React.FC<{data: ProviderOnboardingData, setData: React.Dispatch<React.SetStateAction<ProviderOnboardingData>>}> = ({data, setData}) => {
+    const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
+    const [ciudades, setCiudades] = useState<Ciudad[]>([]);
+    const [barrios, setBarrios] = useState<Barrio[]>([]);
+
+    // Cargar departamentos al montar el componente
+    useEffect(() => {
+        const loadDepartamentos = async () => {
+            try {
+                const data = await locationsAPI.getDepartamentos();
+                setDepartamentos(data);
+            } catch (error) {
+                console.error('Error al cargar departamentos:', error);
+            }
+        };
+        loadDepartamentos();
+    }, []);
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setData(prev => ({ ...prev, address: { ...prev.address, [e.target.name]: e.target.value }}));
     };
 
-    const handleAddressChange = (address: {
+    const handleAddressChange = async (address: {
         departamento: any;
         ciudad: any;
         barrio: any;
@@ -220,20 +238,70 @@ const Step2_Address: React.FC<{data: ProviderOnboardingData, setData: React.Disp
                 neighborhood: address.barrio?.nombre || ''
             }
         }));
+
+        // Cargar ciudades cuando se selecciona un departamento
+        if (address.departamento && address.departamento.id_departamento) {
+            try {
+                const ciudadesData = await locationsAPI.getCiudadesPorDepartamento(address.departamento.id_departamento);
+                setCiudades(ciudadesData);
+            } catch (error) {
+                console.error('Error al cargar ciudades:', error);
+            }
+        }
+
+        // Cargar barrios cuando se selecciona una ciudad
+        if (address.ciudad && address.ciudad.id_ciudad) {
+            try {
+                const barriosData = await locationsAPI.getBarriosPorCiudad(address.ciudad.id_ciudad);
+                setBarrios(barriosData);
+            } catch (error) {
+                console.error('Error al cargar barrios:', error);
+            }
+        }
     };
 
     // Convertir strings a objetos para el AddressSelector
     const getInitialValues = () => {
         const initialValues: any = {};
         
+        // Debug específico para verificar datos de ubicación
+        console.log('🚨 DEBUG AddressSelector - Datos de ubicación en el formulario:');
+        console.log('   Department:', data.address.department);
+        console.log('   City:', data.address.city);
+        console.log('   Neighborhood:', data.address.neighborhood);
+        console.log('   Departamentos disponibles:', departamentos.length);
+        
         if (data.address.department) {
-            initialValues.departamento = { nombre: data.address.department };
+            // Buscar el departamento por nombre para obtener el ID
+            const departamento = departamentos.find(d => d.nombre === data.address.department);
+            if (departamento) {
+                initialValues.departamento = departamento;
+                console.log('✅ Departamento encontrado con ID:', departamento.id_departamento);
+            } else {
+                // Si no se encuentra, crear un objeto temporal con solo el nombre
+                initialValues.departamento = { nombre: data.address.department };
+                console.log('⚠️ Departamento no encontrado, usando solo nombre:', data.address.department);
+            }
         }
         if (data.address.city) {
-            initialValues.ciudad = { nombre: data.address.city };
+            // Buscar la ciudad por nombre para obtener el ID
+            const ciudad = ciudades.find(c => c.nombre === data.address.city);
+            if (ciudad) {
+                initialValues.ciudad = ciudad;
+            } else {
+                // Si no se encuentra, crear un objeto temporal con solo el nombre
+                initialValues.ciudad = { nombre: data.address.city };
+            }
         }
         if (data.address.neighborhood) {
-            initialValues.barrio = { nombre: data.address.neighborhood };
+            // Buscar el barrio por nombre para obtener el ID
+            const barrio = barrios.find(b => b.nombre === data.address.neighborhood);
+            if (barrio) {
+                initialValues.barrio = barrio;
+            } else {
+                // Si no se encuentra, crear un objeto temporal con solo el nombre
+                initialValues.barrio = { nombre: data.address.neighborhood };
+            }
         }
         
         return initialValues;
@@ -711,6 +779,17 @@ const ProviderOnboardingPage: React.FC = () => {
                         barrio: empresaData.barrio,
                         telefono: empresaData.telefono,
                         email: empresaData.email
+                    });
+                    
+                    // Debug específico para verificar datos de ubicación
+                    console.log('🚨 DEBUG UBICACIÓN - Datos recibidos del backend:');
+                    console.log('   Departamento:', empresaData.departamento);
+                    console.log('   Ciudad:', empresaData.ciudad);
+                    console.log('   Barrio:', empresaData.barrio);
+                    console.log('   Tipo de datos:', {
+                        departamento_type: typeof empresaData.departamento,
+                        ciudad_type: typeof empresaData.ciudad,
+                        barrio_type: typeof empresaData.barrio
                     });
 
                     if (empresaData && (empresaData.nombre_fantasia || empresaData.razon_social || empresaData.direccion)) {

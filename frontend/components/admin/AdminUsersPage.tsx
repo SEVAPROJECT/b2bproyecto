@@ -702,25 +702,26 @@ const AdminUsersPage: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Tabla de usuarios */}
+                    {/* Lista de usuarios - Responsive */}
                     <div className="bg-white rounded-xl shadow-md border border-slate-200/80 overflow-hidden">
-                        <div className="overflow-x-auto">
+                        {/* Vista de tabla para desktop */}
+                        <div className="hidden lg:block overflow-x-auto">
                             <table className="min-w-full divide-y divide-slate-200">
                                 <thead className="bg-slate-50">
                                     <tr>
-                                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                                             Usuario
                                         </th>
-                                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                                             Email
                                         </th>
-                                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                                             Rol
                                         </th>
-                                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                                             Estado
                                         </th>
-                                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                                             Acciones
                                         </th>
                                     </tr>
@@ -728,9 +729,9 @@ const AdminUsersPage: React.FC = () => {
                                 <tbody className="bg-white divide-y divide-slate-200">
                                     {paginatedUsers.map((user) => (
                                         <tr key={user.id} className="hover:bg-slate-50">
-                                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                                            <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center">
-                                                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-primary-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                    <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
                                                         {user.foto_perfil ? (
                                                             <img
                                                                 src={user.foto_perfil.startsWith('/') 
@@ -739,7 +740,6 @@ const AdminUsersPage: React.FC = () => {
                                                                 alt={`Foto de perfil de ${user.nombre_persona}`}
                                                                 className="w-full h-full object-cover rounded-full"
                                                                 onError={(e) => {
-                                                                    // Si la imagen falla al cargar, mostrar el icono por defecto
                                                                     const target = e.target as HTMLImageElement;
                                                                     target.style.display = 'none';
                                                                     const parent = target.parentElement;
@@ -752,25 +752,25 @@ const AdminUsersPage: React.FC = () => {
                                                             <UserCircleIcon className="w-6 h-6 text-primary-600" />
                                                         )}
                                                     </div>
-                                                    <div className="ml-2 sm:ml-4 min-w-0">
-                                                        <div className="text-xs sm:text-sm font-medium text-slate-900 truncate">
+                                                    <div className="ml-4 min-w-0">
+                                                        <div className="text-sm font-medium text-slate-900 truncate">
                                                             {user.nombre_persona}
                                                         </div>
-                                                        <div className="text-xs sm:text-sm text-slate-500 truncate">
+                                                        <div className="text-sm text-slate-500 truncate">
                                                             {user.nombre_empresa}
                                                         </div>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                                                <div className="text-xs sm:text-sm text-slate-900 truncate max-w-32 sm:max-w-none">{user.email}</div>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="text-sm text-slate-900">{user.email}</div>
                                             </td>
-                                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                                            <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleBadgeColor(user.rol_principal)}`}>
                                                     {getRoleDisplayName(user.rol_principal)}
                                                 </span>
                                             </td>
-                                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                                            <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                                                     user.estado === 'ACTIVO'
                                                         ? 'bg-green-100 text-green-800'
@@ -779,94 +779,240 @@ const AdminUsersPage: React.FC = () => {
                                                     {user.estado || 'ACTIVO'}
                                                 </span>
                                             </td>
-                                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                <div className="flex flex-col space-y-1 sm:space-y-2">
-                                                    {/* Fila de botones principales */}
-                                                    <div className="flex items-center space-x-1 sm:space-x-2">
-                                                        <button
-                                                            onClick={() => handleEditUser(user)}
-                                                            className="flex items-center space-x-1 px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors border border-primary-200 hover:border-primary-300"
-                                                            title="Editar información del usuario"
-                                                        >
-                                                            <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                            </svg>
-                                                            <span className="hidden sm:inline">Editar</span>
-                                                        </button>
-                                                        
-                                                        <button
-                                                            onClick={() => handleResetPassword(user)}
-                                                            disabled={!userPermissions?.is_admin}
-                                                            className={`flex items-center space-x-1 px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors border ${
-                                                                userPermissions?.is_admin
-                                                                    ? 'text-orange-600 hover:text-orange-900 bg-orange-50 hover:bg-orange-100 border-orange-200 hover:border-orange-300'
-                                                                    : 'text-gray-400 bg-gray-50 cursor-not-allowed border-gray-200'
-                                                            }`}
-                                                            title={
-                                                                userPermissions?.is_admin 
-                                                                    ? "Restablecer contraseña del usuario" 
-                                                                    : "Solo administradores pueden restablecer contraseñas"
-                                                            }
-                                                        >
-                                                            <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                                                            </svg>
-                                                            <span className="hidden sm:inline">Restablecer</span>
-                                                            {!userPermissions?.is_admin && (
-                                                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
-                                                                </svg>
-                                                            )}
-                                                        </button>
-                                                    </div>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                <div className="flex items-center space-x-2">
+                                                    <button
+                                                        onClick={() => handleEditUser(user)}
+                                                        className="flex items-center space-x-1 px-3 py-1.5 text-sm font-medium text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors border border-primary-200 hover:border-primary-300"
+                                                        title="Editar información del usuario"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                        <span>Editar</span>
+                                                    </button>
                                                     
-                                                    {/* Botón de estado (desactivar/reactivar) */}
-                                                    <div className="flex justify-start">
-                                                        <button
-                                                            onClick={async () => {
-                                                                await handleDeactivateUser(user.id);
-                                                            }}
-                                                            disabled={isUpdating}
-                                                            className={`flex items-center space-x-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${
-                                                                user.estado === 'INACTIVO'
-                                                                    ? 'text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 border-green-200 hover:border-green-300'
-                                                                    : 'text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 border-red-200 hover:border-red-300'
-                                                            }`}
-                                                            title={
-                                                                user.estado === 'INACTIVO' 
-                                                                    ? "Reactivar usuario" 
-                                                                    : "Desactivar usuario"
+                                                    <button
+                                                        onClick={() => handleResetPassword(user)}
+                                                        disabled={!userPermissions?.is_admin}
+                                                        className={`flex items-center space-x-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border ${
+                                                            userPermissions?.is_admin
+                                                                ? 'text-orange-600 hover:text-orange-900 bg-orange-50 hover:bg-orange-100 border-orange-200 hover:border-orange-300'
+                                                                : 'text-gray-400 bg-gray-50 cursor-not-allowed border-gray-200'
+                                                        }`}
+                                                        title={
+                                                            userPermissions?.is_admin 
+                                                                ? "Restablecer contraseña del usuario" 
+                                                                : "Solo administradores pueden restablecer contraseñas"
+                                                        }
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z" />
+                                                        </svg>
+                                                        <span>Restablecer</span>
+                                                        {!userPermissions?.is_admin && (
+                                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                                                <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
+                                                            </svg>
+                                                        )}
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={async () => {
+                                                            await handleDeactivateUser(user.id);
+                                                        }}
+                                                        disabled={isUpdating}
+                                                        className={`flex items-center space-x-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${
+                                                            user.estado === 'INACTIVO'
+                                                                ? 'text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 border-green-200 hover:border-green-300'
+                                                                : 'text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 border-red-200 hover:border-red-300'
+                                                        }`}
+                                                        title={
+                                                            user.estado === 'INACTIVO' 
+                                                                ? "Reactivar usuario" 
+                                                                : "Desactivar usuario"
+                                                        }
+                                                    >
+                                                        {isUpdating ? (
+                                                            <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
+                                                                user.estado === 'INACTIVO' ? 'border-green-600' : 'border-red-600'
+                                                            }`}></div>
+                                                        ) : (
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                {user.estado === 'INACTIVO' ? (
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                ) : (
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                )}
+                                                            </svg>
+                                                        )}
+                                                        <span>
+                                                            {isUpdating
+                                                                ? 'Procesando...'
+                                                                : user.estado === 'INACTIVO'
+                                                                    ? 'Reactivar'
+                                                                    : 'Desactivar'
                                                             }
-                                                        >
-                                                            {isUpdating ? (
-                                                                <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
-                                                                    user.estado === 'INACTIVO' ? 'border-green-600' : 'border-red-600'
-                                                                }`}></div>
-                                                            ) : (
-                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    {user.estado === 'INACTIVO' ? (
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                                    ) : (
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                                    )}
-                                                                </svg>
-                                                            )}
-                                                            <span>
-                                                                {isUpdating
-                                                                    ? 'Procesando...'
-                                                                    : user.estado === 'INACTIVO'
-                                                                        ? 'Reactivar'
-                                                                        : 'Desactivar'
-                                                                }
-                                                            </span>
-                                                        </button>
-                                                    </div>
+                                                        </span>
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+
+                        {/* Vista de tarjetas para móvil y tablet */}
+                        <div className="lg:hidden">
+                            <div className="divide-y divide-slate-200">
+                                {paginatedUsers.map((user) => (
+                                    <div key={user.id} className="p-4 hover:bg-slate-50 transition-colors">
+                                        <div className="flex flex-col space-y-4">
+                                            {/* Información del usuario */}
+                                            <div className="flex items-center space-x-3">
+                                                <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                    {user.foto_perfil ? (
+                                                        <img
+                                                            src={user.foto_perfil.startsWith('/') 
+                                                                ? `http://localhost:8000${user.foto_perfil}` 
+                                                                : user.foto_perfil}
+                                                            alt={`Foto de perfil de ${user.nombre_persona}`}
+                                                            className="w-full h-full object-cover rounded-full"
+                                                            onError={(e) => {
+                                                                const target = e.target as HTMLImageElement;
+                                                                target.style.display = 'none';
+                                                                const parent = target.parentElement;
+                                                                if (parent) {
+                                                                    parent.innerHTML = '<svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>';
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <UserCircleIcon className="w-6 h-6 text-primary-600" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className="text-lg font-medium text-slate-900 break-words">
+                                                        {user.nombre_persona}
+                                                    </h3>
+                                                    <p className="text-sm text-slate-500 break-words">
+                                                        {user.nombre_empresa}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Información adicional */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                                <div>
+                                                    <span className="font-medium text-slate-700">Email:</span>
+                                                    <p className="text-slate-900 break-words">{user.email}</p>
+                                                </div>
+                                                <div>
+                                                    <span className="font-medium text-slate-700">Rol:</span>
+                                                    <div className="mt-1">
+                                                        <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${getRoleBadgeColor(user.rol_principal)}`}>
+                                                            {getRoleDisplayName(user.rol_principal)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="sm:col-span-2">
+                                                    <span className="font-medium text-slate-700">Estado:</span>
+                                                    <div className="mt-1">
+                                                        <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
+                                                            user.estado === 'ACTIVO'
+                                                                ? 'bg-green-100 text-green-800'
+                                                                : 'bg-red-100 text-red-800'
+                                                        }`}>
+                                                            {user.estado || 'ACTIVO'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Botones de acción */}
+                                            <div className="flex flex-col space-y-2">
+                                                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                                                    <button
+                                                        onClick={() => handleEditUser(user)}
+                                                        className="w-full sm:w-auto flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors border border-primary-200 hover:border-primary-300"
+                                                        title="Editar información del usuario"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                        <span>Editar</span>
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => handleResetPassword(user)}
+                                                        disabled={!userPermissions?.is_admin}
+                                                        className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors border ${
+                                                            userPermissions?.is_admin
+                                                                ? 'text-orange-600 hover:text-orange-900 bg-orange-50 hover:bg-orange-100 border-orange-200 hover:border-orange-300'
+                                                                : 'text-gray-400 bg-gray-50 cursor-not-allowed border-gray-200'
+                                                        }`}
+                                                        title={
+                                                            userPermissions?.is_admin 
+                                                                ? "Restablecer contraseña del usuario" 
+                                                                : "Solo administradores pueden restablecer contraseñas"
+                                                        }
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z" />
+                                                        </svg>
+                                                        <span>Restablecer</span>
+                                                        {!userPermissions?.is_admin && (
+                                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                                                <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
+                                                            </svg>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                                
+                                                <button
+                                                    onClick={async () => {
+                                                        await handleDeactivateUser(user.id);
+                                                    }}
+                                                    disabled={isUpdating}
+                                                    className={`w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${
+                                                        user.estado === 'INACTIVO'
+                                                            ? 'text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 border-green-200 hover:border-green-300'
+                                                            : 'text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 border-red-200 hover:border-red-300'
+                                                    }`}
+                                                    title={
+                                                        user.estado === 'INACTIVO' 
+                                                            ? "Reactivar usuario" 
+                                                            : "Desactivar usuario"
+                                                    }
+                                                >
+                                                    {isUpdating ? (
+                                                        <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
+                                                            user.estado === 'INACTIVO' ? 'border-green-600' : 'border-red-600'
+                                                        }`}></div>
+                                                    ) : (
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            {user.estado === 'INACTIVO' ? (
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            ) : (
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            )}
+                                                        </svg>
+                                                    )}
+                                                    <span>
+                                                        {isUpdating
+                                                            ? 'Procesando...'
+                                                            : user.estado === 'INACTIVO'
+                                                                ? 'Reactivar'
+                                                                : 'Desactivar'
+                                                        }
+                                                    </span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
                         {/* Paginación */}
@@ -1140,7 +1286,7 @@ const AdminUsersPage: React.FC = () => {
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1">
-                                                Nombre de Empresa
+                                                Razón social de la empresa
                                             </label>
                                             <input
                                                 type="text"

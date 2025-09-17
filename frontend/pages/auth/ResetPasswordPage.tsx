@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../components/layouts';
 import Button from '../../components/ui/Button';
+import { EyeIcon, EyeSlashIcon } from '../../components/icons';
 
 // Tipos para el flujo de restablecimiento
 type ResetStep = 'email' | 'code' | 'new-password' | 'success';
@@ -35,6 +36,8 @@ const ResetPasswordPage: React.FC = () => {
         remainingAttempts: 3,
         codeVerified: false
     });
+    const [newPasswordVisible, setNewPasswordVisible] = useState(false);
+    const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
 
     // Timer para el código de expiración - solo corre si no está verificado
     useEffect(() => {
@@ -454,16 +457,30 @@ const ResetPasswordPage: React.FC = () => {
                                 <label htmlFor="newPassword" className="block text-sm font-medium text-slate-700">
                                     Nueva contraseña
                                 </label>
-                                <input
-                                    id="newPassword"
-                                    name="newPassword"
-                                    type="password"
-                                    required
-                                    className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-slate-300 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-                                    placeholder="Mín. 8 caracteres, mayúscula, minúscula, número y símbolo"
-                                    value={state.newPassword}
-                                    onChange={(e) => updateState({ newPassword: e.target.value })}
-                                />
+                                <div className="relative">
+                                    <input
+                                        id="newPassword"
+                                        name="newPassword"
+                                        type={newPasswordVisible ? "text" : "password"}
+                                        required
+                                        className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 pr-12 border border-slate-300 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+                                        placeholder="Mín. 8 caracteres, mayúscula, minúscula, número y símbolo"
+                                        value={state.newPassword}
+                                        onChange={(e) => updateState({ newPassword: e.target.value })}
+                                    />
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setNewPasswordVisible(!newPasswordVisible)}
+                                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-700 transition-colors duration-200 touch-manipulation min-h-[44px] min-w-[44px]"
+                                        aria-label={newPasswordVisible ? "Ocultar contraseña" : "Mostrar contraseña"}
+                                    >
+                                        {newPasswordVisible ? (
+                                            <EyeSlashIcon className="h-5 w-5" /> 
+                                        ) : (
+                                            <EyeIcon className="h-5 w-5" />
+                                        )}
+                                    </button>
+                                </div>
                                 <p className="mt-2 text-sm text-slate-500 bg-blue-50 p-3 rounded-lg border border-blue-200">
                                     La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un símbolo especial.
                                 </p>
@@ -473,16 +490,30 @@ const ResetPasswordPage: React.FC = () => {
                                 <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-700">
                                     Confirmar nueva contraseña
                                 </label>
-                                <input
-                                    id="confirmPassword"
-                                    name="confirmPassword"
-                                    type="password"
-                                    required
-                                    className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-slate-300 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-                                    placeholder="Repite tu nueva contraseña"
-                                    value={state.confirmPassword}
-                                    onChange={(e) => updateState({ confirmPassword: e.target.value })}
-                                />
+                                <div className="relative">
+                                    <input
+                                        id="confirmPassword"
+                                        name="confirmPassword"
+                                        type={confirmPasswordVisible ? "text" : "password"}
+                                        required
+                                        className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 pr-12 border border-slate-300 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+                                        placeholder="Repite tu nueva contraseña"
+                                        value={state.confirmPassword}
+                                        onChange={(e) => updateState({ confirmPassword: e.target.value })}
+                                    />
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setConfirmPasswordVisible(!confirmPasswordVisible)}
+                                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-700 transition-colors duration-200 touch-manipulation min-h-[44px] min-w-[44px]"
+                                        aria-label={confirmPasswordVisible ? "Ocultar contraseña" : "Mostrar contraseña"}
+                                    >
+                                        {confirmPasswordVisible ? (
+                                            <EyeSlashIcon className="h-5 w-5" /> 
+                                        ) : (
+                                            <EyeIcon className="h-5 w-5" />
+                                        )}
+                                    </button>
+                                </div>
                             </div>
 
                             <Button
