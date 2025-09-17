@@ -109,7 +109,7 @@ const AppRoutes: React.FC = () => {
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             
             {/* Ruta de prueba temporal */}
-            <Route path="/test-dates" element={<DateTestComponent />} />
+            //<Route path="/test-dates" element={<DateTestComponent />} />
 
             <Route path="/marketplace" element={
                 <MainLayout>
