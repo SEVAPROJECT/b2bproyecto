@@ -14,7 +14,7 @@ const getApiBaseUrl = (): string => {
         // En Railway, el backend debe estar en la misma URL pero en el puerto 8000
         // O usar una variable de entorno si está configurada
         //const backendUrl = (window as any).__ENV__?.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
-        const backendUrl = (window as any).__ENV__?.VITE_BACKEND_HOST || `${window.location.protocol}//${window.location.hostname}:8000`; VITE_BACKEND_HOST
+        const backendUrl = (window as any).__ENV__?.VITE_BACKEND_HOST || `${window.location.protocol}//${window.location.hostname}:8000`;
         return `${backendUrl}/api/v1`;
     }
     
