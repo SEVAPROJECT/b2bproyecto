@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import BIGINT, Column, String, ForeignKey, text, DateTime
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from app.models.empresa.barrio import Barrio
+from app.models.empresa.departamento import Departamento
 from geoalchemy2 import Geometry
 from app.supabase.db.db_supabase import Base 
 from typing import TYPE_CHECKING
@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.models.empresa.perfil_empresa import PerfilEmpresa
     from app.models.empresa.sucursal_empresa import SucursalEmpresa
+    from app.models.empresa.ciudad import Ciudad
+    from app.models.empresa.barrio import Barrio
 
 class Direccion(Base):
     """
@@ -35,11 +37,18 @@ class Direccion(Base):
     # La columna de coordenadas ya está correctamente definida
     coordenadas: Mapped[str] = Column(Geometry("POINT", srid=4326), nullable=False)
     
-    # El id_barrio debe ser BIGINT para la consistencia con el modelo Barrio
+    # Relación con departamento (la única que necesita direccion)
+    id_departamento: Mapped[Optional[int]] = Column(BIGINT, ForeignKey('departamento.id_departamento', ondelete='CASCADE'), nullable=True)
+    
+    # Relaciones con ciudad y barrio (nuevos campos)
+    id_ciudad: Mapped[Optional[int]] = Column(BIGINT, ForeignKey('ciudad.id_ciudad', ondelete='CASCADE'), nullable=True)
     id_barrio: Mapped[Optional[int]] = Column(BIGINT, ForeignKey('barrio.id_barrio', ondelete='CASCADE'), nullable=True)
+    
     created_at: Mapped[datetime] = Column(DateTime(timezone=True), server_default=text('now()'))
 
     # Relaciones
-    barrio: Mapped["Barrio"] = relationship("Barrio", back_populates="direccion")
+    departamento: Mapped["Departamento"] = relationship("Departamento", overlaps="direccion")
+    ciudad: Mapped["Ciudad"] = relationship("Ciudad", overlaps="direccion")
+    barrio: Mapped["Barrio"] = relationship("Barrio", overlaps="direccion")
     perfil_empresa: Mapped[List["PerfilEmpresa"]] = relationship("PerfilEmpresa", back_populates="direccion")
     sucursal_empresa: Mapped[List["SucursalEmpresa"]] = relationship("SucursalEmpresa", back_populates="direccion")

@@ -174,7 +174,7 @@ async def solicitar_verificacion_completa(
                 detail=f"Ciudad '{perfil_data['direccion']['ciudad']}' no encontrada en el departamento '{perfil_data['direccion']['departamento']}'"
             )
         
-        # Buscar el barrio por nombre y ciudad (opcional)
+        # Buscar el barrio por nombre y ciudad (opcional) - DEPRECATED
         barrio = None
         barrio_value = perfil_data['direccion'].get('barrio')
         if barrio_value and isinstance(barrio_value, str) and barrio_value.strip():
@@ -198,6 +198,8 @@ async def solicitar_verificacion_completa(
                 calle=perfil_data['direccion']['calle'],
                 numero=perfil_data['direccion']['numero'],
                 referencia=perfil_data['direccion']['referencia'],
+                id_departamento=departamento.id_departamento,
+                id_ciudad=ciudad.id_ciudad if ciudad else None,
                 id_barrio=barrio.id_barrio if barrio else None,
                 coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)  # Centro de Asunción
             )
@@ -227,6 +229,8 @@ async def solicitar_verificacion_completa(
                     direccion_existente.calle = perfil_data['direccion']['calle']
                     direccion_existente.numero = perfil_data['direccion']['numero']
                     direccion_existente.referencia = perfil_data['direccion']['referencia']
+                    direccion_existente.id_departamento = departamento.id_departamento
+                    direccion_existente.id_ciudad = ciudad.id_ciudad if ciudad else None
                     direccion_existente.id_barrio = barrio.id_barrio if barrio else None
                     await db.flush()
             else:
@@ -235,6 +239,8 @@ async def solicitar_verificacion_completa(
                     calle=perfil_data['direccion']['calle'],
                     numero=perfil_data['direccion']['numero'],
                     referencia=perfil_data['direccion']['referencia'],
+                    id_departamento=departamento.id_departamento,
+                    id_ciudad=ciudad.id_ciudad if ciudad else None,
                     id_barrio=barrio.id_barrio if barrio else None,
                     coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)
                 )
@@ -848,43 +854,43 @@ async def get_mis_datos_solicitud(
         # Obtener datos de dirección
         direccion_data = None
         if empresa.id_direccion:
-            direccion_query = select(Direccion).where(Direccion.id_direccion == empresa.id_direccion)
+            # Usar selectinload para cargar las relaciones automáticamente
+            direccion_query = select(Direccion).options(
+                selectinload(Direccion.departamento).selectinload(Departamento.ciudad).selectinload(Ciudad.barrio)
+            ).where(Direccion.id_direccion == empresa.id_direccion)
             direccion_result = await db.execute(direccion_query)
             direccion = direccion_result.scalars().first()
             
-            if direccion:
-                # Obtener barrio
+            if direccion and direccion.departamento:
+                # Obtener datos a través de las relaciones existentes
+                departamento_data = {
+                    "nombre": direccion.departamento.nombre
+                }
+                
+                # Obtener ciudad (si existe)
+                ciudad_data = None
+                if direccion.departamento.ciudad and len(direccion.departamento.ciudad) > 0:
+                    ciudad = direccion.departamento.ciudad[0]
+                    ciudad_data = {
+                        "nombre": ciudad.nombre
+                    }
+                
+                # Obtener barrio (opcional, si existe)
                 barrio_data = None
-                if direccion.id_barrio:
-                    barrio_query = select(Barrio).where(Barrio.id_barrio == direccion.id_barrio)
-                    barrio_result = await db.execute(barrio_query)
-                    barrio = barrio_result.scalars().first()
-                    
-                    if barrio:
-                        # Obtener ciudad
-                        ciudad_query = select(Ciudad).where(Ciudad.id_ciudad == barrio.id_ciudad)
-                        ciudad_result = await db.execute(ciudad_query)
-                        ciudad = ciudad_result.scalars().first()
-                        
-                        if ciudad:
-                            # Obtener departamento
-                            dept_query = select(Departamento).where(Departamento.id_departamento == ciudad.id_departamento)
-                            dept_result = await db.execute(dept_query)
-                            departamento = dept_result.scalars().first()
-                            
-                            if departamento:
-                                barrio_data = {
-                                    "nombre": barrio.nombre,
-                                    "ciudad": ciudad.nombre,
-                                    "departamento": departamento.nombre
-                                }
+                if direccion.departamento.ciudad and len(direccion.departamento.ciudad) > 0:
+                    ciudad = direccion.departamento.ciudad[0]
+                    if ciudad.barrio and len(ciudad.barrio) > 0:
+                        barrio = ciudad.barrio[0]
+                        barrio_data = {
+                            "nombre": barrio.nombre
+                        }
                 
                 direccion_data = {
                     "calle": direccion.calle,
                     "numero": direccion.numero,
                     "referencia": direccion.referencia,
-                    "departamento": barrio_data["departamento"] if barrio_data else None,
-                    "ciudad": barrio_data["ciudad"] if barrio_data else None,
+                    "departamento": departamento_data["nombre"],
+                    "ciudad": ciudad_data["nombre"] if ciudad_data else None,
                     "barrio": barrio_data["nombre"] if barrio_data else None
                 }
         

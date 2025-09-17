@@ -14,14 +14,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SERVICE_ROLE")
 
-# Verificar configuración de Supabase
-if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-    print("⚠️  ADVERTENCIA: Supabase no configurado. Algunas funciones pueden no funcionar.")
-    print(f"   SUPABASE_URL: {'✅' if SUPABASE_URL else '❌'}")
-    print(f"   SUPABASE_ANON_KEY: {'✅' if SUPABASE_ANON_KEY else '❌'}")
-else:
-    print("✅ Supabase configurado correctamente")
-
 #PostgreSQL Supabase
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")
 
@@ -48,15 +40,6 @@ print(f"🔑 Access Key configurada: {'Sí' if AWS_ACCESS_KEY_ID else 'No'}")
 print(f"🔐 Secret Key configurada: {'Sí' if AWS_SECRET_ACCESS_KEY else 'No'}")
 
 IDRIVE_BUCKET_NAME = os.getenv("IDRIVE_BUCKET_NAME")
-
-# Verificar configuración de IDrive
-if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY or not IDRIVE_BUCKET_NAME:
-    print("⚠️  ADVERTENCIA: IDrive no configurado. Funciones de almacenamiento no disponibles.")
-    print(f"   AWS_ACCESS_KEY_ID: {'✅' if AWS_ACCESS_KEY_ID else '❌'}")
-    print(f"   AWS_SECRET_ACCESS_KEY: {'✅' if AWS_SECRET_ACCESS_KEY else '❌'}")
-    print(f"   IDRIVE_BUCKET_NAME: {'✅' if IDRIVE_BUCKET_NAME else '❌'}")
-else:
-    print("✅ IDrive configurado correctamente")
 
 #Weaviate
 #WEAVIATE_URL = os.getenv("WEAVIATE_URL")

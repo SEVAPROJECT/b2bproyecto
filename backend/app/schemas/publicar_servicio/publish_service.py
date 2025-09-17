@@ -69,6 +69,7 @@ class ServicioWithProvider(BaseModel):
     nombre_contacto: Optional[str] = None
     ciudad: Optional[str] = None  # Ciudad de la empresa
     departamento: Optional[str] = None  # Departamento de la empresa
+    barrio: Optional[str] = None  # Barrio de la empresa
     # Información de moneda
     codigo_iso_moneda: Optional[str] = None  # Código ISO de la moneda (ej: PYG, USD)
     nombre_moneda: Optional[str] = None  # Nombre de la moneda (ej: Guaraní, Dólar)

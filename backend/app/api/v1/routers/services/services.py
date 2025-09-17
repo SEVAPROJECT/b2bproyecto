@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import and_, case, func, String, Integer, Numeric, Boolean, DateTime
 from typing import List
 from pydantic import BaseModel
 
@@ -164,43 +165,91 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
     Este endpoint devuelve una lista de todos los servicios activos con información del proveedor.
     """
     try:
-        # Query con JOIN para obtener información del proveedor incluyendo ciudad, departamento y moneda
-        query = select(
-            Servicio.id_servicio,
-            Servicio.id_categoria,
-            Servicio.id_perfil,
-            Servicio.id_moneda,
-            Servicio.nombre,
-            Servicio.descripcion,
-            Servicio.precio,
-            Servicio.imagen,
-            Servicio.estado,
-            Servicio.created_at,
-            PerfilEmpresa.razon_social,
-            UserModel.nombre_persona.label('nombre_contacto'),
-            Ciudad.nombre.label('ciudad'),  # Ciudad de la empresa
-            Departamento.nombre.label('departamento'),  # Departamento de la empresa
-            Moneda.codigo_iso_moneda,  # Código ISO de la moneda
-            Moneda.nombre.label('nombre_moneda'),  # Nombre de la moneda
-            Moneda.simbolo.label('simbolo_moneda')  # Símbolo de la moneda
-        ).join(
-            PerfilEmpresa, Servicio.id_perfil == PerfilEmpresa.id_perfil
-        ).join(
-            UserModel, PerfilEmpresa.user_id == UserModel.id
-        ).outerjoin(  # Usar outerjoin para casos donde no hay dirección
-            Direccion, PerfilEmpresa.id_direccion == Direccion.id_direccion
-        ).outerjoin(  # Usar outerjoin para casos donde no hay barrio
-            Barrio, Direccion.id_barrio == Barrio.id_barrio
-        ).outerjoin(  # Usar outerjoin para casos donde no hay ciudad
-            Ciudad, Barrio.id_ciudad == Ciudad.id_ciudad
-        ).outerjoin(  # Usar outerjoin para casos donde no hay departamento
-            Departamento, Ciudad.id_departamento == Departamento.id_departamento
-        ).outerjoin(  # Usar outerjoin para casos donde no hay moneda
-            Moneda, Servicio.id_moneda == Moneda.id_moneda
-        ).where(Servicio.estado == True)
+        # Usar consulta SQL directa que sabemos que funciona
+        from sqlalchemy import text
+        query = text("""
+            SELECT 
+                s.id_servicio,
+                s.id_categoria,
+                s.id_perfil,
+                s.id_moneda,
+                s.nombre,
+                s.descripcion,
+                s.precio,
+                s.imagen,
+                s.estado,
+                s.created_at,
+                pe.razon_social,
+                u.nombre_persona as nombre_contacto,
+                d.nombre as departamento,
+                c.nombre as ciudad,
+                b.nombre as barrio,
+                m.codigo_iso_moneda,
+                m.nombre as nombre_moneda,
+                m.simbolo as simbolo_moneda
+            FROM servicio s
+            JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+            JOIN users u ON pe.user_id = u.id
+            LEFT JOIN direccion dir ON pe.id_direccion = dir.id_direccion
+            LEFT JOIN departamento d ON dir.id_departamento = d.id_departamento
+            LEFT JOIN ciudad c ON dir.id_ciudad = c.id_ciudad
+            LEFT JOIN barrio b ON dir.id_barrio = b.id_barrio
+            LEFT JOIN moneda m ON s.id_moneda = m.id_moneda
+            WHERE s.estado = true
+            AND pe.verificado = true
+            ORDER BY s.created_at DESC
+        """)
         
         result = await db.execute(query)
         services_data = result.fetchall()
+        
+        print(f"🔍 Backend - Raw query results: {len(services_data)} rows")
+        if services_data:
+            first_row = services_data[0]
+            print(f"🔍 Backend - First row: {first_row}")
+            print(f"🔍 Backend - Barrio value: '{first_row[14]}', type: {type(first_row[14])}")
+        
+        # Convertir los resultados a diccionarios para que funcionen correctamente
+        services_list = []
+        for row in services_data:
+            service_dict = {
+                'id_servicio': row[0],
+                'id_categoria': row[1],
+                'id_perfil': row[2],
+                'id_moneda': row[3],
+                'nombre': row[4],
+                'descripcion': row[5],
+                'precio': row[6],
+                'imagen': row[7],
+                'estado': row[8],
+                'created_at': row[9],
+                'razon_social': row[10],
+                'nombre_contacto': row[11],
+                'departamento': row[12],
+                'ciudad': row[13],
+                'barrio': row[14],
+                'codigo_iso_moneda': row[15],
+                'nombre_moneda': row[16],
+                'simbolo_moneda': row[17]
+            }
+            services_list.append(service_dict)
+        
+        services_data = services_list
+
+        # Debug: verificar datos de barrio
+        print(f"🔍 Backend - Total servicios: {len(services_data)}")
+        if services_data:
+            first_service = services_data[0]
+            print(f"🔍 Backend - Primer servicio: departamento={first_service['departamento']}, ciudad={first_service['ciudad']}, barrio={first_service['barrio']}")
+            print(f"🔍 Backend - Barrio type: {type(first_service['barrio'])}")
+            
+            # Verificar Limpio SA específicamente
+            limpo_services = [s for s in services_data if s['razon_social'] == 'Limpio SA']
+            if limpo_services:
+                limpo = limpo_services[0]
+                print(f"🔍 Backend - Limpio SA: barrio={limpo['barrio']}, type={type(limpo['barrio'])}")
+            else:
+                print("🔍 Backend - Limpio SA no encontrado")
 
         if not services_data:
             # En lugar de lanzar una excepción, devolvemos una lista vacía
@@ -213,7 +262,7 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
             tarifas_result = await db.execute(
                 select(TarifaServicio, TipoTarifaServicio.nombre.label('nombre_tipo_tarifa'))
                 .outerjoin(TipoTarifaServicio, TarifaServicio.id_tarifa == TipoTarifaServicio.id_tarifa)
-                .where(TarifaServicio.id_servicio == row.id_servicio)
+                .where(TarifaServicio.id_servicio == row['id_servicio'])
             )
             tarifas_data = tarifas_result.fetchall()
 
@@ -233,23 +282,24 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
                 })
 
             service_dict = {
-                'id_servicio': row.id_servicio,
-                'id_categoria': row.id_categoria,
-                'id_perfil': row.id_perfil,
-                'id_moneda': row.id_moneda,
-                'nombre': row.nombre,
-                'descripcion': row.descripcion,
-                'precio': row.precio,
-                'imagen': row.imagen,
-                'estado': row.estado,
-                'created_at': row.created_at,
-                'razon_social': row.razon_social,
-                'nombre_contacto': row.nombre_contacto,
-                'ciudad': row.ciudad,  # Ciudad de la empresa
-                'departamento': row.departamento,  # Departamento de la empresa
-                'codigo_iso_moneda': row.codigo_iso_moneda,  # Código ISO de la moneda
-                'nombre_moneda': row.nombre_moneda,  # Nombre de la moneda
-                'simbolo_moneda': row.simbolo_moneda,  # Símbolo de la moneda
+                'id_servicio': row['id_servicio'],
+                'id_categoria': row['id_categoria'],
+                'id_perfil': row['id_perfil'],
+                'id_moneda': row['id_moneda'],
+                'nombre': row['nombre'],
+                'descripcion': row['descripcion'],
+                'precio': row['precio'],
+                'imagen': row['imagen'],
+                'estado': row['estado'],
+                'created_at': row['created_at'],
+                'razon_social': row['razon_social'],
+                'nombre_contacto': row['nombre_contacto'],
+                'ciudad': row['ciudad'],  # Ciudad de la empresa
+                'departamento': row['departamento'],  # Departamento de la empresa
+                'barrio': row['barrio'],  # Barrio de la empresa (opcional)
+                'codigo_iso_moneda': row['codigo_iso_moneda'],  # Código ISO de la moneda
+                'nombre_moneda': row['nombre_moneda'],  # Nombre de la moneda
+                'simbolo_moneda': row['simbolo_moneda'],  # Símbolo de la moneda
                 'tarifas': tarifas  # Agregar tarifas
             }
             services.append(ServicioWithProvider(**service_dict))

@@ -1,7 +1,8 @@
 #autenticacion supabase
 # app/api/v1/routers/auth.py
 import uuid
-from sqlalchemy import UUID, select
+from sqlalchemy import UUID, select, text
+from sqlalchemy.orm import selectinload
 from app.schemas.auth import SignInIn, SignUpIn, SignUpSuccess, TokenOut, RefreshTokenIn, EmailOnlyIn
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.v1.dependencies.auth_user import get_current_user  # dependencia que valida el JWT
@@ -529,212 +530,6 @@ async def get_verificacion_estado(current_user: SupabaseUser = Depends(get_curre
         }
 
 
-@router.get("/verificacion-datos",
-            status_code=status.HTTP_200_OK,
-            description="Obtiene los datos de la solicitud de verificación del usuario autenticado.")
-async def get_verificacion_datos(current_user: SupabaseUser = Depends(get_current_user),
-                                db: AsyncSession = Depends(get_async_db)):
-    """
-    Obtiene los datos completos de la solicitud de verificación del usuario actual
-    """
-    try:
-        # Convertir el id de string a UUID de Python
-        user_uuid = uuid.UUID(current_user.id)
-        
-        # LÓGICA ULTRA SIMPLIFICADA: Consultas directas y simples
-        from app.models.empresa.perfil_empresa import PerfilEmpresa
-        from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
-        from app.models.empresa.documento import Documento
-        from app.models.empresa.tipo_documento import TipoDocumento
-        from app.models.empresa.direccion import Direccion
-        from app.models.empresa.sucursal_empresa import SucursalEmpresa
-        from app.models.empresa.barrio import Barrio
-        from app.models.empresa.ciudad import Ciudad
-        from app.models.empresa.departamento import Departamento
-        
-        # 1. Obtener empresa
-        empresa_query = select(PerfilEmpresa).where(PerfilEmpresa.user_id == user_uuid)
-        empresa_result = await db.execute(empresa_query)
-        empresa = empresa_result.scalars().first()
-        
-        if not empresa:
-            return {
-                "success": False,
-                "mensaje": "No se encontró perfil de empresa para este usuario"
-            }
-        
-        print(f"🔍 Backend - Empresa encontrada: {empresa.razon_social}")
-        
-        # 2. Obtener solicitud más reciente
-        solicitud_query = select(VerificacionSolicitud).where(
-            VerificacionSolicitud.id_perfil == empresa.id_perfil
-        ).order_by(VerificacionSolicitud.created_at.desc())
-        solicitud_result = await db.execute(solicitud_query)
-        solicitud = solicitud_result.scalars().first()
-        
-        if not solicitud:
-            return {
-                "success": False,
-                "mensaje": "No se encontró solicitud de verificación"
-            }
-        
-        print(f"🔍 Backend - Solicitud encontrada: {solicitud.id_verificacion}")
-        
-        # 3. Obtener dirección
-        direccion = None
-        if empresa.id_direccion:
-            direccion_query = select(Direccion).where(Direccion.id_direccion == empresa.id_direccion)
-            direccion_result = await db.execute(direccion_query)
-            direccion = direccion_result.scalars().first()
-            print(f"🔍 Backend - Dirección encontrada: {direccion.calle if direccion else 'No encontrada'}")
-        
-        # 4. Obtener barrio
-        barrio = None
-        if direccion and direccion.id_barrio:
-            barrio_query = select(Barrio).where(Barrio.id_barrio == direccion.id_barrio)
-            barrio_result = await db.execute(barrio_query)
-            barrio = barrio_result.scalars().first()
-            print(f"🔍 Backend - Barrio encontrado: {barrio.nombre if barrio else 'No encontrado'}")
-        
-        # 5. Obtener ciudad
-        ciudad = None
-        if barrio and barrio.id_ciudad:
-            ciudad_query = select(Ciudad).where(Ciudad.id_ciudad == barrio.id_ciudad)
-            ciudad_result = await db.execute(ciudad_query)
-            ciudad = ciudad_result.scalars().first()
-            print(f"🔍 Backend - Ciudad encontrada: {ciudad.nombre if ciudad else 'No encontrada'}")
-        
-        # 6. Obtener departamento
-        departamento = None
-        if ciudad and ciudad.id_departamento:
-            depto_query = select(Departamento).where(Departamento.id_departamento == ciudad.id_departamento)
-            depto_result = await db.execute(depto_query)
-            departamento = depto_result.scalars().first()
-            print(f"🔍 Backend - Departamento encontrado: {departamento.nombre if departamento else 'No encontrado'}")
-        
-        # 7. Obtener sucursal
-        sucursal_query = select(SucursalEmpresa).where(SucursalEmpresa.id_perfil == empresa.id_perfil)
-        sucursal_result = await db.execute(sucursal_query)
-        sucursal = sucursal_result.scalars().first()
-        print(f"🔍 Backend - Sucursal encontrada: {sucursal.nombre if sucursal else 'No encontrada'}")
-        print(f"🔍 Backend - Teléfono: {sucursal.telefono if sucursal else 'No encontrado'}")
-        print(f"🔍 Backend - Email: {sucursal.email if sucursal else 'No encontrado'}")
-        
-        # Verificar si hay múltiples sucursales
-        todas_sucursales_query = select(SucursalEmpresa).where(SucursalEmpresa.id_perfil == empresa.id_perfil)
-        todas_sucursales_result = await db.execute(todas_sucursales_query)
-        todas_sucursales = todas_sucursales_result.scalars().all()
-        print(f"🔍 Backend - Total sucursales: {len(todas_sucursales)}")
-        for i, s in enumerate(todas_sucursales):
-            print(f"🔍 Backend - Sucursal {i+1}: {s.nombre}, Tel: {s.telefono}, Email: {s.email}")
-        
-        if not solicitud:
-            return {
-                "success": False,
-                "mensaje": "No se encontró solicitud de verificación"
-            }
-        
-        # 8. Obtener documentos de la solicitud
-        documentos_query = select(Documento).where(Documento.id_verificacion == solicitud.id_verificacion)
-        documentos_result = await db.execute(documentos_query)
-        documentos = documentos_result.scalars().all()
-        print(f"🔍 Backend - Documentos encontrados: {len(documentos)}")
-        
-        # 9. Obtener información detallada de cada documento
-        documentos_detallados = []
-        for doc in documentos:
-            tipo_doc_query = select(TipoDocumento).where(TipoDocumento.id_tip_documento == doc.id_tip_documento)
-            tipo_doc_result = await db.execute(tipo_doc_query)
-            tipo_doc = tipo_doc_result.scalars().first()
-            
-            doc_info = {
-                "id_documento": doc.id_documento,
-                "tipo_documento": tipo_doc.nombre if tipo_doc else "Tipo no encontrado",
-                "es_requerido": tipo_doc.es_requerido if tipo_doc else False,
-                "estado_revision": doc.estado_revision,
-                "url_archivo": doc.url_archivo,
-                "fecha_verificacion": doc.fecha_verificacion,
-                "observacion": doc.observacion,
-                "created_at": doc.created_at
-            }
-            documentos_detallados.append(doc_info)
-            print(f"🔍 Backend - Documento: {doc_info['tipo_documento']}, URL: {doc_info['url_archivo']}")
-        
-        # Obtener email del usuario desde Supabase Auth
-        try:
-            supabase_user = supabase_auth.auth.admin.get_user_by_id(str(user_uuid))
-            user_email = supabase_user.user.email if supabase_user and supabase_user.user else ""
-        except Exception as e:
-            print(f"🔍 Error obteniendo email de Supabase: {e}")
-            user_email = ""
-        
-        # Preparar datos de la empresa de forma simple
-        datos_empresa = {
-            "razon_social": empresa.razon_social,
-            "nombre_fantasia": empresa.nombre_fantasia,
-            "ruc": "",
-            "direccion": f"{direccion.calle} {direccion.numero}" if direccion else "",
-            "referencia": direccion.referencia if direccion else "",
-            "departamento": departamento.nombre if departamento else "",
-            "ciudad": ciudad.nombre if ciudad else "",
-            "barrio": barrio.nombre if barrio else "",
-            "telefono": sucursal.telefono if sucursal else "",
-            "email": sucursal.email if sucursal else user_email,
-            "sitio_web": "",
-            "descripcion": "",
-            "categoria_empresa": "",
-            "estado": empresa.estado,
-            "verificado": empresa.verificado,
-            "fecha_inicio": empresa.fecha_inicio,
-            "fecha_fin": empresa.fecha_fin,
-            # Agregar datos de sucursal
-            "nombre_sucursal": sucursal.nombre if sucursal else None,
-            "telefono_contacto": sucursal.telefono if sucursal else None,
-            "email_contacto": sucursal.email if sucursal else None
-        }
-        
-        # Preparar datos de la solicitud
-        datos_solicitud = {
-            "id_verificacion": solicitud.id_verificacion,
-            "estado": solicitud.estado,
-            "fecha_solicitud": solicitud.fecha_solicitud,
-            "fecha_revision": solicitud.fecha_revision,
-            "comentario": solicitud.comentario,
-            "created_at": solicitud.created_at
-        }
-        
-        response_data = {
-            "success": True,
-            "empresa": datos_empresa,
-            "solicitud": datos_solicitud,
-            "documentos": documentos_detallados,
-        }
-        
-        # Logs finales
-        print(f"🔍 Backend - RESUMEN FINAL:")
-        print(f"  - Empresa: {empresa.razon_social}")
-        print(f"  - Dirección: {direccion.calle if direccion else 'No encontrada'}")
-        print(f"  - Departamento: {departamento.nombre if departamento else 'No encontrado'}")
-        print(f"  - Ciudad: {ciudad.nombre if ciudad else 'No encontrada'}")
-        print(f"  - Barrio: {barrio.nombre if barrio else 'No encontrado'}")
-        print(f"  - Sucursal: {sucursal.nombre if sucursal else 'No encontrada'}")
-        print(f"  - Teléfono: {sucursal.telefono if sucursal else 'No encontrado'}")
-        print(f"  - Email: {sucursal.email if sucursal else user_email}")
-        print(f"  - Documentos: {len(documentos_detallados)}")
-        print(f"🔍 Backend - Datos de sucursal que se enviarán:")
-        print(f"  - nombre_sucursal: {datos_empresa.get('nombre_sucursal')}")
-        print(f"  - telefono_contacto: {datos_empresa.get('telefono_contacto')}")
-        print(f"  - email_contacto: {datos_empresa.get('email_contacto')}")
-        print(f"  - Datos empresa final: {datos_empresa}")
-        
-        return response_data
-        
-    except Exception as e:
-        print(f"❌ Error obteniendo datos de verificación: {str(e)}")
-        return {
-            "success": False,
-            "mensaje": f"Error al obtener datos: {str(e)}"
-        }
 
 @router.put(
     "/profile",
@@ -926,29 +721,36 @@ async def get_verificacion_datos(
         
         print(f"✅ Solicitud encontrada: {solicitud.estado}")
         
-        # Obtener datos de dirección
+        # Obtener datos de dirección usando consulta SQL directa
         direccion_data = None
         if empresa.id_direccion:
-            direccion_query = select(Direccion).options(
-                selectinload(Direccion.barrio).selectinload(Barrio.ciudad).selectinload(Ciudad.departamento)
-            ).where(Direccion.id_direccion == empresa.id_direccion)
-            direccion_result = await db.execute(direccion_query)
-            direccion = direccion_result.scalars().first()
+            # Usar consulta SQL directa para evitar problemas con selectinload
+            direccion_query = text("""
+                SELECT 
+                    d.calle,
+                    d.numero,
+                    d.referencia,
+                    dep.nombre as departamento,
+                    c.nombre as ciudad,
+                    b.nombre as barrio
+                FROM direccion d
+                LEFT JOIN departamento dep ON d.id_departamento = dep.id_departamento
+                LEFT JOIN ciudad c ON d.id_ciudad = c.id_ciudad
+                LEFT JOIN barrio b ON d.id_barrio = b.id_barrio
+                WHERE d.id_direccion = :direccion_id
+            """)
             
-            if direccion and direccion.barrio:
-                barrio_data = {
-                    "nombre": direccion.barrio.nombre,
-                    "ciudad": direccion.barrio.ciudad.nombre if direccion.barrio.ciudad else None,
-                    "departamento": direccion.barrio.ciudad.departamento.nombre if direccion.barrio.ciudad and direccion.barrio.ciudad.departamento else None
-                }
-                
+            result = await db.execute(direccion_query, {"direccion_id": empresa.id_direccion})
+            direccion = result.fetchone()
+            
+            if direccion:
                 direccion_data = {
                     "calle": direccion.calle,
                     "numero": direccion.numero,
                     "referencia": direccion.referencia,
-                    "departamento": barrio_data["departamento"],
-                    "ciudad": barrio_data["ciudad"],
-                    "barrio": barrio_data["nombre"]
+                    "departamento": direccion.departamento,
+                    "ciudad": direccion.ciudad,
+                    "barrio": direccion.barrio
                 }
         
         # Obtener datos de sucursal (si existe)
@@ -983,10 +785,11 @@ async def get_verificacion_datos(
         documentos_data = []
         for doc in documentos:
             tipo_doc_nombre = doc.tipo_documento.nombre if doc.tipo_documento else f"Tipo {doc.id_tip_documento}"
+            es_requerido = doc.tipo_documento.es_requerido if doc.tipo_documento else False
             documentos_data.append({
                 "id_documento": doc.id_documento,
                 "tipo_documento": tipo_doc_nombre,
-                "es_requerido": doc.es_requerido,
+                "es_requerido": es_requerido,
                 "estado_revision": doc.estado_revision,
                 "url_archivo": doc.url_archivo,
                 "fecha_verificacion": doc.fecha_verificacion,
@@ -998,17 +801,17 @@ async def get_verificacion_datos(
         empresa_dict = {
             "razon_social": empresa.razon_social,
             "nombre_fantasia": empresa.nombre_fantasia,
-            "ruc": empresa.ruc,
-            "direccion": direccion_data["calle"] + " " + direccion_data["numero"] if direccion_data else empresa.direccion,
-            "referencia": direccion_data["referencia"] if direccion_data else empresa.referencia,
+            "ruc": "",  # No existe en PerfilEmpresa
+            "direccion": direccion_data["calle"] + " " + direccion_data["numero"] if direccion_data else "",
+            "referencia": direccion_data["referencia"] if direccion_data else "",
             "departamento": direccion_data["departamento"] if direccion_data else None,
             "ciudad": direccion_data["ciudad"] if direccion_data else None,
             "barrio": direccion_data["barrio"] if direccion_data else None,
-            "telefono": empresa.telefono,
-            "email": empresa.email,
-            "sitio_web": empresa.sitio_web,
-            "descripcion": empresa.descripcion,
-            "categoria_empresa": empresa.categoria_empresa,
+            "telefono": sucursal_data["telefono"] if sucursal_data else "",
+            "email": sucursal_data["email"] if sucursal_data else "",
+            "sitio_web": "",  # No existe en PerfilEmpresa
+            "descripcion": "",  # No existe en PerfilEmpresa
+            "categoria_empresa": "",  # No existe en PerfilEmpresa
             "estado": empresa.estado,
             "verificado": empresa.verificado,
             "fecha_inicio": empresa.fecha_inicio,

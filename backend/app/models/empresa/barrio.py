@@ -27,4 +27,3 @@ class Barrio(Base):
 
     # Relaciones con otras tablas
     ciudad: Mapped["Ciudad"] = relationship("Ciudad", back_populates='barrio')
-    direccion: Mapped[List["Direccion"]] = relationship("Direccion", back_populates='barrio')

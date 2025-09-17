@@ -20,5 +20,6 @@ class Departamento(Base):
     nombre: Mapped[str] = Column(String(100), nullable=False)
     created_at: Mapped[datetime] = Column(DateTime(True), server_default=text('now()'))
     
-    # Relación con la tabla 'ciudad'
+    # Relaciones con otras tablas
     ciudad: Mapped[List["Ciudad"]] = relationship("Ciudad", back_populates='departamento')
+    direccion: Mapped[List["Direccion"]] = relationship("Direccion")

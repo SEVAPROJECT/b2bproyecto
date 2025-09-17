@@ -48,14 +48,6 @@ async def get_current_user(
     )'''
 
     try:
-        # Verificar si Supabase está configurado
-        if not supabase_auth:
-            logger.warning("⚠️ Supabase no configurado - autenticación no disponible")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Servicio de autenticación no disponible. Supabase no está configurado."
-            )
-        
         logger.info(f"🔍 Validando token: {token[:20]}...")
         
         # Obtenemos la respuesta completa del cliente de Supabase

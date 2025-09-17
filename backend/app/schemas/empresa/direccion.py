@@ -16,7 +16,7 @@ class DireccionIn(BaseModel):
     numero: str
     referencia: Optional[str] = None
     coordenadas: str # La coordenada vendrá como un string (ej. 'SRID=4326;POINT(x y)')
-    id_barrio: Optional[int] = None
+    id_departamento: Optional[int] = None
 
 
 class DireccionOut(BaseModel):
@@ -29,7 +29,7 @@ class DireccionOut(BaseModel):
     numero: str
     referencia: Optional[str]
     coordenadas: str # Podría ser un string para la salida
-    id_barrio: Optional[int]
+    id_departamento: Optional[int]
     created_at: datetime
 
     class Config:
