@@ -93,12 +93,12 @@ const RegisterPage: React.FC = () => {
                                 value={formData.ruc}
                                 onChange={handleChange}
                                 className="w-full px-3 py-2 sm:px-4 sm:py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
-                                placeholder="80022614-0"
-                                pattern="[0-9]{8}-[0-9]"
-                                title="Formato: 8 dígitos seguidos de un guión y un dígito verificador (ej: 80022614-0)"
+                                placeholder="80022614-0 o 3864187-8"
+                                pattern="[0-9]{7,8}-[0-9]"
+                                title="Formato: 7 u 8 dígitos seguidos de un guión y un dígito verificador (ej: 80022614-0 o 3864187-8)"
                             />
                             <p className="text-sm text-slate-500">
-                                Formato: 8 dígitos seguidos de un guión y un dígito verificador (ej: 80022614-0)
+                                Formato: 7 u 8 dígitos seguidos de un guión y un dígito verificador (ej: 80022614-0 o 3864187-8)
                             </p>
                         </div>
 

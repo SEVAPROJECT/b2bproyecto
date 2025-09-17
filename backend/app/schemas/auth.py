@@ -38,9 +38,9 @@ class SignUpIn(BaseModel):
     def validate_ruc(cls, v):
         if v is None or v == "":
             return v  # RUC es opcional
-        # Validar formato de RUC paraguayo: 8 dígitos seguidos de un guión y un dígito verificador
-        if not re.match(r'^\d{8}-\d$', v):
-            raise ValueError("El RUC debe tener el formato: 12345678-9 (8 dígitos, guión, 1 dígito verificador)")
+        # Validar formato de RUC paraguayo: 7 u 8 dígitos seguidos de un guión y un dígito verificador
+        if not re.match(r'^\d{7,8}-\d$', v):
+            raise ValueError("El RUC debe tener el formato: 1234567-8 o 12345678-9 (7 u 8 dígitos, guión, 1 dígito verificador)")
         return v
 
 class SignInIn(BaseModel):

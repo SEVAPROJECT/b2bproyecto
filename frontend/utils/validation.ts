@@ -28,8 +28,8 @@ export const isValidPhone = (phone: string): boolean => {
  * Valida si un RUC tiene formato válido
  */
 export const isValidRUC = (ruc: string): boolean => {
-    // RUC paraguayo: 8 dígitos
-    const rucRegex = /^[0-9]{8}$/;
+    // RUC paraguayo: 7 u 8 dígitos seguidos de un guión y un dígito verificador
+    const rucRegex = /^[0-9]{7,8}-[0-9]$/;
     return rucRegex.test(ruc);
 };
 
