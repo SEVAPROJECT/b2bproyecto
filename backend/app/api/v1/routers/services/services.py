@@ -8,7 +8,7 @@ from typing import List
 from pydantic import BaseModel
 
 from app.api.v1.dependencies.database_supabase import get_async_db
-from app.models.publicar_servicio.publish_service import Servicio
+from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
 from app.models.publicar_servicio.category import Categoria
 from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
 from app.models.publicar_servicio.tipo_tarifa_servicio import TipoTarifaServicio
@@ -19,7 +19,7 @@ from app.models.empresa.barrio import Barrio
 from app.models.empresa.ciudad import Ciudad
 from app.models.empresa.departamento import Departamento
 from app.models.publicar_servicio.moneda import Moneda
-from app.schemas.publicar_servicio.publish_service import ServicioOut, ServicioIn, ServicioWithProvider
+from b2bproyecto.backend.app.schemas.publicar_servicio.service import ServicioOut, ServicioIn, ServicioWithProvider
 
 
 # Asegúrate de que los routers se importen en main.py

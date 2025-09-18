@@ -5,12 +5,12 @@ from datetime import datetime
 from sqlalchemy import Column, String, BigInteger, Boolean, DateTime, text, PrimaryKeyConstraint
 from sqlalchemy.orm import relationship, Mapped
 from app.supabase.db.db_supabase import Base # Importación de la base declarativa
-from app.models.publicar_servicio.publish_service import Servicio
+from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
 
 if TYPE_CHECKING:
     from app.models.publicar_servicio.solicitud_servicio import SolicitudServicio
 
-class Categoria(Base):
+class CategoriaModel(Base):
     """
     Representa las categorías de servicios.
     """

@@ -8,7 +8,7 @@ from app.supabase.db.db_supabase import Base
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 
 if TYPE_CHECKING:
-    from app.models.publicar_servicio.category import Categoria
+    from app.models.publicar_servicio.category import CategoriaModel
 
 class SolicitudServicio(Base):
     """
@@ -27,4 +27,4 @@ class SolicitudServicio(Base):
     created_at: Mapped[datetime] = Column(DateTime(True), server_default=text('now()'))
     
     perfil_empresa: Mapped["PerfilEmpresa"] = relationship("PerfilEmpresa", back_populates="solicitudes_servicio")
-    categoria: Mapped["Categoria"] = relationship("Categoria", back_populates="solicitudes_servicio")
+    categoria: Mapped["CategoriaModel"] = relationship("CategoriaModel", back_populates="solicitudes_servicio")

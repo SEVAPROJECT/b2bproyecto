@@ -1,6 +1,6 @@
 # Importar todos los modelos para hacerlos disponibles para SQLAlchemy
 from .category import Categoria
-from .publish_service import Servicio
+from .service import Servicio
 from .moneda import Moneda
 from .tarifa_servicio import TarifaServicio
 from .tipo_tarifa_servicio import TipoTarifaServicio

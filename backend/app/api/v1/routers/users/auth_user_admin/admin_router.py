@@ -19,7 +19,7 @@ from app.models.perfil import UserModel
 from app.models.rol import RolModel
 from app.models.usuario_rol import UsuarioRolModel
 from app.models.publicar_servicio.category import Categoria
-from app.models.publicar_servicio.publish_service import Servicio
+from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
 from app.schemas.empresa.verificacion_solicitud import VerificacionSolicitudOut
 from app.schemas.user import UserProfileAndRolesOut
 from app.api.v1.dependencies.auth_user import get_admin_user, get_current_user

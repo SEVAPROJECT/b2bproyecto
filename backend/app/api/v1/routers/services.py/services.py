@@ -6,8 +6,8 @@ from sqlalchemy.future import select
 from typing import List
 
 from app.api.v1.dependencies.database_supabase import get_async_db
-from app.models.publicar_servicio.publish_service import Servicio
-from app.schemas.publicar_servicio.publish_service import ServicioOut
+from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
+from b2bproyecto.backend.app.schemas.publicar_servicio.service import ServicioOut
 
 
 # Asegúrate de que los routers se importen en main.py

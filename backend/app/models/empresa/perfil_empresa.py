@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
     from app.models.publicar_servicio.solicitud_servicio import SolicitudServicio
     from app.models.publicar_servicio.solicitud_categoria import SolicitudCategoria
-    from app.models.publicar_servicio.publish_service import Servicio
+    from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
 
 class PerfilEmpresa(Base):
     __tablename__ = "perfil_empresa"

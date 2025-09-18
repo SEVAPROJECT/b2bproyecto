@@ -6,11 +6,18 @@ from sqlalchemy import Column, String, BigInteger, Boolean, DateTime, text, Fore
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION as Double
 from app.supabase.db.db_supabase import Base # Importación de la base declarativa
-
+from typing import TYPE_CHECKING
 # Importar Base para asegurar que esté disponible
 from app.supabase.db.db_supabase import Base
 
-class Servicio(Base):
+if TYPE_CHECKING:
+    from app.models.publicar_servicio.category import CategoriaModel
+    from app.models.publicar_servicio.moneda import Moneda
+    from app.models.empresa.perfil_empresa import PerfilEmpresa
+    from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
+    from app.models.reserva_servicio.reserva import ReservaModel
+
+class ServicioModel(Base):
     """
     Representa los servicios ofrecidos por las empresas.
     """
@@ -32,7 +39,8 @@ class Servicio(Base):
     created_at: Mapped[datetime] = Column(DateTime(True), server_default=text('now()'))
 
     # Relaciones con otras tablas
-    categoria: Mapped["Categoria"] = relationship('Categoria', back_populates='servicio')
+    categoria: Mapped["CategoriaModel"] = relationship('CategoriaModel', back_populates='servicio')
     moneda: Mapped["Moneda"] = relationship('Moneda', back_populates='servicio')
     perfil_empresa: Mapped["PerfilEmpresa"] = relationship('PerfilEmpresa', back_populates='servicio')
     tarifa_servicio: Mapped[List["TarifaServicio"]] = relationship('TarifaServicio', back_populates='servicio')
+    reserva: Mapped[List["ReservaModel"]] = relationship('ReservaModel', back_populates='servicio')

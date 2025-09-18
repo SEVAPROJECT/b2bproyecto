@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, BigInteger, Boolean, DateTime, text, ForeignKey
 from sqlalchemy.orm import relationship, Mapped
 from app.supabase.db.db_supabase import Base # Importación de la base declarativa
-from app.models.publicar_servicio.publish_service import Servicio
+from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
 
 class Moneda(Base):
     """

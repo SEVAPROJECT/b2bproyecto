@@ -8,7 +8,7 @@ from app.supabase.db.db_supabase import Base
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 
 if TYPE_CHECKING:
-    from app.models.publicar_servicio.category import Categoria
+    from app.models.publicar_servicio.category import CategoriaModel
 
 class SolicitudCategoria(Base):
     """

@@ -5,6 +5,8 @@ from datetime import datetime, date
 from sqlalchemy import Column, String, BigInteger, Date, Numeric, text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, Mapped
 from app.supabase.db.db_supabase import Base
+from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
+from app.models.publicar_servicio.tipo_tarifa_servicio import TipoTarifaServicio
 
 # Importar Base para asegurar que esté disponible
 from app.supabase.db.db_supabase import Base
