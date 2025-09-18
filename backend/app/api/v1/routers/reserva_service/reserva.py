@@ -1,7 +1,7 @@
 # backend/app/api/v1/routers/reserva.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.reserva_sevicio.reserva import ReservaIn, ReservaOut
+from app.schemas.reserva_servicio.reserva import ReservaIn, ReservaOut
 from app.models.reserva_servicio.reserva import ReservaModel
 from app.api.v1.dependencies.database_supabase import get_async_db
 from app.api.v1.dependencies.auth_user import get_current_user
