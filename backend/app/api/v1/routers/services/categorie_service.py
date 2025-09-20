@@ -36,11 +36,11 @@ async def get_all_categories(
     """
     if active_only:
         result = await db.execute(
-            select(Categoria).where(Categoria.estado == True)
+            select(CategoriaModel).where(CategoriaModel.estado == True)
         )
     else:
         result = await db.execute(
-            select(Categoria)
+            select(CategoriaModel)
         )
 
     categories = result.scalars().all()
@@ -67,7 +67,7 @@ async def create_category(
     Crea una nueva categoría de servicios.
     """
     try:
-        nueva_categoria = Categoria(
+        nueva_categoria = CategoriaModel(
             nombre=category_in.nombre,
             estado=category_in.estado
         )
@@ -102,7 +102,7 @@ async def update_category(
     try:
         # Buscar la categoría
         result = await db.execute(
-            select(Categoria).where(Categoria.id_categoria == category_id)
+            select(CategoriaModel).where(CategoriaModel.id_categoria == category_id)
         )
         categoria = result.scalars().first()
 
