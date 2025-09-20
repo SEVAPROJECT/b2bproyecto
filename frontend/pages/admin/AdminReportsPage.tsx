@@ -32,6 +32,7 @@ const AdminReportsPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [selectedReport, setSelectedReport] = useState<string | null>(null);
     const [loadedReports, setLoadedReports] = useState<Set<string>>(new Set());
+    const [initialLoading, setInitialLoading] = useState<boolean>(true);
 
     // Función helper para formatear valores nulos de manera profesional
     const formatValue = (value: any, fieldName?: string): string => {
@@ -140,10 +141,25 @@ const AdminReportsPage: React.FC = () => {
         const loadBasicReports = async () => {
             if (!user?.accessToken) return;
             
+            console.log('🚀 Iniciando carga de reportes básicos...');
+            
             // Cargar solo los reportes más importantes primero
             const basicReports = ['usuarios-activos', 'proveedores-verificados', 'categorias'];
-            const reportPromises = basicReports.map(report => loadReporte(report));
-            await Promise.allSettled(reportPromises);
+            
+            // Cargar uno por uno para mejor control de errores
+            for (const reportType of basicReports) {
+                try {
+                    console.log(`📊 Cargando reporte: ${reportType}`);
+                    await loadReporte(reportType);
+                    console.log(`✅ Reporte ${reportType} cargado exitosamente`);
+                } catch (error) {
+                    console.error(`❌ Error cargando reporte ${reportType}:`, error);
+                    // Continuar con el siguiente reporte
+                }
+            }
+            
+            console.log('🎉 Carga de reportes básicos completada');
+            setInitialLoading(false);
         };
 
         loadBasicReports();
@@ -399,11 +415,18 @@ const AdminReportsPage: React.FC = () => {
     };
 
     const loadReporte = async (reportType: string) => {
-        if (!user?.accessToken) return;
+        if (!user?.accessToken) {
+            console.error('❌ No hay token de acceso para cargar reporte:', reportType);
+            return;
+        }
 
         // Verificar si ya está cargando para evitar duplicados
-        if (loading[reportType]) return;
+        if (loading[reportType]) {
+            console.log('⏳ Reporte ya está cargando:', reportType);
+            return;
+        }
 
+        console.log(`🚀 Iniciando carga de reporte: ${reportType}`);
         setLoading(prev => ({ ...prev, [reportType]: true }));
         setError(null);
 
@@ -443,7 +466,9 @@ const AdminReportsPage: React.FC = () => {
             }
 
             const data = await Promise.race([dataPromise, timeoutPromise]);
+            console.log(`✅ Reporte ${reportType} cargado exitosamente:`, data);
             setReportes(prev => ({ ...prev, [reportType]: data as ReporteData }));
+            setLoadedReports(prev => new Set(prev).add(reportType));
         } catch (err: any) {
             console.error(`Error cargando reporte ${reportType}:`, err);
             
@@ -463,6 +488,7 @@ const AdminReportsPage: React.FC = () => {
                     rechazadas: 0
                 };
                 setReportes(prev => ({ ...prev, [reportType]: emptyReport }));
+                setLoadedReports(prev => new Set(prev).add(reportType));
             } else {
                 // Solo mostrar error para errores reales (no para "no hay datos")
                 setError(getFriendlyErrorMessage(reportType, err));
@@ -816,13 +842,53 @@ const AdminReportsPage: React.FC = () => {
                                     style={{ width: `${(loadedReports.size / reportTypes.length) * 100}%` }}
                                 ></div>
                             </div>
+                            <button
+                                onClick={() => {
+                                    console.log('🔍 Estado actual de reportes:');
+                                    console.log('Reportes cargados:', Array.from(loadedReports));
+                                    console.log('Reportes en estado:', reportes);
+                                    console.log('Loading states:', loading);
+                                    console.log('Token disponible:', !!user?.accessToken);
+                                }}
+                                className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                            >
+                                Debug Estado
+                            </button>
                         </div>
                     </div>
                 </div>
 
                 {error && (
                     <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
-                        <p className="text-red-800">{error}</p>
+                        <div className="flex items-center justify-between">
+                            <p className="text-red-800">{error}</p>
+                            <button
+                                onClick={() => {
+                                    setError(null);
+                                    setInitialLoading(true);
+                                    // Recargar reportes básicos
+                                    const basicReports = ['usuarios-activos', 'proveedores-verificados', 'categorias'];
+                                    basicReports.forEach(report => {
+                                        if (!loadedReports.has(report)) {
+                                            loadReporte(report);
+                                        }
+                                    });
+                                }}
+                                className="ml-4 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                            >
+                                Reintentar
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Indicador de carga inicial */}
+                {initialLoading && (
+                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-md p-4">
+                        <div className="flex items-center">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+                            <p className="text-blue-800">Cargando reportes básicos...</p>
+                        </div>
                     </div>
                 )}
 
