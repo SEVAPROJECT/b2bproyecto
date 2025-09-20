@@ -5,10 +5,11 @@ from datetime import datetime
 from sqlalchemy import Column, String, BigInteger, DateTime, text, ForeignKey, CheckConstraint
 from sqlalchemy.orm import relationship, Mapped
 from app.supabase.db.db_supabase import Base
-from app.models.empresa.perfil_empresa import PerfilEmpresa
+
 
 if TYPE_CHECKING:
     from app.models.publicar_servicio.category import CategoriaModel
+    from app.models.empresa.perfil_empresa import PerfilEmpresa
 
 class SolicitudCategoria(Base):
     """

@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, BigInteger, Boolean, DateTime, text, ForeignKey
 from sqlalchemy.orm import relationship, Mapped
 from app.supabase.db.db_supabase import Base # Importación de la base declarativa
-from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
+from app.models.servicio.service import ServicioModel
 
 class Moneda(Base):
     """
@@ -31,4 +31,4 @@ class Moneda(Base):
     created_at: Mapped[datetime] = Column(DateTime(True), server_default=text('now()'))
 
     # Relaciones con otras tablas
-    servicio: Mapped[List["Servicio"]] = relationship('Servicio', back_populates='moneda')
+    servicio: Mapped[List["ServicioModel"]] = relationship('ServicioModel', back_populates='moneda')

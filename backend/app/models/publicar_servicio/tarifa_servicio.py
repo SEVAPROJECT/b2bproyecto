@@ -5,11 +5,11 @@ from datetime import datetime, date
 from sqlalchemy import Column, String, BigInteger, Date, Numeric, text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, Mapped
 from app.supabase.db.db_supabase import Base
-from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
-from app.models.publicar_servicio.tipo_tarifa_servicio import TipoTarifaServicio
+from typing import TYPE_CHECKING
 
-# Importar Base para asegurar que esté disponible
-from app.supabase.db.db_supabase import Base
+if TYPE_CHECKING:
+    from app.models.servicio.service import ServicioModel
+    from app.models.publicar_servicio.tipo_tarifa_servicio import TipoTarifaServicio
 
 class TarifaServicio(Base):
     """
@@ -28,6 +28,6 @@ class TarifaServicio(Base):
     id_tarifa: Mapped[int] = Column(BigInteger, ForeignKey('tipo_tarifa_servicio.id_tarifa', ondelete='SET NULL'), nullable=True)
     
     created_at: Mapped[datetime] = Column(DateTime(True), server_default=text('now()'))
-    
-    servicio: Mapped["Servicio"] = relationship('Servicio', back_populates='tarifa_servicio')
+
+    servicio: Mapped["ServicioModel"] = relationship('ServicioModel', back_populates='tarifa_servicio')
     tipo_tarifa_servicio: Mapped["TipoTarifaServicio"] = relationship('TipoTarifaServicio', back_populates='tarifa_servicio')
