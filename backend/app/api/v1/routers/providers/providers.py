@@ -19,7 +19,7 @@ from typing import Optional, List
 import uuid
 import json
 from datetime import datetime
-from app.schemas.publicar_servicio.solicitud_servicio import SolicitudServicioIn, SolicitudServicioOut  # noqa: E402
+from app.schemas.servicio.solicitud_servicio import SolicitudServicioIn, SolicitudServicioOut  # noqa: E402
 from app.api.v1.dependencies.auth_user import get_approved_provider  # noqa: E402
 from app.models.publicar_servicio.solicitud_servicio import SolicitudServicio
 from app.models.empresa.barrio import Barrio

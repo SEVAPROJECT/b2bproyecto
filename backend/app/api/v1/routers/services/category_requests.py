@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.v1.dependencies.database_supabase import get_async_db
 from app.models.publicar_servicio.solicitud_categoria import SolicitudCategoria
-from app.models.publicar_servicio.category import Categoria
+from app.models.publicar_servicio.category import CategoriaModel
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.models.perfil import UserModel
 from app.schemas.publicar_servicio.solicitud_categoria import (

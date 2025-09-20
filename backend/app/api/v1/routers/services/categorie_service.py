@@ -6,7 +6,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 
 from app.api.v1.dependencies.database_supabase import get_async_db
-from app.models.publicar_servicio.category import Categoria
+from app.models.publicar_servicio.category import CategoriaModel
 from app.schemas.publicar_servicio.category import CategoriaOut, CategoriaIn
 from pydantic import BaseModel
 from app.api.v1.dependencies.auth_user import get_admin_user

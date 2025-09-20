@@ -8,8 +8,8 @@ from typing import List
 from pydantic import BaseModel
 
 from app.api.v1.dependencies.database_supabase import get_async_db
-from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
-from app.models.publicar_servicio.category import Categoria
+from app.models.servicio.service import ServicioModel
+from app.models.publicar_servicio.category import CategoriaModel
 from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
 from app.models.publicar_servicio.tipo_tarifa_servicio import TipoTarifaServicio
 from app.models.perfil import UserModel

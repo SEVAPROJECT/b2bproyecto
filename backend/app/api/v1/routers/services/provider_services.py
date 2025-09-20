@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 from app.api.v1.dependencies.database_supabase import get_async_db
 from app.api.v1.dependencies.auth_user import get_current_user
-from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
+from app.models.servicio.service import ServicioModel
 from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
 from app.models.publicar_servicio.tipo_tarifa_servicio import TipoTarifaServicio
 from app.models.publicar_servicio.moneda import Moneda
-from app.models.publicar_servicio.category import Categoria
+from app.models.publicar_servicio.category import CategoriaModel
 from app.models.empresa.perfil_empresa import PerfilEmpresa
-from b2bproyecto.backend.app.schemas.publicar_servicio.service import ServicioUpdate, ServicioCreate, ServicioOut
+from app.schemas.servicio.service import ServicioUpdate, ServicioCreate, ServicioOut
 from app.schemas.publicar_servicio.tarifa_servicio import TarifaServicioIn, TarifaServicioOut
 from pydantic import BaseModel
 
