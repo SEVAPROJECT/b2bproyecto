@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.models.empresa.perfil_empresa import PerfilEmpresa
     from app.models.usuario_rol import UsuarioRolModel
+    from app.models.reserva_servicio.reserva import ReservaModel
 
 class UserModel(Base):
     __tablename__ = "users"
@@ -71,5 +72,12 @@ class UserModel(Base):
         "PerfilEmpresa", 
         back_populates="user",
         primaryjoin="PerfilEmpresa.user_id == UserModel.id"
+    )
+    
+    # Relación con reservas
+    reserva: Mapped[List["ReservaModel"]] = relationship(
+        "ReservaModel", 
+        back_populates="usuario",
+        primaryjoin="ReservaModel.id_usuario == UserModel.id"
     )
 
