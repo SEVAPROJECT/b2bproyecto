@@ -1,4 +1,4 @@
-from .service import Servicio as ServicioModel
+from .service import ServicioModel as ServicioModel
 
 __all__ = [
     'ServicioModel'
