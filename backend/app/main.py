@@ -1,5 +1,33 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+
+# Configurar CORS para permitir comunicación con el frontend
+#es mejor que el middleware CORS esté lo más arriba posible en la pila de middlewares
+# de lo contrario, algunas solicitudes podrían no ser manejadas correctamente.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",  # React dev server
+        "http://127.0.0.1:5173",  # Vite dev server (alternativo)
+        "http://127.0.0.1:3000",  # React dev server (alternativo)
+        "https://frontend-production-ee3b.up.railway.app/",  # Railway deployment
+        "https://seva-frontend.vercel.app",  # Vercel deployment
+        "https://seva-frontend.netlify.app",  # Netlify deployment
+
+        #"https://*.railway.app",  # Railway URLs
+        #"https://*.vercel.app",   # Vercel URLs
+        #"https://*.netlify.app",  # Netlify URLs
+        #"https://*.railway.app",  # Railway URLs
+        #"*"  # Temporalmente para testing - REMOVER EN PRODUCCIÓN
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+
 from fastapi.staticfiles import StaticFiles
 import os
 from app.api.v1.routers.users.auth_user import auth
@@ -23,28 +51,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configurar CORS para permitir comunicación con el frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # React dev server
-        "http://127.0.0.1:5173",  # Vite dev server (alternativo)
-        "http://127.0.0.1:3000",  # React dev server (alternativo)
-        "https://frontend-production-ee3b.up.railway.app/",  # Railway deployment
-        "https://seva-frontend.vercel.app",  # Vercel deployment
-        "https://seva-frontend.netlify.app",  # Netlify deployment
 
-        #"https://*.railway.app",  # Railway URLs
-        #"https://*.vercel.app",   # Vercel URLs
-        #"https://*.netlify.app",  # Netlify URLs
-        #"https://*.railway.app",  # Railway URLs
-        #"*"  # Temporalmente para testing - REMOVER EN PRODUCCIÓN
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-)
 
 # Crear directorio uploads si no existe
 os.makedirs("uploads/services", exist_ok=True)
