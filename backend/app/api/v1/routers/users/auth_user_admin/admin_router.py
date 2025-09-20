@@ -2404,7 +2404,7 @@ async def get_reporte_categorias(
     """Genera reporte de categorías en la plataforma"""
     try:
         # Obtener todas las categorías
-        categorias_query = select(Categoria).order_by(Categoria.nombre)
+        categorias_query = select(CategoriaModel).order_by(CategoriaModel.nombre)
         categorias_result = await db.execute(categorias_query)
         categorias = categorias_result.scalars().all()
 

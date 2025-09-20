@@ -81,6 +81,16 @@ const AdminReportsPage: React.FC = () => {
             return `No hay ${reportName} disponibles en este momento.`;
         }
         
+        // Error 500 del servidor
+        if (error?.status === 500) {
+            return `Error del servidor al cargar ${reportName}. Por favor, intenta nuevamente.`;
+        }
+        
+        // Error de red o conexión
+        if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
+            return `Error de conexión al cargar ${reportName}. Verifica tu conexión e intenta nuevamente.`;
+        }
+        
         return `No se pudieron cargar los ${reportName}. Por favor, intenta nuevamente.`;
     };
 
@@ -470,10 +480,11 @@ const AdminReportsPage: React.FC = () => {
             setReportes(prev => ({ ...prev, [reportType]: data as ReporteData }));
             setLoadedReports(prev => new Set(prev).add(reportType));
         } catch (err: any) {
-            console.error(`Error cargando reporte ${reportType}:`, err);
+            console.error(`❌ Error cargando reporte ${reportType}:`, err);
             
             // Si es un error de "no hay datos", establecer contador en 0 sin mostrar error
             if (err?.status === 404 || err?.detail?.includes('No se encontraron') || err?.detail?.includes('No hay')) {
+                console.log(`📊 Estableciendo reporte vacío para ${reportType} (no hay datos)`);
                 const emptyReport: ReporteData = {
                     fecha_generacion: new Date().toISOString(),
                     total_usuarios: 0,
@@ -490,8 +501,10 @@ const AdminReportsPage: React.FC = () => {
                 setReportes(prev => ({ ...prev, [reportType]: emptyReport }));
                 setLoadedReports(prev => new Set(prev).add(reportType));
             } else {
-                // Solo mostrar error para errores reales (no para "no hay datos")
+                // Para errores reales (500, timeout, etc.), mostrar error y NO marcar como cargado
+                console.error(`🚨 Error real en reporte ${reportType}:`, err);
                 setError(getFriendlyErrorMessage(reportType, err));
+                // NO agregar a loadedReports para permitir reintento
             }
         } finally {
             setLoading(prev => ({ ...prev, [reportType]: false }));
@@ -934,6 +947,9 @@ const AdminReportsPage: React.FC = () => {
                                     {loadedReports.has(report.id) && !loading[report.id] && (
                                         <span className="text-green-500 text-xs">✓</span>
                                     )}
+                                    {error && error.includes(reportTypes.find(r => r.id === report.id)?.title || '') && !loading[report.id] && (
+                                        <span className="text-red-500 text-xs" title="Error al cargar">⚠️</span>
+                                    )}
                                 </div>
                                 <p className="text-sm text-gray-500">Total registros</p>
                                 {(report.id === 'solicitudes-servicios' || report.id === 'solicitudes-categorias') && (
@@ -963,6 +979,20 @@ const AdminReportsPage: React.FC = () => {
                                     {loading[report.id] ? 'Cargando...' : 
                                      loadedReports.has(report.id) ? 'Ver' : 'Cargar y Ver'}
                                 </button>
+                                
+                                {/* Botón de reintento individual si hay error */}
+                                {error && error.includes(reportTypes.find(r => r.id === report.id)?.title || '') && (
+                                    <button
+                                        onClick={() => {
+                                            setError(null);
+                                            loadReporte(report.id);
+                                        }}
+                                        className="ml-2 px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
+                                        title="Reintentar este reporte"
+                                    >
+                                        🔄
+                                    </button>
+                                )}
                                 
                                 <button
                                     onClick={() => generatePDF(report.id)}
