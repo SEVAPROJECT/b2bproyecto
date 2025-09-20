@@ -4,6 +4,23 @@ import { CheckCircleIcon, ExclamationCircleIcon, ClockIcon } from './icons';
 import { useNavigate } from 'react-router-dom';
 import Button from './ui/Button';
 
+// Función helper para ajustar fecha a zona horaria de Argentina (UTC-3)
+const adjustToArgentinaTime = (date: Date): Date => {
+    return new Date(date.getTime() - 3 * 60 * 60 * 1000);
+};
+
+// Función helper para formatear fecha con zona horaria de Argentina
+const formatArgentinaDate = (dateString: string): string => {
+    try {
+        const date = new Date(dateString);
+        const adjustedDate = adjustToArgentinaTime(date);
+        return adjustedDate.toLocaleDateString('es-AR', { hour12: false });
+    } catch (error) {
+        console.error('Error formateando fecha Argentina:', error);
+        return dateString;
+    }
+};
+
 const ProviderApplicationNotification: React.FC = () => {
     const { providerStatus, providerApplication, user, reloadUserProfile } = useAuth();
     const navigate = useNavigate();
@@ -24,7 +41,7 @@ const ProviderApplicationNotification: React.FC = () => {
                         </p>
                         {providerApplication.submittedAt && (
                             <p className="text-xs text-blue-600 mt-2">
-                                Enviada el {new Date(providerApplication.submittedAt).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
+                                Enviada el {formatArgentinaDate(providerApplication.submittedAt)}
                             </p>
                         )}
                     </div>
@@ -52,7 +69,7 @@ const ProviderApplicationNotification: React.FC = () => {
                         )}
                         {providerApplication.reviewedAt && (
                             <p className="text-xs text-red-600 mt-2">
-                                Revisado el {new Date(providerApplication.reviewedAt).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
+                                Revisado el {formatArgentinaDate(providerApplication.reviewedAt)}
                             </p>
                         )}
                         <div className="mt-3 flex space-x-2">
@@ -99,7 +116,7 @@ const ProviderApplicationNotification: React.FC = () => {
                         </p>
                         {providerApplication.reviewedAt && (
                             <p className="text-xs text-green-600 mt-2">
-                                Aprobado el {new Date(providerApplication.reviewedAt).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
+                                Aprobado el {formatArgentinaDate(providerApplication.reviewedAt)}
                             </p>
                         )}
                         <div className="mt-3">

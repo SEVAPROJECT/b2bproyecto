@@ -31,6 +31,7 @@ const AdminReportsPage: React.FC = () => {
     const [loading, setLoading] = useState<{[key: string]: boolean}>({});
     const [error, setError] = useState<string | null>(null);
     const [selectedReport, setSelectedReport] = useState<string | null>(null);
+    const [loadedReports, setLoadedReports] = useState<Set<string>>(new Set());
 
     // Función helper para formatear valores nulos de manera profesional
     const formatValue = (value: any, fieldName?: string): string => {
@@ -134,18 +135,28 @@ const AdminReportsPage: React.FC = () => {
         }
     ];
 
-    // Cargar todos los reportes al inicializar el componente
+    // Cargar solo reportes básicos al inicializar (lazy loading)
     useEffect(() => {
-        const loadAllReports = async () => {
+        const loadBasicReports = async () => {
             if (!user?.accessToken) return;
             
-            // Cargar todos los reportes en paralelo
-            const reportPromises = reportTypes.map(report => loadReporte(report.id));
+            // Cargar solo los reportes más importantes primero
+            const basicReports = ['usuarios-activos', 'proveedores-verificados', 'categorias'];
+            const reportPromises = basicReports.map(report => loadReporte(report));
             await Promise.allSettled(reportPromises);
         };
 
-        loadAllReports();
+        loadBasicReports();
     }, [user?.accessToken]);
+
+    // Función para cargar reporte bajo demanda
+    const loadReportOnDemand = async (reportType: string) => {
+        if (loadedReports.has(reportType) || loading[reportType]) {
+            return; // Ya está cargado o cargando
+        }
+        await loadReporte(reportType);
+        setLoadedReports(prev => new Set(prev).add(reportType));
+    };
 
     // Función para formatear fecha a DD/MM/AAAA
     const formatDateToDDMMAAAA = (dateString: string): string => {
@@ -158,6 +169,36 @@ const AdminReportsPage: React.FC = () => {
         } catch (error) {
             console.error('Error formateando fecha:', error);
             return dateString; // Retornar fecha original si hay error
+        }
+    };
+
+    // Función helper para ajustar fecha a zona horaria de Argentina (UTC-3)
+    const adjustToArgentinaTime = (date: Date): Date => {
+        // Argentina está en UTC-3, así que restamos 3 horas
+        return new Date(date.getTime() - 3 * 60 * 60 * 1000);
+    };
+
+    // Función helper para formatear fecha con zona horaria de Argentina
+    const formatArgentinaDateTime = (dateString: string): string => {
+        try {
+            const date = new Date(dateString);
+            const adjustedDate = adjustToArgentinaTime(date);
+            return adjustedDate.toLocaleString('es-AR', { hour12: false });
+        } catch (error) {
+            console.error('Error formateando fecha Argentina:', error);
+            return dateString;
+        }
+    };
+
+    // Función helper para formatear solo fecha con zona horaria de Argentina
+    const formatArgentinaDate = (dateString: string): string => {
+        try {
+            const date = new Date(dateString);
+            const adjustedDate = adjustToArgentinaTime(date);
+            return adjustedDate.toLocaleDateString('es-AR', { hour12: false });
+        } catch (error) {
+            console.error('Error formateando fecha Argentina:', error);
+            return dateString;
         }
     };
 
@@ -360,13 +401,17 @@ const AdminReportsPage: React.FC = () => {
     const loadReporte = async (reportType: string) => {
         if (!user?.accessToken) return;
 
+        // Verificar si ya está cargando para evitar duplicados
+        if (loading[reportType]) return;
+
         setLoading(prev => ({ ...prev, [reportType]: true }));
         setError(null);
 
         try {
-            // Optimización: Agregar timeout para evitar carga infinita
+            // Timeout más agresivo para reportes pesados
+            const timeoutDuration = reportType.includes('solicitudes') ? 15000 : 10000;
             const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de carga')), 20000)
+                setTimeout(() => reject(new Error('Timeout de carga')), timeoutDuration)
             );
 
             let dataPromise: Promise<ReporteData>;
@@ -427,7 +472,12 @@ const AdminReportsPage: React.FC = () => {
         }
     };
 
-    const viewAllData = (reportType: string) => {
+    const viewAllData = async (reportType: string) => {
+        // Cargar el reporte si no está cargado
+        if (!loadedReports.has(reportType)) {
+            await loadReportOnDemand(reportType);
+        }
+        
         const reporte = reportes[reportType];
         if (!reporte) return;
 
@@ -553,7 +603,7 @@ const AdminReportsPage: React.FC = () => {
                     <h1>📊 Reporte - ${reportInfo.title}</h1>
                     
                     <div class="info">
-                        <p><strong>📅 Fecha de generación:</strong> ${new Date(reporte.fecha_generacion).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}</p>
+                        <p><strong>📅 Fecha de generación:</strong> ${formatArgentinaDateTime(reporte.fecha_generacion)}</p>
                         <p><strong>📈 Total de registros:</strong> ${data.length}</p>
                         <p><strong>📋 Descripción:</strong> ${reportInfo.description}</p>
                         ${(reportType === 'solicitudes-servicios' || reportType === 'solicitudes-categorias') && reporte.pendientes !== undefined ? `
@@ -623,7 +673,7 @@ const AdminReportsPage: React.FC = () => {
                 <div class="header">
                     <h1>SEVA Empresas</h1>
                     <h2>${reportTypes.find(r => r.id === reportType)?.title}</h2>
-                    <p>Generado el: ${new Date(reporte.fecha_generacion).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}</p>
+                    <p>Generado el: ${formatArgentinaDate(reporte.fecha_generacion)}</p>
                 </div>
         `;
 
@@ -679,7 +729,7 @@ const AdminReportsPage: React.FC = () => {
 
         htmlContent += `
                 <div class="footer">
-                    <p>Reporte generado por SEVA Empresas - ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}</p>
+                    <p>Reporte generado por SEVA Empresas - ${formatArgentinaDateTime(new Date().toISOString())}</p>
                 </div>
             </body>
             </html>
@@ -751,13 +801,48 @@ const AdminReportsPage: React.FC = () => {
         <div className="p-6">
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900">Reportes</h1>
-                    <p className="mt-2 text-gray-600">Genera y descarga reportes detallados de la plataforma</p>
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900">Reportes</h1>
+                            <p className="mt-2 text-gray-600">Genera y descarga reportes detallados de la plataforma</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-sm text-gray-500">
+                                Cargados: {loadedReports.size} / {reportTypes.length}
+                            </p>
+                            <div className="w-32 bg-gray-200 rounded-full h-2 mt-1">
+                                <div 
+                                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                    style={{ width: `${(loadedReports.size / reportTypes.length) * 100}%` }}
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 {error && (
                     <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
                         <p className="text-red-800">{error}</p>
+                    </div>
+                )}
+
+                {/* Botón para cargar todos los reportes */}
+                {loadedReports.size < reportTypes.length && (
+                    <div className="mb-6 flex justify-center">
+                        <button
+                            onClick={async () => {
+                                const remainingReports = reportTypes
+                                    .filter(r => !loadedReports.has(r.id))
+                                    .map(r => r.id);
+                                
+                                const promises = remainingReports.map(report => loadReportOnDemand(report));
+                                await Promise.allSettled(promises);
+                            }}
+                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
+                        >
+                            <span>📊</span>
+                            <span>Cargar Todos los Reportes</span>
+                        </button>
                     </div>
                 )}
 
@@ -773,9 +858,17 @@ const AdminReportsPage: React.FC = () => {
                             </div>
                             
                             <div className="mb-4">
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {reportes[report.id] ? getReportTotal(reportes[report.id]) : 0}
-                                </p>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        {reportes[report.id] ? getReportTotal(reportes[report.id]) : 0}
+                                    </p>
+                                    {loading[report.id] && (
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                    )}
+                                    {loadedReports.has(report.id) && !loading[report.id] && (
+                                        <span className="text-green-500 text-xs">✓</span>
+                                    )}
+                                </div>
                                 <p className="text-sm text-gray-500">Total registros</p>
                                 {(report.id === 'solicitudes-servicios' || report.id === 'solicitudes-categorias') && (
                                     <div className="mt-2 text-xs text-gray-600">
@@ -792,7 +885,7 @@ const AdminReportsPage: React.FC = () => {
                                 <button
                                     onClick={() => {
                                         if (!reportes[report.id]) {
-                                            loadReporte(report.id);
+                                            loadReportOnDemand(report.id);
                                         } else {
                                             viewAllData(report.id);
                                         }
@@ -801,7 +894,8 @@ const AdminReportsPage: React.FC = () => {
                                     className="flex-1 flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
                                 >
                                     <EyeIcon className="w-4 h-4 mr-2" />
-                                    {loading[report.id] ? 'Cargando reporte...' : 'Ver'}
+                                    {loading[report.id] ? 'Cargando...' : 
+                                     loadedReports.has(report.id) ? 'Ver' : 'Cargar y Ver'}
                                 </button>
                                 
                                 <button
@@ -824,7 +918,7 @@ const AdminReportsPage: React.FC = () => {
                                 {reportTypes.find(r => r.id === selectedReport)?.title}
                             </h2>
                             <p className="text-sm text-gray-500">
-                                Generado el: {new Date(reportes[selectedReport].fecha_generacion).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
+                                Generado el: {formatArgentinaDateTime(reportes[selectedReport].fecha_generacion)}
                             </p>
                         </div>
                         <div className="p-6">

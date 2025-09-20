@@ -8,6 +8,23 @@ import {
 } from '../../components/icons';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, serviceRequestsAPI, categoryRequestsAPI } from '../../services/api';
+
+// Función helper para ajustar fecha a zona horaria de Argentina (UTC-3)
+const adjustToArgentinaTime = (date: Date): Date => {
+    return new Date(date.getTime() - 3 * 60 * 60 * 1000);
+};
+
+// Función helper para formatear fecha con zona horaria de Argentina
+const formatArgentinaDate = (dateString: string): string => {
+    try {
+        const date = new Date(dateString);
+        const adjustedDate = adjustToArgentinaTime(date);
+        return adjustedDate.toLocaleDateString('es-AR', { hour12: false });
+    } catch (error) {
+        console.error('Error formateando fecha Argentina:', error);
+        return dateString;
+    }
+};
 import { ServiceRequest, CategoryRequest } from '../../types';
 
 // Tipo unificado para manejar ambos tipos de solicitudes
@@ -626,7 +643,7 @@ const ProviderMyRequestsPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">📅 Fecha</p>
                                                 <p className="font-semibold text-gray-600">
-                                                    {new Date(request.created_at).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
+                                                    {formatArgentinaDate(request.created_at)}
                                                 </p>
                                             </div>
 
