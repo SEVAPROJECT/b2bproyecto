@@ -27,4 +27,5 @@ class ReservaModel(Base):
     #relaciones para acceder al usuario y servicio
     usuario = relationship("UserModel", back_populates="reserva")
     #usuario = Mapped["UserModel"] = relationship("UserModel", back_populates="reserva")
-    servicio = Mapped["ServicioModel"] = relationship("ServicioModel", back_populates="reserva")
+    #servicio = Mapped["ServicioModel"] = relationship("ServicioModel", back_populates="reserva")
+    servicio = relationship("ServicioModel", back_populates="reserva")
