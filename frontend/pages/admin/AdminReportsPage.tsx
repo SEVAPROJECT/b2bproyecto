@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { adminAPI, categoryRequestsAPI } from '../../services/api';
 import { ChartBarIcon, DocumentArrowDownIcon, EyeIcon } from '../../components/icons';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 interface ReporteData {
     total_usuarios?: number;
@@ -124,7 +125,7 @@ const AdminReportsPage: React.FC = () => {
             
             // Obtener emails reales usando la misma lógica que la página de administración
             console.log('📧 Obteniendo emails reales desde reporte de proveedores...');
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+            const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
             const proveedoresResponse = await fetch(`${apiBaseUrl}/api/v1/admin/reports/proveedores-verificados`, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -222,7 +223,7 @@ const AdminReportsPage: React.FC = () => {
             
             // Obtener emails reales usando la misma lógica que la página de administración
             console.log('📧 Obteniendo emails reales desde reporte de proveedores...');
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+            const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
             const proveedoresResponse = await fetch(`${apiBaseUrl}/api/v1/admin/reports/proveedores-verificados`, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,

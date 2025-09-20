@@ -7,6 +7,7 @@ import { AddressSelector } from '../../components/AddressSelector';
 import { providersAPI, adminAPI } from '../../services/api';
 import { ProviderOnboardingData } from '../../types/provider';
 import { locationsAPI, Departamento, Ciudad, Barrio } from '../../services/locations';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 // Debug: verificar que providersAPI se importa correctamente
 console.log('🔍 providersAPI importado:', providersAPI);
@@ -16,7 +17,7 @@ console.log('🔍 Métodos disponibles en providersAPI:', Object.keys(providersA
 const testDatos = async (accessToken: string) => {
     try {
         console.log(`🧪 Probando endpoint de datos...`);
-        const response = await fetch(`http://localhost:8000/api/v1/providers/test-datos`, {
+        const response = await fetch(buildApiUrl('/providers/test-datos'), {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -40,7 +41,7 @@ const testDatos = async (accessToken: string) => {
 const getMisDatosSolicitud = async (accessToken: string) => {
     try {
         console.log(`📋 Obteniendo datos de solicitud del proveedor...`);
-        const response = await fetch(`http://localhost:8000/api/v1/providers/mis-datos-solicitud`, {
+        const response = await fetch(buildApiUrl('/providers/mis-datos-solicitud'), {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -65,7 +66,7 @@ const getMisDatosSolicitud = async (accessToken: string) => {
 const debugAuth = async (accessToken: string) => {
     try {
         console.log(`🔐 Probando autenticación...`);
-        const response = await fetch(`http://localhost:8000/api/v1/providers/debug-auth?token=${encodeURIComponent(accessToken)}`);
+        const response = await fetch(buildApiUrl(`/providers/debug-auth?token=${encodeURIComponent(accessToken)}`));
 
         const result = await response.json();
         console.log('🔐 Resultado de debug auth:', result);
@@ -80,7 +81,7 @@ const debugAuth = async (accessToken: string) => {
 const testDocumento = async (documentoId: number) => {
     try {
         console.log(`📄 Probando documento ${documentoId}...`);
-        const response = await fetch(`http://localhost:8000/api/v1/providers/test-documento/${documentoId}`);
+        const response = await fetch(buildApiUrl(`/providers/test-documento/${documentoId}`));
 
         const result = await response.json();
         console.log('📄 Resultado de test documento:', result);
@@ -95,7 +96,7 @@ const testDocumento = async (documentoId: number) => {
 const testDiagnostic = async () => {
     try {
         console.log(`🔧 Probando endpoint de diagnóstico...`);
-        const response = await fetch(`http://localhost:8000/api/v1/providers/diagnostic`);
+        const response = await fetch(buildApiUrl('/providers/diagnostic'));
 
         const result = await response.json();
         console.log('🔧 Resultado de diagnóstico:', result);
@@ -486,7 +487,7 @@ const Step4_Documents: React.FC<{data: ProviderOnboardingData, setData: React.Di
         if (!user?.accessToken) return;
 
         try {
-            const url = `http://localhost:8000/api/v1/providers/mis-documentos/${documentoId}/servir`;
+            const url = buildApiUrl(`/providers/mis-documentos/${documentoId}/servir`);
             const authUrl = `${url}?token=${encodeURIComponent(user.accessToken)}`;
             window.open(authUrl, '_blank');
         } catch (error) {
@@ -607,7 +608,7 @@ const Step4_Documents: React.FC<{data: ProviderOnboardingData, setData: React.Di
 
                                                 if (documentoCorrespondiente) {
                                                     // Usar endpoint con mejor manejo de autenticación
-                                                    const url = `http://localhost:8000/api/v1/providers/mis-documentos/${documentoCorrespondiente.id_documento}/servir`;
+                                                    const url = buildApiUrl(`/providers/mis-documentos/${documentoCorrespondiente.id_documento}/servir`);
                                                     const authUrl = `${url}?token=${encodeURIComponent(user.accessToken)}`;
                                                     console.log('🔗 URL de documento:', authUrl);
                                                     window.open(authUrl, '_blank');
@@ -743,7 +744,7 @@ const ProviderOnboardingPage: React.FC = () => {
                 
                 // Debug: Verificar sucursales
                 try {
-                    const debugResponse = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/auth/debug-sucursal`, {
+                    const debugResponse = await fetch(buildApiUrl('/auth/debug-sucursal'), {
                         headers: { 'Authorization': `Bearer ${user.accessToken}` }
                     });
                     const debugData = await debugResponse.json();

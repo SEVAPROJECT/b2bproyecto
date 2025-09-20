@@ -5,6 +5,7 @@ import OptimizedLoading from '../../components/ui/OptimizedLoading';
 import { BackendService, BackendCategory } from '../../types';
 import { servicesAPI, categoriesAPI } from '../../services/api';
 import { AuthContext } from '../../contexts/AuthContext';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 const AdminCategoryServicesPage: React.FC = () => {
     const { user } = useContext(AuthContext);
@@ -36,7 +37,7 @@ const AdminCategoryServicesPage: React.FC = () => {
             estado: service.estado,
             imagen: service.imagen
         });
-        setImagePreview(service.imagen ? `${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}${service.imagen}` : null);
+        setImagePreview(service.imagen ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}` : null);
         setSelectedImage(null);
         setShowEditModal(true);
     };
@@ -64,7 +65,7 @@ const AdminCategoryServicesPage: React.FC = () => {
                     formData.append('file', selectedImage);
                     
                     // Usar el mismo endpoint que Apporiginal.tsx
-                    const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+                    const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
                     const uploadResponse = await fetch(`${apiBaseUrl}/api/v1/provider/services/upload-image`, {
                         method: 'POST',
                         headers: {
@@ -248,7 +249,7 @@ const AdminCategoryServicesPage: React.FC = () => {
                                     <div className="flex-shrink-0 w-20 h-20 bg-gray-100 rounded-xl border-2 border-gray-200 flex items-center justify-center overflow-hidden">
                                         {service.imagen ? (
                                             <img
-                                                src={`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}${service.imagen}`}
+                                                src={`${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
                                                 alt={`Imagen de ${service.nombre}`}
                                                 className="w-full h-full object-cover"
                                                 onError={(e) => {

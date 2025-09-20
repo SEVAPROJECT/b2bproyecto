@@ -9,6 +9,7 @@ import {
     CameraIcon,
     UploadCloudIcon
 } from '../../components/icons';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, providerServicesAPI, servicesAPI, categoryRequestsAPI, serviceRequestsAPI } from '../../services/api';
 
@@ -370,7 +371,7 @@ const ProviderMyServicesPage: React.FC = () => {
             const formData = new FormData();
             formData.append('file', selectedImage);
 
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+            const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
             const response = await fetch(`${apiBaseUrl}/api/v1/provider/services/upload-image`, {
                 method: 'POST',
                 headers: {
@@ -833,7 +834,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                         <div className="flex-shrink-0 mx-auto sm:mx-0">
                                             {service.imagen ? (
                                                 <img
-                                                    src={`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}${service.imagen}`}
+                                                    src={`${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
                                                     alt={service.nombre}
                                                     className="h-16 w-16 object-cover rounded-lg border border-gray-200"
                                                     onError={(e) => {

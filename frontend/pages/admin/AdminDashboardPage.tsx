@@ -4,6 +4,7 @@ import OptimizedLoading from '../../components/ui/OptimizedLoading';
 import { UsersIcon, FolderIcon, BuildingStorefrontIcon, CheckCircleIcon } from '../../components/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { categoriesAPI, servicesAPI, adminAPI } from '../../services/api';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 const AdminDashboardPage: React.FC = () => {
     const { user } = useAuth();
@@ -43,7 +44,7 @@ const AdminDashboardPage: React.FC = () => {
                     servicesAPI.getServices(user.accessToken),
                     adminAPI.getAllSolicitudesVerificacion(user.accessToken),
                     // Usar el mismo endpoint que AdminUsersPage
-                    fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/admin/users`, {
+                    fetch(buildApiUrl('/admin/users'), {
                         headers: { 'Authorization': `Bearer ${user.accessToken}` }
                     }).then(r => r.ok ? r.json() : { usuarios: [] })
                 ]);

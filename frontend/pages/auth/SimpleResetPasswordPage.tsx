@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../components/layouts';
 import Button from '../../components/ui/Button';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 const SimpleResetPasswordPage: React.FC = () => {
     const navigate = useNavigate();
@@ -18,7 +19,7 @@ const SimpleResetPasswordPage: React.FC = () => {
         setSuccess('');
 
         try {
-            const response = await fetch('http://localhost:8000/api/v1/password-reset-native/request', {
+            const response = await fetch(buildApiUrl('/password-reset-native/request'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -47,7 +48,7 @@ const SimpleResetPasswordPage: React.FC = () => {
         setSuccess('');
 
         try {
-            const response = await fetch('http://localhost:8000/api/v1/password-reset-native/request', {
+            const response = await fetch(buildApiUrl('/password-reset-native/request'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

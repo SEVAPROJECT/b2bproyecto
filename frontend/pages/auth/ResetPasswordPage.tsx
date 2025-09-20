@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../components/layouts';
 import Button from '../../components/ui/Button';
 import { EyeIcon, EyeSlashIcon } from '../../components/icons';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 // Tipos para el flujo de restablecimiento
 type ResetStep = 'email' | 'code' | 'new-password' | 'success';
@@ -90,7 +91,7 @@ const ResetPasswordPage: React.FC = () => {
         updateState({ loading: true });
 
         try {
-            const response = await fetch('http://localhost:8000/api/v1/password-reset-direct/request', {
+            const response = await fetch(buildApiUrl('/password-reset-direct/request'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -140,7 +141,7 @@ const ResetPasswordPage: React.FC = () => {
         updateState({ loading: true });
 
         try {
-            const response = await fetch('http://localhost:8000/api/v1/password-reset-direct/verify-code', {
+            const response = await fetch(buildApiUrl('/password-reset-direct/verify-code'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -209,7 +210,7 @@ const ResetPasswordPage: React.FC = () => {
                     confirm_password: state.confirmPassword
                 };
 
-            const response = await fetch('http://localhost:8000/api/v1/password-reset-direct/set-new-password', {
+            const response = await fetch(buildApiUrl('/password-reset-direct/set-new-password'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -245,7 +246,7 @@ const ResetPasswordPage: React.FC = () => {
         updateState({ loading: true });
 
         try {
-            const response = await fetch('http://localhost:8000/api/v1/password-reset-direct/request', {
+            const response = await fetch(buildApiUrl('/password-reset-direct/request'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

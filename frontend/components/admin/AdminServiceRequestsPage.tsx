@@ -193,7 +193,7 @@ const AdminServiceRequestsPage: React.FC = () => {
             console.log('📧 Obteniendo emails reales usando lógica de reportes de proveedores...');
             
             // Usar el endpoint de proveedores verificados que sí funciona correctamente
-            const proveedoresResponse = await fetch(buildApiUrl('/admin/reports/proveedores-verificados'), {
+            const proveedoresResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.REPORTS.PROVIDERS_VERIFIED), {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'

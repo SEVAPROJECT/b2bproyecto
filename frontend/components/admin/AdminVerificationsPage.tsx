@@ -4,6 +4,7 @@ import OptimizedLoading from '../ui/OptimizedLoading';
 import { adminAPI } from '../../services/api';
 import { AuthContext } from '../../contexts/AuthContext';
 import { useDateUtils } from '../../hooks/useDateUtils';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 const AdminVerificationsPage: React.FC = () => {
     const { user } = React.useContext(AuthContext);
@@ -710,7 +711,7 @@ const AdminVerificationsPage: React.FC = () => {
                                                                 try {
                                                                     if (user?.accessToken) {
                                                                         // Crear URL con token de autorización
-                                                                        const url = `http://localhost:8000/api/v1/admin/verificaciones/${selectedSolicitud.id_verificacion}/documentos/${doc.id_documento}/servir`;
+                                                                        const url = buildApiUrl(`/admin/verificaciones/${selectedSolicitud.id_verificacion}/documentos/${doc.id_documento}/servir`);
                                                                         
                                                                         // Crear una nueva ventana con el token en la URL
                                                                         const authUrl = `${url}?token=${encodeURIComponent(user.accessToken)}`;
@@ -747,7 +748,7 @@ const AdminVerificationsPage: React.FC = () => {
                                                                 try {
                                                                     if (user?.accessToken) {
                                                                         // Crear URL con token de autorización para descarga
-                                                                        const url = `http://localhost:8000/api/v1/admin/verificaciones/${selectedSolicitud.id_verificacion}/documentos/${doc.id_documento}/servir`;
+                                                                        const url = buildApiUrl(`/admin/verificaciones/${selectedSolicitud.id_verificacion}/documentos/${doc.id_documento}/servir`);
                                                                         const authUrl = `${url}?token=${encodeURIComponent(user.accessToken)}`;
                                                                         
                                                                         // Crear enlace de descarga

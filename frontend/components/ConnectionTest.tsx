@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_CONFIG, buildApiUrl } from '../config/api';
 
 const ConnectionTest: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -11,16 +12,8 @@ const ConnectionTest: React.FC = () => {
     setError('');
 
     try {
-      // Detectar la URL base automáticamente
-      const getApiBaseUrl = (): string => {
-        if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-          const backendUrl = (window as any).__ENV__?.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
-          return `${backendUrl}/api/v1`;
-        }
-        return 'http://localhost:8000/api/v1';
-      };
-
-      const API_BASE_URL = getApiBaseUrl();
+      // Usar la configuración centralizada
+      const API_BASE_URL = API_CONFIG.BASE_URL;
       console.log('🔗 Probando conexión a:', API_BASE_URL);
 
       // Probar endpoint simple

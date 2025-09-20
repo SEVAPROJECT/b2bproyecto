@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { UserCircleIcon, PencilIcon, CameraIcon, XMarkIcon, ExclamationTriangleIcon } from '../components/icons';
 import { profileAPI, adminAPI } from '../services/api';
+import { API_CONFIG, buildApiUrl } from '../config/api';
 
 const ManageProfilePage: React.FC = () => {
     const { user, reloadUserProfile, logout } = useAuth();
@@ -43,7 +44,7 @@ const ManageProfilePage: React.FC = () => {
             // Si es una URL relativa, construir la URL completa
             if (user.foto_perfil.startsWith('/')) {
                 // Usar la URL del backend directamente
-                const apiBaseUrl = 'http://localhost:8000';
+                const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
                 const fullUrl = `${apiBaseUrl}${user.foto_perfil}`;
                 return fullUrl;
             }
