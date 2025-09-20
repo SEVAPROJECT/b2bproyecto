@@ -146,33 +146,12 @@ const AdminReportsPage: React.FC = () => {
         }
     ];
 
-    // Cargar solo reportes básicos al inicializar (lazy loading)
+    // No cargar reportes automáticamente - solo bajo demanda
     useEffect(() => {
-        const loadBasicReports = async () => {
-            if (!user?.accessToken) return;
-            
-            console.log('🚀 Iniciando carga de reportes básicos...');
-            
-            // Cargar solo los reportes más importantes primero
-            const basicReports = ['usuarios-activos', 'proveedores-verificados', 'categorias'];
-            
-            // Cargar uno por uno para mejor control de errores
-            for (const reportType of basicReports) {
-                try {
-                    console.log(`📊 Cargando reporte: ${reportType}`);
-                    await loadReporte(reportType);
-                    console.log(`✅ Reporte ${reportType} cargado exitosamente`);
-                } catch (error) {
-                    console.error(`❌ Error cargando reporte ${reportType}:`, error);
-                    // Continuar con el siguiente reporte
-                }
-            }
-            
-            console.log('🎉 Carga de reportes básicos completada');
+        if (user?.accessToken) {
+            console.log('🔑 Usuario autenticado - reportes disponibles para carga bajo demanda');
             setInitialLoading(false);
-        };
-
-        loadBasicReports();
+        }
     }, [user?.accessToken]);
 
     // Función para cargar reporte bajo demanda
@@ -840,34 +819,9 @@ const AdminReportsPage: React.FC = () => {
         <div className="p-6">
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-3xl font-bold text-gray-900">Reportes</h1>
-                            <p className="mt-2 text-gray-600">Genera y descarga reportes detallados de la plataforma</p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-sm text-gray-500">
-                                Cargados: {loadedReports.size} / {reportTypes.length}
-                            </p>
-                            <div className="w-32 bg-gray-200 rounded-full h-2 mt-1">
-                                <div 
-                                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                                    style={{ width: `${(loadedReports.size / reportTypes.length) * 100}%` }}
-                                ></div>
-                            </div>
-                            <button
-                                onClick={() => {
-                                    console.log('🔍 Estado actual de reportes:');
-                                    console.log('Reportes cargados:', Array.from(loadedReports));
-                                    console.log('Reportes en estado:', reportes);
-                                    console.log('Loading states:', loading);
-                                    console.log('Token disponible:', !!user?.accessToken);
-                                }}
-                                className="mt-2 text-xs text-blue-600 hover:text-blue-800"
-                            >
-                                Debug Estado
-                            </button>
-                        </div>
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900">Reportes</h1>
+                        <p className="mt-2 text-gray-600">Genera y descarga reportes detallados de la plataforma</p>
                     </div>
                 </div>
 
@@ -875,55 +829,22 @@ const AdminReportsPage: React.FC = () => {
                     <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
                         <div className="flex items-center justify-between">
                             <p className="text-red-800">{error}</p>
-                            <button
-                                onClick={() => {
-                                    setError(null);
-                                    setInitialLoading(true);
-                                    // Recargar reportes básicos
-                                    const basicReports = ['usuarios-activos', 'proveedores-verificados', 'categorias'];
-                                    basicReports.forEach(report => {
-                                        if (!loadedReports.has(report)) {
-                                            loadReporte(report);
-                                        }
-                                    });
-                                }}
-                                className="ml-4 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-                            >
-                                Reintentar
-                            </button>
+                                <button
+                                    onClick={() => {
+                                        setError(null);
+                                        // Limpiar reportes cargados para permitir recarga
+                                        setLoadedReports(new Set());
+                                        setReportes({});
+                                    }}
+                                    className="ml-4 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                                >
+                                    Limpiar
+                                </button>
                         </div>
                     </div>
                 )}
 
-                {/* Indicador de carga inicial */}
-                {initialLoading && (
-                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-md p-4">
-                        <div className="flex items-center">
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
-                            <p className="text-blue-800">Cargando reportes básicos...</p>
-                        </div>
-                    </div>
-                )}
 
-                {/* Botón para cargar todos los reportes */}
-                {loadedReports.size < reportTypes.length && (
-                    <div className="mb-6 flex justify-center">
-                        <button
-                            onClick={async () => {
-                                const remainingReports = reportTypes
-                                    .filter(r => !loadedReports.has(r.id))
-                                    .map(r => r.id);
-                                
-                                const promises = remainingReports.map(report => loadReportOnDemand(report));
-                                await Promise.allSettled(promises);
-                            }}
-                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
-                        >
-                            <span>📊</span>
-                            <span>Cargar Todos los Reportes</span>
-                        </button>
-                    </div>
-                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                     {reportTypes.map((report) => (
@@ -977,7 +898,7 @@ const AdminReportsPage: React.FC = () => {
                                 >
                                     <EyeIcon className="w-4 h-4 mr-2" />
                                     {loading[report.id] ? 'Cargando...' : 
-                                     loadedReports.has(report.id) ? 'Ver' : 'Cargar y Ver'}
+                                     loadedReports.has(report.id) ? 'Ver Reporte' : 'Cargar y Ver'}
                                 </button>
                                 
                                 {/* Botón de reintento individual si hay error */}
