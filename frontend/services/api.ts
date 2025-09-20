@@ -5,32 +5,10 @@ import {
     PresentationChartLineIcon,
     BriefcaseIcon,
 } from '../components/icons';
-
-
-// Configuración de la API - Detecta automáticamente el entorno
-const getApiBaseUrl = (): string => {
-    // Si estamos en Railway (producción), usar la URL del backend de Railway
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-        // En Railway, el backend debe estar en la misma URL pero en el puerto 8000
-        // O usar una variable de entorno si está configurada
-        //const backendUrl = (window as any).__ENV__?.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
-        //const backendUrl = (window as any).__ENV__?.VITE_BACKEND_HOST || `${window.location.protocol}//${window.location.hostname}:8000`;
-                // En Railway, cada servicio tiene su propia URL
-        // Usar variable de entorno o URL hardcodeada temporalmente
-        const backendUrl = import.meta.env.VITE_BACKEND_HOST || 'https://backend-production-249d.up.railway.app';
-        return `${backendUrl}/api/v1`;
-    }
-    
-    // En desarrollo local
-    return 'http://localhost:8000/api/v1';
-};
-
-const API_BASE_URL = getApiBaseUrl();
-
-///const API_BASE_URL = getApiBaseUrl();
+import { API_CONFIG, buildApiUrl } from '../config/api';
 
 // Log para debugging
-console.log('🔗 API Base URL:', API_BASE_URL);
+console.log('🔗 API Base URL:', API_CONFIG.BASE_URL);
 console.log('🌍 Environment:', window.location.hostname);
 
 // Función helper para manejar errores de la API
@@ -54,8 +32,8 @@ export const authAPI = {
     // Registro de usuario
     async signUp(data: SignUpData): Promise<SignUpResponse | TokenResponse> {
         try {
-            console.log('🚀 Intentando registro en:', `${API_BASE_URL}/auth/signup`);
-            const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+            console.log('🚀 Intentando registro en:', buildApiUrl(API_CONFIG.AUTH.REGISTER));
+            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.REGISTER), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -81,8 +59,8 @@ export const authAPI = {
     // Inicio de sesión
     async signIn(data: LoginData): Promise<TokenResponse> {
         try {
-            console.log('🔐 Intentando login en:', `${API_BASE_URL}/auth/signin`);
-            const response = await fetch(`${API_BASE_URL}/auth/signin`, {
+            console.log('🔐 Intentando login en:', buildApiUrl(API_CONFIG.AUTH.LOGIN));
+            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.LOGIN), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -108,7 +86,7 @@ export const authAPI = {
     // Refrescar token
     async refreshToken(refreshToken: string): Promise<TokenResponse> {
         try {
-            const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.REFRESH), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -133,7 +111,7 @@ export const authAPI = {
     // Cerrar sesión
     async logout(accessToken: string): Promise<void> {
         try {
-            const response = await fetch(`${API_BASE_URL}/auth/logout`, {
+            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.LOGOUT), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -155,7 +133,7 @@ export const authAPI = {
     // Obtener perfil del usuario
     async getProfile(accessToken: string) {
         try {
-            const response = await fetch(`${API_BASE_URL}/auth/me`, {
+            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.ME), {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -180,7 +158,7 @@ export const authAPI = {
     async resetPassword(email: string): Promise<{ message: string }> {
         try {
             console.log('🔑 Intentando restablecer contraseña para:', email);
-            const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.RESET_PASSWORD), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -207,7 +185,7 @@ export const authAPI = {
     async getVerificacionEstado(accessToken: string): Promise<any> {
         try {
             console.log(`🔍 Obteniendo estado de verificación...`);
-            const response = await fetch(`${API_BASE_URL}/auth/verificacion-estado`, {
+            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.VERIFICATION_STATUS), {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -1142,7 +1120,7 @@ export const categoriesAPI = {
             const params = new URLSearchParams();
             params.append('active_only', activeOnly.toString());
 
-            const response = await fetch(`${API_BASE_URL}/categories/?${params.toString()}`, {
+            const response = await fetch(buildApiUrl(`${API_CONFIG.CATEGORIES.LIST}?${params.toString()}`), {
                 method: 'GET',
                 headers,
             });
@@ -1165,7 +1143,7 @@ export const categoriesAPI = {
     // Crear nueva categoría
     async createCategory(categoryData: BackendCategoryIn, accessToken: string): Promise<BackendCategory> {
         try {
-            const response = await fetch(`${API_BASE_URL}/categories/`, {
+            const response = await fetch(buildApiUrl(API_CONFIG.CATEGORIES.CREATE), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -1192,7 +1170,7 @@ export const categoriesAPI = {
     // Actualizar categoría
     async updateCategory(categoryId: number, categoryData: Partial<BackendCategoryIn>, accessToken: string): Promise<BackendCategory> {
         try {
-            const response = await fetch(`${API_BASE_URL}/categories/${categoryId}`, {
+            const response = await fetch(buildApiUrl(`${API_CONFIG.CATEGORIES.UPDATE}/${categoryId}`), {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -1259,7 +1237,7 @@ export const servicesAPI = {
                 headers['Authorization'] = `Bearer ${accessToken}`;
             }
 
-            const response = await fetch(`${API_BASE_URL}/services/with-providers`, {
+            const response = await fetch(buildApiUrl(API_CONFIG.SERVICES.WITH_PROVIDERS), {
                 method: 'GET',
                 headers,
             });

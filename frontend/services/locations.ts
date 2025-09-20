@@ -1,25 +1,6 @@
 // services/locations.ts
 
-// Configuración de la API - Detecta automáticamente el entorno
-const getApiBaseUrl = (): string => {
-    // Si estamos en Railway (producción), usar la URL del backend de Railway
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-        
-         // En Railway, el backend debe estar en la misma URL pero en el puerto 8000
-        // O usar una variable de entorno si está configurada
-        //const backendUrl = (window as any).__ENV__?.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
-        // En Railway, cada servicio tiene su propia URL
-        // Usar variable de entorno o URL hardcodeada temporalmente
-        //const backendUrl = import.meta.env.VITE_BACKEND_HOST || 'https://backend-production-249d.up.railway.app';
-        const backendUrl = (window as any).__ENV__?.VITE_BACKEND_HOST || 'https://backend-production-249d.up.railway.app';
-        return `${backendUrl}/api/v1`;
-    }
-    
-    // En desarrollo local
-    return 'http://localhost:8000/api/v1';
-};
-
-const API_BASE_URL = getApiBaseUrl();
+import { API_CONFIG, buildApiUrl } from '../config/api';
 
 // Interfaces para los datos de ubicación
 export interface Departamento {
@@ -59,7 +40,7 @@ export const locationsAPI = {
     // Obtener todos los departamentos
     async getDepartamentos(): Promise<Departamento[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/locations/departamentos`);
+            const response = await fetch(buildApiUrl(API_CONFIG.LOCATIONS.DEPARTMENTS));
             
             if (!response.ok) {
                 throw await handleApiError(response);
@@ -80,7 +61,7 @@ export const locationsAPI = {
     // Obtener ciudades por departamento
     async getCiudadesPorDepartamento(idDepartamento: number): Promise<Ciudad[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/locations/ciudades/${idDepartamento}`);
+            const response = await fetch(buildApiUrl(`${API_CONFIG.LOCATIONS.CITIES}/${idDepartamento}`));
             
             if (!response.ok) {
                 throw await handleApiError(response);
@@ -101,7 +82,7 @@ export const locationsAPI = {
     // Obtener barrios por ciudad
     async getBarriosPorCiudad(idCiudad: number): Promise<Barrio[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/locations/barrios/${idCiudad}`);
+            const response = await fetch(buildApiUrl(`${API_CONFIG.LOCATIONS.NEIGHBORHOODS}/${idCiudad}`));
             
             if (!response.ok) {
                 throw await handleApiError(response);
