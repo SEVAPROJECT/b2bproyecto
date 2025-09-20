@@ -60,7 +60,8 @@ try:
             "statement_cache_size": 0,  # Deshabilitar prepared statements para PgBouncer
             "prepared_statement_cache_size": 0,
             "server_settings": {
-                "jit": "off"  # Deshabilitar JIT para evitar problemas con PgBouncer
+                "jit": "off",  # Deshabilitar JIT para evitar problemas con PgBouncer
+                "application_name": "seva_b2b_app"
             }
         }
     )

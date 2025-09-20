@@ -2320,6 +2320,12 @@ async def get_reporte_proveedores_verificados(
         }
     except Exception as e:
         print(f"Error generando reporte de proveedores verificados: {e}")
+        # Si es un error de PgBouncer, intentar rollback
+        if "prepared statement" in str(e).lower() or "pgbouncer" in str(e).lower():
+            try:
+                await db.rollback()
+            except:
+                pass
         raise HTTPException(status_code=500, detail="Error generando reporte")
 
 @router.get(
@@ -2411,7 +2417,7 @@ async def get_reporte_categorias(
         categorias_detalladas = []
         for categoria in categorias:
             # Contar servicios en esta categoría
-            servicios_query = select(Servicio).where(Servicio.id_categoria == categoria.id_categoria)
+            servicios_query = select(ServicioModel).where(ServicioModel.id_categoria == categoria.id_categoria)
             servicios_result = await db.execute(servicios_query)
             servicios = servicios_result.scalars().all()
 
@@ -2437,6 +2443,12 @@ async def get_reporte_categorias(
         }
     except Exception as e:
         print(f"Error generando reporte de categorías: {e}")
+        # Si es un error de PgBouncer, intentar rollback
+        if "prepared statement" in str(e).lower() or "pgbouncer" in str(e).lower():
+            try:
+                await db.rollback()
+            except:
+                pass
         raise HTTPException(status_code=500, detail="Error generando reporte")
 
 @router.get(
