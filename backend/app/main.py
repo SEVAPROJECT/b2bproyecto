@@ -31,10 +31,15 @@ app.add_middleware(
         "http://localhost:3000",  # React dev server
         "http://127.0.0.1:5173",  # Vite dev server (alternativo)
         "http://127.0.0.1:3000",  # React dev server (alternativo)
-        "https://*.railway.app",  # Railway URLs
-        "https://*.vercel.app",   # Vercel URLs
-        "https://*.netlify.app",  # Netlify URLs
-        "*"  # Temporalmente para testing - REMOVER EN PRODUCCIÓN
+        "https://frontend-production-ee3b.up.railway.app/",  # Railway deployment
+        "https://seva-frontend.vercel.app",  # Vercel deployment
+        "https://seva-frontend.netlify.app",  # Netlify deployment
+
+        #"https://*.railway.app",  # Railway URLs
+        #"https://*.vercel.app",   # Vercel URLs
+        #"https://*.netlify.app",  # Netlify URLs
+        #"https://*.railway.app",  # Railway URLs
+        #"*"  # Temporalmente para testing - REMOVER EN PRODUCCIÓN
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
