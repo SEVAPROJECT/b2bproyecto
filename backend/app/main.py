@@ -19,7 +19,7 @@ app.add_middleware(
         "http://localhost:3000",  # React dev server
         "http://127.0.0.1:5173",  # Vite dev server (alternativo)
         "http://127.0.0.1:3000",  # React dev server (alternativo)
-        "https://frontend-production-ee3b.up.railway.app/",  # Railway deployment
+        "https://frontend-production-ee3b.up.railway.app",  # Railway deployment
         "https://seva-frontend.vercel.app",  # Vercel deployment
         "https://seva-frontend.netlify.app",  # Netlify deployment
 
