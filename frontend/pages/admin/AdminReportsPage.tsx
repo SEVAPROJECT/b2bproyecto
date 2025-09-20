@@ -134,6 +134,19 @@ const AdminReportsPage: React.FC = () => {
         }
     ];
 
+    // Cargar todos los reportes al inicializar el componente
+    useEffect(() => {
+        const loadAllReports = async () => {
+            if (!user?.accessToken) return;
+            
+            // Cargar todos los reportes en paralelo
+            const reportPromises = reportTypes.map(report => loadReporte(report.id));
+            await Promise.allSettled(reportPromises);
+        };
+
+        loadAllReports();
+    }, [user?.accessToken]);
+
     // Función para formatear fecha a DD/MM/AAAA
     const formatDateToDDMMAAAA = (dateString: string): string => {
         try {
@@ -388,8 +401,27 @@ const AdminReportsPage: React.FC = () => {
             setReportes(prev => ({ ...prev, [reportType]: data as ReporteData }));
         } catch (err: any) {
             console.error(`Error cargando reporte ${reportType}:`, err);
-            // Mostrar error amigable
-            setError(getFriendlyErrorMessage(reportType, err));
+            
+            // Si es un error de "no hay datos", establecer contador en 0 sin mostrar error
+            if (err?.status === 404 || err?.detail?.includes('No se encontraron') || err?.detail?.includes('No hay')) {
+                const emptyReport: ReporteData = {
+                    fecha_generacion: new Date().toISOString(),
+                    total_usuarios: 0,
+                    total_proveedores: 0,
+                    total_solicitudes: 0,
+                    total_categorias: 0,
+                    total_servicios: 0,
+                    total_solicitudes_servicios: 0,
+                    total_solicitudes_categorias: 0,
+                    pendientes: 0,
+                    aprobadas: 0,
+                    rechazadas: 0
+                };
+                setReportes(prev => ({ ...prev, [reportType]: emptyReport }));
+            } else {
+                // Solo mostrar error para errores reales (no para "no hay datos")
+                setError(getFriendlyErrorMessage(reportType, err));
+            }
         } finally {
             setLoading(prev => ({ ...prev, [reportType]: false }));
         }
