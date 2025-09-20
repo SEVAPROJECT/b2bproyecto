@@ -34,6 +34,9 @@ export const API_CONFIG = {
         VERIFICATIONS: '/admin/verificaciones/pendientes',
         CATEGORIES: '/admin/categories',
         SERVICE_REQUESTS: '/admin/service-requests',
+        REPORTS: {
+            PROVIDERS_VERIFIED: '/admin/reports/proveedores-verificados',
+        },
     },
     
     // Endpoints de proveedores
