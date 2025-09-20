@@ -626,7 +626,7 @@ const ProviderMyRequestsPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">📅 Fecha</p>
                                                 <p className="font-semibold text-gray-600">
-                                                    {new Date(request.created_at).toLocaleDateString('es-PY', { timeZone: 'America/Asuncion' })}
+                                                    {new Date(request.created_at).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
                                                 </p>
                                             </div>
 

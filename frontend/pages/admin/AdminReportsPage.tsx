@@ -56,6 +56,32 @@ const AdminReportsPage: React.FC = () => {
                reportData.total_solicitudes_categorias ?? 0;
     };
 
+    // Función helper para generar mensajes de error amigables
+    const getFriendlyErrorMessage = (reportType: string, error: any): string => {
+        const reportNames: {[key: string]: string} = {
+            'usuarios-activos': 'usuarios',
+            'proveedores-verificados': 'proveedores verificados',
+            'solicitudes-proveedores': 'solicitudes de proveedores',
+            'categorias': 'categorías',
+            'servicios': 'servicios',
+            'solicitudes-servicios': 'solicitudes de servicios',
+            'solicitudes-categorias': 'solicitudes de categorías'
+        };
+
+        const reportName = reportNames[reportType] || 'datos';
+        
+        if (error?.message === 'Timeout de carga') {
+            return `La carga de ${reportName} está tardando demasiado. Por favor, intenta nuevamente.`;
+        }
+        
+        // Si no hay datos, mostrar mensaje amigable
+        if (error?.status === 404 || error?.detail?.includes('No se encontraron')) {
+            return `No hay ${reportName} disponibles en este momento.`;
+        }
+        
+        return `No se pudieron cargar los ${reportName}. Por favor, intenta nuevamente.`;
+    };
+
     const reportTypes = [
         {
             id: 'usuarios-activos',
@@ -362,12 +388,8 @@ const AdminReportsPage: React.FC = () => {
             setReportes(prev => ({ ...prev, [reportType]: data as ReporteData }));
         } catch (err: any) {
             console.error(`Error cargando reporte ${reportType}:`, err);
-            // Optimización: Mostrar error más específico
-            if (err.message === 'Timeout de carga') {
-                setError('La carga del reporte está tardando demasiado. Por favor, intenta nuevamente.');
-            } else {
-                setError(err.detail || 'Error al cargar el reporte');
-            }
+            // Mostrar error amigable
+            setError(getFriendlyErrorMessage(reportType, err));
         } finally {
             setLoading(prev => ({ ...prev, [reportType]: false }));
         }
@@ -499,7 +521,7 @@ const AdminReportsPage: React.FC = () => {
                     <h1>📊 Reporte - ${reportInfo.title}</h1>
                     
                     <div class="info">
-                        <p><strong>📅 Fecha de generación:</strong> ${new Date(reporte.fecha_generacion).toLocaleString('es-PY', { timeZone: 'America/Asuncion' })}</p>
+                        <p><strong>📅 Fecha de generación:</strong> ${new Date(reporte.fecha_generacion).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}</p>
                         <p><strong>📈 Total de registros:</strong> ${data.length}</p>
                         <p><strong>📋 Descripción:</strong> ${reportInfo.description}</p>
                         ${(reportType === 'solicitudes-servicios' || reportType === 'solicitudes-categorias') && reporte.pendientes !== undefined ? `
@@ -569,7 +591,7 @@ const AdminReportsPage: React.FC = () => {
                 <div class="header">
                     <h1>SEVA Empresas</h1>
                     <h2>${reportTypes.find(r => r.id === reportType)?.title}</h2>
-                    <p>Generado el: ${new Date(reporte.fecha_generacion).toLocaleDateString('es-PY', { timeZone: 'America/Asuncion' })}</p>
+                    <p>Generado el: ${new Date(reporte.fecha_generacion).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}</p>
                 </div>
         `;
 
@@ -625,7 +647,7 @@ const AdminReportsPage: React.FC = () => {
 
         htmlContent += `
                 <div class="footer">
-                    <p>Reporte generado por SEVA Empresas - ${new Date().toLocaleString('es-PY', { timeZone: 'America/Asuncion' })}</p>
+                    <p>Reporte generado por SEVA Empresas - ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}</p>
                 </div>
             </body>
             </html>
@@ -718,23 +740,21 @@ const AdminReportsPage: React.FC = () => {
                                 </div>
                             </div>
                             
-                            {reportes[report.id] && (
-                                <div className="mb-4">
-                                    <p className="text-2xl font-bold text-gray-900">
-                                        {getReportTotal(reportes[report.id])}
-                                    </p>
-                                    <p className="text-sm text-gray-500">Total registros</p>
-                                    {(report.id === 'solicitudes-servicios' || report.id === 'solicitudes-categorias') && reportes[report.id] && (
-                                        <div className="mt-2 text-xs text-gray-600">
-                                            <div className="flex justify-between">
-                                                <span>Pendientes: {reportes[report.id].pendientes ?? 0}</span>
-                                                <span>Aprobadas: {reportes[report.id].aprobadas ?? 0}</span>
-                                                <span>Rechazadas: {reportes[report.id].rechazadas ?? 0}</span>
-                                            </div>
+                            <div className="mb-4">
+                                <p className="text-2xl font-bold text-gray-900">
+                                    {reportes[report.id] ? getReportTotal(reportes[report.id]) : 0}
+                                </p>
+                                <p className="text-sm text-gray-500">Total registros</p>
+                                {(report.id === 'solicitudes-servicios' || report.id === 'solicitudes-categorias') && (
+                                    <div className="mt-2 text-xs text-gray-600">
+                                        <div className="flex justify-between">
+                                            <span>Pendientes: {reportes[report.id]?.pendientes ?? 0}</span>
+                                            <span>Aprobadas: {reportes[report.id]?.aprobadas ?? 0}</span>
+                                            <span>Rechazadas: {reportes[report.id]?.rechazadas ?? 0}</span>
                                         </div>
-                                    )}
-                                </div>
-                            )}
+                                    </div>
+                                )}
+                            </div>
 
                             <div className="flex space-x-2">
                                 <button
@@ -772,7 +792,7 @@ const AdminReportsPage: React.FC = () => {
                                 {reportTypes.find(r => r.id === selectedReport)?.title}
                             </h2>
                             <p className="text-sm text-gray-500">
-                                Generado el: {new Date(reportes[selectedReport].fecha_generacion).toLocaleString('es-PY', { timeZone: 'America/Asuncion' })}
+                                Generado el: {new Date(reportes[selectedReport].fecha_generacion).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
                             </p>
                         </div>
                         <div className="p-6">
