@@ -1,6 +1,7 @@
 import React, { ReactNode, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { API_CONFIG } from '../../config/api';
 import {
     HomeIcon,
     BuildingStorefrontIcon,
@@ -171,7 +172,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                                 {user?.foto_perfil ? (
                                     <img
                                         src={user.foto_perfil.startsWith('/') 
-                                            ? `http://localhost:8000${user.foto_perfil}` 
+                                            ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${user.foto_perfil}` 
                                             : user.foto_perfil}
                                         alt="Foto de perfil"
                                         className="w-full h-full object-cover"

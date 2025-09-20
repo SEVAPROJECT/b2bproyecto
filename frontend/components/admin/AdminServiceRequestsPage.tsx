@@ -6,6 +6,7 @@ import StandardStatistics from '../ui/StandardStatistics';
 import { useStandardFilters } from '../../hooks/useStandardFilters';
 import { serviceRequestsAPI, categoriesAPI } from '../../services/api';
 import { AuthContext } from '../../contexts/AuthContext';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 // Funciones auxiliares para manejo de fechas
 const parseDateString = (dateString: string): Date => {
@@ -192,8 +193,7 @@ const AdminServiceRequestsPage: React.FC = () => {
             console.log('📧 Obteniendo emails reales usando lógica de reportes de proveedores...');
             
             // Usar el endpoint de proveedores verificados que sí funciona correctamente
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-            const proveedoresResponse = await fetch(`${apiBaseUrl}/api/v1/admin/reports/proveedores-verificados`, {
+            const proveedoresResponse = await fetch(buildApiUrl('/admin/reports/proveedores-verificados'), {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'

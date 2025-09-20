@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { UserCircleIcon, ExclamationCircleIcon } from '../icons';
 import OptimizedLoading from '../ui/OptimizedLoading';
 import { adminAPI } from '../../services/api';
+import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 interface BackendUser {
     id: string;
@@ -90,8 +91,7 @@ const AdminUsersPage: React.FC = () => {
             setError(null);
             setIsSearching(false);
 
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-            const url = `${apiBaseUrl}/api/v1/admin/users`;
+            const url = buildApiUrl(API_CONFIG.ADMIN.USERS);
 
             // Optimización: Agregar timeout para evitar carga infinita
             const timeoutPromise = new Promise((_, reject) =>
@@ -137,15 +137,13 @@ const AdminUsersPage: React.FC = () => {
                 await new Promise(resolve => setTimeout(resolve, 200));
             }
 
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-
             // Construir URL con parámetros de búsqueda
             const urlParams = new URLSearchParams();
             if (trimmedSearch) {
                 urlParams.append('search_empresa', trimmedSearch);
             }
 
-            const url = `${apiBaseUrl}/api/v1/admin/users${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
+            const url = buildApiUrl(`${API_CONFIG.ADMIN.USERS}${urlParams.toString() ? '?' + urlParams.toString() : ''}`);
 
             // Optimización: Agregar timeout para búsquedas
             const timeoutPromise = new Promise((_, reject) =>
@@ -176,14 +174,12 @@ const AdminUsersPage: React.FC = () => {
 
     const loadRoles = async () => {
         try {
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-
             // Optimización: Agregar timeout para roles
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout de roles')), 6000)
             );
 
-            const fetchPromise = fetch(`${apiBaseUrl}/api/v1/admin/roles`, {
+            const fetchPromise = fetch(buildApiUrl(API_CONFIG.ADMIN.ROLES), {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('access_token')}`
                 }
@@ -205,14 +201,12 @@ const AdminUsersPage: React.FC = () => {
 
     const loadUserPermissions = async () => {
         try {
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-
             // Optimización: Agregar timeout para permisos
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout de permisos')), 6000)
             );
 
-            const fetchPromise = fetch(`${apiBaseUrl}/api/v1/admin/users/permissions`, {
+            const fetchPromise = fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/permissions`), {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('access_token')}`
                 }
@@ -274,9 +268,7 @@ const AdminUsersPage: React.FC = () => {
         
         try {
             setIsResettingPassword(true);
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-            
-            const response = await fetch(`${apiBaseUrl}/api/v1/admin/users/${resetPasswordData.user.id}/reset-password`, {
+            const response = await fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/${resetPasswordData.user.id}/reset-password`), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
@@ -319,8 +311,7 @@ const AdminUsersPage: React.FC = () => {
 
         try {
             setIsUpdating(true);
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-            const response = await fetch(`${apiBaseUrl}/api/v1/admin/users/${userId}/toggle-status`, {
+            const response = await fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/${userId}/toggle-status`), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('access_token')}`
@@ -376,9 +367,7 @@ const AdminUsersPage: React.FC = () => {
                 return;
             }
 
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-
-            const response = await fetch(`${apiBaseUrl}/api/v1/admin/users/${selectedUser?.id}/profile`, {
+            const response = await fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/${selectedUser?.id}/profile`), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -734,9 +723,9 @@ const AdminUsersPage: React.FC = () => {
                                                     <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
                                                         {user.foto_perfil ? (
                                                             <img
-                                                                src={user.foto_perfil.startsWith('/') 
-                                                                    ? `http://localhost:8000${user.foto_perfil}` 
-                                                                    : user.foto_perfil}
+                                                        src={user.foto_perfil.startsWith('/') 
+                                                            ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${user.foto_perfil}` 
+                                                            : user.foto_perfil}
                                                                 alt={`Foto de perfil de ${user.nombre_persona}`}
                                                                 className="w-full h-full object-cover rounded-full"
                                                                 onError={(e) => {
@@ -875,7 +864,7 @@ const AdminUsersPage: React.FC = () => {
                                                     {user.foto_perfil ? (
                                                         <img
                                                             src={user.foto_perfil.startsWith('/') 
-                                                                ? `http://localhost:8000${user.foto_perfil}` 
+                                                                ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${user.foto_perfil}` 
                                                                 : user.foto_perfil}
                                                             alt={`Foto de perfil de ${user.nombre_persona}`}
                                                             className="w-full h-full object-cover rounded-full"
@@ -1114,7 +1103,7 @@ const AdminUsersPage: React.FC = () => {
                                                 {resetPasswordData.user.foto_perfil ? (
                                                     <img
                                                         src={resetPasswordData.user.foto_perfil.startsWith('/') 
-                                                            ? `http://localhost:8000${resetPasswordData.user.foto_perfil}` 
+                                                            ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${resetPasswordData.user.foto_perfil}` 
                                                             : resetPasswordData.user.foto_perfil}
                                                         alt={`Foto de perfil de ${resetPasswordData.user.nombre_persona}`}
                                                         className="w-full h-full object-cover rounded-full"

@@ -3,7 +3,21 @@ import { CheckCircleIcon, ClockIcon, PencilIcon, XMarkIcon } from '../icons';
 import OptimizedLoading from '../ui/OptimizedLoading';
 import { categoryRequestsAPI } from '../../services/api';
 import { AuthContext } from '../../contexts/AuthContext';
-import { CategoryRequest } from '../../types';
+// import { CategoryRequest } from '../../types'; // TODO: Definir este tipo
+import { API_CONFIG, buildApiUrl } from '../../config/api';
+
+// Tipo temporal para CategoryRequest
+interface CategoryRequest {
+    id_solicitud: number;
+    nombre_categoria: string;
+    descripcion: string;
+    nombre_empresa?: string;
+    nombre_contacto?: string;
+    email_contacto?: string;
+    estado_aprobacion: string;
+    comentario_admin?: string;
+    created_at: string;
+}
 
 // Funciones auxiliares para manejo de fechas
 const parseDateString = (dateString: string): Date => {
@@ -160,8 +174,7 @@ const AdminCategoryRequestsPage: React.FC = () => {
             console.log('📧 Obteniendo emails reales usando lógica de reportes de proveedores...');
             
             // Usar el endpoint de proveedores verificados que sí funciona correctamente
-            const apiBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-            const proveedoresResponse = await fetch(`${apiBaseUrl}/api/v1/admin/reports/proveedores-verificados`, {
+            const proveedoresResponse = await fetch(buildApiUrl('/admin/reports/proveedores-verificados'), {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'

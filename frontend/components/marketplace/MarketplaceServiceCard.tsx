@@ -3,6 +3,7 @@ import React, { memo } from 'react';
 import { StarIcon, BuildingStorefrontIcon, ClockIcon, LockClosedIcon } from '../icons';
 import { BackendService, BackendCategory } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import { API_CONFIG } from '../../config/api';
 
 interface MarketplaceServiceCardProps {
     service: BackendService;
@@ -35,7 +36,7 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
     // });
     const getImageUrl = (imagePath: string | null) => {
         if (!imagePath) return null;
-        const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+        const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
         return `${baseUrl}${imagePath}`;
     };
 
@@ -64,8 +65,8 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
         }
 
         // Si no hay ID de moneda, usar código ISO limpio como fallback
-        if (!serviceCurrency && service.codigo_iso_moneda) {
-            serviceCurrency = service.codigo_iso_moneda.trim();
+        if (!serviceCurrency && (service as any).codigo_iso_moneda) {
+            serviceCurrency = (service as any).codigo_iso_moneda.trim();
         }
 
         // Si aún no hay moneda, asumir Guaraní
@@ -113,9 +114,9 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
         <div className="service-card-uniform bg-white rounded-xl shadow-md border border-slate-200/80 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 h-full flex flex-col">
             {/* Imagen del servicio - altura fija para uniformidad */}
             <div className="h-40 bg-gradient-to-br from-primary-100 to-primary-200 relative overflow-hidden flex-shrink-0">
-                {service.imagen ? (
+                {(service as any).imagen ? (
                     <img
-                        src={getImageUrl(service.imagen)}
+                        src={getImageUrl((service as any).imagen)}
                         alt={`Imagen de ${service.nombre}`}
                         className="w-full h-full object-cover"
                         onError={(e) => {
@@ -166,22 +167,22 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
                             <BuildingStorefrontIcon className="w-3 h-3 text-primary-600" />
                         </div>
                         <p className="text-sm font-medium text-slate-700 truncate">
-                            {service.razon_social || (service as any).nombre_empresa || (service as any).nombre_proveedor || 'Empresa verificada'}
+                            {(service as any).razon_social || (service as any).nombre_empresa || (service as any).nombre_proveedor || 'Empresa verificada'}
                         </p>
                     </div>
                     
                     {/* Ubicación - línea compacta */}
                     <div className="flex items-center gap-1 text-xs text-slate-500">
-                        {service.departamento && (
-                            <span className="truncate">🗺️ {service.departamento}</span>
+                        {(service as any).departamento && (
+                            <span className="truncate">🗺️ {(service as any).departamento}</span>
                         )}
-                        {service.ciudad && service.departamento && (
+                        {(service as any).ciudad && (service as any).departamento && (
                             <span>•</span>
                         )}
-                        {service.ciudad && (
-                            <span className="truncate">📍 {service.ciudad}</span>
+                        {(service as any).ciudad && (
+                            <span className="truncate">📍 {(service as any).ciudad}</span>
                         )}
-                        {!service.departamento && !service.ciudad && (
+                        {!(service as any).departamento && !(service as any).ciudad && (
                             <span className="text-slate-400">Ubicación no especificada</span>
                         )}
                     </div>

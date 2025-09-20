@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ClockIcon, UserCircleIcon, StarIcon } from '../icons';
-import { BackendService, BackendCategory, TarifaServicio } from '../../types';
+import { BackendService, BackendCategory } from '../../types';
+import { API_CONFIG } from '../../config/api';
 
 interface ServiceReservationModalProps {
     isOpen: boolean;
@@ -20,7 +21,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
 
     const getImageUrl = (imagePath: string | null) => {
         if (!imagePath) return null;
-        const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+        const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
         return `${baseUrl}${imagePath}`;
     };
 
@@ -70,8 +71,8 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
         }
 
         // Si no hay ID de moneda, usar código ISO limpio como fallback
-        if (!serviceCurrency && service.codigo_iso_moneda) {
-            serviceCurrency = service.codigo_iso_moneda.trim();
+        if (!serviceCurrency && (service as any).codigo_iso_moneda) {
+            serviceCurrency = (service as any).codigo_iso_moneda.trim();
         }
 
         // Si aún no hay moneda, asumir Guaraní
@@ -108,8 +109,8 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
             }
         }
 
-        if (!serviceCurrency && service.codigo_iso_moneda) {
-            serviceCurrency = service.codigo_iso_moneda.trim();
+        if (!serviceCurrency && (service as any).codigo_iso_moneda) {
+            serviceCurrency = (service as any).codigo_iso_moneda.trim();
         }
 
         if (!serviceCurrency) {
@@ -172,10 +173,10 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                         {/* COLUMNA IZQUIERDA - INFORMACIÓN DEL SERVICIO Y PROVEEDOR */}
                         <div className="lg:col-span-2 space-y-6">
                             {/* IMAGEN DESTACADA DEL SERVICIO */}
-                            {service.imagen && (
+                            {(service as any).imagen && (
                                 <div className="relative">
                                     <img 
-                                        src={getImageUrl(service.imagen)} 
+                                        src={getImageUrl((service as any).imagen)} 
                                         alt={service.nombre}
                                         className="w-full h-64 object-cover rounded-xl shadow-lg"
                                         onError={(e) => {
@@ -209,7 +210,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                     </div>
                                     <div className="flex-1">
                                         <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                                            {service.nombre_contacto || 'Contacto disponible'}
+                                            {(service as any).nombre_contacto || 'Contacto disponible'}
                                         </h3>
                                         
                                         {/* Lista organizada de información del proveedor */}
@@ -217,33 +218,33 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                             <div className="flex items-center gap-3">
                                                 <span className="text-slate-500">🏢</span>
                                                 <span className="text-slate-700">
-                                                    <span className="font-medium">Empresa:</span> {service.razon_social || 'Información disponible al contactar'}
+                                                    <span className="font-medium">Empresa:</span> {(service as any).razon_social || 'Información disponible al contactar'}
                                                 </span>
                                             </div>
                                             
-                                            {service.departamento && (
+                                            {(service as any).departamento && (
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-slate-500">🗺️</span>
                                                     <span className="text-slate-700">
-                                                        <span className="font-medium">Departamento:</span> {service.departamento}
+                                                        <span className="font-medium">Departamento:</span> {(service as any).departamento}
                                                     </span>
                                                 </div>
                                             )}
                                             
-                                            {service.ciudad && (
+                                            {(service as any).ciudad && (
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-slate-500">📍</span>
                                                     <span className="text-slate-700">
-                                                        <span className="font-medium">Ciudad:</span> {service.ciudad}
+                                                        <span className="font-medium">Ciudad:</span> {(service as any).ciudad}
                                                     </span>
                                                 </div>
                                             )}
                                             
-                                            {service.barrio && (
+                                            {(service as any).barrio && (
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-slate-500">🏘️</span>
                                                     <span className="text-slate-700">
-                                                        <span className="font-medium">Barrio:</span> {service.barrio}
+                                                        <span className="font-medium">Barrio:</span> {(service as any).barrio}
                                                     </span>
                                                 </div>
                                             )}
@@ -305,11 +306,11 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                     </div>
                                     
                                     {/* Tarifas específicas si existen */}
-                                    {service.tarifas && service.tarifas.length > 0 && (
+                                    {(service as any).tarifas && (service as any).tarifas.length > 0 && (
                                         <div className="bg-white rounded-lg p-4 border border-slate-200">
                                             <h4 className="font-medium text-slate-900 mb-4">Tarifas Específicas</h4>
                                             <div className="space-y-3">
-                                                {service.tarifas.map((tarifa) => (
+                                                {(service as any).tarifas.map((tarifa: any) => (
                                                     <div key={tarifa.id_tarifa_servicio} className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                                                         <div className="flex justify-between items-start mb-2">
                                                             <div className="flex-1">
@@ -339,7 +340,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                     )}
                                     
                                     {/* Detalle de tarifas adicionales si no hay tarifas específicas */}
-                                    {(!service.tarifas || service.tarifas.length === 0) && (
+                                    {(!(service as any).tarifas || (service as any).tarifas.length === 0) && (
                                         <div className="bg-white rounded-lg p-4 border border-slate-200">
                                             <h4 className="font-medium text-slate-900 mb-2">Tarifas adicionales</h4>
                                             <p className="text-sm text-slate-600">
