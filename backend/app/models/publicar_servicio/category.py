@@ -5,10 +5,10 @@ from datetime import datetime
 from sqlalchemy import Column, String, BigInteger, Boolean, DateTime, text, PrimaryKeyConstraint
 from sqlalchemy.orm import relationship, Mapped
 from app.supabase.db.db_supabase import Base # Importación de la base declarativa
-from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
 
 if TYPE_CHECKING:
     from app.models.publicar_servicio.solicitud_servicio import SolicitudServicio
+    from app.models.publicar_servicio.servicio import ServicioModel
 
 class CategoriaModel(Base):
     """
@@ -31,5 +31,5 @@ class CategoriaModel(Base):
     created_at: Mapped[datetime] = Column(DateTime(True), server_default=text('now()'))
 
     # Relación con la tabla 'servicio'
-    servicio: Mapped[List["Servicio"]] = relationship('Servicio', back_populates='categoria')
+    servicio: Mapped[List["ServicioModel"]] = relationship('ServicioModel', back_populates='categoria')
     solicitudes_servicio: Mapped[List["SolicitudServicio"]] = relationship('SolicitudServicio', back_populates='categoria')
