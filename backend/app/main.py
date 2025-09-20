@@ -15,7 +15,7 @@ from app.api.v1.routers.services.provider_services import router as provider_ser
 from app.api.v1.routers.auth.password_reset import router as password_reset_router
 from app.api.v1.routers.auth.supabase_password_reset import router as supabase_password_reset_router
 from app.api.v1.routers.auth.direct_password_reset import router as direct_password_reset_router
-from app.api.v1.routers.reserva_service import router as reserva
+from app.api.v1.routers.reserva_service.reserva import router as reserva
 # Instancia de la aplicación de FastAPI
 app = FastAPI(
     title="SEVA B2B API",
