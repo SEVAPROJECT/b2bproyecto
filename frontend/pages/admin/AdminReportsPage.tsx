@@ -45,6 +45,17 @@ const AdminReportsPage: React.FC = () => {
         return String(value);
     };
 
+    // Función helper para obtener el total de registros de un reporte
+    const getReportTotal = (reportData: ReporteData): number => {
+        return reportData.total_usuarios ?? 
+               reportData.total_proveedores ?? 
+               reportData.total_solicitudes ?? 
+               reportData.total_categorias ?? 
+               reportData.total_servicios ?? 
+               reportData.total_solicitudes_servicios ?? 
+               reportData.total_solicitudes_categorias ?? 0;
+    };
+
     const reportTypes = [
         {
             id: 'usuarios-activos',
@@ -348,7 +359,7 @@ const AdminReportsPage: React.FC = () => {
             }
 
             const data = await Promise.race([dataPromise, timeoutPromise]);
-            setReportes(prev => ({ ...prev, [reportType]: data }));
+            setReportes(prev => ({ ...prev, [reportType]: data as ReporteData }));
         } catch (err: any) {
             console.error(`Error cargando reporte ${reportType}:`, err);
             // Optimización: Mostrar error más específico
@@ -488,7 +499,7 @@ const AdminReportsPage: React.FC = () => {
                     <h1>📊 Reporte - ${reportInfo.title}</h1>
                     
                     <div class="info">
-                        <p><strong>📅 Fecha de generación:</strong> ${new Date(reporte.fecha_generacion).toLocaleString('es-ES')}</p>
+                        <p><strong>📅 Fecha de generación:</strong> ${new Date(reporte.fecha_generacion).toLocaleString('es-PY', { timeZone: 'America/Asuncion' })}</p>
                         <p><strong>📈 Total de registros:</strong> ${data.length}</p>
                         <p><strong>📋 Descripción:</strong> ${reportInfo.description}</p>
                         ${(reportType === 'solicitudes-servicios' || reportType === 'solicitudes-categorias') && reporte.pendientes !== undefined ? `
@@ -558,7 +569,7 @@ const AdminReportsPage: React.FC = () => {
                 <div class="header">
                     <h1>SEVA Empresas</h1>
                     <h2>${reportTypes.find(r => r.id === reportType)?.title}</h2>
-                    <p>Generado el: ${new Date(reporte.fecha_generacion).toLocaleDateString('es-ES')}</p>
+                    <p>Generado el: ${new Date(reporte.fecha_generacion).toLocaleDateString('es-PY', { timeZone: 'America/Asuncion' })}</p>
                 </div>
         `;
 
@@ -614,7 +625,7 @@ const AdminReportsPage: React.FC = () => {
 
         htmlContent += `
                 <div class="footer">
-                    <p>Reporte generado por SEVA Empresas - ${new Date().toLocaleString('es-ES')}</p>
+                    <p>Reporte generado por SEVA Empresas - ${new Date().toLocaleString('es-PY', { timeZone: 'America/Asuncion' })}</p>
                 </div>
             </body>
             </html>
@@ -710,21 +721,15 @@ const AdminReportsPage: React.FC = () => {
                             {reportes[report.id] && (
                                 <div className="mb-4">
                                     <p className="text-2xl font-bold text-gray-900">
-                                        {reportes[report.id].total_usuarios || 
-                                         reportes[report.id].total_proveedores || 
-                                         reportes[report.id].total_solicitudes || 
-                                         reportes[report.id].total_categorias || 
-                                         reportes[report.id].total_servicios || 
-                                         reportes[report.id].total_solicitudes_servicios || 
-                                         reportes[report.id].total_solicitudes_categorias || 0}
+                                        {getReportTotal(reportes[report.id])}
                                     </p>
                                     <p className="text-sm text-gray-500">Total registros</p>
                                     {(report.id === 'solicitudes-servicios' || report.id === 'solicitudes-categorias') && reportes[report.id] && (
                                         <div className="mt-2 text-xs text-gray-600">
                                             <div className="flex justify-between">
-                                                <span>Pendientes: {reportes[report.id].pendientes || 0}</span>
-                                                <span>Aprobadas: {reportes[report.id].aprobadas || 0}</span>
-                                                <span>Rechazadas: {reportes[report.id].rechazadas || 0}</span>
+                                                <span>Pendientes: {reportes[report.id].pendientes ?? 0}</span>
+                                                <span>Aprobadas: {reportes[report.id].aprobadas ?? 0}</span>
+                                                <span>Rechazadas: {reportes[report.id].rechazadas ?? 0}</span>
                                             </div>
                                         </div>
                                     )}
@@ -767,7 +772,7 @@ const AdminReportsPage: React.FC = () => {
                                 {reportTypes.find(r => r.id === selectedReport)?.title}
                             </h2>
                             <p className="text-sm text-gray-500">
-                                Generado el: {new Date(reportes[selectedReport].fecha_generacion).toLocaleString('es-ES')}
+                                Generado el: {new Date(reportes[selectedReport].fecha_generacion).toLocaleString('es-PY', { timeZone: 'America/Asuncion' })}
                             </p>
                         </div>
                         <div className="p-6">

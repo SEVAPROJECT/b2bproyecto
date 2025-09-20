@@ -520,7 +520,7 @@ const AdminServiceRequestsPage: React.FC = () => {
                                                 
                                                 <div className="mt-2 text-sm text-gray-500 break-words">
                                                     <span className="font-medium">Categoría:</span> {request.nombre_categoria || 'No especificada'} | 
-                                                    <span className="font-medium ml-2">Fecha:</span> {new Date(request.created_at).toLocaleDateString('es-ES')}
+                                                    <span className="font-medium ml-2">Fecha:</span> {new Date(request.created_at).toLocaleDateString('es-PY', { timeZone: 'America/Asuncion' })}
                                                 </div>
                                             </div>
                                             

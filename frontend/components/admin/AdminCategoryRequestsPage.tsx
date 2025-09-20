@@ -475,7 +475,7 @@ const AdminCategoryRequestsPage: React.FC = () => {
                                                 </div>
                                                 
                                                 <div className="mt-2 text-sm text-gray-500 break-words">
-                                                    <span className="font-medium">Fecha:</span> {new Date(request.created_at).toLocaleDateString('es-ES')}
+                                                    <span className="font-medium">Fecha:</span> {new Date(request.created_at).toLocaleDateString('es-PY', { timeZone: 'America/Asuncion' })}
                                                 </div>
                                             </div>
                                             

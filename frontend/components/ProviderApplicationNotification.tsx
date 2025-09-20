@@ -24,7 +24,7 @@ const ProviderApplicationNotification: React.FC = () => {
                         </p>
                         {providerApplication.submittedAt && (
                             <p className="text-xs text-blue-600 mt-2">
-                                Enviada el {new Date(providerApplication.submittedAt).toLocaleDateString('es-ES')}
+                                Enviada el {new Date(providerApplication.submittedAt).toLocaleDateString('es-PY', { timeZone: 'America/Asuncion' })}
                             </p>
                         )}
                     </div>
@@ -52,7 +52,7 @@ const ProviderApplicationNotification: React.FC = () => {
                         )}
                         {providerApplication.reviewedAt && (
                             <p className="text-xs text-red-600 mt-2">
-                                Revisado el {new Date(providerApplication.reviewedAt).toLocaleDateString('es-ES')}
+                                Revisado el {new Date(providerApplication.reviewedAt).toLocaleDateString('es-PY', { timeZone: 'America/Asuncion' })}
                             </p>
                         )}
                         <div className="mt-3 flex space-x-2">
@@ -99,7 +99,7 @@ const ProviderApplicationNotification: React.FC = () => {
                         </p>
                         {providerApplication.reviewedAt && (
                             <p className="text-xs text-green-600 mt-2">
-                                Aprobado el {new Date(providerApplication.reviewedAt).toLocaleDateString('es-ES')}
+                                Aprobado el {new Date(providerApplication.reviewedAt).toLocaleDateString('es-PY', { timeZone: 'America/Asuncion' })}
                             </p>
                         )}
                         <div className="mt-3">
