@@ -50,15 +50,18 @@ try:
 
     async_engine = create_async_engine(
         async_database_url,
-        pool_size=3,  # Reducido para evitar problemas
-        max_overflow=5,
+        pool_size=1,  # Reducido a 1 para evitar problemas con PgBouncer
+        max_overflow=0,  # Sin overflow para evitar problemas
         pool_pre_ping=True,
-        pool_recycle=1800,
-        pool_timeout=15,
+        pool_recycle=300,  # Reciclar conexiones más frecuentemente
+        pool_timeout=30,
         echo=False,
         connect_args={
             "statement_cache_size": 0,  # Deshabilitar prepared statements para PgBouncer
-            "prepared_statement_cache_size": 0
+            "prepared_statement_cache_size": 0,
+            "server_settings": {
+                "jit": "off"  # Deshabilitar JIT para evitar problemas con PgBouncer
+            }
         }
     )
 
