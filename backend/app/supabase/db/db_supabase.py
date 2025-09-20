@@ -50,7 +50,11 @@ try:
         pool_pre_ping=True,
         pool_recycle=1800,
         pool_timeout=15,
-        echo=False
+        echo=False,
+        connect_args={
+            "statement_cache_size": 0,  # Deshabilitar prepared statements para PgBouncer
+            "prepared_statement_cache_size": 0
+        }
     )
 
     AsyncSessionLocal = sessionmaker(
