@@ -11,7 +11,7 @@ from app.supabase.db.db_supabase import Base
 
 if TYPE_CHECKING:
     from app.models.perfil import UserModel  
-    from app.models.publicar_servicio.service import ServicioModel 
+    from app.models.servicio.service import ServicioModel 
 
 class ReservaModel(Base):
     __tablename__ = "reserva"
@@ -25,6 +25,6 @@ class ReservaModel(Base):
     estado: Mapped[str] = Column(String(20), nullable=False, default="pendiente")
     
     #relaciones para acceder al usuario y servicio
-    #usuario = relationship("UserModel", back_populates="reserva")
-    usuario = Mapped["UserModel"] = relationship("UserModel", back_populates="reserva")
+    usuario = relationship("UserModel", back_populates="reserva")
+    #usuario = Mapped["UserModel"] = relationship("UserModel", back_populates="reserva")
     servicio = Mapped["ServicioModel"] = relationship("ServicioModel", back_populates="reserva")
