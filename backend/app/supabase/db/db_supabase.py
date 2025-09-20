@@ -27,7 +27,11 @@ try:
         DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=1800,
-        echo=False
+        echo=False,
+        connect_args={
+            "statement_cache_size": 0,  # Deshabilitar prepared statements para PgBouncer
+            "prepared_statement_cache_size": 0
+        }
     )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     logger.info("✅ Engine síncrono creado exitosamente")
@@ -42,6 +46,7 @@ try:
     # Convertir URL síncrona a asíncrona
     async_database_url = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
     logger.info("🔄 Creando engine asíncrono...")
+    logger.info("🔧 Configurando para compatibilidad con PgBouncer (prepared statements deshabilitados)")
 
     async_engine = create_async_engine(
         async_database_url,
