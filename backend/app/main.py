@@ -1,6 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Instancia de la aplicación de FastAPI
+app = FastAPI(
+    title="SEVA B2B API",
+    description="API para la plataforma B2B SEVA Empresas",
+    version="1.0.0"
+)
+
 
 # Configurar CORS para permitir comunicación con el frontend
 #es mejor que el middleware CORS esté lo más arriba posible en la pila de middlewares
@@ -44,13 +51,6 @@ from app.api.v1.routers.auth.password_reset import router as password_reset_rout
 from app.api.v1.routers.auth.supabase_password_reset import router as supabase_password_reset_router
 from app.api.v1.routers.auth.direct_password_reset import router as direct_password_reset_router
 from app.api.v1.routers.reserva_service import reserva
-# Instancia de la aplicación de FastAPI
-app = FastAPI(
-    title="SEVA B2B API",
-    description="API para la plataforma B2B SEVA Empresas",
-    version="1.0.0"
-)
-
 
 
 # Crear directorio uploads si no existe
