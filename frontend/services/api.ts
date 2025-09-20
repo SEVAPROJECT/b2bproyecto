@@ -7,6 +7,9 @@ import {
 } from '../components/icons';
 import { API_CONFIG, buildApiUrl } from '../config/api';
 
+// Definir API_BASE_URL para compatibilidad con código existente
+const API_BASE_URL = API_CONFIG.BASE_URL;
+
 // Log para debugging
 console.log('🔗 API Base URL:', API_CONFIG.BASE_URL);
 console.log('🌍 Environment:', window.location.hostname);
