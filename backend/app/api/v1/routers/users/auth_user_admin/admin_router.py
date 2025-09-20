@@ -18,8 +18,8 @@ from app.models.empresa.tipo_documento import TipoDocumento
 from app.models.perfil import UserModel
 from app.models.rol import RolModel
 from app.models.usuario_rol import UsuarioRolModel
-from app.models.publicar_servicio.category import Categoria
-from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
+from app.models.publicar_servicio.category import CategoriaModel
+from app.models.servicio.service import ServicioModel
 from app.schemas.empresa.verificacion_solicitud import VerificacionSolicitudOut
 from app.schemas.user import UserProfileAndRolesOut
 from app.api.v1.dependencies.auth_user import get_admin_user, get_current_user
