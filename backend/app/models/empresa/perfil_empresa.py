@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
     from app.models.publicar_servicio.solicitud_servicio import SolicitudServicio
     from app.models.publicar_servicio.solicitud_categoria import SolicitudCategoria
-    from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
+    from app.models.servicio.service import ServicioModel
 
 class PerfilEmpresa(Base):
     __tablename__ = "perfil_empresa"
@@ -52,4 +52,4 @@ class PerfilEmpresa(Base):
     verificacion_solicitud: Mapped[List["VerificacionSolicitud"]] = relationship(back_populates="perfil_empresa")
     solicitudes_servicio: Mapped[List["SolicitudServicio"]] = relationship(back_populates="perfil_empresa")
     solicitudes_categoria: Mapped[List["SolicitudCategoria"]] = relationship(back_populates="perfil_empresa")
-    servicio: Mapped[List["Servicio"]] = relationship(back_populates="perfil_empresa")
+    servicio: Mapped[List["ServicioModel"]] = relationship(back_populates="perfil_empresa")

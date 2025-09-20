@@ -7,9 +7,7 @@ from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION as Double
 from app.supabase.db.db_supabase import Base # Importación de la base declarativa
 from typing import TYPE_CHECKING
-# Importar Base para asegurar que esté disponible
-from app.supabase.db.db_supabase import Base
-
+    
 if TYPE_CHECKING:
     from app.models.publicar_servicio.category import CategoriaModel
     from app.models.publicar_servicio.moneda import Moneda
