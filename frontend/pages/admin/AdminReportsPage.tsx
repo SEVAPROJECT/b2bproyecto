@@ -230,12 +230,14 @@ const AdminReportsPage: React.FC = () => {
         return new Date(date.getTime() - 3 * 60 * 60 * 1000);
     };
 
-    // Función helper para formatear fecha con zona horaria de Argentina
+    // Función helper para formatear fecha/hora con zona horaria de Argentina
     const formatArgentinaDateTime = (dateString: string): string => {
         try {
             const date = new Date(dateString);
-            const adjustedDate = adjustToArgentinaTime(date);
-            return adjustedDate.toLocaleString('es-AR', { hour12: false });
+            return date.toLocaleString('es-AR', {
+                timeZone: 'America/Argentina/Buenos_Aires',
+                hour12: false,
+            });
         } catch (error) {
             console.error('Error formateando fecha Argentina:', error);
             return dateString;
@@ -246,8 +248,9 @@ const AdminReportsPage: React.FC = () => {
     const formatArgentinaDate = (dateString: string): string => {
         try {
             const date = new Date(dateString);
-            const adjustedDate = adjustToArgentinaTime(date);
-            return adjustedDate.toLocaleDateString('es-AR', { hour12: false });
+            return date.toLocaleDateString('es-AR', {
+                timeZone: 'America/Argentina/Buenos_Aires',
+            });
         } catch (error) {
             console.error('Error formateando fecha Argentina:', error);
             return dateString;
