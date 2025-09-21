@@ -184,48 +184,42 @@ const AdminCategoryRequestsPage: React.FC = () => {
         }
     }, []);
 
-    // Función para cargar emails reales usando la misma lógica que los reportes de proveedores
+    // Función optimizada para cargar emails reales usando endpoint directo
     const loadEmailsInBackground = useCallback(async (requestsData: CategoryRequest[], accessToken: string) => {
         try {
             setLoadingEmails(true);
-            console.log('📧 Obteniendo emails reales usando lógica de reportes de proveedores...');
+            console.log('📧 Obteniendo emails reales usando endpoint directo...');
             
-            // Usar el endpoint de proveedores verificados que sí funciona correctamente
-            const proveedoresResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.REPORTS.PROVIDERS_VERIFIED), {
+            // Usar el endpoint directo de emails de usuarios (más eficiente)
+            const emailsResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.USERS + '/emails'), {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
                 }
             });
             
-            if (!proveedoresResponse.ok) {
-                console.log('❌ No se pudo obtener reporte de proveedores');
+            if (!emailsResponse.ok) {
+                console.log('❌ No se pudo obtener emails de usuarios');
                 return;
             }
             
-            const proveedoresData = await proveedoresResponse.json();
-            const proveedores = proveedoresData.proveedores || [];
-            console.log('🏢 Proveedores obtenidos del reporte:', proveedores.length);
-            
-            // Crear diccionario de emails por nombre de contacto (mismo método que usan los reportes)
-            const emailsDict: {[key: string]: string} = {};
-            proveedores.forEach((proveedor: any) => {
-                if (proveedor.nombre_contacto && proveedor.email_contacto && proveedor.email_contacto !== 'No disponible') {
-                    emailsDict[proveedor.nombre_contacto] = proveedor.email_contacto;
-                }
-            });
-            
-            console.log('📧 Emails extraídos del reporte de proveedores:', Object.keys(emailsDict).length);
+            const emailsData = await emailsResponse.json();
+            const emailsDict = emailsData.emails || {};
+            console.log('📧 Emails obtenidos directamente:', Object.keys(emailsDict).length);
             
             // Procesar solicitudes con emails reales
             const requestsWithEmails = requestsData.map(request => {
                 let emailContacto = 'No especificado';
                 
-                // Buscar email real por nombre de contacto (mismo método que los reportes)
+                // Buscar email real por nombre de contacto
                 if (request.nombre_contacto && request.nombre_contacto !== 'No especificado') {
-                    const userEmail = emailsDict[request.nombre_contacto];
-                    if (userEmail) {
-                        emailContacto = userEmail;
+                    // Buscar en el diccionario de emails por nombre de contacto
+                    const userEmail = Object.values(emailsDict).find((user: any) => 
+                        user.email && user.email.toLowerCase().includes(request.nombre_contacto.toLowerCase())
+                    ) as any;
+                    
+                    if (userEmail && userEmail.email) {
+                        emailContacto = userEmail.email;
                         console.log(`✅ Email real encontrado para contacto ${request.nombre_contacto}: ${emailContacto}`);
                     } else {
                         console.log(`❌ No se encontró email para contacto ${request.nombre_contacto}`);
