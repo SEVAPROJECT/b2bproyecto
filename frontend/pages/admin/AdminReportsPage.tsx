@@ -475,13 +475,16 @@ const AdminReportsPage: React.FC = () => {
         }
 
         try {
-            // Timeout más agresivo para reportes pesados
-            // Especialmente para usuarios-activos que requiere más procesamiento
-            let timeoutDuration = 10000;
+            // Timeouts optimizados para cada tipo de reporte
+            let timeoutDuration = 12000; // Default: 12 segundos
             if (reportType.includes('solicitudes')) {
-                timeoutDuration = 15000;
+                timeoutDuration = 18000; // Solicitudes: 18 segundos
             } else if (reportType === 'usuarios-activos') {
-                timeoutDuration = 25000; // Más tiempo para usuarios
+                timeoutDuration = 25000; // Usuarios: 25 segundos (más complejo)
+            } else if (reportType === 'categorias') {
+                timeoutDuration = 8000; // Categorías: 8 segundos (más simple)
+            } else if (reportType === 'proveedores-verificados') {
+                timeoutDuration = 15000; // Proveedores: 15 segundos
             }
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout de carga')), timeoutDuration)
@@ -535,41 +538,136 @@ const AdminReportsPage: React.FC = () => {
                     });
                     break;
                 case 'proveedores-verificados':
-                    dataPromise = adminAPI.getReporteProveedoresVerificados(user.accessToken);
-                    break;
-                case 'solicitudes-proveedores':
-                    dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken);
-                    break;
-                case 'categorias':
-                    // Usar API service centralizado que maneja CORS correctamente
-                    dataPromise = categoriesAPI.getCategories(user.accessToken, true).then(categorias => {
-                        console.log('Categorías cargadas exitosamente:', categorias.length, 'categorías');
+                    dataPromise = adminAPI.getReporteProveedoresVerificados(user.accessToken).catch(error => {
+                        console.log('⚠️ Reporte de proveedores falló, usando fallback...');
                         return {
                             fecha_generacion: new Date().toISOString(),
-                            total_categorias: categorias.length,
-                            categorias: categorias,
-                            generado_desde: 'categories_api'
-                        };
-                    }).catch(error => {
-                        console.error('Error cargando categorías:', error);
-                        // Fallback: datos vacíos para no bloquear la UI
-                        return {
-                            fecha_generacion: new Date().toISOString(),
-                            total_categorias: 0,
-                            categorias: [],
+                            total_proveedores: 0,
+                            proveedores: [],
                             generado_desde: 'empty_fallback',
-                            error: 'No se pudieron cargar las categorías'
+                            error: 'No se pudieron cargar los proveedores'
                         };
                     });
                     break;
+                case 'solicitudes-proveedores':
+                    dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken).catch(error => {
+                        console.log('⚠️ Reporte de solicitudes de proveedores falló, usando fallback...');
+                        return {
+                            fecha_generacion: new Date().toISOString(),
+                            total_solicitudes: 0,
+                            solicitudes_proveedores: [],
+                            pendientes: 0,
+                            aprobadas: 0,
+                            rechazadas: 0,
+                            generado_desde: 'empty_fallback',
+                            error: 'No se pudieron cargar las solicitudes'
+                        };
+                    });
+                    break;
+                case 'categorias':
+                    // Usar múltiples estrategias para garantizar que funcione
+                    dataPromise = (async () => {
+                        console.log('📂 Iniciando carga de reporte de categorías...');
+                        
+                        // Estrategia 1: categoriesAPI (funciona en /dashboard/categories)
+                        try {
+                            const categorias = await categoriesAPI.getCategories(user.accessToken);
+                            console.log('✅ Categorías cargadas con categoriesAPI:', categorias.length);
+                            return {
+                                fecha_generacion: new Date().toISOString(),
+                                total_categorias: categorias.length,
+                                categorias: categorias,
+                                generado_desde: 'categories_api_primary'
+                            };
+                        } catch (err1) {
+                            console.log('⚠️ categoriesAPI falló, intentando fetch directo...');
+                            
+                            // Estrategia 2: fetch directo
+                            try {
+                                const url = `${buildApiUrl(API_CONFIG.CATEGORIES.LIST)}`;
+                                const response = await fetch(url, {
+                                    headers: { 'Authorization': `Bearer ${user.accessToken}` }
+                                });
+                                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                                
+                                const raw = await response.json();
+                                const categorias = Array.isArray(raw) ? raw : (raw.categorias || raw.results || raw.items || []);
+                                
+                                console.log('✅ Categorías cargadas con fetch directo:', categorias.length);
+                                return {
+                                    fecha_generacion: new Date().toISOString(),
+                                    total_categorias: categorias.length,
+                                    categorias: categorias,
+                                    generado_desde: 'categories_fetch_fallback'
+                                };
+                            } catch (err2) {
+                                console.log('⚠️ Fetch directo falló, intentando con active_only=false...');
+                                
+                                // Estrategia 3: categoriesAPI sin filtro
+                                try {
+                                    const categorias = await categoriesAPI.getCategories(user.accessToken, false);
+                                    console.log('✅ Categorías cargadas sin filtro:', categorias.length);
+                                    return {
+                                        fecha_generacion: new Date().toISOString(),
+                                        total_categorias: categorias.length,
+                                        categorias: categorias,
+                                        generado_desde: 'categories_api_no_filter'
+                                    };
+                                } catch (err3) {
+                                    console.error('❌ Todas las estrategias fallaron:', err3);
+                                    return {
+                                        fecha_generacion: new Date().toISOString(),
+                                        total_categorias: 0,
+                                        categorias: [],
+                                        generado_desde: 'empty_fallback',
+                                        error: 'No se pudieron cargar las categorías'
+                                    };
+                                }
+                            }
+                        }
+                    })();
+                    break;
                 case 'servicios':
-                    dataPromise = adminAPI.getReporteServicios(user.accessToken);
+                    dataPromise = adminAPI.getReporteServicios(user.accessToken).catch(error => {
+                        console.log('⚠️ Reporte de servicios falló, usando fallback...');
+                        return {
+                            fecha_generacion: new Date().toISOString(),
+                            total_servicios: 0,
+                            servicios: [],
+                            generado_desde: 'empty_fallback',
+                            error: 'No se pudieron cargar los servicios'
+                        };
+                    });
                     break;
                 case 'solicitudes-servicios':
-                    dataPromise = generateReporteSolicitudesServicios(user.accessToken);
+                    dataPromise = generateReporteSolicitudesServicios(user.accessToken).catch(error => {
+                        console.log('⚠️ Reporte de solicitudes de servicios falló, usando fallback...');
+                        return {
+                            fecha_generacion: new Date().toISOString(),
+                            total_solicitudes_servicios: 0,
+                            solicitudes_servicios: [],
+                            pendientes: 0,
+                            aprobadas: 0,
+                            rechazadas: 0,
+                            generado_desde: 'empty_fallback',
+                            error: 'No se pudieron cargar las solicitudes de servicios'
+                        };
+                    });
                     break;
                 case 'solicitudes-categorias':
-                    dataPromise = generateReporteSolicitudesCategorias(user.accessToken);
+                    dataPromise = generateReporteSolicitudesCategorias(user.accessToken).catch(error => {
+                        console.log('⚠️ Reporte de solicitudes de categorías falló, usando fallback...');
+                        return {
+                            fecha_generacion: new Date().toISOString(),
+                            total_solicitudes_categorias: 0,
+                            solicitudes_categorias: [],
+                            pendientes: 0,
+                            aprobadas: 0,
+                            rechazadas: 0,
+                            generado_desde: 'empty_fallback',
+                            error: 'No se pudieron cargar las solicitudes de categorías'
+                        };
+                    });
                     break;
                 default:
                     throw new Error('Tipo de reporte no válido');
