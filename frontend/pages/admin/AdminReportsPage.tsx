@@ -533,10 +533,22 @@ const AdminReportsPage: React.FC = () => {
                         }
                         const categorias = await response.json();
                         console.log('Categorías cargadas exitosamente:', categorias.length, 'categorías');
+                        
+                        // Procesar categorías para asegurar formato correcto de fechas
+                        const categoriasProcesadas = categorias.map((categoria: any) => ({
+                            ...categoria,
+                            // Asegurar que las fechas estén en formato ISO
+                            created_at: categoria.created_at || categoria.fecha_creacion || categoria.createdAt || new Date().toISOString(),
+                            updated_at: categoria.updated_at || categoria.fecha_actualizacion || categoria.updatedAt || new Date().toISOString(),
+                            // Asegurar que el estado esté en formato booleano
+                            active: categoria.active !== undefined ? categoria.active : (categoria.activo !== undefined ? categoria.activo : true),
+                            estado: categoria.estado || (categoria.active !== undefined ? (categoria.active ? 'ACTIVO' : 'INACTIVO') : 'ACTIVO')
+                        }));
+                        
                         return {
                             fecha_generacion: new Date().toISOString(),
-                            total_categorias: categorias.length,
-                            categorias: categorias,
+                            total_categorias: categoriasProcesadas.length,
+                            categorias: categoriasProcesadas,
                             generado_desde: 'categories_api_direct'
                         };
                     }).catch(error => {
@@ -544,10 +556,22 @@ const AdminReportsPage: React.FC = () => {
                         // Fallback: intentar con categoriesAPI como último recurso
                         return categoriesAPI.getCategories(user.accessToken, false).then(categorias => {
                             console.log('Categorías cargadas con fallback API:', categorias.length);
+                            
+                            // Procesar categorías para asegurar formato correcto de fechas
+                            const categoriasProcesadas = categorias.map((categoria: any) => ({
+                                ...categoria,
+                                // Asegurar que las fechas estén en formato ISO
+                                created_at: categoria.created_at || categoria.fecha_creacion || categoria.createdAt || new Date().toISOString(),
+                                updated_at: categoria.updated_at || categoria.fecha_actualizacion || categoria.updatedAt || new Date().toISOString(),
+                                // Asegurar que el estado esté en formato booleano
+                                active: categoria.active !== undefined ? categoria.active : (categoria.activo !== undefined ? categoria.activo : true),
+                                estado: categoria.estado || (categoria.active !== undefined ? (categoria.active ? 'ACTIVO' : 'INACTIVO') : 'ACTIVO')
+                            }));
+                            
                             return {
                                 fecha_generacion: new Date().toISOString(),
-                                total_categorias: categorias.length,
-                                categorias: categorias,
+                                total_categorias: categoriasProcesadas.length,
+                                categorias: categoriasProcesadas,
                                 generado_desde: 'categories_api_fallback'
                             };
                         }).catch(fallbackError => {
