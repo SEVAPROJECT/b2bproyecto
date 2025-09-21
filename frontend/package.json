@@ -6,10 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    // Scripts para optimización futura de Tailwind:
-    // "build:optimize": "NODE_ENV=production tailwindcss -i ./src/index.css -o ./dist/index.css --minify && vite build",
-    // "tailwind:watch": "tailwindcss -i ./src/index.css -o ./dist/index.css --watch"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@google/genai": "^1.13.0",
@@ -25,9 +22,5 @@
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
-    // Para optimización futura de Tailwind CSS:
-    // "tailwindcss": "^3.4.0",
-    // "postcss": "^8.4.0",
-    // "autoprefixer": "^10.4.0"
   }
 }
