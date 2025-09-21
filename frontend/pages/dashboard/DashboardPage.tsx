@@ -1,14 +1,16 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import AdminDashboardPage from '../admin/AdminDashboardPage';
 import ProviderApplicationNotification from '../../components/ProviderApplicationNotification';
 
 const DashboardPage: React.FC = () => {
     const { user, reloadUserProfile } = useAuth();
+    const hasReloadedRef = useRef(false);
 
-    // Recargar el perfil del usuario cuando se accede al dashboard
+    // Recargar el perfil del usuario solo una vez cuando se accede al dashboard
     useEffect(() => {
-        if (user?.accessToken) {
+        if (user?.accessToken && !hasReloadedRef.current) {
+            hasReloadedRef.current = true;
             reloadUserProfile();
         }
     }, [user?.accessToken, reloadUserProfile]);
