@@ -50,7 +50,7 @@ async def create_category_request(
 
         # Verificar que no existe una categoría con el mismo nombre
         categoria_existente = await db.execute(
-            select(Categoria).where(Categoria.nombre.ilike(request.nombre_categoria))
+            select(CategoriaModel).where(CategoriaModel.nombre.ilike(request.nombre_categoria))
         )
         if categoria_existente.scalars().first():
             raise HTTPException(
@@ -260,7 +260,7 @@ async def approve_category_request(
 
             # Verificar que no existe una categoría con el mismo nombre
             categoria_existente = await db.execute(
-                select(Categoria).where(Categoria.nombre.ilike(request.nombre_categoria))
+                select(CategoriaModel).where(CategoriaModel.nombre.ilike(request.nombre_categoria))
             )
             if categoria_existente.scalars().first():
                 raise HTTPException(
@@ -269,7 +269,7 @@ async def approve_category_request(
                 )
 
             # Crear la nueva categoría
-            nueva_categoria = Categoria(
+            nueva_categoria = CategoriaModel(
                 nombre=request.nombre_categoria,
                 estado=True
             )

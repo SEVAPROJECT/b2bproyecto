@@ -302,13 +302,13 @@ const ProviderMyRequestsPage: React.FC = () => {
             return;
         }
 
+        // Crear objeto de solicitud optimista
+        const tempId = Date.now(); // ID temporal para la actualización optimista
+        
         try {
             setSubmittingRequest(true);
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) return;
-
-            // Crear objeto de solicitud optimista
-            const tempId = Date.now(); // ID temporal para la actualización optimista
             const optimisticRequest: UnifiedRequest = {
                 id: tempId,
                 nombre_servicio: requestType === 'servicio' ? newServiceName.trim() : '',
