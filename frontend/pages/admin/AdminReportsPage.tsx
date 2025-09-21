@@ -168,33 +168,6 @@ const AdminReportsPage: React.FC = () => {
         }
     ];
 
-    // Carga paralela inteligente de reportes críticos al inicializar
-    useEffect(() => {
-        if (!user?.accessToken) return;
-
-        const loadCriticalReportsInParallel = async () => {
-            console.log('🚀 Iniciando carga paralela de reportes críticos...');
-
-            // Reportes que se cargan automáticamente (los más usados)
-            const criticalReports = ['solicitudes-proveedores', 'proveedores-verificados', 'categorias'];
-
-            // Cargar en paralelo sin bloquear la UI
-            const promises = criticalReports.map(reportType => loadReport(reportType, false));
-
-            try {
-                await Promise.allSettled(promises);
-                console.log('✅ Reportes críticos cargados exitosamente en background');
-            } catch (error) {
-                console.log('⚠️ Algunos reportes críticos fallaron, pero la página funciona');
-            }
-
-            // Marcar inicialización completa
-            setInitialLoading(false);
-        };
-
-        loadCriticalReportsInParallel();
-    }, [user?.accessToken]);
-
     // Función optimizada para cargar reporte con cache inteligente
     const loadReport = useCallback(async (reportType: string, showLoading: boolean = true) => {
         // Verificar cache primero
@@ -222,10 +195,37 @@ const AdminReportsPage: React.FC = () => {
                 setLoading(prev => ({ ...prev, [reportType]: false }));
             }
         }
-    }, [getCachedData, loadedReports, loading, loadReporte, setCachedData]);
+    }, [getCachedData, loadedReports, loading, loadReporte]);
 
     // Función legacy para compatibilidad
     const loadReportOnDemand = useCallback((reportType: string) => loadReport(reportType, true), [loadReport]);
+
+    // Carga paralela inteligente de reportes críticos al inicializar
+    useEffect(() => {
+        if (!user?.accessToken) return;
+
+        const loadCriticalReportsInParallel = async () => {
+            console.log('🚀 Iniciando carga paralela de reportes críticos...');
+
+            // Reportes que se cargan automáticamente (los más usados)
+            const criticalReports = ['solicitudes-proveedores', 'proveedores-verificados', 'categorias'];
+
+            // Cargar en paralelo sin bloquear la UI
+            const promises = criticalReports.map(reportType => loadReport(reportType, false));
+
+            try {
+                await Promise.allSettled(promises);
+                console.log('✅ Reportes críticos cargados exitosamente en background');
+            } catch (error) {
+                console.log('⚠️ Algunos reportes críticos fallaron, pero la página funciona');
+            }
+
+            // Marcar inicialización completa
+            setInitialLoading(false);
+        };
+
+        loadCriticalReportsInParallel();
+    }, [user?.accessToken, loadReport]);
 
     // Función para formatear fecha a DD/MM/AAAA
     const formatDateToDDMMAAAA = (dateString: string): string => {
@@ -467,7 +467,7 @@ const AdminReportsPage: React.FC = () => {
         }
     };
 
-    const loadReporte = async (reportType: string) => {
+    const loadReporte = useCallback(async (reportType: string) => {
         if (!user?.accessToken) {
             console.error('❌ No hay token de acceso para cargar reporte:', reportType);
             return;
@@ -615,7 +615,7 @@ const AdminReportsPage: React.FC = () => {
         } finally {
             setLoading(prev => ({ ...prev, [reportType]: false }));
         }
-    };
+    }, [user?.accessToken, loading, setCachedData]);
 
     const viewAllData = async (reportType: string) => {
         // Cargar el reporte si no está cargado
