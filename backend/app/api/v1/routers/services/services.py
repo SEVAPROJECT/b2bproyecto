@@ -28,7 +28,7 @@ router = APIRouter(prefix="/services", tags=["services"])
 
 @router.get(
     "/list",
-    response_model=List[ServicioModelOut],
+    response_model=List[ServicioOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de todos los servicios activos disponibles en la plataforma."
 )
@@ -52,7 +52,7 @@ async def get_all_services_list(db: AsyncSession = Depends(get_async_db)):
 
 @router.get(
     "/templates",
-    response_model=List[ServicioModelOut],
+    response_model=List[ServicioOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de todos los servicios activos para usar como plantillas."
 )
@@ -76,7 +76,7 @@ async def get_service_templates(db: AsyncSession = Depends(get_async_db)):
 
 @router.get(
     "/templates/category/{category_id}",
-    response_model=List[ServicioModelOut],
+    response_model=List[ServicioOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de servicios activos de una categoría específica para usar como plantillas."
 )
@@ -106,7 +106,7 @@ async def get_service_templates_by_category(
 
 @router.get(
     "/all/category/{category_id}",
-    response_model=List[ServicioModelOut],
+    response_model=List[ServicioOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de TODOS los servicios (activos e inactivos) de una categoría específica."
 )
@@ -156,7 +156,7 @@ async def test_connection(db: AsyncSession = Depends(get_async_db)):
 
 @router.get(
     "/with-providers",
-    response_model=List[ServicioModelWithProvider],
+    response_model=List[ServicioWithProvider],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de todos los servicios activos con información del proveedor."
 )
@@ -260,9 +260,9 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
         for row in services_data:
             # Obtener tarifas del servicio con JOIN al tipo de tarifa
             tarifas_result = await db.execute(
-                select(TarifaServicioModel, TipoTarifaServicioModel.nombre.label('nombre_tipo_tarifa'))
-                .outerjoin(TipoTarifaServicioModel, TarifaServicioModel.id_tarifa == TipoTarifaServicioModel.id_tarifa)
-                .where(TarifaServicioModel.id_servicio == row['id_servicio'])
+                select(TarifaServicio, TipoTarifaServicio.nombre.label('nombre_tipo_tarifa'))
+                .outerjoin(TipoTarifaServicio, TarifaServicio.id_tarifa == TipoTarifaServicio.id_tarifa)
+                .where(TarifaServicio.id_servicio == row['id_servicio'])
             )
             tarifas_data = tarifas_result.fetchall()
 
@@ -302,7 +302,7 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
                 'simbolo_moneda': row['simbolo_moneda'],  # Símbolo de la moneda
                 'tarifas': tarifas  # Agregar tarifas
             }
-            services.append(ServicioModelWithProvider(**service_dict))
+            services.append(ServicioWithProvider(**service_dict))
         
         return services
         
@@ -316,7 +316,7 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
 
 @router.get(
     "/category/{category_id}",
-    response_model=List[ServicioModelOut],
+    response_model=List[ServicioOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de servicios activos de una categoría específica."
 )
@@ -346,12 +346,12 @@ async def get_services_by_category(
 
 @router.post(
     "/",
-    response_model=ServicioModelOut,
+    response_model=ServicioOut,
     status_code=status.HTTP_201_CREATED,
     description="Crea un nuevo servicio."
 )
 async def create_service(
-    service_in: ServicioModelIn,
+    service_in: ServicioIn,
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -395,7 +395,7 @@ async def create_service(
 
 @router.put(
     "/{service_id}",
-    response_model=ServicioModelOut,
+    response_model=ServicioOut,
     status_code=status.HTTP_200_OK,
     description="Actualiza un servicio existente."
 )
