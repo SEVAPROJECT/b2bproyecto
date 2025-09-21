@@ -38,23 +38,23 @@ const AdminReportsPage: React.FC = () => {
     const [cache, setCache] = useState<{[key: string]: {data: ReporteData, timestamp: number}}>({});
     const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
 
-    // Utilidades de cache
-    const isCacheValid = useCallback((reportType: string): boolean => {
+    // Utilidades de cache (funciones simples sin useCallback)
+    const isCacheValid = (reportType: string): boolean => {
         const cached = cache[reportType];
         if (!cached) return false;
         return Date.now() - cached.timestamp < CACHE_DURATION;
-    }, [cache]);
+    };
 
-    const getCachedData = useCallback((reportType: string): ReporteData | null => {
+    const getCachedData = (reportType: string): ReporteData | null => {
         return isCacheValid(reportType) ? cache[reportType].data : null;
-    }, [cache, isCacheValid]);
+    };
 
-    const setCachedData = useCallback((reportType: string, data: ReporteData) => {
+    const setCachedData = (reportType: string, data: ReporteData) => {
         setCache(prev => ({
             ...prev,
             [reportType]: { data, timestamp: Date.now() }
         }));
-    }, []);
+    };
 
     // Función helper para formatear valores nulos de manera profesional
     const formatValue = (value: any, fieldName?: string): string => {
@@ -168,8 +168,8 @@ const AdminReportsPage: React.FC = () => {
         }
     ];
 
-    // Función optimizada para cargar reporte con cache inteligente
-    const loadReport = useCallback(async (reportType: string, showLoading: boolean = true) => {
+    // Función optimizada para cargar reporte con cache inteligente (sin useCallback)
+    const loadReport = async (reportType: string, showLoading: boolean = true) => {
         // Verificar cache primero
         const cachedData = getCachedData(reportType);
         if (cachedData) {
@@ -195,10 +195,10 @@ const AdminReportsPage: React.FC = () => {
                 setLoading(prev => ({ ...prev, [reportType]: false }));
             }
         }
-    }, [getCachedData, loadedReports, loading, loadReporte]);
+    };
 
     // Función legacy para compatibilidad
-    const loadReportOnDemand = useCallback((reportType: string) => loadReport(reportType, true), [loadReport]);
+    const loadReportOnDemand = (reportType: string) => loadReport(reportType, true);
 
     // Carga paralela inteligente de reportes críticos al inicializar
     useEffect(() => {
@@ -225,7 +225,7 @@ const AdminReportsPage: React.FC = () => {
         };
 
         loadCriticalReportsInParallel();
-    }, [user?.accessToken, loadReport]);
+    }, [user?.accessToken]);
 
     // Función para formatear fecha a DD/MM/AAAA
     const formatDateToDDMMAAAA = (dateString: string): string => {
@@ -467,7 +467,7 @@ const AdminReportsPage: React.FC = () => {
         }
     };
 
-    const loadReporte = useCallback(async (reportType: string) => {
+    const loadReporte = async (reportType: string) => {
         if (!user?.accessToken) {
             console.error('❌ No hay token de acceso para cargar reporte:', reportType);
             return;
@@ -615,7 +615,7 @@ const AdminReportsPage: React.FC = () => {
         } finally {
             setLoading(prev => ({ ...prev, [reportType]: false }));
         }
-    }, [user?.accessToken, loading, setCachedData]);
+    };
 
     const viewAllData = async (reportType: string) => {
         // Cargar el reporte si no está cargado
