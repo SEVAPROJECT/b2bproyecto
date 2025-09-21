@@ -1,17 +1,12 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import AdminDashboardPage from '../admin/AdminDashboardPage';
 import ProviderApplicationNotification from '../../components/ProviderApplicationNotification';
 
 const DashboardPage: React.FC = () => {
-    const { user, reloadUserProfile } = useAuth();
+    const { user } = useAuth();
 
-    // Recargar el perfil del usuario cuando se accede al dashboard
-    useEffect(() => {
-        if (user?.accessToken) {
-            reloadUserProfile();
-        }
-    }, [user?.accessToken, reloadUserProfile]);
+    // Eliminado el reloadUserProfile que causaba bucles infinitos
 
     return (
         <div>

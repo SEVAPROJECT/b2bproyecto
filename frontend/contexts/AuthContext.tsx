@@ -301,7 +301,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 return;
             }
 
-            const profile = await authAPI.getProfile(accessToken);
+            // Agregar timeout para evitar esperas infinitas
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout de conexión')), 5000)
+            );
+
+            const profilePromise = authAPI.getProfile(accessToken);
+            const profile = await Promise.race([profilePromise, timeoutPromise]);
             console.log('👤 Perfil recargado:', profile);
             console.log('🔍 Campos disponibles:', Object.keys(profile));
 
@@ -362,6 +368,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         } catch (error) {
             console.error('❌ Error recargando perfil:', error);
+            
+            // Si es un error de CORS o timeout, no hacer nada para evitar bucles
+            if (error instanceof Error && (
+                error.message.includes('Timeout') || 
+                error.message.includes('CORS') ||
+                error.message.includes('Failed to fetch')
+            )) {
+                console.log('⚠️ Error de conexión detectado, manteniendo perfil actual');
+                return;
+            }
+            
+            // Para otros errores, limpiar el token si es necesario
+            if (error instanceof Error && error.message.includes('401')) {
+                console.log('🔐 Token inválido, limpiando sesión');
+                localStorage.removeItem('access_token');
+                setUser(null);
+            }
         }
     };
 

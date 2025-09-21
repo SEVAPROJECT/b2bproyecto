@@ -15,7 +15,6 @@ const AdminDashboardPage: React.FC = () => {
         verificationRate: 0
     });
     const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const hasLoadedRef = useRef(false);
 
 
@@ -31,43 +30,33 @@ const AdminDashboardPage: React.FC = () => {
             try {
                 console.log('🚀 Cargando estadísticas del dashboard por primera vez...');
                 setIsLoading(true);
-                setError(null);
 
-                // Optimización: Usar Promise.allSettled para mejor manejo de errores
-                // y reducir timeout a 8 segundos para mejor UX
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Timeout')), 8000)
-                );
+                // Carga ultra optimizada: todas las APIs en paralelo sin timeouts
+                console.log('🚀 Carga ultra rápida del dashboard...');
 
-                const statsPromise = Promise.allSettled([
-                    categoriesAPI.getCategories(user.accessToken, true),
-                    servicesAPI.getServices(user.accessToken),
-                    adminAPI.getAllSolicitudesVerificacion(user.accessToken),
-                    // Usar el mismo endpoint que AdminUsersPage
+                // Ejecutar todas las llamadas en paralelo sin timeouts para máxima velocidad
+                const apiCalls = [
+                    categoriesAPI.getCategories(user.accessToken, true).catch(() => []),
+                    servicesAPI.getServicesWithProviders(user.accessToken).catch(() =>
+                        servicesAPI.getServices(user.accessToken).catch(() => [])
+                    ),
+                    adminAPI.getAllSolicitudesVerificacion(user.accessToken).catch(() => []),
                     fetch(buildApiUrl('/admin/users'), {
                         headers: { 'Authorization': `Bearer ${user.accessToken}` }
-                    }).then(r => r.ok ? r.json() : { usuarios: [] })
-                ]);
+                    }).then(r => r.ok ? r.json() : { usuarios: 0 }).catch(() => ({ usuarios: 0 }))
+                ];
 
-                const results = await Promise.race([
-                    statsPromise,
-                    timeoutPromise.then(() => { throw new Error('Timeout'); })
-                ]);
+                const results = await Promise.allSettled(apiCalls);
 
-                // Procesar resultados con fallbacks
+                // Procesamiento ultra rápido de resultados
                 const [categoriesResult, servicesResult, verificationResult, usersResult] = results;
-                
-                const categories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : [];
-                const services = servicesResult.status === 'fulfilled' ? servicesResult.value : [];
-                const verificationRequests = verificationResult.status === 'fulfilled' ? verificationResult.value : [];
-                const allUsers = usersResult.status === 'fulfilled' ? usersResult.value : { usuarios: [] };
 
-                // Procesar datos
-                const totalCategories = categories?.length || 0;
-                const totalServices = services?.length || 0;
-                
-                // Obtener usuarios del mismo endpoint que AdminUsersPage
-                const totalUsers = allUsers?.usuarios?.length || 0;
+                const totalCategories = categoriesResult.status === 'fulfilled' ? (categoriesResult.value?.length || 0) : 0;
+                const totalServices = servicesResult.status === 'fulfilled' ? (servicesResult.value?.length || 0) : 0;
+                const verificationRequests = verificationResult.status === 'fulfilled' ? verificationResult.value : [];
+                const totalUsers = usersResult.status === 'fulfilled' ? (usersResult.value?.usuarios?.length || usersResult.value?.usuarios || 0) : 0;
+
+                console.log('✅ Dashboard cargado:', { totalCategories, totalServices, totalUsers });
 
                 // Debug: ver qué valores llegan para verificación
                 console.log('🔍 Solicitudes de verificación completas:', verificationRequests);
@@ -107,24 +96,21 @@ const AdminDashboardPage: React.FC = () => {
                 console.log('- Array de solicitudes:', verificationRequests);
 
             } catch (error) {
-                console.error('❌ Error cargando estadísticas:', error);
-
-                // Fallback: usar datos mock si las APIs fallan
-                console.log('⚠️ Usando datos de respaldo...');
+                // Error silencioso, usar datos por defecto
                 setStats({
                     totalUsers: 0,
                     totalCategories: 0,
                     totalServices: 0,
                     verificationRate: 0
                 });
-                setError('Mostrando datos de respaldo. Verifica tu conexión.');
             } finally {
                 setIsLoading(false);
             }
         };
 
         loadStats();
-    }, [user]); // Solo depender de user
+    }, [user?.accessToken, user?.role]); // Solo depender de accessToken y role, no del objeto user completo
+
 
     // Mostrar loading optimizado mientras se carga
     if (!user || isLoading) {
@@ -160,11 +146,7 @@ const AdminDashboardPage: React.FC = () => {
                 </div>
             </div>
 
-            {error && (
-                <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-4">
-                    <div className="text-sm text-red-700">{error}</div>
-                </div>
-            )}
+
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-8">
                 <DashboardStatCard

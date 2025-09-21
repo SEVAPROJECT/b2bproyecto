@@ -1,5 +1,5 @@
-/* Estilos globales para diseño responsivo */
-/* Tailwind CSS se carga via CDN - estas son utilidades adicionales */
+/* Tailwind CSS se carga via CDN optimizado para producción */
+/* Para optimización futura: instalar Tailwind localmente con 'npm install -D tailwindcss postcss autoprefixer' */
 
 /* Variables CSS para consistencia */
 :root {
