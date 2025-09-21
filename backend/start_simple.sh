@@ -35,3 +35,4 @@ echo "📁 Directorios de upload creados"
 echo "🎯 Iniciando aplicación simplificada..."
 exec python simple_app.py
 
+

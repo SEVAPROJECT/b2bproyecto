@@ -8,10 +8,10 @@ from typing import List
 from pydantic import BaseModel
 
 from app.api.v1.dependencies.database_supabase import get_async_db
-from app.models.servicio.service import ServicioModel
-from app.models.publicar_servicio.category import CategoriaModel
-from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
-from app.models.publicar_servicio.tipo_tarifa_servicio import TipoTarifaServicio
+from app.models.servicio.service import ServicioModelModel
+from app.models.publicar_servicio.category import CategoriaModelModel
+from app.models.publicar_servicio.tarifa_servicio import TarifaServicioModel
+from app.models.publicar_servicio.tipo_tarifa_servicio import TipoTarifaServicioModel
 from app.models.perfil import UserModel
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.models.empresa.direccion import Direccion
@@ -19,7 +19,7 @@ from app.models.empresa.barrio import Barrio
 from app.models.empresa.ciudad import Ciudad
 from app.models.empresa.departamento import Departamento
 from app.models.publicar_servicio.moneda import Moneda
-from app.schemas.servicio.service import ServicioOut, ServicioIn, ServicioWithProvider
+from app.schemas.servicio.service import ServicioModelOut, ServicioModelIn, ServicioModelWithProvider
 
 
 # Asegúrate de que los routers se importen en main.py
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/services", tags=["services"])
 
 @router.get(
     "/list",
-    response_model=List[ServicioOut],
+    response_model=List[ServicioModelOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de todos los servicios activos disponibles en la plataforma."
 )
@@ -37,7 +37,7 @@ async def get_all_services_list(db: AsyncSession = Depends(get_async_db)):
     Este endpoint devuelve una lista de todos los servicios activos.
     """
     result = await db.execute(
-        select(Servicio).where(Servicio.estado)
+        select(ServicioModelModel).where(ServicioModelModel.estado == True)
     )
     
     services = result.scalars().all()
@@ -52,7 +52,7 @@ async def get_all_services_list(db: AsyncSession = Depends(get_async_db)):
 
 @router.get(
     "/templates",
-    response_model=List[ServicioOut],
+    response_model=List[ServicioModelOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de todos los servicios activos para usar como plantillas."
 )
@@ -61,7 +61,7 @@ async def get_service_templates(db: AsyncSession = Depends(get_async_db)):
     Este endpoint devuelve una lista de todos los servicios activos que pueden ser usados como plantillas.
     """
     result = await db.execute(
-        select(Servicio).where(Servicio.estado == True)
+        select(ServicioModelModel).where(ServicioModelModel.estado == True)
     )
     
     services = result.scalars().all()
@@ -76,7 +76,7 @@ async def get_service_templates(db: AsyncSession = Depends(get_async_db)):
 
 @router.get(
     "/templates/category/{category_id}",
-    response_model=List[ServicioOut],
+    response_model=List[ServicioModelOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de servicios activos de una categoría específica para usar como plantillas."
 )
@@ -88,9 +88,9 @@ async def get_service_templates_by_category(
     Este endpoint devuelve una lista de servicios activos de una categoría específica que pueden ser usados como plantillas.
     """
     result = await db.execute(
-        select(Servicio).where(
-            Servicio.estado == True,
-            Servicio.id_categoria == category_id
+        select(ServicioModel).where(
+            ServicioModel.estado == True,
+            ServicioModel.id_categoria == category_id
         )
     )
     
@@ -106,7 +106,7 @@ async def get_service_templates_by_category(
 
 @router.get(
     "/all/category/{category_id}",
-    response_model=List[ServicioOut],
+    response_model=List[ServicioModelOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de TODOS los servicios (activos e inactivos) de una categoría específica."
 )
@@ -119,8 +119,8 @@ async def get_all_services_by_category(
     Permite a los proveedores ver todos los servicios disponibles antes de decidir si reutilizar o solicitar uno nuevo.
     """
     result = await db.execute(
-        select(Servicio).where(
-            Servicio.id_categoria == category_id
+        select(ServicioModel).where(
+            ServicioModel.id_categoria == category_id
         )
     )
     
@@ -141,12 +141,12 @@ async def test_connection(db: AsyncSession = Depends(get_async_db)):
     """
     try:
         # Query simple para contar servicios
-        query = select(Servicio).where(Servicio.estado == True)
+        query = select(ServicioModel).where(ServicioModel.estado == True)
         result = await db.execute(query)
         services = result.scalars().all()
         return {
             "status": "success", 
-            "message": f"Conexión exitosa. Servicios activos: {len(services)}"
+            "message": f"Conexión exitosa. ServicioModels activos: {len(services)}"
         }
     except Exception as e:
         return {
@@ -156,7 +156,7 @@ async def test_connection(db: AsyncSession = Depends(get_async_db)):
 
 @router.get(
     "/with-providers",
-    response_model=List[ServicioWithProvider],
+    response_model=List[ServicioModelWithProvider],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de todos los servicios activos con información del proveedor."
 )
@@ -260,16 +260,16 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
         for row in services_data:
             # Obtener tarifas del servicio con JOIN al tipo de tarifa
             tarifas_result = await db.execute(
-                select(TarifaServicio, TipoTarifaServicio.nombre.label('nombre_tipo_tarifa'))
-                .outerjoin(TipoTarifaServicio, TarifaServicio.id_tarifa == TipoTarifaServicio.id_tarifa)
-                .where(TarifaServicio.id_servicio == row['id_servicio'])
+                select(TarifaServicioModel, TipoTarifaServicioModel.nombre.label('nombre_tipo_tarifa'))
+                .outerjoin(TipoTarifaServicioModel, TarifaServicioModel.id_tarifa == TipoTarifaServicioModel.id_tarifa)
+                .where(TarifaServicioModel.id_servicio == row['id_servicio'])
             )
             tarifas_data = tarifas_result.fetchall()
 
             # Formatear tarifas
             tarifas = []
             for tarifa_row in tarifas_data:
-                tarifa = tarifa_row[0]  # TarifaServicio
+                tarifa = tarifa_row[0]  # TarifaServicioModel
                 nombre_tipo_tarifa = tarifa_row[1]  # nombre_tipo_tarifa
                 tarifas.append({
                     "id_tarifa_servicio": tarifa.id_tarifa_servicio,
@@ -302,7 +302,7 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
                 'simbolo_moneda': row['simbolo_moneda'],  # Símbolo de la moneda
                 'tarifas': tarifas  # Agregar tarifas
             }
-            services.append(ServicioWithProvider(**service_dict))
+            services.append(ServicioModelWithProvider(**service_dict))
         
         return services
         
@@ -316,7 +316,7 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
 
 @router.get(
     "/category/{category_id}",
-    response_model=List[ServicioOut],
+    response_model=List[ServicioModelOut],
     status_code=status.HTTP_200_OK,
     description="Obtiene el listado de servicios activos de una categoría específica."
 )
@@ -328,9 +328,9 @@ async def get_services_by_category(
     Obtiene todos los servicios activos de una categoría específica.
     """
     result = await db.execute(
-        select(Servicio).where(
-            Servicio.estado == True,
-            Servicio.id_categoria == category_id
+        select(ServicioModel).where(
+            ServicioModel.estado == True,
+            ServicioModel.id_categoria == category_id
         )
     )
 
@@ -346,12 +346,12 @@ async def get_services_by_category(
 
 @router.post(
     "/",
-    response_model=ServicioOut,
+    response_model=ServicioModelOut,
     status_code=status.HTTP_201_CREATED,
     description="Crea un nuevo servicio."
 )
 async def create_service(
-    service_in: ServicioIn,
+    service_in: ServicioModelIn,
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -360,7 +360,7 @@ async def create_service(
     try:
         # Verificar que la categoría existe
         category_result = await db.execute(
-            select(Categoria).where(Categoria.id_categoria == service_in.id_categoria)
+            select(CategoriaModel).where(CategoriaModel.id_categoria == service_in.id_categoria)
         )
         category = category_result.scalars().first()
 
@@ -370,7 +370,7 @@ async def create_service(
                 detail="Categoría no encontrada."
             )
 
-        nuevo_servicio = Servicio(
+        nuevo_servicio = ServicioModel(
             nombre=service_in.nombre,
             descripcion=service_in.descripcion,
             precio=service_in.precio,
@@ -395,7 +395,7 @@ async def create_service(
 
 @router.put(
     "/{service_id}",
-    response_model=ServicioOut,
+    response_model=ServicioModelOut,
     status_code=status.HTTP_200_OK,
     description="Actualiza un servicio existente."
 )
@@ -410,14 +410,14 @@ async def update_service(
     try:
         # Verificar que el servicio existe
         service_result = await db.execute(
-            select(Servicio).where(Servicio.id_servicio == service_id)
+            select(ServicioModel).where(ServicioModel.id_servicio == service_id)
         )
         service = service_result.scalars().first()
 
         if not service:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Servicio no encontrado."
+                detail="ServicioModel no encontrado."
             )
 
         # Actualizar campos del servicio
@@ -447,7 +447,7 @@ async def update_service(
 
 
 # Modelo para actualizar estado del servicio
-class ServicioStatusUpdate(BaseModel):
+class ServicioModelStatusUpdate(BaseModel):
     estado: bool
 
 @router.patch(
@@ -457,7 +457,7 @@ class ServicioStatusUpdate(BaseModel):
 )
 async def update_service_status(
     service_id: int,
-    status_data: ServicioStatusUpdate,
+    status_data: ServicioModelStatusUpdate,
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -466,14 +466,14 @@ async def update_service_status(
     try:
         # Verificar que el servicio existe
         service_result = await db.execute(
-            select(Servicio).where(Servicio.id_servicio == service_id)
+            select(ServicioModel).where(ServicioModel.id_servicio == service_id)
         )
         service = service_result.scalars().first()
 
         if not service:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Servicio no encontrado."
+                detail="ServicioModel no encontrado."
             )
 
         # Actualizar el estado del servicio
@@ -482,7 +482,7 @@ async def update_service_status(
         await db.refresh(service)
 
         return {
-            "message": f"Servicio {'activado' if status_data.estado else 'desactivado'} exitosamente",
+            "message": f"ServicioModel {'activado' if status_data.estado else 'desactivado'} exitosamente",
             "servicio": {
                 "id_servicio": service.id_servicio,
                 "nombre": service.nombre,
