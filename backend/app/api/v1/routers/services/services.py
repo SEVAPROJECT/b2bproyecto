@@ -22,7 +22,6 @@ from app.models.publicar_servicio.moneda import Moneda
 from app.schemas.servicio.service import ServicioOut, ServicioIn, ServicioWithProvider
 
 
-# Asegúrate de que los routers se importen en main.py
 router = APIRouter(prefix="/services", tags=["services"])
 
 
@@ -37,7 +36,7 @@ async def get_all_services_list(db: AsyncSession = Depends(get_async_db)):
     Este endpoint devuelve una lista de todos los servicios activos.
     """
     result = await db.execute(
-        select(ServicioModelModel).where(ServicioModelModel.estado == True)
+        select(ServicioModel).where(ServicioModel.estado == True)
     )
     
     services = result.scalars().all()
