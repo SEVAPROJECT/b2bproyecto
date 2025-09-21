@@ -538,7 +538,13 @@ const AdminReportsPage: React.FC = () => {
                     });
                     break;
                 case 'proveedores-verificados':
-                    dataPromise = adminAPI.getReporteProveedoresVerificados(user.accessToken).catch(error => {
+                    dataPromise = adminAPI.getReporteProveedoresVerificados(user.accessToken).then(data => {
+                        // Corregir fecha_generacion para zona horaria Argentina
+                        return {
+                            ...data,
+                            fecha_generacion: new Date().toISOString()
+                        };
+                    }).catch(error => {
                         console.log('⚠️ Reporte de proveedores falló, usando fallback...');
                         return {
                             fecha_generacion: new Date().toISOString(),
@@ -550,7 +556,13 @@ const AdminReportsPage: React.FC = () => {
                     });
                     break;
                 case 'solicitudes-proveedores':
-                    dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken).catch(error => {
+                    dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken).then(data => {
+                        // Corregir fecha_generacion para zona horaria Argentina
+                        return {
+                            ...data,
+                            fecha_generacion: new Date().toISOString()
+                        };
+                    }).catch(error => {
                         console.log('⚠️ Reporte de solicitudes de proveedores falló, usando fallback...');
                         return {
                             fecha_generacion: new Date().toISOString(),
@@ -628,7 +640,13 @@ const AdminReportsPage: React.FC = () => {
                     })();
                     break;
                 case 'servicios':
-                    dataPromise = adminAPI.getReporteServicios(user.accessToken).catch(error => {
+                    dataPromise = adminAPI.getReporteServicios(user.accessToken).then(data => {
+                        // Corregir fecha_generacion para zona horaria Argentina
+                        return {
+                            ...data,
+                            fecha_generacion: new Date().toISOString()
+                        };
+                    }).catch(error => {
                         console.log('⚠️ Reporte de servicios falló, usando fallback...');
                         return {
                             fecha_generacion: new Date().toISOString(),
@@ -640,7 +658,13 @@ const AdminReportsPage: React.FC = () => {
                     });
                     break;
                 case 'solicitudes-servicios':
-                    dataPromise = generateReporteSolicitudesServicios(user.accessToken).catch(error => {
+                    dataPromise = generateReporteSolicitudesServicios(user.accessToken).then(data => {
+                        // Asegurar fecha_generacion actualizada
+                        return {
+                            ...data,
+                            fecha_generacion: new Date().toISOString()
+                        };
+                    }).catch(error => {
                         console.log('⚠️ Reporte de solicitudes de servicios falló, usando fallback...');
                         return {
                             fecha_generacion: new Date().toISOString(),
@@ -655,7 +679,13 @@ const AdminReportsPage: React.FC = () => {
                     });
                     break;
                 case 'solicitudes-categorias':
-                    dataPromise = generateReporteSolicitudesCategorias(user.accessToken).catch(error => {
+                    dataPromise = generateReporteSolicitudesCategorias(user.accessToken).then(data => {
+                        // Asegurar fecha_generacion actualizada
+                        return {
+                            ...data,
+                            fecha_generacion: new Date().toISOString()
+                        };
+                    }).catch(error => {
                         console.log('⚠️ Reporte de solicitudes de categorías falló, usando fallback...');
                         return {
                             fecha_generacion: new Date().toISOString(),
