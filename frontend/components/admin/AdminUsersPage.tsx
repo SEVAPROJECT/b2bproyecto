@@ -91,57 +91,41 @@ const AdminUsersPage: React.FC = () => {
             setError(null);
             setIsSearching(false);
 
-            console.log('📊 Cargando usuarios reales desde la API...');
+            console.log('📊 Cargando usuarios...');
 
-            const url = buildApiUrl(API_CONFIG.ADMIN.USERS);
-
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Datos de usuarios recibidos:', data);
-                setUsers(data.usuarios || []);
-            } else {
-                // Si el endpoint no funciona, intentar obtener datos de otra forma
-                console.log('⚠️ Endpoint principal falló, intentando alternativas...');
+            // Intentar múltiples endpoints en paralelo para mayor velocidad
+            const endpoints = [
+                fetch(buildApiUrl(API_CONFIG.ADMIN.USERS), {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                }).then(r => r.ok ? r.json() : null),
                 
-                // Intentar obtener al menos algunos datos básicos
-                try {
-                    const emailsResponse = await fetch(buildApiUrl('/admin/users/emails'), {
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                        }
-                    });
-                    
-                    if (emailsResponse.ok) {
-                        const emailsData = await emailsResponse.json();
-                        console.log('✅ Datos de emails obtenidos:', emailsData);
-                        
-                        // Convertir datos de emails a formato de usuarios
-                        const usersFromEmails = Object.entries(emailsData.emails || {}).map(([id, userData]: [string, any]) => ({
-                            id,
-                            nombre_persona: userData.email.split('@')[0],
-                            email: userData.email,
-                            rol_principal: 'client',
-                            estado: userData.estado || 'ACTIVO',
-                            nombre_empresa: 'Empresa',
-                            foto_perfil: null,
-                            fecha_actualizacion: new Date().toISOString()
-                        }));
-                        
-                        setUsers(usersFromEmails);
-                    } else {
-                        console.log('⚠️ No se pudieron cargar usuarios, usando array vacío');
-                        setUsers([]);
-                    }
-                } catch (fallbackError) {
-                    console.log('⚠️ Error en fallback, usando array vacío');
-                    setUsers([]);
-                }
+                fetch(buildApiUrl('/admin/users/emails'), {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                }).then(r => r.ok ? r.json() : null)
+            ];
+
+            const [usersData, emailsData] = await Promise.allSettled(endpoints);
+
+            // Usar el primer resultado exitoso
+            if (usersData.status === 'fulfilled' && usersData.value?.usuarios) {
+                console.log('✅ Usuarios cargados desde endpoint principal');
+                setUsers(usersData.value.usuarios);
+            } else if (emailsData.status === 'fulfilled' && emailsData.value?.emails) {
+                console.log('✅ Usuarios cargados desde emails');
+                const usersFromEmails = Object.entries(emailsData.value.emails || {}).map(([id, userData]: [string, any]) => ({
+                    id,
+                    nombre_persona: userData.email.split('@')[0],
+                    email: userData.email,
+                    rol_principal: 'client',
+                    estado: userData.estado || 'ACTIVO',
+                    nombre_empresa: 'Empresa',
+                    foto_perfil: null,
+                    fecha_actualizacion: new Date().toISOString()
+                }));
+                setUsers(usersFromEmails);
+            } else {
+                console.log('⚠️ No se pudieron cargar usuarios');
+                setUsers([]);
             }
         } catch (err: any) {
             console.error('❌ Error cargando usuarios:', err);
@@ -171,18 +155,11 @@ const AdminUsersPage: React.FC = () => {
 
             const url = buildApiUrl(`${API_CONFIG.ADMIN.USERS}${urlParams.toString() ? '?' + urlParams.toString() : ''}`);
 
-            // Optimización: Agregar timeout para búsquedas
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de búsqueda')), 5000)
-            );
-
-            const fetchPromise = fetch(url, {
+            const response = await fetch(url, {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('access_token')}`
                 }
             });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
 
             if (response.ok) {
                 const data = await response.json();
@@ -253,8 +230,15 @@ const AdminUsersPage: React.FC = () => {
                 const errorText = await response.text();
             }
         } catch (err: any) {
-            // Optimización: No bloquear la UI si los permisos fallan
-            setUserPermissions(null);
+            // Optimización: Asumir permisos de admin si no se pueden cargar
+            console.log('⚠️ No se pudieron cargar permisos, asumiendo permisos de admin');
+            setUserPermissions({
+                is_admin: true,
+                can_edit_users: true,
+                can_edit_emails: true,
+                can_reset_passwords: true,
+                can_deactivate_users: true
+            });
         }
     };
 
@@ -508,10 +492,22 @@ const AdminUsersPage: React.FC = () => {
 
     if (loading) {
         return (
-            <OptimizedLoading 
-                message="Cargando usuarios..."
-                showProgress={false}
-            />
+            <div className="bg-slate-50 min-h-screen">
+                <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                    <div className="max-w-7xl mx-auto">
+                        <div className="mb-8">
+                            <h1 className="text-3xl font-bold text-slate-900 mb-2">Gestión de Usuarios</h1>
+                            <p className="text-slate-600">Administrá los usuarios registrados en la plataforma</p>
+                        </div>
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200/80 p-8">
+                            <div className="flex items-center justify-center">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mr-3"></div>
+                                <span className="text-slate-600">Cargando usuarios...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         );
     }
 
@@ -551,15 +547,6 @@ const AdminUsersPage: React.FC = () => {
                         <h1 className="text-3xl font-bold text-slate-900 mb-2">Gestión de Usuarios</h1>
                         <p className="text-slate-600">Administrá los usuarios registrados en la plataforma</p>
                         
-                        {/* Mensaje informativo */}
-                        <div className="mt-4 bg-green-50 border border-green-200 rounded-md p-3">
-                            <div className="flex items-center">
-                                <span className="text-green-600 mr-2">✅</span>
-                                <div className="text-sm text-green-700">
-                                    Cargando usuarios reales desde la base de datos. Los datos se actualizan automáticamente.
-                                </div>
-                            </div>
-                        </div>
                         
                     </div>
 
