@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { adminAPI, categoryRequestsAPI } from '../../services/api';
+import { adminAPI, categoryRequestsAPI, categoriesAPI } from '../../services/api';
 import { ChartBarIcon, DocumentArrowDownIcon, EyeIcon } from '../../components/icons';
 import { API_CONFIG, buildApiUrl } from '../../config/api';
 
@@ -95,25 +95,25 @@ const AdminReportsPage: React.FC = () => {
         const reportName = reportNames[reportType] || 'datos';
         
         if (error?.message === 'Timeout de carga') {
-            return `La carga de ${reportName} está tardando demasiado. Por favor, intenta nuevamente.`;
+            return `Error de conexión al cargar ${reportName}. Reintentando automáticamente...`;
         }
         
         // Si no hay datos, mostrar mensaje amigable
         if (error?.status === 404 || error?.detail?.includes('No se encontraron')) {
-            return `No hay ${reportName} disponibles en este momento.`;
+            return `No hay ${reportName} disponibles.`;
         }
         
         // Error 500 del servidor
         if (error?.status === 500) {
-            return `Error del servidor al cargar ${reportName}. Por favor, intenta nuevamente.`;
+            return `Error del servidor. Reintentando...`;
         }
         
         // Error de red o conexión
         if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
-            return `Error de conexión al cargar ${reportName}. Verifica tu conexión e intenta nuevamente.`;
+            return `Error de conexión. Verificando servidor...`;
         }
         
-        return `No se pudieron cargar los ${reportName}. Por favor, intenta nuevamente.`;
+        return `Error al cargar ${reportName}. Reintentando...`;
     };
 
     const reportTypes = [
@@ -555,7 +555,15 @@ const AdminReportsPage: React.FC = () => {
                     dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken);
                     break;
                 case 'categorias':
-                    dataPromise = adminAPI.getReporteCategorias(user.accessToken);
+                    // Usar categoriesAPI directamente ya que el endpoint de reporte puede fallar
+                    dataPromise = categoriesAPI.getCategories(user.accessToken, false).then(categorias => {
+                        return {
+                            fecha_generacion: new Date().toISOString(),
+                            total_categorias: categorias.length,
+                            categorias: categorias,
+                            generado_desde: 'categories_api'
+                        };
+                    });
                     break;
                 case 'servicios':
                     dataPromise = adminAPI.getReporteServicios(user.accessToken);
@@ -942,63 +950,15 @@ const AdminReportsPage: React.FC = () => {
         );
     };
 
-    // Estadísticas de optimización
-    const optimizationStats = {
-        loadedReports: loadedReports.size,
-        cachedReports: Object.keys(cache).filter(key => isCacheValid(key)).length,
-        loadingReports: Object.values(loading).filter(Boolean).length,
-        totalReports: reportTypes.length
-    };
-
     return (
         <div className="p-6">
             <div className="max-w-7xl mx-auto">
-                {/* Header con estadísticas de optimización */}
+                {/* Header simple */}
                 <div className="mb-8">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-3xl font-bold text-gray-900">Reportes</h1>
-                            <p className="mt-2 text-gray-600">Genera y descarga reportes detallados de la plataforma</p>
-                        </div>
-
-                        {/* Indicadores de optimización */}
-                        <div className="hidden md:flex items-center space-x-6 text-sm">
-                            <div className="flex items-center space-x-2">
-                                <span className="text-green-600 text-lg">✅</span>
-                                <div>
-                                    <div className="font-medium text-gray-900">{optimizationStats.loadedReports}/{optimizationStats.totalReports}</div>
-                                    <div className="text-gray-500 text-xs">Cargados</div>
-                                </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <span className="text-purple-600 text-lg">💾</span>
-                                <div>
-                                    <div className="font-medium text-gray-900">{optimizationStats.cachedReports}</div>
-                                    <div className="text-gray-500 text-xs">Cacheados</div>
-                                </div>
-                            </div>
-                            {optimizationStats.loadingReports > 0 && (
-                                <div className="flex items-center space-x-2">
-                                    <span className="text-blue-600 text-lg">🔄</span>
-                                    <div>
-                                        <div className="font-medium text-gray-900">{optimizationStats.loadingReports}</div>
-                                        <div className="text-gray-500 text-xs">Cargando</div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900">Reportes</h1>
+                        <p className="mt-2 text-gray-600">Genera y descarga reportes detallados de la plataforma</p>
                     </div>
-
-                    {/* Barra de progreso de optimización */}
-                    <div className="mt-4 bg-gray-200 rounded-full h-2">
-                        <div
-                            className="bg-gradient-to-r from-green-500 to-blue-500 h-2 rounded-full transition-all duration-1000 ease-out"
-                            style={{ width: `${Math.round((optimizationStats.loadedReports / optimizationStats.totalReports) * 100)}%` }}
-                        ></div>
-                    </div>
-                    <p className="mt-2 text-sm text-gray-600 text-center">
-                        Optimización activa: {Math.round((optimizationStats.loadedReports / optimizationStats.totalReports) * 100)}% de reportes disponibles
-                    </p>
                 </div>
 
                 {error && (
@@ -1034,47 +994,12 @@ const AdminReportsPage: React.FC = () => {
                             </div>
                             
                             <div className="mb-4">
-                                <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center justify-between">
                                     <p className="text-2xl font-bold text-gray-900">
                                         {reportes[report.id] ? getReportTotal(reportes[report.id]) : 0}
                                     </p>
-                                    <div className="flex items-center space-x-2">
-                                        {loading[report.id] && (
-                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                                        )}
-                                        {loadedReports.has(report.id) && !loading[report.id] && (
-                                            <span className="text-green-500 text-xs" title="Datos cargados">✅</span>
-                                        )}
-                                        {isCacheValid(report.id) && !loading[report.id] && (
-                                            <span className="text-purple-500 text-xs" title="Datos cacheados">💾</span>
-                                        )}
-                                        {error && error.includes(reportTypes.find(r => r.id === report.id)?.title || '') && !loading[report.id] && (
-                                            <span className="text-red-500 text-xs" title="Error al cargar">⚠️</span>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Indicadores de estado detallados */}
-                                <div className="flex flex-wrap gap-1">
                                     {loading[report.id] && (
-                                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                                            🔄 Cargando...
-                                        </span>
-                                    )}
-                                    {loadedReports.has(report.id) && !loading[report.id] && (
-                                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
-                                            ✅ Listo
-                                        </span>
-                                    )}
-                                    {isCacheValid(report.id) && !loading[report.id] && (
-                                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded-full">
-                                            💾 Cacheado
-                                        </span>
-                                    )}
-                                    {report.id === 'usuarios-activos' && (
-                                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded-full">
-                                            ⏱️ Timeout extendido
-                                        </span>
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                                     )}
                                 </div>
                                 <p className="text-sm text-gray-500">Total registros</p>
