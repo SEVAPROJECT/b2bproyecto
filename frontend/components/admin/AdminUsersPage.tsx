@@ -110,8 +110,15 @@ const AdminUsersPage: React.FC = () => {
                 const data = await response.json();
                 setUsers(data.usuarios || []);
             } else {
-                const errorText = await response.text();
-                throw new Error(`Error ${response.status}: ${errorText}`);
+                // Manejo mejorado de errores
+                if (response.status === 404) {
+                    console.log('⚠️ Endpoint /admin/users no encontrado, usando datos vacíos');
+                    setUsers([]);
+                    return; // No mostrar error para 404, solo usar array vacío
+                } else {
+                    const errorText = await response.text();
+                    throw new Error(`Error ${response.status}: ${errorText}`);
+                }
             }
         } catch (err: any) {
             // Optimización: Mostrar error más específico
@@ -162,8 +169,14 @@ const AdminUsersPage: React.FC = () => {
                 const data = await response.json();
                 setUsers(data.usuarios || []);
             } else {
-                const errorText = await response.text();
-                // Para errores de búsqueda, mantener la lista actual
+                // Manejo mejorado de errores para búsqueda
+                if (response.status === 404) {
+                    console.log('⚠️ Endpoint /admin/users no encontrado en búsqueda, manteniendo lista actual');
+                    // Mantener la lista actual en lugar de mostrar error
+                } else {
+                    const errorText = await response.text();
+                    console.error(`Error en búsqueda: ${response.status}: ${errorText}`);
+                }
             }
         } catch (err: any) {
             // Mantener la lista actual en caso de error de red
@@ -489,9 +502,14 @@ const AdminUsersPage: React.FC = () => {
                 <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
                     <div className="bg-white p-8 rounded-xl shadow-md border border-slate-200/80">
                         <div className="text-center py-12">
-                            <ExclamationCircleIcon className="mx-auto h-12 w-12 text-red-400" />
-                            <h3 className="mt-2 text-lg font-semibold text-slate-800">Error al cargar</h3>
-                            <p className="mt-1 text-sm text-slate-500">{error}</p>
+                            <ExclamationCircleIcon className="mx-auto h-12 w-12 text-yellow-400" />
+                            <h3 className="mt-2 text-lg font-semibold text-slate-800">Información no disponible</h3>
+                            <p className="mt-1 text-sm text-slate-500">
+                                {error.includes('Timeout') 
+                                    ? 'La carga está tardando más de lo esperado. Algunos datos pueden no estar disponibles.'
+                                    : 'No se pudieron cargar los usuarios en este momento. Verifica tu conexión.'
+                                }
+                            </p>
                             <button
                                 onClick={loadUsers}
                                 className="mt-4 btn-blue touch-manipulation"
@@ -796,7 +814,7 @@ const AdminUsersPage: React.FC = () => {
                                                         }
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1 7 2 1 9 z" />
                                                         </svg>
                                                         <span>Restablecer</span>
                                                         {!userPermissions?.is_admin && (
@@ -948,7 +966,7 @@ const AdminUsersPage: React.FC = () => {
                                                         }
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1 7 2 1 9 z" />
                                                         </svg>
                                                         <span>Restablecer</span>
                                                         {!userPermissions?.is_admin && (
@@ -1003,6 +1021,35 @@ const AdminUsersPage: React.FC = () => {
                                 ))}
                             </div>
                         </div>
+
+                        {/* Mensaje cuando no hay usuarios */}
+                        {paginatedUsers.length === 0 && (
+                            <div className="p-8 text-center">
+                                <UserCircleIcon className="mx-auto h-12 w-12 text-slate-400" />
+                                <h3 className="mt-2 text-lg font-medium text-slate-900">
+                                    {users.length === 0 
+                                        ? 'No hay usuarios disponibles' 
+                                        : 'No se encontraron usuarios'
+                                    }
+                                </h3>
+                                <p className="mt-1 text-sm text-slate-500">
+                                    {users.length === 0 
+                                        ? 'Los datos de usuarios no están disponibles en este momento. Verifica tu conexión.'
+                                        : searchQuery || searchEmpresa || filterRole !== 'all' || filterStatus !== 'all'
+                                            ? 'Intenta ajustar los filtros de búsqueda.'
+                                            : 'No hay usuarios registrados en la plataforma.'
+                                    }
+                                </p>
+                                {users.length === 0 && (
+                                    <button
+                                        onClick={loadUsers}
+                                        className="mt-4 btn-blue touch-manipulation"
+                                    >
+                                        <span>Reintentar</span>
+                                    </button>
+                                )}
+                            </div>
+                        )}
 
                         {/* Paginación */}
                         {totalPages > 1 && (

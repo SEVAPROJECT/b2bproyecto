@@ -61,10 +61,20 @@ const AdminDashboardPage: React.FC = () => {
                     categoriesAPI.getCategories(user.accessToken, true),
                     getServicesWithFallback(),
                     adminAPI.getAllSolicitudesVerificacion(user.accessToken),
-                    // Usar el mismo endpoint que AdminUsersPage
+                    // Usar endpoint alternativo para usuarios con fallback
                     fetch(buildApiUrl('/admin/users'), {
                         headers: { 'Authorization': `Bearer ${user.accessToken}` }
-                    }).then(r => r.ok ? r.json() : { usuarios: [] })
+                    }).then(r => {
+                        if (r.ok) {
+                            return r.json();
+                        } else {
+                            console.log('⚠️ Endpoint /admin/users falló, intentando endpoint alternativo...');
+                            // Fallback: intentar obtener usuarios de otra manera
+                            return fetch(buildApiUrl('/admin/users/emails'), {
+                                headers: { 'Authorization': `Bearer ${user.accessToken}` }
+                            }).then(r2 => r2.ok ? { usuarios: [] } : { usuarios: [] });
+                        }
+                    }).catch(() => ({ usuarios: [] }))
                 ]);
 
                 const results = await Promise.race([
