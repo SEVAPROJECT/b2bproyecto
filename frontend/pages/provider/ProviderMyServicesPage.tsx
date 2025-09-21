@@ -811,17 +811,12 @@ const ProviderMyServicesPage: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Error y Success Messages */}
-                {error && (
-                    <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-4">
-                        <div className="text-sm text-red-700">{error}</div>
-                    </div>
-                )}
-                {success && (
+                {/* Success Messages */}
+                {/* {success && (
                     <div className="mb-4 bg-green-50 border border-green-200 rounded-md p-4">
                         <div className="text-sm text-green-700">{success}</div>
                     </div>
-                )}
+                )} */}
 
                 {/* Services List */}
                 <div className="bg-white shadow overflow-hidden sm:rounded-md">

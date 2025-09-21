@@ -36,3 +36,4 @@ echo "🎯 Iniciando aplicación simplificada..."
 exec python simple_app.py
 
 
+
