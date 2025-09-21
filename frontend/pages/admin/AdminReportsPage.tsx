@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { adminAPI, categoryRequestsAPI } from '../../services/api';
 import { ChartBarIcon, DocumentArrowDownIcon, EyeIcon } from '../../components/icons';
