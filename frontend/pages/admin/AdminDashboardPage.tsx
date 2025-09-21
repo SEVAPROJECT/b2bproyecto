@@ -39,12 +39,17 @@ const AdminDashboardPage: React.FC = () => {
                     setTimeout(() => reject(new Error('Timeout')), 8000)
                 );
 
+                const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
+
                 const statsPromise = Promise.allSettled([
                     categoriesAPI.getCategories(user.accessToken, true),
                     servicesAPI.getServices(user.accessToken),
                     adminAPI.getAllSolicitudesVerificacion(user.accessToken),
                     // Usar el mismo endpoint que AdminUsersPage
-                    fetch(buildApiUrl('/admin/users'), {
+                    //fetch(buildApiUrl('/admin/users'), {
+                        //headers: { 'Authorization': `Bearer ${user.//accessToken}` }
+                    //}).then(r => r.ok ? r.json() : { usuarios: [] })
+                    fetch(`${apiBaseUrl}/api/v1/admin/users'`, {
                         headers: { 'Authorization': `Bearer ${user.accessToken}` }
                     }).then(r => r.ok ? r.json() : { usuarios: [] })
                 ]);
