@@ -264,89 +264,56 @@ const AdminReportsPage: React.FC = () => {
     };
 
 
-    // Función para generar reporte de solicitudes de servicios (versión simplificada sin CORS)
+    // Función para generar reporte de solicitudes de servicios (ahora solo con datos reales)
     const generateReporteSolicitudesServicios = async (accessToken: string): Promise<ReporteData> => {
         try {
-            console.log('📋 Generando reporte de solicitudes de servicios simplificado...');
+            console.log('📋 Generando reporte de solicitudes de servicios...');
+            
+            // Llama al endpoint real que actualmente puede fallar por CORS
+            const solicitudes = await adminAPI.getAllSolicitudesServiciosModificado(accessToken);
+            
+            console.log('📊 Solicitudes reales obtenidas:', solicitudes.length);
 
-            // Usar datos básicos de usuarios como base para solicitudes simuladas
-            const usersResponse = await fetch(buildApiUrl('/admin/users'), {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            });
+            // Procesar las solicitudes reales (si las hay)
+            const solicitudesProcesadas = solicitudes.map((solicitud: any) => ({
+                id_solicitud: solicitud.id_solicitud,
+                nombre_servicio: solicitud.nombre_servicio,
+                descripcion: solicitud.descripcion,
+                estado_aprobacion: solicitud.estado_aprobacion,
+                comentario_admin: solicitud.comentario_admin || '',
+                fecha_creacion: formatDateToDDMMAAAA(solicitud.created_at),
+                categoria: solicitud.nombre_categoria || 'Sin especificar',
+                empresa: solicitud.nombre_empresa || 'Sin especificar',
+                contacto: solicitud.nombre_contacto || 'Sin especificar',
+                email_contacto: solicitud.email_contacto || 'Sin especificar'
+            }));
 
-            let solicitudesProcesadas = [];
-            if (usersResponse.ok) {
-                const usersData = await usersResponse.json();
-                const usuarios = usersData.usuarios || [];
-                const clientes = usuarios.filter((u: any) => u.rol_principal === 'client' || u.rol_principal === 'cliente');
-
-                // Generar solicitudes simuladas basadas en clientes existentes
-                solicitudesProcesadas = clientes.slice(0, Math.min(clientes.length, 5)).map((cliente: any, index: number) => ({
-                    id_solicitud: cliente.id,
-                    nombre_servicio: [
-                        'Limpieza de oficinas',
-                        'Reparación eléctrica',
-                        'Jardinería',
-                        'Construcción residencial',
-                        'Servicio de plomería'
-                    ][index % 5],
-                    descripcion: `Solicitud de servicio para ${cliente.nombre_empresa || 'empresa'}`,
-                    estado_aprobacion: ['pendiente', 'aprobada', 'rechazada'][index % 3],
-                    comentario_admin: index % 2 === 0 ? 'Servicio aprobado y asignado' : '',
-                    fecha_creacion: formatDateToDDMMAAAA(cliente.fecha_creacion || new Date().toISOString()),
-                    categoria: [
-                        'Limpieza',
-                        'Electricidad',
-                        'Jardinería',
-                        'Construcción',
-                        'Plomería'
-                    ][index % 5],
-                    empresa: cliente.nombre_empresa || 'Sin especificar',
-                    contacto: cliente.nombre_persona || 'Sin especificar',
-                    email_contacto: cliente.email || 'Sin especificar'
-                }));
-
-                console.log('✅ Generadas', solicitudesProcesadas.length, 'solicitudes simuladas');
-            }
-
-            // Calcular estadísticas
             const totalSolicitudes = solicitudesProcesadas.length;
             const pendientes = solicitudesProcesadas.filter(s => s.estado_aprobacion === 'pendiente').length;
             const aprobadas = solicitudesProcesadas.filter(s => s.estado_aprobacion === 'aprobada').length;
             const rechazadas = solicitudesProcesadas.filter(s => s.estado_aprobacion === 'rechazada').length;
 
-            console.log('📈 Estadísticas del reporte:', {
-                total: totalSolicitudes,
-                pendientes,
-                aprobadas,
-                rechazadas
-            });
-
-            const reporteData = {
+            return {
                 total_solicitudes_servicios: totalSolicitudes,
                 solicitudes_servicios: solicitudesProcesadas,
-                fecha_generacion: getArgentinaDateISO(),
-                // Estadísticas adicionales
+                fecha_generacion: new Date().toISOString(),
                 pendientes,
                 aprobadas,
                 rechazadas,
-                generado_desde: 'solicitudes_simuladas'
+                generado_desde: 'backend_real'
             };
-
-            console.log('Reporte generado exitosamente:', reporteData);
-            return reporteData;
         } catch (error) {
             console.error('❌ Error generando reporte de solicitudes de servicios:', error);
-            // Fallback sin datos
+            // Fallback honesto: sin datos
             return {
                 total_solicitudes_servicios: 0,
                 solicitudes_servicios: [],
-                fecha_generacion: getArgentinaDateISO(),
+                fecha_generacion: new Date().toISOString(),
                 pendientes: 0,
                 aprobadas: 0,
                 rechazadas: 0,
                 generado_desde: 'sin_datos_backend',
-                mensaje: 'No se pudieron generar las solicitudes'
+                mensaje: 'No se pudieron cargar las solicitudes desde el backend'
             };
         }
     };
@@ -489,9 +456,17 @@ const AdminReportsPage: React.FC = () => {
             
             switch (reportType) {
                 case 'usuarios-activos':
-                    // Intentar primero el reporte específico, si falla usar datos de usuarios normales
-                    dataPromise = adminAPI.getReporteUsuariosActivos(user.accessToken).catch(async (error) => {
-                        console.log('⚠️ Reporte específico falló, intentando generar desde datos generales...');
+                    // Sobrescribe la fecha del backend para asegurar la hora local correcta
+                    dataPromise = adminAPI.getReporteUsuariosActivos(user.accessToken)
+                        .then(data => {
+                            // Asegura que la fecha de generación sea la local
+                            return {
+                                ...data,
+                                fecha_generacion: new Date().toISOString()
+                            };
+                        })
+                        .catch(async (error) => {
+                        console.log('⚠️ Reporte específico de usuarios falló, intentando generar desde datos generales...');
 
                         // Fallback: generar reporte desde datos de usuarios normales
                         try {
@@ -520,9 +495,9 @@ const AdminReportsPage: React.FC = () => {
                             console.log('⚠️ Fallback también falló, generando datos básicos...');
                         }
 
-                        // Último fallback: sin datos
+                        // Fallback final: sin datos si todo falla
                         return {
-                            fecha_generacion: getArgentinaDateISO(),
+                            fecha_generacion: new Date().toISOString(),
                             total_usuarios: 0,
                             usuarios_activos: 0,
                             usuarios_inactivos: 0,
