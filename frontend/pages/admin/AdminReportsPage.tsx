@@ -48,7 +48,22 @@ const AdminReportsPage: React.FC = () => {
         }
 
         // Formatear fechas como DD/MM/AAAA
-        if (fieldName === 'created_at' || fieldName === 'fecha_creacion' || fieldName === 'updated_at') {
+        // Detectar fechas por nombre de campo o por contenido
+        const isDateField = fieldName === 'created_at' || fieldName === 'fecha_creacion' || 
+                           fieldName === 'updated_at' || fieldName === 'fecha_actualizacion' ||
+                           fieldName === 'createdAt' || fieldName === 'updatedAt' ||
+                           fieldName === 'fecha_creacion' || fieldName === 'fecha_actualizacion';
+        
+        // También detectar si el valor parece ser una fecha
+        const looksLikeDate = typeof value === 'string' && (
+            value.includes('T') || // ISO format
+            value.includes('-') || // Date format
+            value.includes('/') || // Date format
+            /^\d{4}-\d{2}-\d{2}/.test(value) || // YYYY-MM-DD
+            /^\d{2}\/\d{2}\/\d{4}/.test(value) // DD/MM/YYYY
+        );
+        
+        if (isDateField || looksLikeDate) {
             try {
                 const date = new Date(value);
                 if (!isNaN(date.getTime())) {
@@ -523,68 +538,7 @@ const AdminReportsPage: React.FC = () => {
                     dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken);
                     break;
                 case 'categorias':
-                    // Solución definitiva: usar endpoint correcto de categorías
-                    dataPromise = fetch(buildApiUrl(API_CONFIG.CATEGORIES.LIST), {
-                        headers: { 'Authorization': `Bearer ${user.accessToken}` }
-                    }).then(async response => {
-                        if (!response.ok) {
-                            console.error('Error response:', response.status, response.statusText);
-                            throw new Error(`Error ${response.status}: ${response.statusText}`);
-                        }
-                        const categorias = await response.json();
-                        console.log('Categorías cargadas exitosamente:', categorias.length, 'categorías');
-                        
-                        // Procesar categorías para asegurar formato correcto de fechas
-                        const categoriasProcesadas = categorias.map((categoria: any) => ({
-                            ...categoria,
-                            // Asegurar que las fechas estén en formato ISO
-                            created_at: categoria.created_at || categoria.fecha_creacion || categoria.createdAt || new Date().toISOString(),
-                            updated_at: categoria.updated_at || categoria.fecha_actualizacion || categoria.updatedAt || new Date().toISOString(),
-                            // Asegurar que el estado esté en formato booleano
-                            active: categoria.active !== undefined ? categoria.active : (categoria.activo !== undefined ? categoria.activo : true),
-                            estado: categoria.estado || (categoria.active !== undefined ? (categoria.active ? 'ACTIVO' : 'INACTIVO') : 'ACTIVO')
-                        }));
-                        
-                        return {
-                            fecha_generacion: new Date().toISOString(),
-                            total_categorias: categoriasProcesadas.length,
-                            categorias: categoriasProcesadas,
-                            generado_desde: 'categories_api_direct'
-                        };
-                    }).catch(error => {
-                        console.error('Error cargando categorías:', error);
-                        // Fallback: intentar con categoriesAPI como último recurso
-                        return categoriesAPI.getCategories(user.accessToken, false).then(categorias => {
-                            console.log('Categorías cargadas con fallback API:', categorias.length);
-                            
-                            // Procesar categorías para asegurar formato correcto de fechas
-                            const categoriasProcesadas = categorias.map((categoria: any) => ({
-                                ...categoria,
-                                // Asegurar que las fechas estén en formato ISO
-                                created_at: categoria.created_at || categoria.fecha_creacion || categoria.createdAt || new Date().toISOString(),
-                                updated_at: categoria.updated_at || categoria.fecha_actualizacion || categoria.updatedAt || new Date().toISOString(),
-                                // Asegurar que el estado esté en formato booleano
-                                active: categoria.active !== undefined ? categoria.active : (categoria.activo !== undefined ? categoria.activo : true),
-                                estado: categoria.estado || (categoria.active !== undefined ? (categoria.active ? 'ACTIVO' : 'INACTIVO') : 'ACTIVO')
-                            }));
-                            
-                            return {
-                                fecha_generacion: new Date().toISOString(),
-                                total_categorias: categoriasProcesadas.length,
-                                categorias: categoriasProcesadas,
-                                generado_desde: 'categories_api_fallback'
-                            };
-                        }).catch(fallbackError => {
-                            console.error('Fallback también falló:', fallbackError);
-                            return {
-                                fecha_generacion: new Date().toISOString(),
-                                total_categorias: 0,
-                                categorias: [],
-                                generado_desde: 'empty_fallback',
-                                error: 'No se pudieron cargar las categorías'
-                            };
-                        });
-                    });
+                    dataPromise = adminAPI.getReporteCategorias(user.accessToken);
                     break;
                 case 'servicios':
                     dataPromise = adminAPI.getReporteServicios(user.accessToken);
