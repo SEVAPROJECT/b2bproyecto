@@ -36,7 +36,7 @@ const AdminReportsPage: React.FC = () => {
 
     // Sin cache para evitar complejidad - carga directa
 
-    // Función helper para formatear valores nulos de manera profesional
+    // Función helper para formatear valores con formatos específicos
     const formatValue = (value: any, fieldName?: string): string => {
         if (value === null || value === undefined || value === '') {
             // Para comentarios, mostrar campo vacío en lugar de N/A
@@ -46,6 +46,32 @@ const AdminReportsPage: React.FC = () => {
             // Para otros campos, mostrar N/A solo si es necesario
             return 'N/A';
         }
+
+        // Formatear fechas como DD/MM/AAAA
+        if (fieldName === 'created_at' || fieldName === 'fecha_creacion' || fieldName === 'updated_at') {
+            try {
+                const date = new Date(value);
+                if (!isNaN(date.getTime())) {
+                    return date.toLocaleDateString('es-ES', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                    });
+                }
+            } catch (error) {
+                return String(value);
+            }
+        }
+
+        // Formatear estado booleano como ACTIVO/INACTIVO
+        if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo') {
+            if (typeof value === 'boolean') {
+                return value ? 'ACTIVO' : 'INACTIVO';
+            }
+            if (value === 'true' || value === true) return 'ACTIVO';
+            if (value === 'false' || value === false) return 'INACTIVO';
+        }
+
         return String(value);
     };
 
@@ -726,7 +752,14 @@ const AdminReportsPage: React.FC = () => {
                     <table>
                         <thead>
                             <tr>
-                                ${Object.keys(data[0]).map(key => `<th>${key.replace(/_/g, ' ').toUpperCase()}</th>`).join('')}
+                                ${Object.keys(data[0]).map(key => {
+                                    let headerName = key.replace(/_/g, ' ').toUpperCase();
+                                    // Personalizar nombres específicos
+                                    if (key === 'created_at') headerName = 'FECHA CREACION';
+                                    if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
+                                    if (key === 'active' || key === 'activo') headerName = 'ESTADO';
+                                    return `<th>${headerName}</th>`;
+                                }).join('')}
                             </tr>
                         </thead>
                         <tbody>
@@ -816,9 +849,14 @@ const AdminReportsPage: React.FC = () => {
             if (data && data.length > 0) {
                 htmlContent += '<table class="table"><thead><tr>';
                 
-                // Headers
+                // Headers con nombres personalizados
                 Object.keys(data[0]).forEach(key => {
-                    htmlContent += `<th>${key.replace(/_/g, ' ').toUpperCase()}</th>`;
+                    let headerName = key.replace(/_/g, ' ').toUpperCase();
+                    // Personalizar nombres específicos
+                    if (key === 'created_at') headerName = 'FECHA CREACION';
+                    if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
+                    if (key === 'active' || key === 'activo') headerName = 'ESTADO';
+                    htmlContent += `<th>${headerName}</th>`;
                 });
                 
                 htmlContent += '</tr></thead><tbody>';
@@ -873,11 +911,19 @@ const AdminReportsPage: React.FC = () => {
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            {Object.keys(data[0]).map((key) => (
-                                <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {key.replace(/_/g, ' ')}
-                                </th>
-                            ))}
+                            {Object.keys(data[0]).map((key) => {
+                                let headerName = key.replace(/_/g, ' ');
+                                // Personalizar nombres específicos
+                                if (key === 'created_at') headerName = 'FECHA CREACION';
+                                if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
+                                if (key === 'active' || key === 'activo') headerName = 'ESTADO';
+                                
+                                return (
+                                    <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        {headerName}
+                                    </th>
+                                );
+                            })}
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
