@@ -538,7 +538,44 @@ const AdminReportsPage: React.FC = () => {
                     dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken);
                     break;
                 case 'categorias':
-                    dataPromise = adminAPI.getReporteCategorias(user.accessToken);
+                    // Usar endpoint directo de categorías que sabemos que funciona
+                    dataPromise = fetch(buildApiUrl(API_CONFIG.CATEGORIES.LIST), {
+                        headers: { 'Authorization': `Bearer ${user.accessToken}` }
+                    }).then(async response => {
+                        if (!response.ok) {
+                            console.error('Error response:', response.status, response.statusText);
+                            throw new Error(`Error ${response.status}: ${response.statusText}`);
+                        }
+                        const categorias = await response.json();
+                        console.log('Categorías cargadas exitosamente:', categorias.length, 'categorías');
+                        return {
+                            fecha_generacion: new Date().toISOString(),
+                            total_categorias: categorias.length,
+                            categorias: categorias,
+                            generado_desde: 'categories_direct'
+                        };
+                    }).catch(error => {
+                        console.error('Error cargando categorías:', error);
+                        // Fallback: intentar con categoriesAPI
+                        return categoriesAPI.getCategories(user.accessToken, false).then(categorias => {
+                            console.log('Categorías cargadas con fallback API:', categorias.length);
+                            return {
+                                fecha_generacion: new Date().toISOString(),
+                                total_categorias: categorias.length,
+                                categorias: categorias,
+                                generado_desde: 'categories_api_fallback'
+                            };
+                        }).catch(fallbackError => {
+                            console.error('Fallback también falló:', fallbackError);
+                            return {
+                                fecha_generacion: new Date().toISOString(),
+                                total_categorias: 0,
+                                categorias: [],
+                                generado_desde: 'empty_fallback',
+                                error: 'No se pudieron cargar las categorías'
+                            };
+                        });
+                    });
                     break;
                 case 'servicios':
                     dataPromise = adminAPI.getReporteServicios(user.accessToken);
