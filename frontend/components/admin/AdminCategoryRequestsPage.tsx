@@ -184,28 +184,71 @@ const AdminCategoryRequestsPage: React.FC = () => {
         }
     }, []);
 
-    // Función optimizada para cargar emails reales usando endpoint directo
+    // Función optimizada para cargar emails reales con múltiples estrategias
     const loadEmailsInBackground = useCallback(async (requestsData: CategoryRequest[], accessToken: string) => {
         try {
             setLoadingEmails(true);
-            console.log('📧 Obteniendo emails reales usando endpoint directo...');
+            console.log('📧 Obteniendo emails reales con estrategia múltiple...');
             
-            // Usar el endpoint directo de emails de usuarios (más eficiente)
-            const emailsResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.USERS + '/emails'), {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
+            let emailsDict: {[key: string]: any} = {};
+            
+            // ESTRATEGIA 1: Intentar endpoint directo de emails
+            try {
+                console.log('🔄 Estrategia 1: Endpoint directo de emails...');
+                const emailsResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.USERS + '/emails'), {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (emailsResponse.ok) {
+                    const emailsData = await emailsResponse.json();
+                    emailsDict = emailsData.emails || {};
+                    console.log('✅ Estrategia 1 exitosa:', Object.keys(emailsDict).length, 'emails');
+                } else {
+                    console.log('❌ Estrategia 1 falló:', emailsResponse.status);
                 }
-            });
-            
-            if (!emailsResponse.ok) {
-                console.log('❌ No se pudo obtener emails de usuarios');
-                return;
+            } catch (error) {
+                console.log('❌ Estrategia 1 error:', error);
             }
             
-            const emailsData = await emailsResponse.json();
-            const emailsDict = emailsData.emails || {};
-            console.log('📧 Emails obtenidos directamente:', Object.keys(emailsDict).length);
+            // ESTRATEGIA 2: Si la primera falla, usar endpoint de usuarios con emails
+            if (Object.keys(emailsDict).length === 0) {
+                try {
+                    console.log('🔄 Estrategia 2: Endpoint de usuarios con emails...');
+                    const usersResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.USERS + '?page=1&limit=100'), {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    if (usersResponse.ok) {
+                        const usersData = await usersResponse.json();
+                        const users = usersData.usuarios || [];
+                        
+                        // Crear diccionario de emails por nombre
+                        users.forEach((user: any) => {
+                            if (user.nombre_contacto && user.email) {
+                                emailsDict[user.nombre_contacto] = user.email;
+                            }
+                        });
+                        console.log('✅ Estrategia 2 exitosa:', Object.keys(emailsDict).length, 'emails');
+                    } else {
+                        console.log('❌ Estrategia 2 falló:', usersResponse.status);
+                    }
+                } catch (error) {
+                    console.log('❌ Estrategia 2 error:', error);
+                }
+            }
+            
+            // ESTRATEGIA 3: Si ambas fallan, usar datos existentes
+            if (Object.keys(emailsDict).length === 0) {
+                console.log('⚠️ Todas las estrategias fallaron, usando datos existentes');
+                setLoadingEmails(false);
+                return;
+            }
             
             // Procesar solicitudes con emails reales
             const requestsWithEmails = requestsData.map(request => {
@@ -213,13 +256,9 @@ const AdminCategoryRequestsPage: React.FC = () => {
                 
                 // Buscar email real por nombre de contacto
                 if (request.nombre_contacto && request.nombre_contacto !== 'No especificado') {
-                    // Buscar en el diccionario de emails por nombre de contacto
-                    const userEmail = Object.values(emailsDict).find((user: any) => 
-                        user.email && user.email.toLowerCase().includes(request.nombre_contacto.toLowerCase())
-                    ) as any;
-                    
-                    if (userEmail && userEmail.email) {
-                        emailContacto = userEmail.email;
+                    const userEmail = emailsDict[request.nombre_contacto];
+                    if (userEmail) {
+                        emailContacto = userEmail;
                         console.log(`✅ Email real encontrado para contacto ${request.nombre_contacto}: ${emailContacto}`);
                     } else {
                         console.log(`❌ No se encontró email para contacto ${request.nombre_contacto}`);
