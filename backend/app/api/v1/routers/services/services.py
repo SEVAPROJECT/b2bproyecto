@@ -19,7 +19,7 @@ from app.models.empresa.barrio import Barrio
 from app.models.empresa.ciudad import Ciudad
 from app.models.empresa.departamento import Departamento
 from app.models.publicar_servicio.moneda import Moneda
-from app.schemas.servicio.service import ServicioModelOut, ServicioModelIn, ServicioModelWithProvider
+from app.schemas.servicio.service import ServicioOut, ServicioIn, ServicioWithProvider
 
 
 # Asegúrate de que los routers se importen en main.py
