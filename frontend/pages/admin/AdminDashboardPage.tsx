@@ -17,6 +17,7 @@ const AdminDashboardPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const hasLoadedRef = useRef(false);
+    const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
 
     useEffect(() => {
@@ -117,14 +118,38 @@ const AdminDashboardPage: React.FC = () => {
                     totalServices: 0,
                     verificationRate: 0
                 });
-                setError('Mostrando datos de respaldo. Verifica tu conexión.');
+                
+                // Solo mostrar error si es un error real de conexión, no un timeout
+                if (error instanceof Error && error.message === 'Timeout') {
+                    setError('La conexión está tardando más de lo esperado. Intenta recargar la página.');
+                } else {
+                    setError('Error al cargar los datos. Verifica tu conexión.');
+                }
+                
+                // Limpiar el error después de 10 segundos para permitir reintentos
+                if (retryTimeoutRef.current) {
+                    clearTimeout(retryTimeoutRef.current);
+                }
+                retryTimeoutRef.current = setTimeout(() => {
+                    setError(null);
+                    hasLoadedRef.current = false; // Permitir reintento
+                }, 10000);
             } finally {
                 setIsLoading(false);
             }
         };
 
         loadStats();
-    }, [user]); // Solo depender de user
+    }, [user?.accessToken, user?.role]); // Solo depender de accessToken y role, no del objeto user completo
+
+    // Cleanup timeout al desmontar el componente
+    useEffect(() => {
+        return () => {
+            if (retryTimeoutRef.current) {
+                clearTimeout(retryTimeoutRef.current);
+            }
+        };
+    }, []);
 
     // Mostrar loading optimizado mientras se carga
     if (!user || isLoading) {
@@ -162,7 +187,21 @@ const AdminDashboardPage: React.FC = () => {
 
             {error && (
                 <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-4">
-                    <div className="text-sm text-red-700">{error}</div>
+                    <div className="flex items-center justify-between">
+                        <div className="text-sm text-red-700">{error}</div>
+                        <button
+                            onClick={() => {
+                                setError(null);
+                                hasLoadedRef.current = false;
+                                setIsLoading(true);
+                                // Trigger reload by updating a dependency
+                                window.location.reload();
+                            }}
+                            className="ml-4 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
+                        >
+                            Reintentar
+                        </button>
+                    </div>
                 </div>
             )}
 
