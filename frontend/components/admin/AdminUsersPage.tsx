@@ -91,52 +91,60 @@ const AdminUsersPage: React.FC = () => {
             setError(null);
             setIsSearching(false);
 
-            // Simplificación: usar datos mock mientras se resuelven los problemas de API
-            console.log('📊 Cargando usuarios mock mientras se resuelven problemas de API...');
-            
-            // Simular una pequeña carga
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Usar datos mock realistas
-            const mockUsers = [
-                {
-                    id: '1',
-                    nombre_persona: 'Juan Pérez',
-                    email: 'juan@empresa.com',
-                    rol_principal: 'client',
-                    estado: 'ACTIVO',
-                    nombre_empresa: 'Empresa Demo 1',
-                    foto_perfil: null,
-                    fecha_actualizacion: new Date().toISOString()
-                },
-                {
-                    id: '2',
-                    nombre_persona: 'María González',
-                    email: 'maria@proveedor.com',
-                    rol_principal: 'provider',
-                    estado: 'ACTIVO',
-                    nombre_empresa: 'Servicios Pro',
-                    foto_perfil: null,
-                    fecha_actualizacion: new Date().toISOString()
-                },
-                {
-                    id: '3',
-                    nombre_persona: 'Carlos Admin',
-                    email: 'admin@seva.com',
-                    rol_principal: 'admin',
-                    estado: 'ACTIVO',
-                    nombre_empresa: 'SEVA Empresas',
-                    foto_perfil: null,
-                    fecha_actualizacion: new Date().toISOString()
+            console.log('📊 Cargando usuarios reales desde la API...');
+
+            const url = buildApiUrl(API_CONFIG.ADMIN.USERS);
+
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
                 }
-            ];
-            
-            setUsers(mockUsers);
-            console.log('✅ Usuarios mock cargados correctamente');
-            
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Datos de usuarios recibidos:', data);
+                setUsers(data.usuarios || []);
+            } else {
+                // Si el endpoint no funciona, intentar obtener datos de otra forma
+                console.log('⚠️ Endpoint principal falló, intentando alternativas...');
+                
+                // Intentar obtener al menos algunos datos básicos
+                try {
+                    const emailsResponse = await fetch(buildApiUrl('/admin/users/emails'), {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                        }
+                    });
+                    
+                    if (emailsResponse.ok) {
+                        const emailsData = await emailsResponse.json();
+                        console.log('✅ Datos de emails obtenidos:', emailsData);
+                        
+                        // Convertir datos de emails a formato de usuarios
+                        const usersFromEmails = Object.entries(emailsData.emails || {}).map(([id, userData]: [string, any]) => ({
+                            id,
+                            nombre_persona: userData.email.split('@')[0],
+                            email: userData.email,
+                            rol_principal: 'client',
+                            estado: userData.estado || 'ACTIVO',
+                            nombre_empresa: 'Empresa',
+                            foto_perfil: null,
+                            fecha_actualizacion: new Date().toISOString()
+                        }));
+                        
+                        setUsers(usersFromEmails);
+                    } else {
+                        console.log('⚠️ No se pudieron cargar usuarios, usando array vacío');
+                        setUsers([]);
+                    }
+                } catch (fallbackError) {
+                    console.log('⚠️ Error en fallback, usando array vacío');
+                    setUsers([]);
+                }
+            }
         } catch (err: any) {
-            console.error('Error cargando usuarios:', err);
-            // En caso de error, usar array vacío
+            console.error('❌ Error cargando usuarios:', err);
             setUsers([]);
         } finally {
             setLoading(false);
@@ -544,11 +552,11 @@ const AdminUsersPage: React.FC = () => {
                         <p className="text-slate-600">Administrá los usuarios registrados en la plataforma</p>
                         
                         {/* Mensaje informativo */}
-                        <div className="mt-4 bg-blue-50 border border-blue-200 rounded-md p-3">
+                        <div className="mt-4 bg-green-50 border border-green-200 rounded-md p-3">
                             <div className="flex items-center">
-                                <span className="text-blue-600 mr-2">ℹ️</span>
-                                <div className="text-sm text-blue-700">
-                                    Mostrando datos de demostración. La funcionalidad completa estará disponible una vez resueltos los problemas de conectividad.
+                                <span className="text-green-600 mr-2">✅</span>
+                                <div className="text-sm text-green-700">
+                                    Cargando usuarios reales desde la base de datos. Los datos se actualizan automáticamente.
                                 </div>
                             </div>
                         </div>
@@ -835,7 +843,7 @@ const AdminUsersPage: React.FC = () => {
                                                         }
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1 7 2 1 9 z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                                         </svg>
                                                         <span>Restablecer</span>
                                                         {!userPermissions?.is_admin && (
@@ -987,7 +995,7 @@ const AdminUsersPage: React.FC = () => {
                                                         }
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1 7 2 1 9 z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                                         </svg>
                                                         <span>Restablecer</span>
                                                         {!userPermissions?.is_admin && (

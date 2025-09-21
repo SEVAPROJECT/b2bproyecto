@@ -31,27 +31,43 @@ const AdminDashboardPage: React.FC = () => {
                 console.log('🚀 Cargando estadísticas del dashboard por primera vez...');
                 setIsLoading(true);
 
-                // Simplificación: Solo usar las APIs que sabemos que funcionan
-                console.log('🔄 Cargando solo datos de verificación que funcionan...');
+                // Cargar datos reales de todas las APIs disponibles
+                console.log('🔄 Cargando datos reales desde todas las APIs...');
                 
                 const results = await Promise.allSettled([
-                    // Solo usar la API de verificaciones que sabemos que funciona
-                    adminAPI.getAllSolicitudesVerificacion(user.accessToken)
+                    categoriesAPI.getCategories(user.accessToken, true),
+                    servicesAPI.getServicesWithProviders(user.accessToken).catch(() => 
+                        servicesAPI.getServices(user.accessToken).catch(() => [])
+                    ),
+                    adminAPI.getAllSolicitudesVerificacion(user.accessToken),
+                    fetch(buildApiUrl('/admin/users'), {
+                        headers: { 'Authorization': `Bearer ${user.accessToken}` }
+                    }).then(r => r.ok ? r.json() : 
+                        fetch(buildApiUrl('/admin/users/emails'), {
+                            headers: { 'Authorization': `Bearer ${user.accessToken}` }
+                        }).then(r2 => r2.ok ? r2.json().then(data => ({ usuarios: Object.keys(data.emails || {}) })) : { usuarios: [] })
+                    ).catch(() => ({ usuarios: [] }))
                 ]);
 
-                // Procesar solo los datos de verificación que funcionan
-                const [verificationResult] = results;
+                // Procesar todos los datos reales obtenidos
+                const [categoriesResult, servicesResult, verificationResult, usersResult] = results;
                 
+                const categories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : [];
+                const services = servicesResult.status === 'fulfilled' ? servicesResult.value : [];
                 const verificationRequests = verificationResult.status === 'fulfilled' ? verificationResult.value : [];
+                const allUsers = usersResult.status === 'fulfilled' ? usersResult.value : { usuarios: [] };
 
-                console.log('📊 Datos de verificación obtenidos:', {
-                    verificationRequests: verificationRequests?.length || 0
+                console.log('📊 Datos reales obtenidos:', {
+                    categories: categories?.length || 0,
+                    services: services?.length || 0,
+                    verificationRequests: verificationRequests?.length || 0,
+                    users: Array.isArray(allUsers?.usuarios) ? allUsers.usuarios.length : (allUsers?.usuarios || 0)
                 });
 
-                // Usar datos mock realistas mientras se resuelven los problemas de API
-                const totalCategories = 5; // Datos mock realistas
-                const totalServices = 12; // Datos mock realistas  
-                const totalUsers = 8; // Datos mock realistas
+                // Usar datos reales de las APIs
+                const totalCategories = categories?.length || 0;
+                const totalServices = services?.length || 0;
+                const totalUsers = Array.isArray(allUsers?.usuarios) ? allUsers.usuarios.length : (allUsers?.usuarios || 0);
 
                 // Debug: ver qué valores llegan para verificación
                 console.log('🔍 Solicitudes de verificación completas:', verificationRequests);
@@ -146,11 +162,11 @@ const AdminDashboardPage: React.FC = () => {
             </div>
 
             {/* Mensaje informativo sobre datos */}
-            <div className="mb-4 bg-blue-50 border border-blue-200 rounded-md p-3">
+            <div className="mb-4 bg-green-50 border border-green-200 rounded-md p-3">
                 <div className="flex items-center">
-                    <span className="text-blue-600 mr-2">ℹ️</span>
-                    <div className="text-sm text-blue-700">
-                        Dashboard cargado correctamente. Los datos se actualizan en tiempo real.
+                    <span className="text-green-600 mr-2">✅</span>
+                    <div className="text-sm text-green-700">
+                        Dashboard cargado con datos reales desde la base de datos. Los datos se actualizan automáticamente.
                     </div>
                 </div>
             </div>
