@@ -34,27 +34,7 @@ const AdminReportsPage: React.FC = () => {
     const [loadedReports, setLoadedReports] = useState<Set<string>>(new Set());
     const [initialLoading, setInitialLoading] = useState<boolean>(true);
 
-    // Cache inteligente con expiración (5 minutos)
-    const [cache, setCache] = useState<{[key: string]: {data: ReporteData, timestamp: number}}>({});
-    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
-
-    // Utilidades de cache (funciones simples sin useCallback)
-    const isCacheValid = (reportType: string): boolean => {
-        const cached = cache[reportType];
-        if (!cached) return false;
-        return Date.now() - cached.timestamp < CACHE_DURATION;
-    };
-
-    const getCachedData = (reportType: string): ReporteData | null => {
-        return isCacheValid(reportType) ? cache[reportType].data : null;
-    };
-
-    const setCachedData = (reportType: string, data: ReporteData) => {
-        setCache(prev => ({
-            ...prev,
-            [reportType]: { data, timestamp: Date.now() }
-        }));
-    };
+    // Sin cache para evitar complejidad - carga directa
 
     // Función helper para formatear valores nulos de manera profesional
     const formatValue = (value: any, fieldName?: string): string => {
@@ -128,7 +108,7 @@ const AdminReportsPage: React.FC = () => {
             id: 'proveedores-verificados',
             title: 'Proveedores Verificados',
             description: 'Empresas que han sido verificadas como proveedores',
-            icon: '✅',
+            icon: '🏢',
             color: 'green'
         },
         {
@@ -168,63 +148,25 @@ const AdminReportsPage: React.FC = () => {
         }
     ];
 
-    // Función optimizada para cargar reporte con cache inteligente (sin useCallback)
-    const loadReport = async (reportType: string, showLoading: boolean = true) => {
-        // Verificar cache primero
-        const cachedData = getCachedData(reportType);
-        if (cachedData) {
-            console.log(`💾 Usando datos cacheados para ${reportType}`);
-            setReportes(prev => ({ ...prev, [reportType]: cachedData }));
-            setLoadedReports(prev => new Set(prev).add(reportType));
-            return;
-        }
-
+    // Función simple para cargar reportes sin cache
+    const loadReportOnDemand = async (reportType: string) => {
         if (loadedReports.has(reportType) || loading[reportType]) {
             return; // Ya está cargado o cargando
-        }
-
-        if (showLoading) {
-            setLoading(prev => ({ ...prev, [reportType]: true }));
         }
 
         try {
             await loadReporte(reportType);
             setLoadedReports(prev => new Set(prev).add(reportType));
-        } finally {
-            if (showLoading) {
-                setLoading(prev => ({ ...prev, [reportType]: false }));
-            }
+        } catch (error) {
+            console.error('Error cargando reporte:', error);
         }
     };
 
-    // Función legacy para compatibilidad
-    const loadReportOnDemand = (reportType: string) => loadReport(reportType, true);
-
-    // Carga paralela inteligente de reportes críticos al inicializar
+    // Inicialización simple sin pre-carga automática
     useEffect(() => {
-        if (!user?.accessToken) return;
-
-        const loadCriticalReportsInParallel = async () => {
-            console.log('🚀 Iniciando carga paralela de reportes críticos...');
-
-            // Reportes que se cargan automáticamente (los más usados)
-            const criticalReports = ['solicitudes-proveedores', 'proveedores-verificados', 'categorias'];
-
-            // Cargar en paralelo sin bloquear la UI
-            const promises = criticalReports.map(reportType => loadReport(reportType, false));
-
-            try {
-                await Promise.allSettled(promises);
-                console.log('✅ Reportes críticos cargados exitosamente en background');
-            } catch (error) {
-                console.log('⚠️ Algunos reportes críticos fallaron, pero la página funciona');
-            }
-
-            // Marcar inicialización completa
+        if (user?.accessToken) {
             setInitialLoading(false);
-        };
-
-        loadCriticalReportsInParallel();
+        }
     }, [user?.accessToken]);
 
     // Función para formatear fecha a DD/MM/AAAA
@@ -319,7 +261,7 @@ const AdminReportsPage: React.FC = () => {
                     const userEmail = emailsDict[solicitud.nombre_contacto];
                     if (userEmail) {
                         emailContacto = userEmail;
-                        console.log(`✅ Email real encontrado para contacto ${solicitud.nombre_contacto}: ${emailContacto}`);
+                        console.log(`Email real encontrado para contacto ${solicitud.nombre_contacto}: ${emailContacto}`);
                     } else {
                         console.log(`❌ No se encontró email para contacto ${solicitud.nombre_contacto}`);
                     }
@@ -362,7 +304,7 @@ const AdminReportsPage: React.FC = () => {
                 rechazadas
             };
 
-            console.log('✅ Reporte generado exitosamente:', reporteData);
+            console.log('Reporte generado exitosamente:', reporteData);
             return reporteData;
         } catch (error) {
             console.error('❌ Error generando reporte de solicitudes de servicios:', error);
@@ -417,7 +359,7 @@ const AdminReportsPage: React.FC = () => {
                     const userEmail = emailsDict[solicitud.nombre_contacto];
                     if (userEmail) {
                         emailContacto = userEmail;
-                        console.log(`✅ Email real encontrado para contacto ${solicitud.nombre_contacto}: ${emailContacto}`);
+                        console.log(`Email real encontrado para contacto ${solicitud.nombre_contacto}: ${emailContacto}`);
                     } else {
                         console.log(`❌ No se encontró email para contacto ${solicitud.nombre_contacto}`);
                     }
@@ -459,7 +401,7 @@ const AdminReportsPage: React.FC = () => {
                 rechazadas
             };
 
-            console.log('✅ Reporte de categorías generado exitosamente:', reporteData);
+            console.log('Reporte de categorías generado exitosamente:', reporteData);
             return reporteData;
         } catch (error) {
             console.error('❌ Error generando reporte de solicitudes de categorías:', error);
@@ -555,13 +497,28 @@ const AdminReportsPage: React.FC = () => {
                     dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken);
                     break;
                 case 'categorias':
-                    // Usar categoriesAPI directamente ya que el endpoint de reporte puede fallar
-                    dataPromise = categoriesAPI.getCategories(user.accessToken, false).then(categorias => {
+                    // Solución definitiva: usar fetch directo para categorías
+                    dataPromise = fetch(buildApiUrl('/categories'), {
+                        headers: { 'Authorization': `Bearer ${user.accessToken}` }
+                    }).then(async response => {
+                        if (!response.ok) throw new Error('Error al cargar categorías');
+                        const categorias = await response.json();
+                        console.log('📂 Categorías cargadas exitosamente:', categorias.length);
                         return {
                             fecha_generacion: new Date().toISOString(),
                             total_categorias: categorias.length,
                             categorias: categorias,
-                            generado_desde: 'categories_api'
+                            generado_desde: 'direct_fetch'
+                        };
+                    }).catch(error => {
+                        console.error('❌ Error cargando categorías:', error);
+                        // Fallback con datos mock si falla todo
+                        return {
+                            fecha_generacion: new Date().toISOString(),
+                            total_categorias: 0,
+                            categorias: [],
+                            generado_desde: 'fallback_empty',
+                            error: 'No se pudieron cargar las categorías'
                         };
                     });
                     break;
@@ -579,10 +536,9 @@ const AdminReportsPage: React.FC = () => {
             }
 
             const data = await Promise.race([dataPromise, timeoutPromise]);
-            console.log(`✅ Reporte ${reportType} cargado exitosamente:`, data);
+            console.log(`Reporte ${reportType} cargado exitosamente:`, data);
 
-            // Guardar en cache
-            setCachedData(reportType, data as ReporteData);
+            // Sin cache - datos directos
 
             setReportes(prev => ({ ...prev, [reportType]: data as ReporteData }));
             setLoadedReports(prev => new Set(prev).add(reportType));
