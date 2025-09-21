@@ -40,9 +40,26 @@ const AdminDashboardPage: React.FC = () => {
                     setTimeout(() => reject(new Error('Timeout')), 8000)
                 );
 
+                // Función para obtener servicios con fallback
+                const getServicesWithFallback = async () => {
+                    try {
+                        // Intentar primero con getServicesWithProviders
+                        return await servicesAPI.getServicesWithProviders(user.accessToken);
+                    } catch (error) {
+                        console.log('⚠️ getServicesWithProviders falló, intentando getServices...');
+                        try {
+                            // Fallback a getServices
+                            return await servicesAPI.getServices(user.accessToken);
+                        } catch (fallbackError) {
+                            console.log('⚠️ getServices también falló, usando array vacío');
+                            return [];
+                        }
+                    }
+                };
+
                 const statsPromise = Promise.allSettled([
                     categoriesAPI.getCategories(user.accessToken, true),
-                    servicesAPI.getServices(user.accessToken),
+                    getServicesWithFallback(),
                     adminAPI.getAllSolicitudesVerificacion(user.accessToken),
                     // Usar el mismo endpoint que AdminUsersPage
                     fetch(buildApiUrl('/admin/users'), {
@@ -62,6 +79,14 @@ const AdminDashboardPage: React.FC = () => {
                 const services = servicesResult.status === 'fulfilled' ? servicesResult.value : [];
                 const verificationRequests = verificationResult.status === 'fulfilled' ? verificationResult.value : [];
                 const allUsers = usersResult.status === 'fulfilled' ? usersResult.value : { usuarios: [] };
+
+                // Log de resultados para debugging
+                console.log('📊 Resultados de APIs:', {
+                    categories: categories?.length || 0,
+                    services: services?.length || 0,
+                    verificationRequests: verificationRequests?.length || 0,
+                    users: allUsers?.usuarios?.length || 0
+                });
 
                 // Procesar datos
                 const totalCategories = categories?.length || 0;
@@ -110,30 +135,21 @@ const AdminDashboardPage: React.FC = () => {
             } catch (error) {
                 console.error('❌ Error cargando estadísticas:', error);
 
-                // Fallback: usar datos mock si las APIs fallan
-                console.log('⚠️ Usando datos de respaldo...');
-                setStats({
-                    totalUsers: 0,
-                    totalCategories: 0,
-                    totalServices: 0,
-                    verificationRate: 0
-                });
-                
-                // Solo mostrar error si es un error real de conexión, no un timeout
+                // Solo mostrar error si es un timeout o error crítico
                 if (error instanceof Error && error.message === 'Timeout') {
-                    setError('La conexión está tardando más de lo esperado. Intenta recargar la página.');
+                    setError('La conexión está tardando más de lo esperado. Algunos datos pueden no estar disponibles.');
                 } else {
-                    setError('Error al cargar los datos. Verifica tu conexión.');
+                    setError('Error al cargar algunos datos. Verifica tu conexión.');
                 }
                 
-                // Limpiar el error después de 10 segundos para permitir reintentos
+                // Limpiar el error después de 8 segundos para permitir reintentos
                 if (retryTimeoutRef.current) {
                     clearTimeout(retryTimeoutRef.current);
                 }
                 retryTimeoutRef.current = setTimeout(() => {
                     setError(null);
                     hasLoadedRef.current = false; // Permitir reintento
-                }, 10000);
+                }, 8000);
             } finally {
                 setIsLoading(false);
             }
@@ -186,9 +202,12 @@ const AdminDashboardPage: React.FC = () => {
             </div>
 
             {error && (
-                <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-4">
+                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md p-4">
                     <div className="flex items-center justify-between">
-                        <div className="text-sm text-red-700">{error}</div>
+                        <div className="flex items-center">
+                            <span className="text-yellow-600 mr-2">⚠️</span>
+                            <div className="text-sm text-yellow-700">{error}</div>
+                        </div>
                         <button
                             onClick={() => {
                                 setError(null);
@@ -197,7 +216,7 @@ const AdminDashboardPage: React.FC = () => {
                                 // Trigger reload by updating a dependency
                                 window.location.reload();
                             }}
-                            className="ml-4 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
+                            className="ml-4 px-3 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-700 transition-colors"
                         >
                             Reintentar
                         </button>
