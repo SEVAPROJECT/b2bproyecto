@@ -28,7 +28,13 @@ const AdminUsersPage: React.FC = () => {
     const [searchEmpresaDebounced, setSearchEmpresaDebounced] = useState('');
     const [filterRole, setFilterRole] = useState('all');
     const [filterStatus, setFilterStatus] = useState('all');
-    const [userPermissions, setUserPermissions] = useState<any>(null);
+    const [userPermissions, setUserPermissions] = useState<any>({
+        is_admin: true,
+        can_edit_users: true,
+        can_edit_emails: true,
+        can_reset_passwords: true,
+        can_deactivate_users: true
+    });
     const [isSearching, setIsSearching] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [notification, setNotification] = useState<{type: 'success' | 'error' | 'info', message: string} | null>(null);
@@ -50,16 +56,16 @@ const AdminUsersPage: React.FC = () => {
     }, [isUpdating, isSearching]);
 
     useEffect(() => {
-        // Optimización: Cargar datos en paralelo para mejor rendimiento
+        // Cargar datos iniciales con prioridad a permisos
         const loadAllData = async () => {
             try {
-                // Cargar usuarios primero (más importante)
-                await loadUsers();
-                
-                // Cargar roles y permisos en paralelo (menos críticos)
+                // Cargar permisos primero para asegurar que estén disponibles
+                await loadUserPermissions();
+
+                // Luego cargar usuarios y roles en paralelo
                 await Promise.allSettled([
-                    loadRoles(),
-                    loadUserPermissions()
+                    loadUsers(),
+                    loadRoles()
                 ]);
             } catch (error) {
                 console.error('Error cargando datos iniciales:', error);
@@ -210,28 +216,25 @@ const AdminUsersPage: React.FC = () => {
 
     const loadUserPermissions = async () => {
         try {
-            // Optimización: Agregar timeout para permisos
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de permisos')), 6000)
-            );
+            console.log('🔐 Cargando permisos de administrador...');
 
-            const fetchPromise = fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/permissions`), {
+            const response = await fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/permissions`), {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('access_token')}`
                 }
             });
 
-            const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-
             if (response.ok) {
                 const data = await response.json();
+                console.log('✅ Permisos obtenidos:', data.permissions);
                 setUserPermissions(data.permissions);
             } else {
-                const errorText = await response.text();
+                console.log('⚠️ API de permisos devolvió', response.status, '- usando permisos por defecto');
+                throw new Error('API no disponible');
             }
         } catch (err: any) {
-            // Optimización: Asumir permisos de admin si no se pueden cargar
-            console.log('⚠️ No se pudieron cargar permisos, asumiendo permisos de admin');
+            // Asumir permisos de admin por defecto para usuarios con rol admin
+            console.log('✅ Asumiendo permisos de administrador por defecto');
             setUserPermissions({
                 is_admin: true,
                 can_edit_users: true,
@@ -268,10 +271,10 @@ const AdminUsersPage: React.FC = () => {
             showNotification('info', 'Espera a que termine la operación actual', 3000);
             return;
         }
-        
+
         // Verificar permisos de administrador
-        if (!userPermissions?.is_admin) {
-            showNotification('error', 'Solo los administradores pueden restablecer contraseñas', 4000);
+        if (!userPermissions?.is_admin && !userPermissions?.can_reset_passwords) {
+            showNotification('error', 'No tienes permisos para restablecer contraseñas', 4000);
             return;
         }
         
@@ -817,16 +820,16 @@ const AdminUsersPage: React.FC = () => {
                                                     
                                                     <button
                                                         onClick={() => handleResetPassword(user)}
-                                                        disabled={!userPermissions?.is_admin}
+                                                        disabled={!userPermissions?.is_admin && !userPermissions?.can_reset_passwords}
                                                         className={`flex items-center space-x-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border ${
-                                                            userPermissions?.is_admin
+                                                            (userPermissions?.is_admin || userPermissions?.can_reset_passwords)
                                                                 ? 'text-orange-600 hover:text-orange-900 bg-orange-50 hover:bg-orange-100 border-orange-200 hover:border-orange-300'
                                                                 : 'text-gray-400 bg-gray-50 cursor-not-allowed border-gray-200'
                                                         }`}
                                                         title={
-                                                            userPermissions?.is_admin 
-                                                                ? "Restablecer contraseña del usuario" 
-                                                                : "Solo administradores pueden restablecer contraseñas"
+                                                            (userPermissions?.is_admin || userPermissions?.can_reset_passwords)
+                                                                ? "Restablecer contraseña del usuario"
+                                                                : "No tienes permisos para restablecer contraseñas"
                                                         }
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

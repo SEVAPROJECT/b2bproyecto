@@ -31,43 +31,32 @@ const AdminDashboardPage: React.FC = () => {
                 console.log('🚀 Cargando estadísticas del dashboard por primera vez...');
                 setIsLoading(true);
 
-                // Cargar datos reales de todas las APIs disponibles
-                console.log('🔄 Cargando datos reales desde todas las APIs...');
-                
-                const results = await Promise.allSettled([
-                    categoriesAPI.getCategories(user.accessToken, true),
-                    servicesAPI.getServicesWithProviders(user.accessToken).catch(() => 
+                // Carga ultra optimizada: todas las APIs en paralelo sin timeouts
+                console.log('🚀 Carga ultra rápida del dashboard...');
+
+                // Ejecutar todas las llamadas en paralelo sin timeouts para máxima velocidad
+                const apiCalls = [
+                    categoriesAPI.getCategories(user.accessToken, true).catch(() => []),
+                    servicesAPI.getServicesWithProviders(user.accessToken).catch(() =>
                         servicesAPI.getServices(user.accessToken).catch(() => [])
                     ),
-                    adminAPI.getAllSolicitudesVerificacion(user.accessToken),
+                    adminAPI.getAllSolicitudesVerificacion(user.accessToken).catch(() => []),
                     fetch(buildApiUrl('/admin/users'), {
                         headers: { 'Authorization': `Bearer ${user.accessToken}` }
-                    }).then(r => r.ok ? r.json() : 
-                        fetch(buildApiUrl('/admin/users/emails'), {
-                            headers: { 'Authorization': `Bearer ${user.accessToken}` }
-                        }).then(r2 => r2.ok ? r2.json().then(data => ({ usuarios: Object.keys(data.emails || {}) })) : { usuarios: [] })
-                    ).catch(() => ({ usuarios: [] }))
-                ]);
+                    }).then(r => r.ok ? r.json() : { usuarios: 0 }).catch(() => ({ usuarios: 0 }))
+                ];
 
-                // Procesar todos los datos reales obtenidos
+                const results = await Promise.allSettled(apiCalls);
+
+                // Procesamiento ultra rápido de resultados
                 const [categoriesResult, servicesResult, verificationResult, usersResult] = results;
-                
-                const categories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : [];
-                const services = servicesResult.status === 'fulfilled' ? servicesResult.value : [];
+
+                const totalCategories = categoriesResult.status === 'fulfilled' ? (categoriesResult.value?.length || 0) : 0;
+                const totalServices = servicesResult.status === 'fulfilled' ? (servicesResult.value?.length || 0) : 0;
                 const verificationRequests = verificationResult.status === 'fulfilled' ? verificationResult.value : [];
-                const allUsers = usersResult.status === 'fulfilled' ? usersResult.value : { usuarios: [] };
+                const totalUsers = usersResult.status === 'fulfilled' ? (usersResult.value?.usuarios?.length || usersResult.value?.usuarios || 0) : 0;
 
-                console.log('📊 Datos reales obtenidos:', {
-                    categories: categories?.length || 0,
-                    services: services?.length || 0,
-                    verificationRequests: verificationRequests?.length || 0,
-                    users: Array.isArray(allUsers?.usuarios) ? allUsers.usuarios.length : (allUsers?.usuarios || 0)
-                });
-
-                // Usar datos reales de las APIs
-                const totalCategories = categories?.length || 0;
-                const totalServices = services?.length || 0;
-                const totalUsers = Array.isArray(allUsers?.usuarios) ? allUsers.usuarios.length : (allUsers?.usuarios || 0);
+                console.log('✅ Dashboard cargado:', { totalCategories, totalServices, totalUsers });
 
                 // Debug: ver qué valores llegan para verificación
                 console.log('🔍 Solicitudes de verificación completas:', verificationRequests);
@@ -107,17 +96,13 @@ const AdminDashboardPage: React.FC = () => {
                 console.log('- Array de solicitudes:', verificationRequests);
 
             } catch (error) {
-                console.error('❌ Error cargando estadísticas:', error);
-
-                // Para cualquier error, usar datos por defecto sin mostrar error
+                // Error silencioso, usar datos por defecto
                 setStats({
                     totalUsers: 0,
                     totalCategories: 0,
                     totalServices: 0,
                     verificationRate: 0
                 });
-                
-                console.log('⚠️ Usando datos por defecto debido a error');
             } finally {
                 setIsLoading(false);
             }
@@ -161,15 +146,6 @@ const AdminDashboardPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Mensaje informativo sobre datos */}
-            <div className="mb-4 bg-green-50 border border-green-200 rounded-md p-3">
-                <div className="flex items-center">
-                    <span className="text-green-600 mr-2">✅</span>
-                    <div className="text-sm text-green-700">
-                        Dashboard cargado con datos reales desde la base de datos. Los datos se actualizan automáticamente.
-                    </div>
-                </div>
-            </div>
 
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-8">
