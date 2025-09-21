@@ -196,8 +196,8 @@ const AdminReportsPage: React.FC = () => {
         }
 
         try {
-            await loadReporte(reportType);
-            setLoadedReports(prev => new Set(prev).add(reportType));
+        await loadReporte(reportType);
+        setLoadedReports(prev => new Set(prev).add(reportType));
         } catch (error) {
             console.error('Error cargando reporte:', error);
         }
@@ -259,10 +259,8 @@ const AdminReportsPage: React.FC = () => {
 
     // Función para generar fecha actual de Argentina en formato ISO
     const getArgentinaDateISO = (): string => {
-        const now = new Date();
-        // Crear fecha ajustada a Argentina (UTC-3)
-        const argentinaTime = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-        return argentinaTime.toISOString();
+        // Usar la fecha actual sin ajustes - formatArgentinaDateTime se encarga del display
+        return new Date().toISOString();
     };
 
 
@@ -533,15 +531,15 @@ const AdminReportsPage: React.FC = () => {
                             console.log('⚠️ Fallback también falló, generando datos básicos...');
                         }
 
-                        // Último fallback: datos mock básicos
+                        // Último fallback: sin datos
                         return {
                             fecha_generacion: getArgentinaDateISO(),
                             total_usuarios: 0,
                             usuarios_activos: 0,
                             usuarios_inactivos: 0,
                             usuarios: [],
-                            generado_desde: 'mock_data',
-                            mensaje: 'Datos no disponibles temporalmente'
+                            generado_desde: 'sin_datos_backend',
+                            mensaje: 'No hay datos de usuarios disponibles en el backend'
                         };
                     });
                     break;
@@ -611,43 +609,16 @@ const AdminReportsPage: React.FC = () => {
                                     console.log('⚠️ Todas las estrategias fallaron');
                                 }
                                 
-                                // Estrategia 4: datos mock para no bloquear la UI
-                                console.log('📊 Generando datos mock para proveedores...');
+                                // Estrategia 4: sin datos si todo falla
+                                console.log('⚠️ No se pudieron cargar proveedores desde ninguna fuente');
                                 return {
                                     fecha_generacion: getArgentinaDateISO(),
-                                    total_proveedores: 3,
-                                    proveedores_verificados: 2,
-                                    proveedores_pendientes: 1,
-                                    proveedores: [
-                                        {
-                                            id: 1,
-                                            nombre_empresa: 'Empresa Demo 1',
-                                            nombre_contacto: 'Juan Pérez',
-                                            email_contacto: 'juan@empresa1.com',
-                                            estado_verificacion: 'VERIFICADO',
-                                            fecha_registro: getArgentinaDateISO(),
-                                            servicios_ofrecidos: 5
-                                        },
-                                        {
-                                            id: 2,
-                                            nombre_empresa: 'Empresa Demo 2',
-                                            nombre_contacto: 'María García',
-                                            email_contacto: 'maria@empresa2.com',
-                                            estado_verificacion: 'VERIFICADO',
-                                            fecha_registro: getArgentinaDateISO(),
-                                            servicios_ofrecidos: 3
-                                        },
-                                        {
-                                            id: 3,
-                                            nombre_empresa: 'Empresa Demo 3',
-                                            nombre_contacto: 'Carlos López',
-                                            email_contacto: 'carlos@empresa3.com',
-                                            estado_verificacion: 'PENDIENTE',
-                                            fecha_registro: getArgentinaDateISO(),
-                                            servicios_ofrecidos: 0
-                                        }
-                                    ],
-                                    generado_desde: 'mock_data'
+                                    total_proveedores: 0,
+                                    proveedores_verificados: 0,
+                                    proveedores_pendientes: 0,
+                                    proveedores: [],
+                                    generado_desde: 'sin_datos_backend',
+                                    mensaje: 'No hay datos de proveedores disponibles en el backend'
                                 };
                             }
                         }
@@ -655,13 +626,12 @@ const AdminReportsPage: React.FC = () => {
                     break;
                 case 'solicitudes-proveedores':
                     dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken).then(data => {
-                        // Corregir fecha_generacion para zona horaria Argentina
                         return {
                             ...data,
                             fecha_generacion: getArgentinaDateISO()
                         };
                     }).catch(error => {
-                        console.log('⚠️ Reporte de solicitudes de proveedores falló, usando fallback...');
+                        console.log('⚠️ No se pudieron cargar solicitudes de proveedores:', error);
                         return {
                             fecha_generacion: getArgentinaDateISO(),
                             total_solicitudes: 0,
@@ -669,8 +639,8 @@ const AdminReportsPage: React.FC = () => {
                             pendientes: 0,
                             aprobadas: 0,
                             rechazadas: 0,
-                            generado_desde: 'empty_fallback',
-                            error: 'No se pudieron cargar las solicitudes'
+                            generado_desde: 'sin_datos_backend',
+                            mensaje: 'No hay datos disponibles en el backend'
                         };
                     });
                     break;
@@ -739,19 +709,18 @@ const AdminReportsPage: React.FC = () => {
                     break;
                 case 'servicios':
                     dataPromise = adminAPI.getReporteServicios(user.accessToken).then(data => {
-                        // Corregir fecha_generacion para zona horaria Argentina
                         return {
                             ...data,
                             fecha_generacion: getArgentinaDateISO()
                         };
                     }).catch(error => {
-                        console.log('⚠️ Reporte de servicios falló, usando fallback...');
+                        console.log('⚠️ No se pudieron cargar servicios:', error);
                         return {
                             fecha_generacion: getArgentinaDateISO(),
                             total_servicios: 0,
                             servicios: [],
-                            generado_desde: 'empty_fallback',
-                            error: 'No se pudieron cargar los servicios'
+                            generado_desde: 'sin_datos_backend',
+                            mensaje: 'No hay datos disponibles en el backend'
                         };
                     });
                     break;
@@ -771,8 +740,8 @@ const AdminReportsPage: React.FC = () => {
                             pendientes: 0,
                             aprobadas: 0,
                             rechazadas: 0,
-                            generado_desde: 'empty_fallback',
-                            error: 'No se pudieron cargar las solicitudes de servicios'
+                            generado_desde: 'sin_datos_backend',
+                            mensaje: 'No se pudieron cargar las solicitudes de servicios'
                         };
                     });
                     break;
@@ -792,8 +761,8 @@ const AdminReportsPage: React.FC = () => {
                             pendientes: 0,
                             aprobadas: 0,
                             rechazadas: 0,
-                            generado_desde: 'empty_fallback',
-                            error: 'No se pudieron cargar las solicitudes de categorías'
+                            generado_desde: 'sin_datos_backend',
+                            mensaje: 'No se pudieron cargar las solicitudes de categorías'
                         };
                     });
                     break;
@@ -817,7 +786,7 @@ const AdminReportsPage: React.FC = () => {
                 // No mostrar error inmediatamente, el fallback se ejecutará
                 return;
             }
-
+            
             // Si es un error de "no hay datos", establecer contador en 0 sin mostrar error
             if (err?.status === 404 || err?.detail?.includes('No se encontraron') || err?.detail?.includes('No hay')) {
                 console.log(`📊 Estableciendo reporte vacío para ${reportType} (no hay datos)`);
@@ -1159,9 +1128,9 @@ const AdminReportsPage: React.FC = () => {
                                 if (key === 'active' || key === 'activo') headerName = 'ESTADO';
                                 
                                 return (
-                                    <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         {headerName}
-                                    </th>
+                                </th>
                                 );
                             })}
                         </tr>
