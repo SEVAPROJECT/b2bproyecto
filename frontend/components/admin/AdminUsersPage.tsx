@@ -95,7 +95,7 @@ const AdminUsersPage: React.FC = () => {
 
             // Optimización: Agregar timeout para evitar carga infinita
             const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de carga')), 10000)
+                setTimeout(() => reject(new Error('Timeout de carga')), 6000)
             );
 
             const fetchPromise = fetch(url, {
@@ -124,6 +124,8 @@ const AdminUsersPage: React.FC = () => {
             // Optimización: Mostrar error más específico
             if (err.message === 'Timeout de carga') {
                 setError('La carga está tardando demasiado. Por favor, recarga la página.');
+            } else if (err.message.includes('CORS') || err.message.includes('Failed to fetch')) {
+                setError('Error de conexión con el servidor. Verifica tu conexión a internet.');
             } else {
                 setError(err.message);
             }
@@ -154,7 +156,7 @@ const AdminUsersPage: React.FC = () => {
 
             // Optimización: Agregar timeout para búsquedas
             const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de búsqueda')), 8000)
+                setTimeout(() => reject(new Error('Timeout de búsqueda')), 5000)
             );
 
             const fetchPromise = fetch(url, {
