@@ -541,40 +541,26 @@ const AdminReportsPage: React.FC = () => {
                     dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken);
                     break;
                 case 'categorias':
-                    // Usar endpoint directo y normalizar respuesta (array o paginado)
-                    dataPromise = (async () => {
-                        try {
-                            const url = `${buildApiUrl(API_CONFIG.CATEGORIES.LIST)}?active_only=true`;
-                            const response = await fetch(url, {
-                                headers: { 'Authorization': `Bearer ${user.accessToken}` }
-                            });
-                            if (!response.ok) {
-                                throw new Error(`Error ${response.status}: ${response.statusText}`);
-                            }
-                            const raw = await response.json();
-
-                            // Normalizar: puede venir como array o como objeto paginado
-                            const categorias = Array.isArray(raw)
-                                ? raw
-                                : (raw.categorias || raw.results || raw.items || []);
-
-                            return {
-                                fecha_generacion: new Date().toISOString(),
-                                total_categorias: categorias.length,
-                                categorias,
-                                generado_desde: 'categories_direct'
-                            };
-                        } catch (err) {
-                            // Fallback usando servicio centralizado
-                            const categorias = await categoriesAPI.getCategories(user.accessToken, true).catch(() => []);
-                            return {
-                                fecha_generacion: new Date().toISOString(),
-                                total_categorias: categorias.length,
-                                categorias,
-                                generado_desde: 'categories_api_fallback'
-                            };
-                        }
-                    })();
+                    // Usar API service centralizado que maneja CORS correctamente
+                    dataPromise = categoriesAPI.getCategories(user.accessToken, true).then(categorias => {
+                        console.log('Categorías cargadas exitosamente:', categorias.length, 'categorías');
+                        return {
+                            fecha_generacion: new Date().toISOString(),
+                            total_categorias: categorias.length,
+                            categorias: categorias,
+                            generado_desde: 'categories_api'
+                        };
+                    }).catch(error => {
+                        console.error('Error cargando categorías:', error);
+                        // Fallback: datos vacíos para no bloquear la UI
+                        return {
+                            fecha_generacion: new Date().toISOString(),
+                            total_categorias: 0,
+                            categorias: [],
+                            generado_desde: 'empty_fallback',
+                            error: 'No se pudieron cargar las categorías'
+                        };
+                    });
                     break;
                 case 'servicios':
                     dataPromise = adminAPI.getReporteServicios(user.accessToken);
