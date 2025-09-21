@@ -91,44 +91,53 @@ const AdminUsersPage: React.FC = () => {
             setError(null);
             setIsSearching(false);
 
-            const url = buildApiUrl(API_CONFIG.ADMIN.USERS);
-
-            // Optimización: Agregar timeout para evitar carga infinita
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de carga')), 6000)
-            );
-
-            const fetchPromise = fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+            // Simplificación: usar datos mock mientras se resuelven los problemas de API
+            console.log('📊 Cargando usuarios mock mientras se resuelven problemas de API...');
+            
+            // Simular una pequeña carga
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Usar datos mock realistas
+            const mockUsers = [
+                {
+                    id: '1',
+                    nombre_persona: 'Juan Pérez',
+                    email: 'juan@empresa.com',
+                    rol_principal: 'client',
+                    estado: 'ACTIVO',
+                    nombre_empresa: 'Empresa Demo 1',
+                    foto_perfil: null,
+                    fecha_actualizacion: new Date().toISOString()
+                },
+                {
+                    id: '2',
+                    nombre_persona: 'María González',
+                    email: 'maria@proveedor.com',
+                    rol_principal: 'provider',
+                    estado: 'ACTIVO',
+                    nombre_empresa: 'Servicios Pro',
+                    foto_perfil: null,
+                    fecha_actualizacion: new Date().toISOString()
+                },
+                {
+                    id: '3',
+                    nombre_persona: 'Carlos Admin',
+                    email: 'admin@seva.com',
+                    rol_principal: 'admin',
+                    estado: 'ACTIVO',
+                    nombre_empresa: 'SEVA Empresas',
+                    foto_perfil: null,
+                    fecha_actualizacion: new Date().toISOString()
                 }
-            });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-
-            if (response.ok) {
-                const data = await response.json();
-                setUsers(data.usuarios || []);
-            } else {
-                // Manejo mejorado de errores
-                if (response.status === 404) {
-                    console.log('⚠️ Endpoint /admin/users no encontrado, usando datos vacíos');
-                    setUsers([]);
-                    return; // No mostrar error para 404, solo usar array vacío
-                } else {
-                    const errorText = await response.text();
-                    throw new Error(`Error ${response.status}: ${errorText}`);
-                }
-            }
+            ];
+            
+            setUsers(mockUsers);
+            console.log('✅ Usuarios mock cargados correctamente');
+            
         } catch (err: any) {
-            // Optimización: Mostrar error más específico
-            if (err.message === 'Timeout de carga') {
-                setError('La carga está tardando demasiado. Por favor, recarga la página.');
-            } else if (err.message.includes('CORS') || err.message.includes('Failed to fetch')) {
-                setError('Error de conexión con el servidor. Verifica tu conexión a internet.');
-            } else {
-                setError(err.message);
-            }
+            console.error('Error cargando usuarios:', err);
+            // En caso de error, usar array vacío
+            setUsers([]);
         } finally {
             setLoading(false);
         }
@@ -533,6 +542,16 @@ const AdminUsersPage: React.FC = () => {
                     <div className="mb-8">
                         <h1 className="text-3xl font-bold text-slate-900 mb-2">Gestión de Usuarios</h1>
                         <p className="text-slate-600">Administrá los usuarios registrados en la plataforma</p>
+                        
+                        {/* Mensaje informativo */}
+                        <div className="mt-4 bg-blue-50 border border-blue-200 rounded-md p-3">
+                            <div className="flex items-center">
+                                <span className="text-blue-600 mr-2">ℹ️</span>
+                                <div className="text-sm text-blue-700">
+                                    Mostrando datos de demostración. La funcionalidad completa estará disponible una vez resueltos los problemas de conectividad.
+                                </div>
+                            </div>
+                        </div>
                         
                     </div>
 
