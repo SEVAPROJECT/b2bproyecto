@@ -17,7 +17,7 @@ interface BackendUser {
 }
 
 const AdminUsersPage: React.FC = () => {
-    const [allUsers, setAllUsers] = useState<BackendUser[]>([]); // Todos los usuarios cargados
+    const [users, setUsers] = useState<BackendUser[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedUser, setSelectedUser] = useState<BackendUser | null>(null);
@@ -25,11 +25,9 @@ const AdminUsersPage: React.FC = () => {
     const [availableRoles, setAvailableRoles] = useState<any[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchEmpresa, setSearchEmpresa] = useState('');
+    const [searchEmpresaDebounced, setSearchEmpresaDebounced] = useState('');
     const [filterRole, setFilterRole] = useState('all');
     const [filterStatus, setFilterStatus] = useState('all');
-    const [currentPage, setCurrentPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [totalUsers, setTotalUsers] = useState(0);
     const [userPermissions, setUserPermissions] = useState<any>({
         is_admin: true,
         can_edit_users: true,
@@ -40,6 +38,7 @@ const AdminUsersPage: React.FC = () => {
     const [isSearching, setIsSearching] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [notification, setNotification] = useState<{type: 'success' | 'error' | 'info', message: string} | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 12;
     const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
     const [resetPasswordData, setResetPasswordData] = useState<{user: BackendUser | null, newPassword: string | null}>({user: null, newPassword: null});
@@ -63,14 +62,11 @@ const AdminUsersPage: React.FC = () => {
                 // Cargar permisos primero para asegurar que estén disponibles
                 await loadUserPermissions();
 
-                // Cargar usuarios primero (crítico)
-                await loadUsers();
-                
-                // Cargar roles después (opcional, no bloquea la UI)
-                loadRoles().catch(error => {
-                    console.warn('⚠️ Error cargando roles (no crítico):', error);
-                    // Los roles no son críticos para mostrar usuarios
-                });
+                // Luego cargar usuarios y roles en paralelo
+                await Promise.allSettled([
+                    loadUsers(),
+                    loadRoles()
+                ]);
             } catch (error) {
                 console.error('Error cargando datos iniciales:', error);
             }
@@ -80,128 +76,122 @@ const AdminUsersPage: React.FC = () => {
     }, []);
 
     // Debouncing para búsqueda de empresa (500ms)
-    // Efecto para búsqueda híbrida de nombre/email
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (searchQuery.length >= 3) {
-                searchInBackend(searchQuery, 'nombre');
-            } else if (searchQuery.length === 0 && searchEmpresa.length === 0) {
-                // Si se borra la búsqueda, usar filtros locales (no recargar desde backend)
-                // Los filtros locales ya manejan esto automáticamente
-            }
+            setSearchEmpresaDebounced(searchEmpresa);
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [searchQuery, searchEmpresa, currentPage]);
+    }, [searchEmpresa]);
 
-    // Efecto para búsqueda híbrida de empresa
+    // Efecto para búsqueda de empresa con debouncing
     useEffect(() => {
-        const timer = setTimeout(() => {
-            if (searchEmpresa.length >= 3) {
-                searchInBackend(searchEmpresa, 'empresa');
-            } else if (searchEmpresa.length === 0 && searchQuery.length === 0) {
-                // Si se borra la búsqueda, usar filtros locales (no recargar desde backend)
-                // Los filtros locales ya manejan esto automáticamente
-            }
-        }, 500);
+        if (searchEmpresaDebounced !== undefined) {
+            loadUsersWithSearch(searchEmpresaDebounced);
+        }
+    }, [searchEmpresaDebounced]);
 
-        return () => clearTimeout(timer);
-    }, [searchEmpresa, searchQuery, currentPage]);
-
-    const loadUsers = async (page: number = 1, searchEmpresaParam?: string, searchNombreParam?: string, retryCount: number = 0) => {
+    const loadUsers = async () => {
         try {
-            // Prevenir llamadas múltiples simultáneas (excepto en carga inicial)
-            if (loading && retryCount === 0 && allUsers.length > 0) {
-                console.log('⚠️ Carga ya en progreso, saltando llamada duplicada');
-                return;
-            }
-            
             setLoading(true);
             setError(null);
+            setIsSearching(false);
 
-            console.log(`📊 Cargando usuarios optimizado... (intento ${retryCount + 1})`);
+            console.log('📊 Cargando usuarios...');
 
-            // Construir URL con parámetros de paginación y búsqueda
-            const urlParams = new URLSearchParams();
-            urlParams.append('page', page.toString());
-            urlParams.append('limit', '100'); // Cargar 100 usuarios por página
-            
-            if (searchEmpresaParam && searchEmpresaParam.trim()) {
-                urlParams.append('search_empresa', searchEmpresaParam.trim());
-            }
-            
-            if (searchNombreParam && searchNombreParam.trim()) {
-                urlParams.append('search_nombre', searchNombreParam.trim());
-            }
-
-            const url = buildApiUrl(`${API_CONFIG.ADMIN.USERS}?${urlParams.toString()}`);
-            
-            // Timeout de 10 segundos para usuarios
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de usuarios')), 10000)
-            );
-
-            const fetchPromise = fetch(url, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-            });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Usuarios cargados:', data.usuarios?.length || 0);
+            // Intentar múltiples endpoints en paralelo para mayor velocidad
+            const endpoints = [
+                fetch(buildApiUrl(API_CONFIG.ADMIN.USERS), {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                }).then(r => r.ok ? r.json() : null),
                 
-                setAllUsers(data.usuarios || []);
-                setTotalUsers(data.total || 0);
-                setTotalPages(data.total_pages || 1);
-                setCurrentPage(data.page || 1);
+                fetch(buildApiUrl('/admin/users/emails'), {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                }).then(r => r.ok ? r.json() : null)
+            ];
+
+            const [usersData, emailsData] = await Promise.allSettled(endpoints);
+
+            // Usar el primer resultado exitoso
+            if (usersData.status === 'fulfilled' && usersData.value?.usuarios) {
+                console.log('✅ Usuarios cargados desde endpoint principal');
+                setUsers(usersData.value.usuarios);
+            } else if (emailsData.status === 'fulfilled' && emailsData.value?.emails) {
+                console.log('✅ Usuarios cargados desde emails');
+                const usersFromEmails = Object.entries(emailsData.value.emails || {}).map(([id, userData]: [string, any]) => ({
+                    id,
+                    nombre_persona: userData.email.split('@')[0],
+                    email: userData.email,
+                    rol_principal: 'client',
+                    estado: userData.estado || 'ACTIVO',
+                    nombre_empresa: 'Empresa',
+                    foto_perfil: null,
+                    fecha_actualizacion: new Date().toISOString()
+                }));
+                setUsers(usersFromEmails);
             } else {
-                console.log('❌ Error en respuesta del servidor:', response.status);
-                
-                // Reintentar si es error 500 y no hemos intentado más de 2 veces
-                if (response.status === 500 && retryCount < 2) {
-                    console.log(`🔄 Reintentando carga de usuarios... (${retryCount + 1}/2)`);
-                    await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo
-                    return loadUsers(page, searchEmpresaParam, searchNombreParam, retryCount + 1);
-                }
-                
-                setError('Error al cargar usuarios. Verifica tu conexión.');
-                // Solo limpiar usuarios si no hay datos cargados (evitar perder datos existentes)
-                if (allUsers.length === 0) {
-                    setAllUsers([]);
-                }
+                console.log('⚠️ No se pudieron cargar usuarios');
+                setUsers([]);
             }
-
-        } catch (error) {
-            console.error('❌ Error cargando usuarios:', error);
-            
-            // Reintentar si es timeout o Failed to fetch y no hemos intentado más de 2 veces
-            if (error instanceof Error && 
-                (error.message.includes('Timeout') || error.message.includes('Failed to fetch')) && 
-                retryCount < 2) {
-                console.log(`🔄 Reintentando por ${error.message.includes('Timeout') ? 'timeout' : 'conexión'}... (${retryCount + 1}/2)`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo
-                return loadUsers(page, searchEmpresaParam, searchNombreParam, retryCount + 1);
-            }
-            
-            setError('Error al cargar usuarios. Verifica tu conexión.');
-            // Solo limpiar usuarios si no hay datos cargados (evitar perder datos existentes)
-            if (allUsers.length === 0) {
-                setAllUsers([]);
-            }
+        } catch (err: any) {
+            console.error('❌ Error cargando usuarios:', err);
+            setUsers([]);
         } finally {
             setLoading(false);
         }
     };
 
+    const loadUsersWithSearch = async (empresaSearch: string) => {
+        try {
+            const trimmedSearch = empresaSearch?.trim() || '';
+
+            // Solo mostrar indicador de búsqueda si hay texto real
+            if (trimmedSearch) {
+                setIsSearching(true);
+
+                // Pequeño delay para mejor UX (al menos 200ms de indicador visual)
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+
+            // Construir URL con parámetros de búsqueda
+            const urlParams = new URLSearchParams();
+            if (trimmedSearch) {
+                urlParams.append('search_empresa', trimmedSearch);
+            }
+
+            const url = buildApiUrl(`${API_CONFIG.ADMIN.USERS}${urlParams.toString() ? '?' + urlParams.toString() : ''}`);
+
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setUsers(data.usuarios || []);
+            } else {
+                // Manejo mejorado de errores para búsqueda
+                if (response.status === 404) {
+                    console.log('⚠️ Endpoint /admin/users no encontrado en búsqueda, manteniendo lista actual');
+                    // Mantener la lista actual en lugar de mostrar error
+                } else {
+                    const errorText = await response.text();
+                    console.error(`Error en búsqueda: ${response.status}: ${errorText}`);
+                }
+            }
+        } catch (err: any) {
+            // Mantener la lista actual en caso de error de red
+        } finally {
+            setIsSearching(false);
+        }
+    };
 
     const loadRoles = async () => {
         try {
-            console.log('📋 Cargando roles...');
-            
-            // Timeout más corto para roles (3 segundos)
+            // Optimización: Agregar timeout para roles
             const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de roles')), 3000)
+                setTimeout(() => reject(new Error('Timeout de roles')), 6000)
             );
 
             const fetchPromise = fetch(buildApiUrl(API_CONFIG.ADMIN.ROLES), {
@@ -215,14 +205,11 @@ const AdminUsersPage: React.FC = () => {
             if (response.ok) {
                 const data = await response.json();
                 setAvailableRoles(data.roles || []);
-                console.log('✅ Roles cargados:', data.roles?.length || 0);
             } else {
-                console.warn('⚠️ Error en respuesta de roles:', response.status);
-                setAvailableRoles([]);
+                const errorText = await response.text();
             }
         } catch (err: any) {
-            console.warn('⚠️ Error cargando roles (no crítico):', err.message);
-            // No bloquear la UI si los roles fallan
+            // Optimización: No bloquear la UI si los roles fallan
             setAvailableRoles([]);
         }
     };
@@ -231,18 +218,11 @@ const AdminUsersPage: React.FC = () => {
         try {
             console.log('🔐 Cargando permisos de administrador...');
 
-            // Timeout de 5 segundos para permisos
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de permisos')), 5000)
-            );
-
-            const fetchPromise = fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/permissions`), {
+            const response = await fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/permissions`), {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('access_token')}`
                 }
             });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
 
             if (response.ok) {
                 const data = await response.json();
@@ -250,10 +230,9 @@ const AdminUsersPage: React.FC = () => {
                 setUserPermissions(data.permissions);
             } else {
                 console.log('⚠️ API de permisos devolvió', response.status, '- usando permisos por defecto');
-                throw new Error(`API devolvió ${response.status}`);
+                throw new Error('API no disponible');
             }
         } catch (err: any) {
-            console.warn('⚠️ Error cargando permisos (usando por defecto):', err.message);
             // Asumir permisos de admin por defecto para usuarios con rol admin
             console.log('✅ Asumiendo permisos de administrador por defecto');
             setUserPermissions({
@@ -270,11 +249,11 @@ const AdminUsersPage: React.FC = () => {
     const clearFilters = useCallback(() => {
         setSearchQuery('');
         setSearchEmpresa('');
+        setSearchEmpresaDebounced('');
         setFilterRole('all');
         setFilterStatus('all');
         setCurrentPage(1);
-        // Recargar usuarios sin filtros (sin parámetros de búsqueda)
-        loadUsers(1, '', '');
+        // No recargar usuarios, solo limpiar filtros
         showNotification('info', 'Filtros limpiados');
     }, [showNotification]);
 
@@ -338,7 +317,7 @@ const AdminUsersPage: React.FC = () => {
 
     const handleDeactivateUser = async (userId: string): Promise<boolean> => {
         // Encontrar el usuario para saber su estado actual
-        const user = allUsers.find(u => u.id === userId);
+        const user = users.find(u => u.id === userId);
         const isInactive = user?.estado === 'INACTIVO';
 
         const confirmMessage = isInactive
@@ -363,12 +342,12 @@ const AdminUsersPage: React.FC = () => {
 
                 // Actualización optimista: cambiar estado del usuario localmente
                 const newEstado = isInactive ? 'ACTIVO' : 'INACTIVO';
-                const updatedUsers = allUsers.map((user: BackendUser) =>
+                const updatedUsers = users.map((user: BackendUser) =>
                     user.id === userId
                         ? { ...user, estado: newEstado }
                         : user
                 );
-                setAllUsers(updatedUsers);
+                setUsers(updatedUsers);
 
                 const actionMessage = isInactive ? 'reactivado' : 'desactivado';
                 showNotification('success', result.message || `Usuario ${actionMessage} exitosamente`);
@@ -420,7 +399,7 @@ const AdminUsersPage: React.FC = () => {
 
             if (response.ok) {
                 // Actualización optimista: actualizar el usuario localmente sin recargar
-                const updatedUsers = allUsers.map((user: BackendUser) =>
+                const updatedUsers = users.map((user: BackendUser) =>
                     user.id === selectedUser?.id
                         ? {
                             ...user,
@@ -430,7 +409,7 @@ const AdminUsersPage: React.FC = () => {
                         }
                         : user
                 );
-                setAllUsers(updatedUsers);
+                setUsers(updatedUsers);
 
                 showNotification('success', 'Perfil actualizado exitosamente');
                 setShowEditModal(false);
@@ -477,14 +456,11 @@ const AdminUsersPage: React.FC = () => {
         }
     };
 
-    // Búsqueda híbrida: local para búsquedas cortas, backend para búsquedas largas
     const filteredUsers = useMemo(() => {
-        console.log('🔍 DEBUG: filteredUsers - allUsers.length:', allUsers.length);
-        console.log('🔍 DEBUG: filteredUsers - allUsers:', allUsers);
-        let filtered = [...allUsers];
+        let filtered = [...users];
 
-        // Filtro local por nombre/email (búsquedas cortas)
-        if (searchQuery.trim() && searchQuery.length < 3) {
+        // Filtro por búsqueda
+        if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase();
             filtered = filtered.filter(user =>
                 user.nombre_persona.toLowerCase().includes(query) ||
@@ -492,50 +468,30 @@ const AdminUsersPage: React.FC = () => {
             );
         }
 
-        // Filtro local por empresa (búsquedas cortas)
-        if (searchEmpresa.trim() && searchEmpresa.length < 3) {
-            const query = searchEmpresa.toLowerCase();
-            filtered = filtered.filter(user =>
-                user.nombre_empresa?.toLowerCase().includes(query)
-            );
-        }
-
-        // Filtro por rol (siempre local)
+        // Filtro por rol
         if (filterRole !== 'all') {
             filtered = filtered.filter(user =>
                 user.rol_principal === filterRole
             );
         }
 
-        // Filtro por estado (siempre local)
+        // Filtro por estado
         if (filterStatus !== 'all') {
             filtered = filtered.filter(user => {
                 return user.estado === filterStatus;
             });
         }
 
-        console.log('🔍 DEBUG: filteredUsers - resultado final:', filtered.length);
         return filtered;
-    }, [allUsers, searchQuery, searchEmpresa, filterRole, filterStatus]);
+    }, [users, searchQuery, filterRole, filterStatus]);
 
-    // Función para búsqueda en backend (búsquedas largas)
-    const searchInBackend = async (searchTerm: string, searchType: 'nombre' | 'empresa') => {
-        if (searchTerm.length >= 3) {
-            if (searchType === 'nombre') {
-                await loadUsers(1, undefined, searchTerm);
-            } else {
-                await loadUsers(1, searchTerm, undefined);
-            }
-        }
-    };
-
-    // Paginación - usar usuarios filtrados directamente
+    // Paginación
     const paginatedUsers = useMemo(() => {
-        return filteredUsers;
-    }, [filteredUsers]);
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        return filteredUsers.slice(startIndex, startIndex + itemsPerPage);
+    }, [filteredUsers, currentPage, itemsPerPage]);
 
-    // Usar totalPages del backend para paginación real
-    // const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+    const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
 
     if (loading) {
         return (
@@ -573,7 +529,7 @@ const AdminUsersPage: React.FC = () => {
                                 }
                             </p>
                             <button
-                                        onClick={() => loadUsers(1)}
+                                onClick={loadUsers}
                                 className="mt-4 btn-blue touch-manipulation"
                             >
                                 <span>Reintentar</span>
@@ -728,7 +684,7 @@ const AdminUsersPage: React.FC = () => {
                                     </button>
                                 )}
                                 <button
-                                    onClick={() => loadUsers(currentPage)}
+                                    onClick={loadUsers}
                                     className="w-full sm:w-auto bg-primary-600 text-white px-3 sm:px-4 py-2 text-sm rounded-lg hover:bg-primary-700 transition-colors"
                                 >
                                     Actualizar
@@ -742,7 +698,7 @@ const AdminUsersPage: React.FC = () => {
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                             <div>
                                 <h3 className="text-base sm:text-lg font-medium text-slate-900">
-                                    Total: {totalUsers} usuarios
+                                    Total: {filteredUsers.length} usuarios
                                 </h3>
                                 {isSearching && (
                                     <span className="ml-2 text-blue-600 animate-pulse">
@@ -1090,22 +1046,22 @@ const AdminUsersPage: React.FC = () => {
                             <div className="p-8 text-center">
                                 <UserCircleIcon className="mx-auto h-12 w-12 text-slate-400" />
                                 <h3 className="mt-2 text-lg font-medium text-slate-900">
-                                    {allUsers.length === 0 
+                                    {users.length === 0 
                                         ? 'No hay usuarios disponibles' 
                                         : 'No se encontraron usuarios'
                                     }
                                 </h3>
                                 <p className="mt-1 text-sm text-slate-500">
-                                    {allUsers.length === 0 
+                                    {users.length === 0 
                                         ? 'Los datos de usuarios no están disponibles en este momento. Verifica tu conexión.'
                                         : searchQuery || searchEmpresa || filterRole !== 'all' || filterStatus !== 'all'
                                             ? 'Intenta ajustar los filtros de búsqueda.'
                                             : 'No hay usuarios registrados en la plataforma.'
                                     }
                                 </p>
-                                {allUsers.length === 0 && (
+                                {users.length === 0 && (
                                     <button
-                                        onClick={() => loadUsers(1)}
+                                        onClick={loadUsers}
                                         className="mt-4 btn-blue touch-manipulation"
                                     >
                                         <span>Reintentar</span>

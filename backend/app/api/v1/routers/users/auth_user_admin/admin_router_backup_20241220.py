@@ -938,140 +938,109 @@ async def servir_documento(
 
 @router.get(
     "/users",
-    description="Obtiene la lista de todos los usuarios de la plataforma con opción de búsqueda optimizada"
+    description="Obtiene la lista de todos los usuarios de la plataforma con opción de búsqueda"
 )
 async def get_all_users(
     admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
     db: AsyncSession = Depends(get_async_db),
-    search_empresa: str = None,
-    search_nombre: str = None,
-    page: int = 1,
-    limit: int = 100
+    search_empresa: str = None
 ):
-    """Obtiene usuarios con paginación y búsqueda optimizada"""
+    """Obtiene todos los usuarios con sus roles y estado - VERSIÓN SIMPLIFICADA"""
     try:
-        print(f"🔍 DEBUG: Endpoint optimizado - Página: {page}, Límite: {limit}")
-        print(f"🔍 DEBUG: Búsqueda empresa: {search_empresa}, nombre: {search_nombre}")
-        print(f"🔍 DEBUG: Iniciando consulta de base de datos...")
+        print("🔍 DEBUG: Endpoint simplificado iniciado")
+        print(f"🔍 DEBUG: Búsqueda por empresa: {search_empresa}")
 
+        # SOLUCIÓN ULTRA SIMPLE: Obtener usuarios básicos primero
         from sqlalchemy.future import select
-        from sqlalchemy import or_, and_, func
+        from sqlalchemy import or_, and_
 
-        # OPTIMIZACIÓN 1: Una sola consulta con JOIN para usuarios y roles
-        base_query = select(
-            UserModel.id,
-            UserModel.nombre_persona,
-            UserModel.nombre_empresa,
-            UserModel.estado,
-            UserModel.foto_perfil,
-            RolModel.nombre.label('rol_nombre')
-        ).select_from(
-            UserModel
-        ).outerjoin(
-            UsuarioRolModel, UserModel.id == UsuarioRolModel.id_usuario
-        ).outerjoin(
-            RolModel, UsuarioRolModel.id_rol == RolModel.id
-        )
-
-        # Aplicar filtros de búsqueda
+        # Paso 1: Obtener todos los usuarios con filtro opcional
         if search_empresa and search_empresa.strip():
+            # Aplicar filtro de búsqueda por nombre de empresa
             search_term = f"%{search_empresa.strip()}%"
-            base_query = base_query.where(UserModel.nombre_empresa.ilike(search_term))
-            print(f"🔍 DEBUG: Filtro empresa aplicado: {search_term}")
+            user_query = select(UserModel.id, UserModel.nombre_persona, UserModel.nombre_empresa, UserModel.estado, UserModel.foto_perfil).where(
+                UserModel.nombre_empresa.ilike(search_term)
+            )
+            print(f"🔍 DEBUG: Aplicando filtro de búsqueda: {search_term}")
+        else:
+            # Obtener todos los usuarios sin filtro
+            user_query = select(UserModel.id, UserModel.nombre_persona, UserModel.nombre_empresa, UserModel.estado, UserModel.foto_perfil)
 
-        if search_nombre and search_nombre.strip():
-            search_term = f"%{search_nombre.strip()}%"
-            base_query = base_query.where(UserModel.nombre_persona.ilike(search_term))
-            print(f"🔍 DEBUG: Filtro nombre aplicado: {search_term}")
+        user_result = await db.execute(user_query)
+        users = user_result.all()
 
-        # OPTIMIZACIÓN 2: Obtener total de registros para paginación
-        count_query = select(func.count(func.distinct(UserModel.id)))
-        if search_empresa and search_empresa.strip():
-            count_query = count_query.where(UserModel.nombre_empresa.ilike(f"%{search_empresa.strip()}%"))
-        if search_nombre and search_nombre.strip():
-            count_query = count_query.where(UserModel.nombre_persona.ilike(f"%{search_nombre.strip()}%"))
+        print(f"🔍 DEBUG: {len(users)} usuarios encontrados" + (f" para búsqueda '{search_empresa}'" if search_empresa else ""))
 
-        total_result = await db.execute(count_query)
-        total_users = total_result.scalar()
-
-        # OPTIMIZACIÓN 3: Aplicar paginación
-        offset = (page - 1) * limit
-        base_query = base_query.offset(offset).limit(limit)
-
-        # Ejecutar consulta optimizada
-        print("🔍 DEBUG: Ejecutando consulta de base de datos...")
-        result = await db.execute(base_query)
-        users_with_roles = result.all()
-        print("🔍 DEBUG: Consulta de base de datos completada")
-
-        print(f"🔍 DEBUG: {len(users_with_roles)} registros obtenidos de {total_users} totales")
-
-        # OPTIMIZACIÓN 4: Obtener todos los emails de Supabase de una vez
-        print("🔍 DEBUG: Obteniendo usuarios de Supabase...")
-        try:
-            from app.supabase.auth_service import supabase_admin
-            auth_users = supabase_admin.auth.admin.list_users()
-            print(f"🔍 DEBUG: Supabase devolvió {len(auth_users) if auth_users else 0} usuarios")
-            
-            emails_dict = {}
-            if auth_users and len(auth_users) > 0:
-                for auth_user in auth_users:
-                    if auth_user.id and auth_user.email:
-                        emails_dict[auth_user.id] = {
-                            "email": auth_user.email,
-                            "ultimo_acceso": auth_user.last_sign_in_at
-                        }
-                print(f"🔍 DEBUG: {len(emails_dict)} emails obtenidos de Supabase")
-            else:
-                print("⚠️ DEBUG: No se obtuvieron usuarios de Supabase")
-        except Exception as supabase_error:
-            print(f"❌ DEBUG: Error en Supabase: {str(supabase_error)}")
-            emails_dict = {}
-
-        # OPTIMIZACIÓN 5: Procesar resultados agrupados por usuario
-        users_dict = {}
-        for row in users_with_roles:
-            user_id = str(row.id)
-            
-            if user_id not in users_dict:
-                # Crear usuario base
-                users_dict[user_id] = {
-                    "id": user_id,
-                    "nombre_persona": row.nombre_persona,
-                    "nombre_empresa": row.nombre_empresa,
-                    "foto_perfil": row.foto_perfil,
-                    "estado": row.estado or "ACTIVO",
-                    "roles": [],
-                    "rol_principal": "client",
-                    "email": "No disponible",
-                    "ultimo_acceso": None
-                }
-
-                # Agregar email si existe
-                if user_id in emails_dict:
-                    users_dict[user_id]["email"] = emails_dict[user_id]["email"]
-                    users_dict[user_id]["ultimo_acceso"] = emails_dict[user_id]["ultimo_acceso"]
-
-            # Agregar rol si existe
-            if row.rol_nombre:
-                users_dict[user_id]["roles"].append(row.rol_nombre)
-
-        # OPTIMIZACIÓN 6: Determinar rol principal para cada usuario
+        # Paso 2: Procesar usuarios uno por uno de manera segura
         users_data = []
-        for user_id, user_data in users_dict.items():
-            roles = user_data["roles"]
-            user_data["todos_roles"] = roles.copy()
+        for user_row in users:
+            user_id = str(user_row.id)
+            print(f"🔍 DEBUG: Procesando usuario {user_id}")
 
-            # Determinar rol principal
-            normalized_roles = [rol.lower().strip() for rol in roles]
-            if any(admin_role in normalized_roles for admin_role in ["admin", "administrador", "administrator"]):
-                user_data["rol_principal"] = "admin"
-            elif any(provider_role in normalized_roles for provider_role in ["provider", "proveedor", "proveedores"]):
-                user_data["rol_principal"] = "provider"
-            elif any(client_role in normalized_roles for client_role in ["client", "cliente"]):
-                user_data["rol_principal"] = "client"
-            else:
-                user_data["rol_principal"] = "client"
+            # Crear objeto usuario básico
+            user_data = {
+                "id": user_id,
+                "nombre_persona": user_row.nombre_persona,
+                "nombre_empresa": user_row.nombre_empresa,
+                "foto_perfil": user_row.foto_perfil,  # Campo foto_perfil del modelo UserModel
+                "roles": [],
+                "rol_principal": "client",
+                "todos_roles": [],
+                "email": "No disponible",
+                "estado": user_row.estado or "ACTIVO",  # Usar estado real de BD
+                "ultimo_acceso": None
+            }
+
+            # Obtener email desde Supabase Auth
+            try:
+                from app.supabase.auth_service import supabase_admin
+                auth_user = supabase_admin.auth.admin.get_user_by_id(user_row.id)
+
+                if auth_user and auth_user.user:
+                    user_data["email"] = auth_user.user.email or "No disponible"
+                    # Usar estado de la base de datos, no de Supabase
+                    user_data["estado"] = user.estado if user else "ACTIVO"
+                    user_data["ultimo_acceso"] = auth_user.user.last_sign_in_at
+
+                print(f"🔍 DEBUG: Email obtenido para usuario {user_id}: {user_data['email']}")
+
+            except Exception as email_error:
+                print(f"⚠️ Error obteniendo email para usuario {user_id}: {str(email_error)}")
+                # Mantener valores por defecto
+                pass
+
+            # Paso 3: Obtener roles de este usuario específico
+            try:
+                roles_query = select(RolModel.nombre).select_from(
+                    UsuarioRolModel
+                ).join(
+                    RolModel, UsuarioRolModel.id_rol == RolModel.id
+                ).where(
+                    UsuarioRolModel.id_usuario == user_row.id
+                )
+
+                roles_result = await db.execute(roles_query)
+                roles = roles_result.scalars().all()
+                user_data["roles"] = list(roles)
+                user_data["todos_roles"] = list(roles)
+
+                # Determinar rol principal (usar lógica de mapeo consistente)
+                normalized_roles = [rol.lower().strip() for rol in roles]
+                if any(admin_role in normalized_roles for admin_role in ["admin", "administrador", "administrator"]):
+                    user_data["rol_principal"] = "admin"
+                elif any(provider_role in normalized_roles for provider_role in ["provider", "proveedor", "proveedores"]):
+                    user_data["rol_principal"] = "provider"
+                elif any(client_role in normalized_roles for client_role in ["client", "cliente"]):
+                    user_data["rol_principal"] = "client"
+                else:
+                    user_data["rol_principal"] = "client"
+
+                print(f"🔍 DEBUG: Usuario {user_id} procesado correctamente con {len(roles)} roles")
+
+            except Exception as role_error:
+                print(f"⚠️ Error obteniendo roles para usuario {user_id}: {str(role_error)}")
+                # Continuar sin roles
+                pass
 
             users_data.append(user_data)
 
@@ -1079,11 +1048,11 @@ async def get_all_users(
 
         return {
             "usuarios": users_data,
-            "total": total_users,
-            "page": page,
-            "limit": limit,
-            "total_pages": (total_users + limit - 1) // limit,
-            "message": "Usuarios obtenidos exitosamente"
+            "total": len(users_data),
+            "filtros": {
+                "search_empresa": search_empresa,
+                "busqueda_activa": bool(search_empresa and search_empresa.strip())
+            }
         }
 
     except Exception as e:
@@ -1107,12 +1076,8 @@ async def get_user_permissions(
 ):
     """Obtiene información sobre los permisos del usuario administrador actual"""
     try:
-        print(f"🔍 DEBUG: Obteniendo permisos para usuario: {admin_user.id}")
-        print(f"🔍 DEBUG: Roles del usuario: {admin_user.roles}")
-        
         # Verificar si el usuario es administrador
         is_admin = any(rol.lower() in ["admin", "administrador"] for rol in admin_user.roles)
-        print(f"🔍 DEBUG: Es admin: {is_admin}")
 
         # Determinar permisos basados en roles
         permissions = {
@@ -1128,7 +1093,7 @@ async def get_user_permissions(
             "user_email": admin_user.email
         }
 
-        result = {
+        return {
             "permissions": permissions,
             "features": {
                 "search_by_company": True,
@@ -1137,9 +1102,6 @@ async def get_user_permissions(
                 "role_management": is_admin
             }
         }
-        
-        print(f"🔍 DEBUG: Permisos generados exitosamente: {permissions}")
-        return result
 
     except Exception as e:
         print(f"❌ Error obteniendo permisos: {str(e)}")
@@ -1638,12 +1600,12 @@ async def get_users_emails(
         # Obtener todos los usuarios de Supabase en una sola llamada
         auth_users = supabase_admin.auth.admin.list_users()
         
-        if not auth_users or len(auth_users) == 0:
+        if not auth_users or not auth_users.users:
             return {"emails": {}}
         
         # Crear diccionario de ID -> email
         emails_dict = {}
-        for auth_user in auth_users:
+        for auth_user in auth_users.users:
             if auth_user.id and auth_user.email:
                 emails_dict[auth_user.id] = {
                     "email": auth_user.email,
@@ -2501,15 +2463,15 @@ async def get_reporte_servicios(
     try:
         # Obtener todos los servicios con información de empresa y categoría
         servicios_query = select(
-            ServicioModel,
+            Servicio,
             PerfilEmpresa.razon_social,
             PerfilEmpresa.nombre_fantasia,
-            CategoriaModel.nombre.label('categoria_nombre')
+            Categoria.nombre.label('categoria_nombre')
         ).join(
-            PerfilEmpresa, ServicioModel.id_perfil == PerfilEmpresa.id_perfil
+            PerfilEmpresa, Servicio.id_perfil == PerfilEmpresa.id_perfil
         ).join(
-            CategoriaModel, ServicioModel.id_categoria == CategoriaModel.id_categoria
-        ).order_by(ServicioModel.created_at.desc())
+            Categoria, Servicio.id_categoria == Categoria.id_categoria
+        ).order_by(Servicio.created_at.desc())
         
         servicios_result = await db.execute(servicios_query)
         servicios_data = servicios_result.all()
@@ -2562,11 +2524,11 @@ async def get_users_batch_emails(
         # Obtener usuarios de Supabase en lotes
         auth_users = supabase_admin.auth.admin.list_users()
 
-        if not auth_users or len(auth_users) == 0:
+        if not auth_users or not auth_users.users:
             return {"emails": {}, "total": 0}
 
         # Aplicar paginación
-        paginated_users = auth_users[skip:skip + limit]
+        paginated_users = auth_users.users[skip:skip + limit]
 
         # Crear diccionario de emails
         emails_dict = {}
