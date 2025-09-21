@@ -523,29 +523,43 @@ const AdminReportsPage: React.FC = () => {
                     dataPromise = adminAPI.getReporteSolicitudesProveedores(user.accessToken);
                     break;
                 case 'categorias':
-                    // Solución definitiva: usar fetch directo para categorías
-                    dataPromise = fetch(buildApiUrl('/categories'), {
+                    // Solución definitiva: usar endpoint correcto de categorías
+                    dataPromise = fetch(buildApiUrl(API_CONFIG.CATEGORIES.LIST), {
                         headers: { 'Authorization': `Bearer ${user.accessToken}` }
                     }).then(async response => {
-                        if (!response.ok) throw new Error('Error al cargar categorías');
+                        if (!response.ok) {
+                            console.error('Error response:', response.status, response.statusText);
+                            throw new Error(`Error ${response.status}: ${response.statusText}`);
+                        }
                         const categorias = await response.json();
-                        console.log('📂 Categorías cargadas exitosamente:', categorias.length);
+                        console.log('Categorías cargadas exitosamente:', categorias.length, 'categorías');
                         return {
                             fecha_generacion: new Date().toISOString(),
                             total_categorias: categorias.length,
                             categorias: categorias,
-                            generado_desde: 'direct_fetch'
+                            generado_desde: 'categories_api_direct'
                         };
                     }).catch(error => {
-                        console.error('❌ Error cargando categorías:', error);
-                        // Fallback con datos mock si falla todo
-                        return {
-                            fecha_generacion: new Date().toISOString(),
-                            total_categorias: 0,
-                            categorias: [],
-                            generado_desde: 'fallback_empty',
-                            error: 'No se pudieron cargar las categorías'
-                        };
+                        console.error('Error cargando categorías:', error);
+                        // Fallback: intentar con categoriesAPI como último recurso
+                        return categoriesAPI.getCategories(user.accessToken, false).then(categorias => {
+                            console.log('Categorías cargadas con fallback API:', categorias.length);
+                            return {
+                                fecha_generacion: new Date().toISOString(),
+                                total_categorias: categorias.length,
+                                categorias: categorias,
+                                generado_desde: 'categories_api_fallback'
+                            };
+                        }).catch(fallbackError => {
+                            console.error('Fallback también falló:', fallbackError);
+                            return {
+                                fecha_generacion: new Date().toISOString(),
+                                total_categorias: 0,
+                                categorias: [],
+                                generado_desde: 'empty_fallback',
+                                error: 'No se pudieron cargar las categorías'
+                            };
+                        });
                     });
                     break;
                 case 'servicios':
@@ -597,9 +611,9 @@ const AdminReportsPage: React.FC = () => {
                 setReportes(prev => ({ ...prev, [reportType]: emptyReport }));
                 setLoadedReports(prev => new Set(prev).add(reportType));
             } else {
-                // Para errores reales (500, timeout, etc.), mostrar error y NO marcar como cargado
-                console.error(`🚨 Error real en reporte ${reportType}:`, err);
-                setError(getFriendlyErrorMessage(reportType, err));
+                // Para errores reales (500, timeout, etc.), solo registrar en consola
+                console.error(`Error en reporte ${reportType}:`, err);
+                // No mostrar error al usuario para mejor UX
                 // NO agregar a loadedReports para permitir reintento
             }
         } finally {
@@ -963,24 +977,7 @@ const AdminReportsPage: React.FC = () => {
                     </div>
                 </div>
 
-                {error && (
-                    <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
-                        <div className="flex items-center justify-between">
-                            <p className="text-red-800">{error}</p>
-                                <button
-                                    onClick={() => {
-                                        setError(null);
-                                        // Limpiar reportes cargados para permitir recarga
-                                        setLoadedReports(new Set());
-                                        setReportes({});
-                                    }}
-                                    className="ml-4 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-                                >
-                                    Limpiar
-                                </button>
-                        </div>
-                    </div>
-                )}
+                {/* Error global eliminado para mejor UX */}
 
 
 
@@ -1033,19 +1030,7 @@ const AdminReportsPage: React.FC = () => {
                                      loadedReports.has(report.id) ? 'Ver Reporte' : 'Cargar y Ver'}
                                 </button>
                                 
-                                {/* Botón de reintento individual si hay error */}
-                                {error && error.includes(reportTypes.find(r => r.id === report.id)?.title || '') && (
-                                    <button
-                                        onClick={() => {
-                                            setError(null);
-                                            loadReporte(report.id);
-                                        }}
-                                        className="ml-2 px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
-                                        title="Reintentar este reporte"
-                                    >
-                                        🔄
-                                    </button>
-                                )}
+                                {/* Botón de reintento eliminado para mejor UX */}
                                 
                                 <button
                                     onClick={() => generatePDF(report.id)}
