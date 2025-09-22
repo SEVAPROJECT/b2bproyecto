@@ -59,17 +59,26 @@ smtp_configurado = bool(SMTP_USERNAME and SMTP_PASSWORD)
 sendgrid_configurado = bool(os.getenv("SENDGRID_API_KEY"))
 
 print(f"📧 SMTP configurado: {'Sí' if smtp_configurado else 'No'}")
+print(f"📧 Resend configurado: {'Sí' if os.getenv('RESEND_API_KEY') else 'No'}")
 print(f"📧 SendGrid configurado: {'Sí' if sendgrid_configurado else 'No'}")
 
-if smtp_configurado:
-    print("   🔄 SMTP con múltiples configuraciones: Gmail TLS/SSL, Outlook TLS/Plain")
-    if sendgrid_configurado:
-        print("   ✅ Configuración completa: Múltiples SMTP + SendGrid (ultra confiable)")
-    else:
-        print("   ℹ️ Solo SMTP configurado - intentará múltiples proveedores hasta que uno funcione")
+resend_configurado = bool(os.getenv("RESEND_API_KEY"))
 
-if not smtp_configurado and not sendgrid_configurado:
-    print("   ⚠️ Ningún método de email configurado")
+if smtp_configurado:
+    print("   🔄 SMTP con 2 configuraciones rápidas: Gmail TLS/SSL")
+    if resend_configurado or sendgrid_configurado:
+        api_name = "Resend" if resend_configurado else "SendGrid"
+        print(f"   ✅ Configuración completa: SMTP + {api_name} (óptimo)")
+    else:
+        print("   ℹ️ Solo SMTP configurado - Railway bloquea SMTP en planes gratuitos")
+
+if resend_configurado:
+    print("   🚂 Resend configurado - recomendado por Railway para planes gratuitos")
+elif sendgrid_configurado:
+    print("   ✅ SendGrid configurado - funciona en cualquier plataforma")
+
+if not smtp_configurado and not resend_configurado and not sendgrid_configurado:
+    print("   ⚠️ NINGÚN método de email configurado - Railway requiere API HTTP en planes gratuitos")
     missing_vars = []
     if not SMTP_USERNAME:
         missing_vars.append("SMTP_USERNAME")
@@ -78,7 +87,5 @@ if not smtp_configurado and not sendgrid_configurado:
     if missing_vars:
         print(f"   📧 Variables SMTP faltantes: {', '.join(missing_vars)}")
         print(f"   📧 Alternativas SMTP: GMAIL_EMAIL, GMAIL_APP_PASSWORD")
-    print("   📧 Para respaldo opcional: SENDGRID_API_KEY")
-
-if not smtp_configurado and sendgrid_configurado:
-    print("   ✅ Solo SendGrid configurado - funciona en cualquier plataforma")
+    print("   📧 SOLUCIÓN RECOMENDADA: RESEND_API_KEY (gratuito, recomendado por Railway)")
+    print("   📧 Respaldo alternativo: SENDGRID_API_KEY")

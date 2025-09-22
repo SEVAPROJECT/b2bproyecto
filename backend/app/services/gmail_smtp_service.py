@@ -21,7 +21,7 @@ class GmailSMTPService:
     """Servicio para envío de correos usando SMTP de Gmail"""
     
     def __init__(self):
-        # Configuración SMTP - Intenta múltiples configuraciones para superar restricciones de Railway
+        # Configuración SMTP - Solo Gmail TLS/SSL (rápido), luego directo a API
         self.configurations = [
             {
                 "server": "smtp.gmail.com",
@@ -34,18 +34,6 @@ class GmailSMTPService:
                 "port": 465,
                 "use_ssl": True,
                 "name": "Gmail SSL"
-            },
-            {
-                "server": "smtp-mail.outlook.com",
-                "port": 587,
-                "use_tls": True,
-                "name": "Outlook TLS"
-            },
-            {
-                "server": "smtp-mail.outlook.com",
-                "port": 25,
-                "use_tls": False,
-                "name": "Outlook Plain"
             }
         ]
 
@@ -54,23 +42,26 @@ class GmailSMTPService:
         self.sender_password = os.getenv("SMTP_PASSWORD") or os.getenv("GMAIL_APP_PASSWORD")
         self.sender_name = os.getenv("SMTP_FROM_NAME") or os.getenv("SENDER_NAME") or os.getenv("GMAIL_SENDER_NAME", "B2B Platform")
 
-        # Configuración API HTTP (SendGrid o similar) - opcional
-        self.sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
-        self.api_enabled = bool(self.sendgrid_api_key)
+        # Configuración API HTTP (Resend recomendado por Railway, SendGrid como respaldo)
+        self.resend_api_key = os.getenv("RESEND_API_KEY")
+        self.sendgrid_api_key = os.getenv("SENDGRID_API_KEY")  # respaldo alternativo
+        self.api_enabled = bool(self.resend_api_key or self.sendgrid_api_key)
 
         # Verificar configuración
         smtp_configurado = bool(self.sender_email and self.sender_password)
 
         if smtp_configurado:
             logger.info(f"✅ SMTP configurado para: {self.sender_email}")
-            logger.info(f"🔄 Configuraciones disponibles: {len(self.configurations)} (intentará todas hasta que una funcione)")
+            logger.info(f"🔄 Configuraciones disponibles: {len(self.configurations)} (Gmail TLS/SSL rápidas)")
         else:
             logger.warning("⚠️ SMTP no configurado. Faltan variables (SMTP_USER/GMAIL_EMAIL o SMTP_PASSWORD/GMAIL_APP_PASSWORD)")
 
-        if self.api_enabled:
-            logger.info("✅ API Email (SendGrid) configurada como respaldo")
+        if self.resend_api_key:
+            logger.info("✅ API Email (Resend) configurada como respaldo - recomendado por Railway")
+        elif self.sendgrid_api_key:
+            logger.info("✅ API Email (SendGrid) configurada como respaldo alternativo")
         else:
-            logger.info("ℹ️ API Email no configurada - solo SMTP disponible")
+            logger.warning("⚠️ API Email no configurada - Railway bloquea SMTP en planes gratuitos")
     
     def send_email(
         self,
@@ -400,9 +391,9 @@ class GmailSMTPService:
         
         return self.send_email_with_fallback(to_email, subject, html_content, text_content)
 
-    def send_email_via_api(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
+    def send_email_via_resend(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
         """
-        Envía un correo electrónico usando SendGrid API (HTTP)
+        Envía un correo electrónico usando Resend API (recomendado por Railway)
 
         Args:
             to_email: Email del destinatario
@@ -414,8 +405,62 @@ class GmailSMTPService:
             bool: True si se envió correctamente, False en caso contrario
         """
         try:
-            if not self.api_enabled:
-                logger.warning("❌ API Email no configurada")
+            if not self.resend_api_key:
+                logger.warning("❌ Resend API no configurada")
+                return False
+
+            url = "https://api.resend.com/emails"
+            headers = {
+                "Authorization": f"Bearer {self.resend_api_key}",
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "from": f"{self.sender_name} <{self.sender_email}>",
+                "to": [to_email],
+                "subject": subject,
+                "html": html_content
+            }
+
+            if text_content:
+                payload["text"] = text_content
+
+            # Enviar usando httpx (debe ser async, pero lo hago sync para compatibilidad)
+            async def send_async():
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(url, headers=headers, json=payload)
+                    return response
+
+            # Ejecutar de forma síncrona
+            response = asyncio.run(send_async())
+
+            if response.status_code == 200:
+                logger.info(f"✅ Correo enviado exitosamente via Resend a {to_email}")
+                return True
+            else:
+                logger.error(f"❌ Error en API Resend: {response.status_code} - {response.text}")
+                return False
+
+        except Exception as e:
+            logger.error(f"❌ Error enviando correo via Resend a {to_email}: {str(e)}")
+            return False
+
+    def send_email_via_api(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
+        """
+        Envía un correo electrónico usando SendGrid API (respaldo alternativo)
+
+        Args:
+            to_email: Email del destinatario
+            subject: Asunto del correo
+            html_content: Contenido HTML del correo
+            text_content: Contenido de texto plano (opcional)
+
+        Returns:
+            bool: True si se envió correctamente, False en caso contrario
+        """
+        try:
+            if not self.sendgrid_api_key:
+                logger.warning("❌ SendGrid API no configurada")
                 return False
 
             url = "https://api.sendgrid.com/v3/mail/send"
@@ -462,19 +507,19 @@ class GmailSMTPService:
             response = asyncio.run(send_async())
 
             if response.status_code == 202:  # SendGrid aceptó el email
-                logger.info(f"✅ Correo enviado exitosamente via API a {to_email}")
+                logger.info(f"✅ Correo enviado exitosamente via SendGrid a {to_email}")
                 return True
             else:
                 logger.error(f"❌ Error en API SendGrid: {response.status_code} - {response.text}")
                 return False
 
         except Exception as e:
-            logger.error(f"❌ Error enviando correo via API a {to_email}: {str(e)}")
+            logger.error(f"❌ Error enviando correo via SendGrid a {to_email}: {str(e)}")
             return False
 
     def send_email_with_fallback(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
         """
-        Envía email intentando múltiples configuraciones SMTP
+        Envía email: Gmail TLS/SSL → Resend → SendGrid
 
         Args:
             to_email: Email del destinatario
@@ -485,22 +530,29 @@ class GmailSMTPService:
         Returns:
             bool: True si se envió correctamente, False en caso contrario
         """
-        # Intentar con múltiples configuraciones SMTP (sin servicios externos)
+        # Intentar primero Gmail TLS/SSL (rápido)
         if self.sender_email and self.sender_password:
-            logger.info("🔄 Intentando envío via SMTP con múltiples configuraciones...")
+            logger.info("🔄 Intentando Gmail TLS/SSL...")
             smtp_result = self.send_email(to_email, subject, html_content, text_content)
             if smtp_result:
                 return True
 
-        # Si todas las configuraciones SMTP fallan, intentar API solo si está configurada
-        if self.api_enabled:
-            logger.warning("⚠️ Todas las configuraciones SMTP fallaron, intentando SendGrid como último recurso...")
-            api_result = self.send_email_via_api(to_email, subject, html_content, text_content)
-            if api_result:
+        # Si SMTP falla (esperado en Railway gratuito), intentar Resend primero
+        if self.resend_api_key:
+            logger.info("🚂 SMTP falló, usando Resend (recomendado por Railway)...")
+            resend_result = self.send_email_via_resend(to_email, subject, html_content, text_content)
+            if resend_result:
+                return True
+
+        # Si Resend falla, intentar SendGrid como último respaldo
+        if self.sendgrid_api_key:
+            logger.warning("⚠️ Resend falló, intentando SendGrid como respaldo...")
+            sendgrid_result = self.send_email_via_api(to_email, subject, html_content, text_content)
+            if sendgrid_result:
                 return True
 
         # Si todo falla
-        logger.error("❌ No se pudo enviar el correo - revisa configuración SMTP o agrega SENDGRID_API_KEY")
+        logger.error("❌ No se pudo enviar el correo - configura RESEND_API_KEY o SENDGRID_API_KEY")
         return False
 
 # Instancia global del servicio
