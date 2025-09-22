@@ -80,12 +80,12 @@ async def get_provider_services(
     # Obtener servicios del proveedor con información relacionada (simplificada para evitar errores de columna)
     # QUITAR FILTRO DE ESTADO PARA MOSTRAR TODOS LOS SERVICIOS
     result = await db.execute(
-        select(Servicio)
+        select(ServicioModel)
         .options(
-            joinedload(Servicio.categoria),
-            joinedload(Servicio.moneda)
+            joinedload(ServicioModel.categoria),
+            joinedload(ServicioModel.moneda)
         )
-        .where(Servicio.id_perfil == perfil.id_perfil)
+        .where(ServicioModel.id_perfil == perfil.id_perfil)
         # .where(Servicio.estado == True)  # QUITADO: Mostrar todos los servicios independientemente del estado
     )
 
@@ -157,14 +157,14 @@ async def get_provider_service(
 
     # Obtener el servicio específico
     result = await db.execute(
-        select(Servicio)
+        select(ServicioModel)
         .options(
-            joinedload(Servicio.categoria),
-            joinedload(Servicio.moneda),
-            joinedload(Servicio.tarifa_servicio).joinedload(TarifaServicio.tipo_tarifa_servicio)
+            joinedload(ServicioModel.categoria),
+            joinedload(ServicioModel.moneda),
+            joinedload(ServicioModel.tarifa_servicio).joinedload(TarifaServicio.tipo_tarifa_servicio)
         )
-        .where(Servicio.id_servicio == service_id)
-        .where(Servicio.id_perfil == perfil.id_perfil)
+        .where(ServicioModel.id_servicio == service_id)
+        .where(ServicioModel.id_perfil == perfil.id_perfil)
     )
 
     servicio = result.scalars().first()
@@ -227,9 +227,9 @@ async def update_provider_service(
 
     # Obtener el servicio específico
     result = await db.execute(
-        select(Servicio)
-        .where(Servicio.id_servicio == service_id)
-        .where(Servicio.id_perfil == perfil.id_perfil)
+        select(ServicioModel)
+        .where(ServicioModel.id_servicio == service_id)
+        .where(ServicioModel.id_perfil == perfil.id_perfil)
     )
 
     servicio = result.scalars().first()
@@ -410,9 +410,9 @@ async def add_tarifa_to_service(
 
     # Verificar que el servicio existe y pertenece al usuario
     service_result = await db.execute(
-        select(Servicio)
-        .where(Servicio.id_servicio == service_id)
-        .where(Servicio.id_perfil == perfil.id_perfil)
+        select(ServicioModel)
+        .where(ServicioModel.id_servicio == service_id)
+        .where(ServicioModel.id_perfil == perfil.id_perfil)
     )
 
     servicio = service_result.scalars().first()
@@ -463,9 +463,9 @@ async def remove_tarifa_from_service(
 
     # Verificar que el servicio existe y pertenece al usuario
     service_result = await db.execute(
-        select(Servicio)
-        .where(Servicio.id_servicio == service_id)
-        .where(Servicio.id_perfil == perfil.id_perfil)
+        select(ServicioModel)
+        .where(ServicioModel.id_servicio == service_id)
+        .where(ServicioModel.id_perfil == perfil.id_perfil)
     )
 
     servicio = service_result.scalars().first()
@@ -575,9 +575,9 @@ async def update_service_status(
             )
 
         # Verificar que el servicio pertenece al proveedor
-        servicio_query = select(Servicio).where(
-            Servicio.id_servicio == service_id,
-            Servicio.id_perfil == perfil.id_perfil
+        servicio_query = select(ServicioModel).where(
+            ServicioModel.id_servicio == service_id,
+            ServicioModel.id_perfil == perfil.id_perfil
         )
         servicio_result = await db.execute(servicio_query)
         servicio = servicio_result.scalar_one_or_none()
@@ -644,7 +644,7 @@ async def create_service_from_template(
             )
 
         # Obtener la plantilla del servicio
-        template_query = select(Servicio).where(Servicio.id_servicio == service_data.template_id)
+        template_query = select(ServicioModel).where(ServicioModel.id_servicio == service_data.template_id)
         template_result = await db.execute(template_query)
         template = template_result.scalar_one_or_none()
         
@@ -655,7 +655,7 @@ async def create_service_from_template(
             )
 
         # Crear nuevo servicio basado en la plantilla
-        nuevo_servicio = Servicio(
+        nuevo_servicio = ServicioModel(
             nombre=service_data.nombre,
             descripcion=service_data.descripcion,
             precio=service_data.precio,
