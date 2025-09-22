@@ -54,15 +54,31 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME)
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "B2B Platform")
 
-# Diagnóstico detallado de SMTP
+# Diagnóstico detallado de Email
 smtp_configurado = bool(SMTP_USERNAME and SMTP_PASSWORD)
-print(f"📧 SMTP configurado: {'Sí' if smtp_configurado else 'No'}")
+sendgrid_configurado = bool(os.getenv("SENDGRID_API_KEY"))
 
-if not smtp_configurado:
+print(f"📧 SMTP configurado: {'Sí' if smtp_configurado else 'No'}")
+print(f"📧 SendGrid configurado: {'Sí' if sendgrid_configurado else 'No'}")
+
+if smtp_configurado:
+    print("   🔄 SMTP con múltiples configuraciones: Gmail TLS/SSL, Outlook TLS/Plain")
+    if sendgrid_configurado:
+        print("   ✅ Configuración completa: Múltiples SMTP + SendGrid (ultra confiable)")
+    else:
+        print("   ℹ️ Solo SMTP configurado - intentará múltiples proveedores hasta que uno funcione")
+
+if not smtp_configurado and not sendgrid_configurado:
+    print("   ⚠️ Ningún método de email configurado")
     missing_vars = []
     if not SMTP_USERNAME:
         missing_vars.append("SMTP_USERNAME")
     if not SMTP_PASSWORD:
         missing_vars.append("SMTP_PASSWORD")
-    print(f"   📧 Variables faltantes: {', '.join(missing_vars)}")
-    print(f"   📧 Alternativas disponibles: GMAIL_EMAIL, GMAIL_APP_PASSWORD")
+    if missing_vars:
+        print(f"   📧 Variables SMTP faltantes: {', '.join(missing_vars)}")
+        print(f"   📧 Alternativas SMTP: GMAIL_EMAIL, GMAIL_APP_PASSWORD")
+    print("   📧 Para respaldo opcional: SENDGRID_API_KEY")
+
+if not smtp_configurado and sendgrid_configurado:
+    print("   ✅ Solo SendGrid configurado - funciona en cualquier plataforma")

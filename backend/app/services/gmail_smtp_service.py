@@ -1,5 +1,5 @@
 """
-Servicio de envío de correos usando SMTP de Gmail directamente
+Servicio de envío de correos usando SMTP de Gmail o API HTTP como fallback
 """
 import smtplib
 import ssl
@@ -8,6 +8,8 @@ from email.mime.multipart import MIMEMultipart
 from typing import Optional
 import logging
 import os
+import httpx
+import asyncio
 from dotenv import load_dotenv
 
 # Cargar variables de entorno
@@ -19,77 +21,132 @@ class GmailSMTPService:
     """Servicio para envío de correos usando SMTP de Gmail"""
     
     def __init__(self):
-        # Configuración SMTP - Prioriza variables genéricas, luego específicas de Gmail
-        self.smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        self.smtp_port = int(os.getenv("SMTP_PORT", 587))
+        # Configuración SMTP - Intenta múltiples configuraciones para superar restricciones de Railway
+        self.configurations = [
+            {
+                "server": "smtp.gmail.com",
+                "port": 587,
+                "use_tls": True,
+                "name": "Gmail TLS"
+            },
+            {
+                "server": "smtp.gmail.com",
+                "port": 465,
+                "use_ssl": True,
+                "name": "Gmail SSL"
+            },
+            {
+                "server": "smtp-mail.outlook.com",
+                "port": 587,
+                "use_tls": True,
+                "name": "Outlook TLS"
+            },
+            {
+                "server": "smtp-mail.outlook.com",
+                "port": 25,
+                "use_tls": False,
+                "name": "Outlook Plain"
+            }
+        ]
 
         # Para credenciales, permite ambas nomenclaturas por retrocompatibilidad
         self.sender_email = os.getenv("SMTP_USERNAME") or os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL")
         self.sender_password = os.getenv("SMTP_PASSWORD") or os.getenv("GMAIL_APP_PASSWORD")
         self.sender_name = os.getenv("SMTP_FROM_NAME") or os.getenv("SENDER_NAME") or os.getenv("GMAIL_SENDER_NAME", "B2B Platform")
-        
+
+        # Configuración API HTTP (SendGrid o similar) - opcional
+        self.sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+        self.api_enabled = bool(self.sendgrid_api_key)
+
         # Verificar configuración
-        if not self.sender_email or not self.sender_password:
-            logger.warning("⚠️ SMTP no configurado. Faltan variables (SMTP_USER/GMAIL_EMAIL o SMTP_PASSWORD/GMAIL_APP_PASSWORD)")
+        smtp_configurado = bool(self.sender_email and self.sender_password)
+
+        if smtp_configurado:
+            logger.info(f"✅ SMTP configurado para: {self.sender_email}")
+            logger.info(f"🔄 Configuraciones disponibles: {len(self.configurations)} (intentará todas hasta que una funcione)")
         else:
-            logger.info(f"✅ SMTP configurado para: {self.sender_email} en {self.smtp_server}:{self.smtp_port}")
+            logger.warning("⚠️ SMTP no configurado. Faltan variables (SMTP_USER/GMAIL_EMAIL o SMTP_PASSWORD/GMAIL_APP_PASSWORD)")
+
+        if self.api_enabled:
+            logger.info("✅ API Email (SendGrid) configurada como respaldo")
+        else:
+            logger.info("ℹ️ API Email no configurada - solo SMTP disponible")
     
     def send_email(
-        self, 
-        to_email: str, 
-        subject: str, 
-        html_content: str, 
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str,
         text_content: Optional[str] = None
     ) -> bool:
         """
-        Envía un correo electrónico usando SMTP de Gmail
-        
+        Envía un correo electrónico intentando múltiples configuraciones SMTP
+
         Args:
             to_email: Email del destinatario
             subject: Asunto del correo
             html_content: Contenido HTML del correo
             text_content: Contenido de texto plano (opcional)
-        
+
         Returns:
             bool: True si se envió correctamente, False en caso contrario
         """
         try:
-            # Verificar configuración
+            # Verificar configuración básica
             if not self.sender_email or not self.sender_password:
                 logger.error("❌ SMTP no configurado. Verifica las variables de entorno.")
                 return False
-            
+
             # Crear mensaje
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
             message["From"] = f"{self.sender_name} <{self.sender_email}>"
             message["To"] = to_email
-            
+
             # Agregar contenido de texto plano si se proporciona
             if text_content:
                 text_part = MIMEText(text_content, "plain", "utf-8")
                 message.attach(text_part)
-            
+
             # Agregar contenido HTML
             html_part = MIMEText(html_content, "html", "utf-8")
             message.attach(html_part)
-            
-            # Crear contexto SSL
-            context = ssl.create_default_context()
-            
-            # Enviar correo
-            logger.info(f"📧 Enviando correo a {to_email} usando Gmail SMTP...")
-            
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls(context=context)
-                server.login(self.sender_email, self.sender_password)
-                server.sendmail(self.sender_email, to_email, message.as_string())
-            
-            logger.info(f"✅ Correo enviado exitosamente a {to_email}")
-            return True
-            
+
+            # Intentar cada configuración disponible
+            for config in self.configurations:
+                try:
+                    logger.info(f"🔄 Intentando configuración: {config['name']} ({config['server']}:{config['port']})")
+
+                    # Crear contexto SSL para todas las configuraciones
+                    context = ssl.create_default_context()
+
+                    # Intentar conexión según la configuración
+                    if config.get("use_ssl"):
+                        # Conexión SSL directa (puerto 465)
+                        with smtplib.SMTP_SSL(config["server"], config["port"], context=context) as server:
+                            server.login(self.sender_email, self.sender_password)
+                            server.sendmail(self.sender_email, to_email, message.as_string())
+                    else:
+                        # Conexión estándar con STARTTLS (puerto 587) o sin cifrado (puerto 25)
+                        with smtplib.SMTP(config["server"], config["port"]) as server:
+                            if config.get("use_tls", True):
+                                server.starttls(context=context)
+                            server.login(self.sender_email, self.sender_password)
+                            server.sendmail(self.sender_email, to_email, message.as_string())
+
+                    logger.info(f"✅ Correo enviado exitosamente a {to_email} usando {config['name']}")
+                    return True
+
+                except Exception as e:
+                    logger.warning(f"⚠️ Configuración {config['name']} falló: {str(e)}")
+                    continue
+
+            # Si ninguna configuración funcionó
+            logger.error(f"❌ Todas las configuraciones SMTP fallaron para {to_email}")
+            return False
+
         except Exception as e:
-            logger.error(f"❌ Error enviando correo a {to_email}: {str(e)}")
+            logger.error(f"❌ Error general enviando correo a {to_email}: {str(e)}")
             return False
     
     def send_password_reset_code(
@@ -232,7 +289,7 @@ class GmailSMTPService:
         Equipo SEVA EMPRESAS
         """
         
-        return self.send_email(to_email, subject, html_content, text_content)
+        return self.send_email_with_fallback(to_email, subject, html_content, text_content)
     
     def send_password_reset_success(
         self, 
@@ -341,7 +398,110 @@ class GmailSMTPService:
         Equipo SEVA EMPRESAS
         """
         
-        return self.send_email(to_email, subject, html_content, text_content)
+        return self.send_email_with_fallback(to_email, subject, html_content, text_content)
+
+    def send_email_via_api(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
+        """
+        Envía un correo electrónico usando SendGrid API (HTTP)
+
+        Args:
+            to_email: Email del destinatario
+            subject: Asunto del correo
+            html_content: Contenido HTML del correo
+            text_content: Contenido de texto plano (opcional)
+
+        Returns:
+            bool: True si se envió correctamente, False en caso contrario
+        """
+        try:
+            if not self.api_enabled:
+                logger.warning("❌ API Email no configurada")
+                return False
+
+            url = "https://api.sendgrid.com/v3/mail/send"
+            headers = {
+                "Authorization": f"Bearer {self.sendgrid_api_key}",
+                "Content-Type": "application/json"
+            }
+
+            # Construir el payload para SendGrid
+            personalizations = [{
+                "to": [{"email": to_email}],
+                "subject": subject
+            }]
+
+            from_email = {
+                "email": self.sender_email,
+                "name": self.sender_name
+            }
+
+            content = []
+            if text_content:
+                content.append({
+                    "type": "text/plain",
+                    "value": text_content
+                })
+            content.append({
+                "type": "text/html",
+                "value": html_content
+            })
+
+            payload = {
+                "personalizations": personalizations,
+                "from": from_email,
+                "content": content
+            }
+
+            # Enviar usando httpx (debe ser async, pero lo hago sync para compatibilidad)
+            async def send_async():
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(url, headers=headers, json=payload)
+                    return response
+
+            # Ejecutar de forma síncrona
+            response = asyncio.run(send_async())
+
+            if response.status_code == 202:  # SendGrid aceptó el email
+                logger.info(f"✅ Correo enviado exitosamente via API a {to_email}")
+                return True
+            else:
+                logger.error(f"❌ Error en API SendGrid: {response.status_code} - {response.text}")
+                return False
+
+        except Exception as e:
+            logger.error(f"❌ Error enviando correo via API a {to_email}: {str(e)}")
+            return False
+
+    def send_email_with_fallback(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
+        """
+        Envía email intentando múltiples configuraciones SMTP
+
+        Args:
+            to_email: Email del destinatario
+            subject: Asunto del correo
+            html_content: Contenido HTML del correo
+            text_content: Contenido de texto plano (opcional)
+
+        Returns:
+            bool: True si se envió correctamente, False en caso contrario
+        """
+        # Intentar con múltiples configuraciones SMTP (sin servicios externos)
+        if self.sender_email and self.sender_password:
+            logger.info("🔄 Intentando envío via SMTP con múltiples configuraciones...")
+            smtp_result = self.send_email(to_email, subject, html_content, text_content)
+            if smtp_result:
+                return True
+
+        # Si todas las configuraciones SMTP fallan, intentar API solo si está configurada
+        if self.api_enabled:
+            logger.warning("⚠️ Todas las configuraciones SMTP fallaron, intentando SendGrid como último recurso...")
+            api_result = self.send_email_via_api(to_email, subject, html_content, text_content)
+            if api_result:
+                return True
+
+        # Si todo falla
+        logger.error("❌ No se pudo enviar el correo - revisa configuración SMTP o agrega SENDGRID_API_KEY")
+        return False
 
 # Instancia global del servicio
 gmail_smtp_service = GmailSMTPService()
