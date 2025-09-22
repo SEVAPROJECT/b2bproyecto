@@ -22,11 +22,11 @@ class GmailSMTPService:
         # Configuración SMTP - Prioriza variables genéricas, luego específicas de Gmail
         self.smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
         self.smtp_port = int(os.getenv("SMTP_PORT", 587))
-        
+
         # Para credenciales, permite ambas nomenclaturas por retrocompatibilidad
-        self.sender_email = os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL")
+        self.sender_email = os.getenv("SMTP_USERNAME") or os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL")
         self.sender_password = os.getenv("SMTP_PASSWORD") or os.getenv("GMAIL_APP_PASSWORD")
-        self.sender_name = os.getenv("SENDER_NAME") or os.getenv("GMAIL_SENDER_NAME", "B2B Platform")
+        self.sender_name = os.getenv("SMTP_FROM_NAME") or os.getenv("SENDER_NAME") or os.getenv("GMAIL_SENDER_NAME", "B2B Platform")
         
         # Verificar configuración
         if not self.sender_email or not self.sender_password:

@@ -54,4 +54,15 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME)
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "B2B Platform")
 
-print(f"📧 SMTP configurado: {'Sí' if SMTP_USERNAME and SMTP_PASSWORD else 'No'}")
+# Diagnóstico detallado de SMTP
+smtp_configurado = bool(SMTP_USERNAME and SMTP_PASSWORD)
+print(f"📧 SMTP configurado: {'Sí' if smtp_configurado else 'No'}")
+
+if not smtp_configurado:
+    missing_vars = []
+    if not SMTP_USERNAME:
+        missing_vars.append("SMTP_USERNAME")
+    if not SMTP_PASSWORD:
+        missing_vars.append("SMTP_PASSWORD")
+    print(f"   📧 Variables faltantes: {', '.join(missing_vars)}")
+    print(f"   📧 Alternativas disponibles: GMAIL_EMAIL, GMAIL_APP_PASSWORD")
