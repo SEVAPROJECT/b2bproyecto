@@ -59,33 +59,40 @@ smtp_configurado = bool(SMTP_USERNAME and SMTP_PASSWORD)
 sendgrid_configurado = bool(os.getenv("SENDGRID_API_KEY"))
 
 print(f"📧 SMTP configurado: {'Sí' if smtp_configurado else 'No'}")
-print(f"📧 Resend configurado: {'Sí' if os.getenv('RESEND_API_KEY') else 'No'}")
+print(f"📧 Brevo configurado: {'Sí' if os.getenv('BREVO_API_KEY') else 'No'}")
 print(f"📧 SendGrid configurado: {'Sí' if sendgrid_configurado else 'No'}")
+print(f"📧 Mailgun configurado: {'Sí' if os.getenv('MAILGUN_API_KEY') and os.getenv('MAILGUN_DOMAIN') else 'No'}")
+print(f"📧 Resend configurado: {'Sí' if os.getenv('RESEND_API_KEY') else 'No'}")
 
+brevo_configurado = bool(os.getenv("BREVO_API_KEY"))
+mailgun_configurado = bool(os.getenv("MAILGUN_API_KEY") and os.getenv("MAILGUN_DOMAIN"))
 resend_configurado = bool(os.getenv("RESEND_API_KEY"))
 
-if resend_configurado:
-    print("   🚂 Resend configurado - recomendado por Railway para planes gratuitos")
+if brevo_configurado:
+    print("   📧 Brevo configurado - gratuito sin tarjeta")
 elif sendgrid_configurado:
-    print("   ✅ SendGrid configurado - funciona en cualquier plataforma")
+    print("   ✅ SendGrid configurado - requiere verificación")
+elif mailgun_configurado:
+    print("   📧 Mailgun configurado - requiere tarjeta")
+elif resend_configurado:
+    print("   🚂 Resend configurado - no funciona con Gmail")
 
 if smtp_configurado:
     print("   🔄 SMTP con 2 configuraciones rápidas: Gmail TLS/SSL (último respaldo)")
-    if resend_configurado or sendgrid_configurado:
-        api_name = "Resend" if resend_configurado else "SendGrid"
-        print(f"   ✅ Configuración completa: {api_name} + SMTP respaldo (óptimo)")
+    if brevo_configurado or sendgrid_configurado or mailgun_configurado or resend_configurado:
+        apis = []
+        if brevo_configurado: apis.append("Brevo")
+        if sendgrid_configurado: apis.append("SendGrid")
+        if mailgun_configurado: apis.append("Mailgun")
+        if resend_configurado: apis.append("Resend")
+        print(f"   ✅ Configuración completa: {', '.join(apis)} + SMTP respaldo (óptimo)")
     else:
         print("   ℹ️ Solo SMTP configurado - Railway bloquea SMTP en planes gratuitos")
 
-if not smtp_configurado and not resend_configurado and not sendgrid_configurado:
+if not smtp_configurado and not brevo_configurado and not sendgrid_configurado and not mailgun_configurado and not resend_configurado:
     print("   ⚠️ NINGÚN método de email configurado - Railway requiere API HTTP en planes gratuitos")
-    missing_vars = []
-    if not SMTP_USERNAME:
-        missing_vars.append("SMTP_USERNAME")
-    if not SMTP_PASSWORD:
-        missing_vars.append("SMTP_PASSWORD")
-    if missing_vars:
-        print(f"   📧 Variables SMTP faltantes: {', '.join(missing_vars)}")
-        print(f"   📧 Alternativas SMTP: GMAIL_EMAIL, GMAIL_APP_PASSWORD")
-    print("   📧 SOLUCIÓN RECOMENDADA: RESEND_API_KEY (gratuito, recomendado por Railway)")
-    print("   📧 Respaldo alternativo: SENDGRID_API_KEY")
+    print("   📧 SOLUCIONES RECOMENDADAS:")
+    print("   📧 1. BREVO_API_KEY (gratuito sin tarjeta)")
+    print("   📧 2. SENDGRID_API_KEY (con verificación de email)")
+    print("   📧 3. MAILGUN_API_KEY + MAILGUN_DOMAIN (requiere tarjeta)")
+    print("   📧 ❌ RESEND_API_KEY (no funciona con Gmail)")

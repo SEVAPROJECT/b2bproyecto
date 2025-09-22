@@ -42,10 +42,13 @@ class GmailSMTPService:
         self.sender_password = os.getenv("SMTP_PASSWORD") or os.getenv("GMAIL_APP_PASSWORD")
         self.sender_name = os.getenv("SMTP_FROM_NAME") or os.getenv("SENDER_NAME") or os.getenv("GMAIL_SENDER_NAME", "B2B Platform")
 
-        # Configuración API HTTP (Resend recomendado por Railway, SendGrid como respaldo)
-        self.resend_api_key = os.getenv("RESEND_API_KEY")
-        self.sendgrid_api_key = os.getenv("SENDGRID_API_KEY")  # respaldo alternativo
-        self.api_enabled = bool(self.resend_api_key or self.sendgrid_api_key)
+        # Configuración API HTTP (Brevo recomendado - gratuito sin tarjeta)
+        self.brevo_api_key = os.getenv("BREVO_API_KEY")
+        self.sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+        self.mailgun_api_key = os.getenv("MAILGUN_API_KEY")
+        self.mailgun_domain = os.getenv("MAILGUN_DOMAIN")
+        self.resend_api_key = os.getenv("RESEND_API_KEY")  # último respaldo
+        self.api_enabled = bool(self.brevo_api_key or self.sendgrid_api_key or self.mailgun_api_key or self.resend_api_key)
 
         # Verificar configuración
         smtp_configurado = bool(self.sender_email and self.sender_password)
@@ -56,10 +59,14 @@ class GmailSMTPService:
         else:
             logger.warning("⚠️ SMTP no configurado. Faltan variables (SMTP_USER/GMAIL_EMAIL o SMTP_PASSWORD/GMAIL_APP_PASSWORD)")
 
-        if self.resend_api_key:
-            logger.info("✅ API Email (Resend) configurada como respaldo - recomendado por Railway")
+        if self.brevo_api_key:
+            logger.info("✅ API Email (Brevo) configurada - gratuito sin tarjeta")
         elif self.sendgrid_api_key:
-            logger.info("✅ API Email (SendGrid) configurada como respaldo alternativo")
+            logger.info("✅ API Email (SendGrid) configurada - requiere verificación")
+        elif self.mailgun_api_key and self.mailgun_domain:
+            logger.info("✅ API Email (Mailgun) configurada - requiere tarjeta")
+        elif self.resend_api_key:
+            logger.info("✅ API Email (Resend) configurada - no funciona con Gmail")
         else:
             logger.warning("⚠️ API Email no configurada - Railway bloquea SMTP en planes gratuitos")
     
@@ -391,6 +398,116 @@ class GmailSMTPService:
         
         return self.send_email_with_fallback(to_email, subject, html_content, text_content)
 
+    def send_email_via_brevo(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
+        """
+        Envía un correo electrónico usando Brevo API (gratuito sin tarjeta)
+
+        Args:
+            to_email: Email del destinatario
+            subject: Asunto del correo
+            html_content: Contenido HTML del correo
+            text_content: Contenido de texto plano (opcional)
+
+        Returns:
+            bool: True si se envió correctamente, False en caso contrario
+        """
+        try:
+            if not self.brevo_api_key:
+                logger.warning("❌ Brevo API no configurada")
+                return False
+
+            url = "https://api.brevo.com/v3/smtp/email"
+            headers = {
+                "api-key": self.brevo_api_key,
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "sender": {
+                    "name": self.sender_name,
+                    "email": self.sender_email
+                },
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "htmlContent": html_content
+            }
+
+            if text_content:
+                payload["textContent"] = text_content
+
+            # Enviar usando httpx de forma síncrona
+            try:
+                response = httpx.post(url, headers=headers, json=payload, timeout=30.0)
+
+                if response.status_code == 201:  # Brevo aceptó el email
+                    logger.info(f"✅ Correo enviado exitosamente via Brevo a {to_email}")
+                    return True
+                else:
+                    logger.error(f"❌ Error en API Brevo: {response.status_code} - {response.text}")
+                    return False
+            except httpx.TimeoutException:
+                logger.error(f"❌ Timeout enviando correo via Brevo a {to_email}")
+                return False
+            except Exception as e:
+                logger.error(f"❌ Error de conexión via Brevo a {to_email}: {str(e)}")
+                return False
+
+        except Exception as e:
+            logger.error(f"❌ Error enviando correo via Brevo a {to_email}: {str(e)}")
+            return False
+
+    def send_email_via_mailgun(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
+        """
+        Envía un correo electrónico usando Mailgun API (compatible con Gmail)
+
+        Args:
+            to_email: Email del destinatario
+            subject: Asunto del correo
+            html_content: Contenido HTML del correo
+            text_content: Contenido de texto plano (opcional)
+
+        Returns:
+            bool: True si se envió correctamente, False en caso contrario
+        """
+        try:
+            if not self.mailgun_api_key or not self.mailgun_domain:
+                logger.warning("❌ Mailgun API no configurada")
+                return False
+
+            url = f"https://api.mailgun.net/v3/{self.mailgun_domain}/messages"
+            auth = ("api", self.mailgun_api_key)
+
+            data = {
+                "from": f"{self.sender_name} <{self.sender_email}>",
+                "to": [to_email],
+                "subject": subject,
+                "html": html_content
+            }
+
+            if text_content:
+                data["text"] = text_content
+
+            # Enviar usando httpx de forma síncrona
+            try:
+                response = httpx.post(url, auth=auth, data=data, timeout=30.0)
+
+                if response.status_code == 200:
+                    logger.info(f"✅ Correo enviado exitosamente via Mailgun a {to_email}")
+                    return True
+                else:
+                    logger.error(f"❌ Error en API Mailgun: {response.status_code} - {response.text}")
+                    return False
+            except httpx.TimeoutException:
+                logger.error(f"❌ Timeout enviando correo via Mailgun a {to_email}")
+                return False
+            except Exception as e:
+                logger.error(f"❌ Error de conexión via Mailgun a {to_email}: {str(e)}")
+                return False
+
+        except Exception as e:
+            logger.error(f"❌ Error enviando correo via Mailgun a {to_email}: {str(e)}")
+            return False
+
     def send_email_via_resend(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
         """
         Envía un correo electrónico usando Resend API (síncrono, compatible con FastAPI)
@@ -521,7 +638,7 @@ class GmailSMTPService:
 
     def send_email_with_fallback(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
         """
-        Envía email: Resend → SendGrid → Gmail TLS/SSL (último respaldo)
+        Envía email: Brevo → SendGrid → Mailgun → Resend → Gmail TLS/SSL (último respaldo)
 
         Args:
             to_email: Email del destinatario
@@ -532,21 +649,35 @@ class GmailSMTPService:
         Returns:
             bool: True si se envió correctamente, False en caso contrario
         """
-        # 1. Intentar primero Resend (funciona en Railway gratuito)
-        if self.resend_api_key:
-            logger.info("🚂 Intentando Resend (recomendado por Railway)...")
-            resend_result = self.send_email_via_resend(to_email, subject, html_content, text_content)
-            if resend_result:
+        # 1. Intentar primero Brevo (gratuito sin tarjeta, funciona con Gmail)
+        if self.brevo_api_key:
+            logger.info("📧 Intentando Brevo (gratuito sin tarjeta)...")
+            brevo_result = self.send_email_via_brevo(to_email, subject, html_content, text_content)
+            if brevo_result:
                 return True
 
-        # 2. Si Resend falla, intentar SendGrid
+        # 2. Si Brevo falla, intentar SendGrid
         if self.sendgrid_api_key:
-            logger.info("📧 Resend no disponible, intentando SendGrid...")
+            logger.info("📧 Brevo no disponible, intentando SendGrid...")
             sendgrid_result = self.send_email_via_api(to_email, subject, html_content, text_content)
             if sendgrid_result:
                 return True
 
-        # 3. Si ambas APIs fallan, intentar Gmail TLS/SSL como último respaldo
+        # 3. Si SendGrid falla, intentar Mailgun
+        if self.mailgun_api_key and self.mailgun_domain:
+            logger.info("📧 SendGrid no disponible, intentando Mailgun...")
+            mailgun_result = self.send_email_via_mailgun(to_email, subject, html_content, text_content)
+            if mailgun_result:
+                return True
+
+        # 4. Si Mailgun falla, intentar Resend (no funciona con Gmail pero puede estar configurado)
+        if self.resend_api_key:
+            logger.info("🚂 Mailgun no disponible, intentando Resend...")
+            resend_result = self.send_email_via_resend(to_email, subject, html_content, text_content)
+            if resend_result:
+                return True
+
+        # 5. Si todas las APIs fallan, intentar Gmail TLS/SSL como último respaldo
         if self.sender_email and self.sender_password:
             logger.warning("⚠️ APIs fallaron, intentando Gmail TLS/SSL como último recurso...")
             smtp_result = self.send_email(to_email, subject, html_content, text_content)
@@ -554,7 +685,7 @@ class GmailSMTPService:
                 return True
 
         # Si todo falla
-        logger.error("❌ No se pudo enviar el correo - configura RESEND_API_KEY (recomendado) o SENDGRID_API_KEY")
+        logger.error("❌ No se pudo enviar el correo - configura BREVO_API_KEY (gratuito sin tarjeta) o SENDGRID_API_KEY")
         return False
 
 # Instancia global del servicio
