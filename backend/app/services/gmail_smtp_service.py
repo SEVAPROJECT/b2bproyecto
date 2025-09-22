@@ -19,18 +19,20 @@ class GmailSMTPService:
     """Servicio para envío de correos usando SMTP de Gmail"""
     
     def __init__(self):
-        # Configuración SMTP de Gmail
-        self.smtp_server = "smtp.gmail.com"
-        self.smtp_port = 587
-        self.sender_email = os.getenv("GMAIL_EMAIL")
-        self.sender_password = os.getenv("GMAIL_APP_PASSWORD")
-        self.sender_name = os.getenv("GMAIL_SENDER_NAME", "B2B Platform")
+        # Configuración SMTP - Prioriza variables genéricas, luego específicas de Gmail
+        self.smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
+        self.smtp_port = int(os.getenv("SMTP_PORT", 587))
+        
+        # Para credenciales, permite ambas nomenclaturas por retrocompatibilidad
+        self.sender_email = os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL")
+        self.sender_password = os.getenv("SMTP_PASSWORD") or os.getenv("GMAIL_APP_PASSWORD")
+        self.sender_name = os.getenv("SENDER_NAME") or os.getenv("GMAIL_SENDER_NAME", "B2B Platform")
         
         # Verificar configuración
         if not self.sender_email or not self.sender_password:
-            logger.warning("⚠️ Gmail SMTP no configurado. Variables requeridas: GMAIL_EMAIL, GMAIL_APP_PASSWORD")
+            logger.warning("⚠️ SMTP no configurado. Faltan variables (SMTP_USER/GMAIL_EMAIL o SMTP_PASSWORD/GMAIL_APP_PASSWORD)")
         else:
-            logger.info(f"✅ Gmail SMTP configurado para: {self.sender_email}")
+            logger.info(f"✅ SMTP configurado para: {self.sender_email} en {self.smtp_server}:{self.smtp_port}")
     
     def send_email(
         self, 
@@ -54,7 +56,7 @@ class GmailSMTPService:
         try:
             # Verificar configuración
             if not self.sender_email or not self.sender_password:
-                logger.error("❌ Gmail SMTP no configurado. Verifica GMAIL_EMAIL y GMAIL_APP_PASSWORD")
+                logger.error("❌ SMTP no configurado. Verifica las variables de entorno.")
                 return False
             
             # Crear mensaje
