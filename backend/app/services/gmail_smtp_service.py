@@ -519,7 +519,7 @@ class GmailSMTPService:
 
     def send_email_with_fallback(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
         """
-        Envía email: Gmail TLS/SSL → Resend → SendGrid
+        Envía email: Resend → SendGrid → Gmail TLS/SSL (último respaldo)
 
         Args:
             to_email: Email del destinatario
@@ -530,29 +530,29 @@ class GmailSMTPService:
         Returns:
             bool: True si se envió correctamente, False en caso contrario
         """
-        # Intentar primero Gmail TLS/SSL (rápido)
-        if self.sender_email and self.sender_password:
-            logger.info("🔄 Intentando Gmail TLS/SSL...")
-            smtp_result = self.send_email(to_email, subject, html_content, text_content)
-            if smtp_result:
-                return True
-
-        # Si SMTP falla (esperado en Railway gratuito), intentar Resend primero
+        # 1. Intentar primero Resend (funciona en Railway gratuito)
         if self.resend_api_key:
-            logger.info("🚂 SMTP falló, usando Resend (recomendado por Railway)...")
+            logger.info("🚂 Intentando Resend (recomendado por Railway)...")
             resend_result = self.send_email_via_resend(to_email, subject, html_content, text_content)
             if resend_result:
                 return True
 
-        # Si Resend falla, intentar SendGrid como último respaldo
+        # 2. Si Resend falla, intentar SendGrid
         if self.sendgrid_api_key:
-            logger.warning("⚠️ Resend falló, intentando SendGrid como respaldo...")
+            logger.info("📧 Resend no disponible, intentando SendGrid...")
             sendgrid_result = self.send_email_via_api(to_email, subject, html_content, text_content)
             if sendgrid_result:
                 return True
 
+        # 3. Si ambas APIs fallan, intentar Gmail TLS/SSL como último respaldo
+        if self.sender_email and self.sender_password:
+            logger.warning("⚠️ APIs fallaron, intentando Gmail TLS/SSL como último recurso...")
+            smtp_result = self.send_email(to_email, subject, html_content, text_content)
+            if smtp_result:
+                return True
+
         # Si todo falla
-        logger.error("❌ No se pudo enviar el correo - configura RESEND_API_KEY o SENDGRID_API_KEY")
+        logger.error("❌ No se pudo enviar el correo - configura RESEND_API_KEY (recomendado) o SENDGRID_API_KEY")
         return False
 
 # Instancia global del servicio

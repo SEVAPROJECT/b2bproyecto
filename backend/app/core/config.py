@@ -64,18 +64,18 @@ print(f"📧 SendGrid configurado: {'Sí' if sendgrid_configurado else 'No'}")
 
 resend_configurado = bool(os.getenv("RESEND_API_KEY"))
 
-if smtp_configurado:
-    print("   🔄 SMTP con 2 configuraciones rápidas: Gmail TLS/SSL")
-    if resend_configurado or sendgrid_configurado:
-        api_name = "Resend" if resend_configurado else "SendGrid"
-        print(f"   ✅ Configuración completa: SMTP + {api_name} (óptimo)")
-    else:
-        print("   ℹ️ Solo SMTP configurado - Railway bloquea SMTP en planes gratuitos")
-
 if resend_configurado:
     print("   🚂 Resend configurado - recomendado por Railway para planes gratuitos")
 elif sendgrid_configurado:
     print("   ✅ SendGrid configurado - funciona en cualquier plataforma")
+
+if smtp_configurado:
+    print("   🔄 SMTP con 2 configuraciones rápidas: Gmail TLS/SSL (último respaldo)")
+    if resend_configurado or sendgrid_configurado:
+        api_name = "Resend" if resend_configurado else "SendGrid"
+        print(f"   ✅ Configuración completa: {api_name} + SMTP respaldo (óptimo)")
+    else:
+        print("   ℹ️ Solo SMTP configurado - Railway bloquea SMTP en planes gratuitos")
 
 if not smtp_configurado and not resend_configurado and not sendgrid_configurado:
     print("   ⚠️ NINGÚN método de email configurado - Railway requiere API HTTP en planes gratuitos")
