@@ -105,48 +105,72 @@ async def get_admin_user(
     """
     Dependencia que asegura que el usuario autenticado es un administrador.
     """
-    from app.models.perfil import UserModel
-    from app.models.usuario_rol import UsuarioRolModel
-    from app.models.rol import RolModel
-    from sqlalchemy.orm import joinedload
-    import uuid
-    
-    # Obtener el perfil del usuario con sus roles
-    user_uuid = uuid.UUID(current_user.id)
-    result_profile = await db.execute(
-        select(UserModel)
-        .options(
-            joinedload(UserModel.roles).joinedload(UsuarioRolModel.rol)
+    try:
+        print(f"🔍 DEBUG: get_admin_user iniciado para usuario: {current_user.id}")
+        print(f"🔍 DEBUG: Email del usuario: {current_user.email}")
+        
+        from app.models.perfil import UserModel
+        from app.models.usuario_rol import UsuarioRolModel
+        from app.models.rol import RolModel
+        from sqlalchemy.orm import joinedload
+        import uuid
+        
+        # Obtener el perfil del usuario con sus roles
+        print(f"🔍 DEBUG: Convirtiendo ID a UUID: {current_user.id}")
+        user_uuid = uuid.UUID(current_user.id)
+        print(f"🔍 DEBUG: UUID convertido: {user_uuid}")
+        print(f"🔍 DEBUG: Ejecutando consulta de base de datos...")
+        result_profile = await db.execute(
+            select(UserModel)
+            .options(
+                joinedload(UserModel.roles).joinedload(UsuarioRolModel.rol)
+            )
+            .where(UserModel.id == user_uuid)
         )
-        .where(UserModel.id == user_uuid)
-    )
-    
-    user_profile = result_profile.scalars().first()
-    
-    if not user_profile:
+        
+        user_profile = result_profile.scalars().first()
+        print(f"🔍 DEBUG: Perfil encontrado: {user_profile is not None}")
+        
+        if not user_profile:
+            print(f"❌ DEBUG: Perfil de usuario no encontrado para UUID: {user_uuid}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Perfil de usuario no encontrado"
+            )
+        
+        # Extraer los nombres de los roles
+        roles_nombres = [rol_asociado.rol.nombre for rol_asociado in user_profile.roles]
+        print(f"🔍 DEBUG: Roles encontrados: {roles_nombres}")
+        
+        # Verificar si tiene rol de admin (solución para mayúsculas/minúsculas)
+        roles_lower = [rol.lower() for rol in roles_nombres]
+        print(f"🔍 DEBUG: Roles en minúsculas: {roles_lower}")
+        
+        if "admin" not in roles_lower and "administrador" not in roles_lower:
+            print(f"❌ DEBUG: Usuario no tiene permisos de administrador")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes permisos de administrador"
+            )
+        
+        print(f"✅ DEBUG: Usuario administrador validado exitosamente")
+        return UserProfileAndRolesOut(
+            id=user_profile.id,
+            email=current_user.email,
+            nombre_persona=user_profile.nombre_persona,
+            nombre_empresa=user_profile.nombre_empresa,
+            roles=roles_nombres
+        )
+        
+    except Exception as e:
+        print(f"❌ DEBUG: Error en get_admin_user: {str(e)}")
+        import traceback
+        print("Traceback completo:")
+        traceback.print_exc()
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="Perfil de usuario no encontrado"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error validando administrador: {str(e)}"
         )
-    
-    # Extraer los nombres de los roles
-    roles_nombres = [rol_asociado.rol.nombre for rol_asociado in user_profile.roles]
-    
-    # Verificar si tiene rol de admin (solución para mayúsculas/minúsculas)
-    roles_lower = [rol.lower() for rol in roles_nombres]
-    if "admin" not in roles_lower and "administrador" not in roles_lower:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permisos de administrador"
-        )
-    
-    return UserProfileAndRolesOut(
-        id=user_profile.id,
-        email=current_user.email,
-        nombre_persona=user_profile.nombre_persona,
-        nombre_empresa=user_profile.nombre_empresa,
-        roles=roles_nombres
-    )
 
 async def get_approved_provider(
     current_user: SupabaseUser = Depends(get_current_user),

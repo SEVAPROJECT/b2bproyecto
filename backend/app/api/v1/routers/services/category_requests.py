@@ -129,15 +129,27 @@ async def get_my_category_requests(
             SolicitudCategoria.comentario_admin,
             SolicitudCategoria.created_at,
             PerfilEmpresa.razon_social.label('nombre_empresa'),
-            UserModel.nombre_persona.label('nombre_contacto')
+            UserModel.nombre_persona.label('nombre_contacto'),
+            PerfilEmpresa.user_id.label('user_id')  # ✅ USAR user_id de PerfilEmpresa
         ).select_from(SolicitudCategoria)\
          .join(PerfilEmpresa, SolicitudCategoria.id_perfil == PerfilEmpresa.id_perfil)\
          .join(UserModel, PerfilEmpresa.user_id == UserModel.id)\
          .where(SolicitudCategoria.id_perfil == perfil.id_perfil)\
          .order_by(SolicitudCategoria.created_at.desc())
 
-        result = await db.execute(query)
-        rows = result.fetchall()
+        try:
+            result = await db.execute(query)
+            rows = result.fetchall()
+        except Exception as db_error:
+            # Manejar errores de PgBouncer
+            if "DuplicatePreparedStatementError" in str(db_error):
+                print(f"🔄 Error de PgBouncer detectado, reintentando...")
+                await db.rollback()
+                # Reintentar la consulta
+                result = await db.execute(query)
+                rows = result.fetchall()
+            else:
+                raise db_error
 
         # Formatear respuesta
         formatted_requests = []
@@ -152,7 +164,8 @@ async def get_my_category_requests(
                 'created_at': row.created_at,
                 'nombre_empresa': row.nombre_empresa,
                 'nombre_contacto': row.nombre_contacto,
-                'email_contacto': None  # Email no disponible en el modelo actual
+                'user_id': str(row.user_id) if row.user_id else None,  # ✅ CONVERTIR UUID A STRING
+                'email_contacto': None  # Email se obtendrá en el frontend usando user_id
             })
 
         return formatted_requests
@@ -189,7 +202,8 @@ async def get_all_category_requests_for_admin(
             SolicitudCategoria.comentario_admin,
             SolicitudCategoria.created_at,
             PerfilEmpresa.razon_social.label('nombre_empresa'),
-            UserModel.nombre_persona.label('nombre_contacto')
+            UserModel.nombre_persona.label('nombre_contacto'),
+            PerfilEmpresa.user_id.label('user_id')  # ✅ USAR user_id de PerfilEmpresa
         ).select_from(SolicitudCategoria)\
          .join(PerfilEmpresa, SolicitudCategoria.id_perfil == PerfilEmpresa.id_perfil)\
          .join(UserModel, PerfilEmpresa.user_id == UserModel.id)\
@@ -198,8 +212,19 @@ async def get_all_category_requests_for_admin(
         if limit > 0:
             query = query.limit(limit)
 
-        result = await db.execute(query)
-        rows = result.fetchall()
+        try:
+            result = await db.execute(query)
+            rows = result.fetchall()
+        except Exception as db_error:
+            # Manejar errores de PgBouncer
+            if "DuplicatePreparedStatementError" in str(db_error):
+                print(f"🔄 Error de PgBouncer detectado, reintentando...")
+                await db.rollback()
+                # Reintentar la consulta
+                result = await db.execute(query)
+                rows = result.fetchall()
+            else:
+                raise db_error
 
         # Formatear respuesta
         formatted_requests = []
@@ -214,7 +239,8 @@ async def get_all_category_requests_for_admin(
                 'created_at': row.created_at,
                 'nombre_empresa': row.nombre_empresa,
                 'nombre_contacto': row.nombre_contacto,
-                'email_contacto': None  # Email no disponible en el modelo actual
+                'user_id': str(row.user_id) if row.user_id else None,  # ✅ CONVERTIR UUID A STRING
+                'email_contacto': None  # Email se obtendrá en el frontend usando user_id
             })
 
         return formatted_requests
@@ -344,3 +370,50 @@ async def reject_category_request(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al rechazar la solicitud: {str(e)}"
         )
+
+@router.get(
+    "/debug/test-query",
+    status_code=status.HTTP_200_OK,
+    description="Endpoint de prueba para verificar la consulta SQL"
+)
+async def test_category_query(
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Endpoint de prueba para verificar la consulta SQL.
+    """
+    try:
+        # Consulta simple para verificar la estructura
+        query = select(
+            SolicitudCategoria.id_solicitud,
+            SolicitudCategoria.id_perfil,
+            PerfilEmpresa.user_id.label('user_id'),
+            UserModel.nombre_persona.label('nombre_contacto'),
+            PerfilEmpresa.razon_social.label('nombre_empresa')
+        ).select_from(SolicitudCategoria)\
+         .join(PerfilEmpresa, SolicitudCategoria.id_perfil == PerfilEmpresa.id_perfil)\
+         .join(UserModel, PerfilEmpresa.user_id == UserModel.id)\
+         .limit(1)
+
+        result = await db.execute(query)
+        rows = result.fetchall()
+        
+        if rows:
+            row_dict = dict(rows[0]._mapping)
+            return {
+                "success": True,
+                "data": row_dict,
+                "message": "Consulta exitosa"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "No se encontraron datos"
+            }
+            
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Error en la consulta"
+        }

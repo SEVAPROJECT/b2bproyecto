@@ -26,6 +26,7 @@ const formatArgentinaDate = (dateString: string): string => {
 // Tipo temporal para CategoryRequest
 interface CategoryRequest {
     id_solicitud: number;
+    id_perfil: number;
     nombre_categoria: string;
     descripcion: string;
     nombre_empresa?: string;
@@ -34,6 +35,7 @@ interface CategoryRequest {
     estado_aprobacion: string;
     comentario_admin?: string;
     created_at: string;
+    user_id?: string; // ID del usuario que hizo la solicitud
 }
 
 // Funciones auxiliares para manejo de fechas
@@ -154,13 +156,11 @@ const AdminCategoryRequestsPage: React.FC = () => {
             setError(null);
             
             const accessToken = localStorage.getItem('access_token');
-            if (!accessToken) return;
-
-            console.log('🚀 Cargando solicitudes de categorías...');
+            if (!accessToken) {
+                return;
+            }
 
             const requestsData = await categoryRequestsAPI.getAllCategoryRequests(accessToken);
-            
-            console.log('📊 Solicitudes obtenidas:', requestsData.length);
             
             // Procesar solicitudes básicas primero (sin emails)
             const requestsBasic = requestsData.map(request => ({
@@ -179,6 +179,7 @@ const AdminCategoryRequestsPage: React.FC = () => {
             
         } catch (err: any) {
             console.error('❌ Error cargando solicitudes:', err);
+            console.error('❌ Error completo:', JSON.stringify(err, null, 2));
             setError(err.detail || 'Error al cargar las solicitudes');
             setLoading(false);
         }
@@ -188,14 +189,26 @@ const AdminCategoryRequestsPage: React.FC = () => {
     const loadEmailsInBackground = useCallback(async (requestsData: CategoryRequest[], accessToken: string) => {
         try {
             setLoadingEmails(true);
-            console.log('📧 Obteniendo emails reales con estrategia múltiple...');
             
             let emailsDict: {[key: string]: any} = {};
             
-            // ESTRATEGIA 1: Intentar endpoint directo de emails
+            // ESTRATEGIA 1: Intentar endpoint específico de emails-only
             try {
-                console.log('🔄 Estrategia 1: Endpoint directo de emails...');
-                const emailsResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.USERS + '/emails'), {
+                
+                
+                // Si tenemos user_id, usarlo para obtener email específico
+                const hasUserId = requestsData.some(request => request.user_id);
+                let endpointUrl = buildApiUrl(API_CONFIG.ADMIN.USERS + '/emails-only');
+                
+                if (hasUserId) {
+                    // Usar el primer user_id disponible para obtener email específico
+                    const firstUserId = requestsData.find(request => request.user_id)?.user_id;
+                    if (firstUserId) {
+                        endpointUrl += `?user_id=${firstUserId}`;
+                    }
+                }
+                
+                const emailsResponse = await fetch(endpointUrl, {
                     headers: {
                         'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json'
@@ -205,18 +218,14 @@ const AdminCategoryRequestsPage: React.FC = () => {
                 if (emailsResponse.ok) {
                     const emailsData = await emailsResponse.json();
                     emailsDict = emailsData.emails || {};
-                    console.log('✅ Estrategia 1 exitosa:', Object.keys(emailsDict).length, 'emails');
-                } else {
-                    console.log('❌ Estrategia 1 falló:', emailsResponse.status);
                 }
             } catch (error) {
-                console.log('❌ Estrategia 1 error:', error);
+                // Error silencioso
             }
             
             // ESTRATEGIA 2: Si la primera falla, usar endpoint de usuarios con emails
             if (Object.keys(emailsDict).length === 0) {
                 try {
-                    console.log('🔄 Estrategia 2: Endpoint de usuarios con emails...');
                     const usersResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.USERS + '?page=1&limit=100'), {
                         headers: {
                             'Authorization': `Bearer ${accessToken}`,
@@ -234,18 +243,14 @@ const AdminCategoryRequestsPage: React.FC = () => {
                                 emailsDict[user.nombre_contacto] = user.email;
                             }
                         });
-                        console.log('✅ Estrategia 2 exitosa:', Object.keys(emailsDict).length, 'emails');
-                    } else {
-                        console.log('❌ Estrategia 2 falló:', usersResponse.status);
                     }
                 } catch (error) {
-                    console.log('❌ Estrategia 2 error:', error);
+                    // Error silencioso
                 }
             }
             
-            // ESTRATEGIA 3: Si ambas fallan, usar datos existentes
+            // ESTRATEGIA 3: Si ambas fallan, usar datos existentes y mostrar mensaje
             if (Object.keys(emailsDict).length === 0) {
-                console.log('⚠️ Todas las estrategias fallaron, usando datos existentes');
                 setLoadingEmails(false);
                 return;
             }
@@ -254,14 +259,54 @@ const AdminCategoryRequestsPage: React.FC = () => {
             const requestsWithEmails = requestsData.map(request => {
                 let emailContacto = 'No especificado';
                 
-                // Buscar email real por nombre de contacto
+                // ESTRATEGIA MEJORADA: Buscar email por múltiples métodos
                 if (request.nombre_contacto && request.nombre_contacto !== 'No especificado') {
-                    const userEmail = emailsDict[request.nombre_contacto];
-                    if (userEmail) {
-                        emailContacto = userEmail;
-                        console.log(`✅ Email real encontrado para contacto ${request.nombre_contacto}: ${emailContacto}`);
-                    } else {
-                        console.log(`❌ No se encontró email para contacto ${request.nombre_contacto}`);
+                    
+                    // Método 1: Buscar por ID de usuario (más confiable)
+                    if (request.user_id && emailsDict[request.user_id]) {
+                        const userData = emailsDict[request.user_id];
+                        emailContacto = typeof userData === 'string' ? userData : userData.email;
+                    } else if (request.id_perfil) {
+                        // Método 1.5: Buscar por id_perfil (sin mapeo directo)
+                        
+                        // Si aún no tenemos email, continuar con otros métodos
+                        if (!emailContacto) {
+                            // Método 2: Búsqueda más precisa por nombre en emails
+                            const emailMatch = Object.entries(emailsDict).find(([key, value]) => {
+                                const email = typeof value === 'string' ? value : value.email;
+                                if (!email) return false;
+                                
+                                // Buscar coincidencias más precisas en el email
+                                const emailLower = email.toLowerCase();
+                                const nombreLower = request.nombre_contacto.toLowerCase();
+                                
+                                // Coincidencia más estricta: el email debe contener ambos nombres
+                                const nombres = nombreLower.split(' ').filter(n => n.length > 2); // Filtrar nombres cortos
+                                if (nombres.length >= 2) {
+                                    const emailLocal = emailLower.split('@')[0];
+                                    // El email debe contener al menos 2 de los nombres principales
+                                    const coincidencias = nombres.filter(nombre => 
+                                        emailLocal.includes(nombre) || nombre.includes(emailLocal)
+                                    );
+                                    return coincidencias.length >= 2;
+                                }
+                                
+                                return false; // No hacer coincidencias vagas
+                            });
+                            
+                            if (emailMatch) {
+                                const [, userData] = emailMatch;
+                                emailContacto = typeof userData === 'string' ? userData : userData.email;
+                            } else {
+                                // Método 3: Búsqueda por nombre de contacto (fallback)
+                                if (emailContacto === 'No especificado') {
+                                    const userEmail = emailsDict[request.nombre_contacto];
+                                    if (userEmail) {
+                                        emailContacto = typeof userEmail === 'string' ? userEmail : userEmail.email;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 
@@ -275,10 +320,9 @@ const AdminCategoryRequestsPage: React.FC = () => {
             
             // Actualizar con emails reales
             setRequests(requestsWithEmails);
-            console.log('✅ Emails reales aplicados exitosamente');
             
         } catch (error) {
-            console.error('❌ Error obteniendo emails reales:', error);
+            console.error('Error obteniendo emails reales:', error);
         } finally {
             setLoadingEmails(false);
         }

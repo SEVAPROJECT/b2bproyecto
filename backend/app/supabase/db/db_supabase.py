@@ -30,7 +30,13 @@ try:
         echo=False,
         connect_args={
             "statement_cache_size": 0,  # Deshabilitar prepared statements para PgBouncer
-            "prepared_statement_cache_size": 0
+            "prepared_statement_cache_size": 0,
+            "command_timeout": 60,  # Timeout para comandos
+            "server_settings": {
+                "jit": "off",  # Deshabilitar JIT para evitar problemas con PgBouncer
+                "application_name": "seva_b2b_app",
+                "default_transaction_isolation": "read committed"
+            }
         }
     )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -48,20 +54,19 @@ try:
     logger.info("🔄 Creando engine asíncrono...")
     logger.info("🔧 Configurando para compatibilidad con PgBouncer (prepared statements deshabilitados)")
 
+    # SOLUCIÓN ALTERNATIVA: Usar conexiones directas sin pool para evitar PgBouncer
     async_engine = create_async_engine(
         async_database_url,
-        pool_size=1,  # Reducido a 1 para evitar problemas con PgBouncer
-        max_overflow=0,  # Sin overflow para evitar problemas
-        pool_pre_ping=True,
-        pool_recycle=300,  # Reciclar conexiones más frecuentemente
-        pool_timeout=30,
+        poolclass=None,  # Sin pool de conexiones para evitar PgBouncer
         echo=False,
         connect_args={
             "statement_cache_size": 0,  # Deshabilitar prepared statements para PgBouncer
             "prepared_statement_cache_size": 0,
+            "command_timeout": 60,  # Timeout para comandos
             "server_settings": {
                 "jit": "off",  # Deshabilitar JIT para evitar problemas con PgBouncer
-                "application_name": "seva_b2b_app"
+                "application_name": "seva_b2b_app",
+                "default_transaction_isolation": "read committed"
             }
         }
     )

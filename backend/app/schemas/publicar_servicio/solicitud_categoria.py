@@ -36,6 +36,7 @@ class SolicitudCategoriaWithDetails(BaseModel):
     nombre_empresa: Optional[str] = None
     nombre_contacto: Optional[str] = None
     email_contacto: Optional[str] = None
+    user_id: Optional[str] = None  # ✅ AGREGAR user_id
 
     class Config:
         from_attributes = True

@@ -152,3 +152,4 @@ async def get_users_optimized(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error obteniendo usuarios: {str(e)}"
         )
+

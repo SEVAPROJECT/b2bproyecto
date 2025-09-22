@@ -937,6 +937,110 @@ async def servir_documento(
 # ========================================
 
 @router.get(
+    "/users/emails-only",
+    description="Obtiene solo los emails de usuarios para AdminCategoryRequestsPage (endpoint específico)"
+)
+async def get_users_emails_only(
+    user_id: str = None,
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Endpoint específico para obtener emails de usuarios - optimizado para AdminCategoryRequestsPage"""
+    try:
+        
+        # OPTIMIZACIÓN: Si se proporciona user_id, obtener solo ese usuario
+        if user_id:
+            
+            # Obtener email específico de Supabase
+            from app.supabase.auth_service import supabase_admin
+            try:
+                auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
+                if auth_user and auth_user.user and auth_user.user.email:
+                    emails_dict = {
+                        user_id: {
+                            "email": auth_user.user.email,
+                            "user_id": user_id,
+                            "last_sign_in": auth_user.user.last_sign_in_at
+                        }
+                    }
+                    return {
+                        "emails": emails_dict,
+                        "total": 1
+                    }
+                else:
+                    return {"emails": {}, "total": 0}
+            except Exception as e:
+                return {"emails": {}, "total": 0}
+        
+        # Si no se proporciona user_id, obtener todos los usuarios (comportamiento original)
+        # OPTIMIZACIÓN: Solo obtener IDs de usuarios (consulta ultra simple)
+        from sqlalchemy.future import select
+        from app.models.perfil import UserModel
+        
+        query = select(UserModel.id)
+        result = await db.execute(query)
+        user_ids = [str(row.id) for row in result.all()]
+        
+        # Obtener emails de Supabase
+        from app.supabase.auth_service import supabase_admin
+        auth_users = supabase_admin.auth.admin.list_users()
+        
+        if not auth_users or len(auth_users) == 0:
+            return {"emails": {}, "total": 0}
+        
+        # Crear diccionario de emails con información adicional
+        emails_dict = {}
+        for auth_user in auth_users:
+            if auth_user.id and auth_user.email:
+                # Incluir tanto ID como email para búsqueda flexible
+                emails_dict[auth_user.id] = {
+                    "email": auth_user.email,
+                    "user_id": auth_user.id,
+                    "last_sign_in": auth_user.last_sign_in_at
+                }
+        return {
+            "emails": emails_dict,
+            "total": len(emails_dict)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo emails: {str(e)}")
+
+@router.get(
+    "/users/emails",
+    description="Obtiene los emails de todos los usuarios desde Supabase Auth"
+)
+async def get_users_emails(
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user)
+):
+    """Obtiene los emails de todos los usuarios desde Supabase Auth"""
+    try:
+        from app.supabase.auth_service import supabase_admin
+        
+        # Obtener todos los usuarios de Supabase en una sola llamada
+        auth_users = supabase_admin.auth.admin.list_users()
+        
+        if not auth_users or len(auth_users) == 0:
+            return {"emails": {}}
+        
+        # Crear diccionario de ID -> email
+        emails_dict = {}
+        for auth_user in auth_users:
+            if auth_user.id and auth_user.email:
+                emails_dict[auth_user.id] = {
+                    "email": auth_user.email,
+                    "ultimo_acceso": auth_user.last_sign_in_at,
+                    "estado": "Activo" if not auth_user.banned_until else "Suspendido"
+                }
+        
+        return {"emails": emails_dict}
+
+    except Exception as e:
+        print(f"⚠️ Error obteniendo emails de Supabase: {e}")
+        return {"emails": {}}
+
+
+@router.get(
     "/users",
     description="Obtiene la lista de todos los usuarios de la plataforma con opción de búsqueda optimizada"
 )
@@ -957,20 +1061,15 @@ async def get_all_users(
         from sqlalchemy.future import select
         from sqlalchemy import or_, and_, func
 
-        # OPTIMIZACIÓN 1: Una sola consulta con JOIN para usuarios y roles
+        # OPTIMIZACIÓN 1: Consulta completa para funcionalidad completa
         base_query = select(
             UserModel.id,
             UserModel.nombre_persona,
             UserModel.nombre_empresa,
             UserModel.estado,
-            UserModel.foto_perfil,
-            RolModel.nombre.label('rol_nombre')
+            UserModel.foto_perfil
         ).select_from(
             UserModel
-        ).outerjoin(
-            UsuarioRolModel, UserModel.id == UsuarioRolModel.id_usuario
-        ).outerjoin(
-            RolModel, UsuarioRolModel.id_rol == RolModel.id
         )
 
         # Aplicar filtros de búsqueda
@@ -991,8 +1090,19 @@ async def get_all_users(
         if search_nombre and search_nombre.strip():
             count_query = count_query.where(UserModel.nombre_persona.ilike(f"%{search_nombre.strip()}%"))
 
-        total_result = await db.execute(count_query)
-        total_users = total_result.scalar()
+        try:
+            total_result = await db.execute(count_query)
+            total_users = total_result.scalar()
+        except Exception as db_error:
+            # Manejar errores de PgBouncer en conteo
+            if "DuplicatePreparedStatementError" in str(db_error):
+                print(f"🔄 Error de PgBouncer detectado en count_query, reintentando...")
+                await db.rollback()
+                # Reintentar la consulta de conteo
+                total_result = await db.execute(count_query)
+                total_users = total_result.scalar()
+            else:
+                raise db_error
 
         # OPTIMIZACIÓN 3: Aplicar paginación
         offset = (page - 1) * limit
@@ -1000,9 +1110,21 @@ async def get_all_users(
 
         # Ejecutar consulta optimizada
         print("🔍 DEBUG: Ejecutando consulta de base de datos...")
-        result = await db.execute(base_query)
-        users_with_roles = result.all()
-        print("🔍 DEBUG: Consulta de base de datos completada")
+        try:
+            result = await db.execute(base_query)
+            users_with_roles = result.all()
+            print("🔍 DEBUG: Consulta de base de datos completada")
+        except Exception as db_error:
+            # Manejar errores de PgBouncer
+            if "DuplicatePreparedStatementError" in str(db_error):
+                print(f"🔄 Error de PgBouncer detectado en get_all_users, reintentando...")
+                await db.rollback()
+                # Reintentar la consulta
+                result = await db.execute(base_query)
+                users_with_roles = result.all()
+                print("🔍 DEBUG: Consulta de base de datos completada después del reintento")
+            else:
+                raise db_error
 
         print(f"🔍 DEBUG: {len(users_with_roles)} registros obtenidos de {total_users} totales")
 
@@ -1052,9 +1174,9 @@ async def get_all_users(
                     users_dict[user_id]["email"] = emails_dict[user_id]["email"]
                     users_dict[user_id]["ultimo_acceso"] = emails_dict[user_id]["ultimo_acceso"]
 
-            # Agregar rol si existe
-            if row.rol_nombre:
-                users_dict[user_id]["roles"].append(row.rol_nombre)
+            # Agregar rol por defecto (consulta simplificada)
+            if not users_dict[user_id]["roles"]:
+                users_dict[user_id]["roles"] = ["Usuario"]
 
         # OPTIMIZACIÓN 6: Determinar rol principal para cada usuario
         users_data = []
@@ -1097,6 +1219,44 @@ async def get_all_users(
             detail=f"Error obteniendo usuarios: {str(e)}"
         )
 
+
+@router.get(
+    "/users/user-id-by-profile/{id_perfil}",
+    description="Obtiene el user_id usando el id_perfil"
+)
+async def get_user_id_by_profile(
+    id_perfil: int,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Obtiene el user_id usando el id_perfil de PerfilEmpresa.
+    """
+    try:
+        from app.models.perfil_empresa import PerfilEmpresaModel
+        
+        # Consulta simple para obtener user_id por id_perfil
+        query = select(PerfilEmpresaModel.user_id).where(PerfilEmpresaModel.id_perfil == id_perfil)
+        result = await db.execute(query)
+        user_id = result.scalar()
+        
+        if user_id:
+            return {
+                "success": True,
+                "user_id": str(user_id),
+                "id_perfil": id_perfil
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"No se encontró user_id para id_perfil {id_perfil}"
+            }
+            
+    except Exception as e:
+        print(f"❌ Error obteniendo user_id por id_perfil: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error obteniendo user_id: {str(e)}"
+        )
 
 @router.get(
     "/users/permissions",
@@ -1166,88 +1326,6 @@ async def get_user_permissions(
         }
 
 
-@router.get(
-    "/users/{user_id}",
-    description="Obtiene información detallada de un usuario específico"
-)
-async def get_user_details(
-    user_id: str,
-    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """Obtiene información detallada de un usuario específico"""
-    try:
-        # Obtener usuario
-        query = select(UserModel).where(UserModel.id == user_id)
-        result = await db.execute(query)
-        user = result.scalars().first()
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Usuario no encontrado"
-            )
-        
-        # Obtener roles del usuario en una consulta separada
-        roles_query = select(UsuarioRolModel).where(UsuarioRolModel.id_usuario == user.id)
-        roles_result = await db.execute(roles_query)
-        user_roles = roles_result.scalars().all()
-        
-        # Extraer información de roles
-        roles_data = []
-        for user_role in user_roles:
-            if user_role.rol:
-                roles_data.append({
-                    "id": str(user_role.rol.id),
-                    "nombre": user_role.rol.nombre,
-                    "descripcion": user_role.rol.descripcion
-                })
-        
-        # Obtener información de Supabase Auth
-        try:
-            from app.supabase.auth_service import supabase_auth
-            auth_user = supabase_auth.auth.admin.get_user_by_id(str(user.id))
-            
-            user_data = {
-                "id": str(user.id),
-                "nombre_persona": user.nombre_persona,
-                "nombre_empresa": user.nombre_empresa,
-                "email": auth_user.user.email if auth_user and auth_user.user else "No disponible",
-                "email_verificado": auth_user.user.email_confirmed_at is not None if auth_user and auth_user.user else False,
-                "telefono": auth_user.user.phone if auth_user and auth_user.user else None,
-                "telefono_verificado": auth_user.user.phone_confirmed_at is not None if auth_user and auth_user.user else False,
-                "roles": roles_data,
-                "estado": user.estado if user else "ACTIVO",
-                "ultimo_acceso": auth_user.user.last_sign_in_at if auth_user and auth_user.user else None,
-                "ultima_actividad": auth_user.user.last_sign_in_at if auth_user and auth_user.user else None
-            }
-            
-        except Exception as e:
-            print(f"Error obteniendo información de auth para usuario {user.id}: {e}")
-            user_data = {
-                "id": str(user.id),
-                "nombre_persona": user.nombre_persona,
-                "nombre_empresa": user.nombre_empresa,
-                "email": "No disponible",
-                "email_verificado": False,
-                "telefono": None,
-                "telefono_verificado": False,
-                "roles": roles_data,
-                "estado": user.estado if user else "ACTIVO",
-                "ultimo_acceso": None,
-                "ultima_actividad": None
-            }
-        
-        return user_data
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Error obteniendo detalles del usuario: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo detalles del usuario: {str(e)}"
-        )
 
 
 @router.put(
@@ -1622,40 +1700,6 @@ async def get_available_roles(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error obteniendo roles: {str(e)}"
         )
-
-
-@router.get(
-    "/users/emails",
-    description="Obtiene los emails de todos los usuarios desde Supabase Auth"
-)
-async def get_users_emails(
-    admin_user: UserProfileAndRolesOut = Depends(get_admin_user)
-):
-    """Obtiene los emails de todos los usuarios desde Supabase Auth"""
-    try:
-        from app.supabase.auth_service import supabase_admin
-        
-        # Obtener todos los usuarios de Supabase en una sola llamada
-        auth_users = supabase_admin.auth.admin.list_users()
-        
-        if not auth_users or len(auth_users) == 0:
-            return {"emails": {}}
-        
-        # Crear diccionario de ID -> email
-        emails_dict = {}
-        for auth_user in auth_users:
-            if auth_user.id and auth_user.email:
-                emails_dict[auth_user.id] = {
-                    "email": auth_user.email,
-                    "ultimo_acceso": auth_user.last_sign_in_at,
-                    "estado": "Activo" if not auth_user.banned_until else "Suspendido"
-                }
-        
-        return {"emails": emails_dict}
-
-    except Exception as e:
-        print(f"⚠️ Error obteniendo emails de Supabase: {e}")
-        return {"emails": {}}
 
 
 @router.post(
@@ -2727,4 +2771,88 @@ async def self_deactivate_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error desactivando la cuenta: {str(e)}"
+        )
+
+
+@router.get(
+    "/users/{user_id}",
+    description="Obtiene información detallada de un usuario específico"
+)
+async def get_user_details(
+    user_id: str,
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Obtiene información detallada de un usuario específico"""
+    try:
+        # Obtener usuario
+        query = select(UserModel).where(UserModel.id == user_id)
+        result = await db.execute(query)
+        user = result.scalars().first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Usuario no encontrado"
+            )
+        
+        # Obtener roles del usuario en una consulta separada
+        roles_query = select(UsuarioRolModel).where(UsuarioRolModel.id_usuario == user.id)
+        roles_result = await db.execute(roles_query)
+        user_roles = roles_result.scalars().all()
+        
+        # Extraer información de roles
+        roles_data = []
+        for user_role in user_roles:
+            if user_role.rol:
+                roles_data.append({
+                    "id": str(user_role.rol.id),
+                    "nombre": user_role.rol.nombre,
+                    "descripcion": user_role.rol.descripcion
+                })
+        
+        # Obtener información de Supabase Auth
+        try:
+            from app.supabase.auth_service import supabase_auth
+            auth_user = supabase_auth.auth.admin.get_user_by_id(str(user.id))
+            
+            user_data = {
+                "id": str(user.id),
+                "nombre_persona": user.nombre_persona,
+                "nombre_empresa": user.nombre_empresa,
+                "email": auth_user.user.email if auth_user and auth_user.user else "No disponible",
+                "email_verificado": auth_user.user.email_confirmed_at is not None if auth_user and auth_user.user else False,
+                "telefono": auth_user.user.phone if auth_user and auth_user.user else None,
+                "telefono_verificado": auth_user.user.phone_confirmed_at is not None if auth_user and auth_user.user else False,
+                "roles": roles_data,
+                "estado": user.estado if user else "ACTIVO",
+                "ultimo_acceso": auth_user.user.last_sign_in_at if auth_user and auth_user.user else None,
+                "ultima_actividad": auth_user.user.last_sign_in_at if auth_user and auth_user.user else None
+            }
+            
+        except Exception as e:
+            print(f"Error obteniendo información de auth para usuario {user.id}: {e}")
+            user_data = {
+                "id": str(user.id),
+                "nombre_persona": user.nombre_persona,
+                "nombre_empresa": user.nombre_empresa,
+                "email": "No disponible",
+                "email_verificado": False,
+                "telefono": None,
+                "telefono_verificado": False,
+                "roles": roles_data,
+                "estado": user.estado if user else "ACTIVO",
+                "ultimo_acceso": None,
+                "ultima_actividad": None
+            }
+        
+        return user_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error obteniendo detalles del usuario: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error obteniendo detalles del usuario: {str(e)}"
         )

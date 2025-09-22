@@ -2075,7 +2075,7 @@ export const categoryRequestsAPI = {
     // Obtener todas las solicitudes de categorías (para administradores)
     async getAllCategoryRequests(accessToken: string): Promise<CategoryRequest[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/category-requests/admin/todas`, {
+            const response = await fetch(buildApiUrl('/category-requests/admin/todas'), {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -2088,9 +2088,40 @@ export const categoryRequestsAPI = {
                 throw error;
             }
 
-            return await response.json();
+            const data = await response.json();
+            console.log('📊 Datos recibidos:', data);
+            return data;
         } catch (error) {
             console.error('❌ Error en getAllCategoryRequests:', error);
+            if (error instanceof Error) {
+                throw { detail: error.message };
+            }
+            throw error;
+        }
+    },
+
+    // Obtener user_id usando id_perfil
+    async getUserIdByProfile(idPerfil: number, accessToken: string): Promise<{success: boolean, user_id?: string, message?: string}> {
+        try {
+            console.log('🔗 Obteniendo user_id para id_perfil:', idPerfil);
+            const response = await fetch(buildApiUrl(`/admin/users/user-id-by-profile/${idPerfil}`), {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const error = await handleApiError(response);
+                throw error;
+            }
+
+            const data = await response.json();
+            console.log('📊 User ID obtenido:', data);
+            return data;
+        } catch (error) {
+            console.error('❌ Error obteniendo user_id por id_perfil:', error);
             if (error instanceof Error) {
                 throw { detail: error.message };
             }
