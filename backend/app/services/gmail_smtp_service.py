@@ -393,7 +393,7 @@ class GmailSMTPService:
 
     def send_email_via_resend(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
         """
-        Envía un correo electrónico usando Resend API (recomendado por Railway)
+        Envía un correo electrónico usando Resend API (síncrono, compatible con FastAPI)
 
         Args:
             to_email: Email del destinatario
@@ -425,20 +425,21 @@ class GmailSMTPService:
             if text_content:
                 payload["text"] = text_content
 
-            # Enviar usando httpx (debe ser async, pero lo hago sync para compatibilidad)
-            async def send_async():
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(url, headers=headers, json=payload)
-                    return response
+            # Enviar usando httpx de forma síncrona (compatible con FastAPI)
+            try:
+                response = httpx.post(url, headers=headers, json=payload, timeout=30.0)
 
-            # Ejecutar de forma síncrona
-            response = asyncio.run(send_async())
-
-            if response.status_code == 200:
-                logger.info(f"✅ Correo enviado exitosamente via Resend a {to_email}")
-                return True
-            else:
-                logger.error(f"❌ Error en API Resend: {response.status_code} - {response.text}")
+                if response.status_code == 200:
+                    logger.info(f"✅ Correo enviado exitosamente via Resend a {to_email}")
+                    return True
+                else:
+                    logger.error(f"❌ Error en API Resend: {response.status_code} - {response.text}")
+                    return False
+            except httpx.TimeoutException:
+                logger.error(f"❌ Timeout enviando correo via Resend a {to_email}")
+                return False
+            except Exception as e:
+                logger.error(f"❌ Error de conexión via Resend a {to_email}: {str(e)}")
                 return False
 
         except Exception as e:
@@ -447,7 +448,7 @@ class GmailSMTPService:
 
     def send_email_via_api(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
         """
-        Envía un correo electrónico usando SendGrid API (respaldo alternativo)
+        Envía un correo electrónico usando SendGrid API (síncrono, compatible con FastAPI)
 
         Args:
             to_email: Email del destinatario
@@ -497,20 +498,21 @@ class GmailSMTPService:
                 "content": content
             }
 
-            # Enviar usando httpx (debe ser async, pero lo hago sync para compatibilidad)
-            async def send_async():
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(url, headers=headers, json=payload)
-                    return response
+            # Enviar usando httpx de forma síncrona (compatible con FastAPI)
+            try:
+                response = httpx.post(url, headers=headers, json=payload, timeout=30.0)
 
-            # Ejecutar de forma síncrona
-            response = asyncio.run(send_async())
-
-            if response.status_code == 202:  # SendGrid aceptó el email
-                logger.info(f"✅ Correo enviado exitosamente via SendGrid a {to_email}")
-                return True
-            else:
-                logger.error(f"❌ Error en API SendGrid: {response.status_code} - {response.text}")
+                if response.status_code == 202:  # SendGrid aceptó el email
+                    logger.info(f"✅ Correo enviado exitosamente via SendGrid a {to_email}")
+                    return True
+                else:
+                    logger.error(f"❌ Error en API SendGrid: {response.status_code} - {response.text}")
+                    return False
+            except httpx.TimeoutException:
+                logger.error(f"❌ Timeout enviando correo via SendGrid a {to_email}")
+                return False
+            except Exception as e:
+                logger.error(f"❌ Error de conexión via SendGrid a {to_email}: {str(e)}")
                 return False
 
         except Exception as e:
