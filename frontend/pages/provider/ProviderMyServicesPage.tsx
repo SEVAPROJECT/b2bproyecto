@@ -550,17 +550,53 @@ const ProviderMyServicesPage: React.FC = () => {
                 template_id: selectedTemplate.id_servicio,
                 nombre: templateForm.nombre.trim(),
                 descripcion: templateForm.descripcion.trim(),
-                precio: parseFloat(templateForm.precio),
+                precio: parsePriceInput(templateForm.precio),
                 id_moneda: templateForm.id_moneda
             };
 
-            await providerServicesAPI.createServiceFromTemplate(templateData, accessToken);
+            // Crear servicio optimista para evitar refresco de pantalla
+            const optimisticService = {
+                id_servicio: Date.now(), // ID temporal
+                nombre: templateData.nombre,
+                descripcion: templateData.descripcion,
+                precio: templateData.precio,
+                id_categoria: selectedTemplate.id_categoria,
+                id_perfil: selectedTemplate.id_perfil,
+                id_moneda: templateData.id_moneda,
+                estado: true,
+                imagen: selectedTemplate.imagen,
+                tarifas: [],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                // Datos adicionales para mostrar
+                categoria: selectedTemplate.categoria,
+                moneda: currencies.find(c => c.id_moneda === templateData.id_moneda) || currencies[0],
+                isOptimistic: true // Marcar como optimista
+            };
+
+            // Agregar el servicio optimista inmediatamente
+            setServices(prev => [optimisticService, ...prev]);
             
-            setSuccess('Servicio creado exitosamente desde plantilla');
+            try {
+                const newService = await providerServicesAPI.createServiceFromTemplate(templateData, accessToken);
+                
+                // Reemplazar el servicio optimista con el real
+                setServices(prev => prev.map(service => 
+                    service.id_servicio === optimisticService.id_servicio 
+                        ? { ...newService, isOptimistic: false }
+                        : service
+                ));
+                
+                setSuccess('Servicio creado exitosamente desde plantilla');
+            } catch (apiError) {
+                // Si falla, remover el servicio optimista
+                setServices(prev => prev.filter(service => service.id_servicio !== optimisticService.id_servicio));
+                throw apiError;
+            }
+            
             setShowTemplateModal(false);
             setSelectedTemplate(null);
             setTemplateForm({ nombre: '', descripcion: '', precio: '', id_moneda: 1 });
-            loadData(); // Recargar servicios
             setTimeout(() => setSuccess(null), 3000);
 
         } catch (err: any) {
@@ -846,7 +882,15 @@ const ProviderMyServicesPage: React.FC = () => {
 
                                         {/* Información principal */}
                                         <div className="flex-1 min-w-0 text-center sm:text-left">
-                                            <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
+                                            <div className="flex items-center gap-2 justify-center sm:justify-start">
+                                                <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
+                                                {service.isOptimistic && (
+                                                    <div className="flex items-center gap-1">
+                                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                                        <span className="text-xs text-blue-600 font-medium">Creando...</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                             <p className="text-sm text-gray-600 mt-1 break-words">{service.descripcion}</p>
                                         </div>
 
@@ -1331,13 +1375,16 @@ const ProviderMyServicesPage: React.FC = () => {
                                                                         Precio *
                                                                     </label>
                                                                     <input
-                                                                        type="number"
+                                                                        type="text"
                                                                         value={templateForm.precio}
-                                                                        onChange={(e) => setTemplateForm(prev => ({ ...prev, precio: e.target.value }))}
+                                                                        onChange={(e) => {
+                                                                            const inputValue = e.target.value;
+                                                                            // Formatear el precio con puntos de mil mientras se escribe
+                                                                            const formattedValue = formatPriceInput(inputValue);
+                                                                            setTemplateForm(prev => ({ ...prev, precio: formattedValue }));
+                                                                        }}
                                                                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                                                                         placeholder="0"
-                                                                        min="0"
-                                                                        step="0.01"
                                                                     />
                                                                 </div>
                                                             </div>
