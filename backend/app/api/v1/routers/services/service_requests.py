@@ -284,7 +284,7 @@ async def approve_service_request(
             print(f"✅ Usando moneda: {codigo_moneda} (ID: {id_moneda_default})")
 
             # Crear el servicio
-            nuevo_servicio = Servicio(
+            nuevo_servicio = ServicioModel(
                 nombre=request.nombre_servicio,
                 descripcion=request.descripcion,
                 precio=0.0,  # Precio por defecto, el proveedor lo configurará después
