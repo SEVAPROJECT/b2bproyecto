@@ -554,14 +554,66 @@ const ProviderMyServicesPage: React.FC = () => {
                 id_moneda: templateForm.id_moneda
             };
 
-            await providerServicesAPI.createServiceFromTemplate(templateData, accessToken);
+            // Crear servicio optimista para evitar refresco de pantalla
+            const tempId = Date.now(); // ID temporal
+            const selectedCurrency = currencies.find(c => c.id_moneda === templateData.id_moneda) || currencies[0];
             
-            setSuccess('Servicio creado exitosamente desde plantilla');
+            const optimisticService = {
+                id_servicio: tempId,
+                nombre: templateData.nombre,
+                descripcion: templateData.descripcion,
+                precio: templateData.precio,
+                id_categoria: selectedTemplate.id_categoria,
+                id_perfil: selectedTemplate.id_perfil,
+                id_moneda: templateData.id_moneda,
+                estado: true,
+                imagen: selectedTemplate.imagen || null,
+                tarifas: [],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                // Datos adicionales para el renderizado
+                categoria: {
+                    id_categoria: selectedTemplate.id_categoria,
+                    nombre: selectedTemplate.categoria?.nombre || 'Categoría',
+                    descripcion: selectedTemplate.categoria?.descripcion || '',
+                    estado: true
+                },
+                moneda: {
+                    id_moneda: selectedCurrency.id_moneda,
+                    nombre: selectedCurrency.nombre,
+                    codigo_iso_moneda: selectedCurrency.codigo_iso_moneda,
+                    simbolo: selectedCurrency.simbolo
+                },
+                isOptimistic: true // Marcar como optimista
+            };
+
+            // Actualización optimista: agregar el servicio inmediatamente
+            setServices(prev => [optimisticService, ...prev]);
+
+            // Limpiar formulario y cerrar modal inmediatamente
             setShowTemplateModal(false);
             setSelectedTemplate(null);
             setTemplateForm({ nombre: '', descripcion: '', precio: '', id_moneda: 1 });
-            loadData(); // Recargar servicios
+            
+            // Mostrar mensaje de éxito inmediatamente
+            setSuccess('Servicio creado exitosamente desde plantilla');
             setTimeout(() => setSuccess(null), 3000);
+
+            // Llamar a la API en segundo plano
+            try {
+                const newService = await providerServicesAPI.createServiceFromTemplate(templateData, accessToken);
+                
+                // Reemplazar el servicio optimista con el real
+                setServices(prev => prev.map(service => 
+                    service.id_servicio === tempId 
+                        ? { ...newService, isOptimistic: false }
+                        : service
+                ));
+            } catch (apiError) {
+                // Si falla, remover el servicio optimista
+                setServices(prev => prev.filter(service => service.id_servicio !== tempId));
+                throw apiError;
+            }
 
         } catch (err: any) {
             setError(err.detail || 'Error al crear servicio desde plantilla');
@@ -823,7 +875,7 @@ const ProviderMyServicesPage: React.FC = () => {
                     {filteredServices.length > 0 ? (
                         <div className="divide-y divide-gray-200">
                             {filteredServices.map((service) => (
-                                <div key={service.id_servicio} className="p-4 hover:bg-gray-50 transition-colors duration-200">
+                                <div key={service.id_servicio} className={`p-4 transition-colors duration-200 ${service.isOptimistic ? 'bg-blue-50 border-l-4 border-blue-400' : 'hover:bg-gray-50'}`}>
                                     <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
                                         {/* Imagen del servicio */}
                                         <div className="flex-shrink-0 mx-auto sm:mx-0">
@@ -846,7 +898,15 @@ const ProviderMyServicesPage: React.FC = () => {
 
                                         {/* Información principal */}
                                         <div className="flex-1 min-w-0 text-center sm:text-left">
-                                            <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
+                                            <div className="flex items-center gap-2 justify-center sm:justify-start">
+                                                <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
+                                                {service.isOptimistic && (
+                                                    <div className="flex items-center gap-1">
+                                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                                        <span className="text-xs text-blue-600 font-medium">Creando...</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                             <p className="text-sm text-gray-600 mt-1 break-words">{service.descripcion}</p>
                                         </div>
 
