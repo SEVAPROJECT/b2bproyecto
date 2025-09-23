@@ -558,26 +558,18 @@ const ProviderMyServicesPage: React.FC = () => {
             const tempId = Date.now(); // ID temporal
             const selectedCurrency = currencies.find(c => c.id_moneda === templateData.id_moneda) || currencies[0];
             
+            // Usar los datos completos de la plantilla como base
             const optimisticService = {
-                id_servicio: tempId,
-                nombre: templateData.nombre,
-                descripcion: templateData.descripcion,
-                precio: templateData.precio,
-                id_categoria: selectedTemplate.id_categoria,
-                id_perfil: selectedTemplate.id_perfil,
-                id_moneda: templateData.id_moneda,
-                estado: true,
-                imagen: selectedTemplate.imagen || null,
-                tarifas: [],
+                ...selectedTemplate, // Copiar todos los datos de la plantilla
+                id_servicio: tempId, // Solo cambiar el ID
+                nombre: templateData.nombre, // Usar el nombre del formulario
+                descripcion: templateData.descripcion, // Usar la descripción del formulario
+                precio: templateData.precio, // Usar el precio del formulario
+                id_moneda: templateData.id_moneda, // Usar la moneda del formulario
+                estado: true, // Activo por defecto
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                // Datos adicionales para el renderizado
-                categoria: {
-                    id_categoria: selectedTemplate.id_categoria,
-                    nombre: selectedTemplate.categoria?.nombre || 'Categoría',
-                    descripcion: selectedTemplate.categoria?.descripcion || '',
-                    estado: true
-                },
+                // Asegurar que la moneda esté actualizada
                 moneda: {
                     id_moneda: selectedCurrency.id_moneda,
                     nombre: selectedCurrency.nombre,
