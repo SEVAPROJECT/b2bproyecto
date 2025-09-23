@@ -670,16 +670,41 @@ async def create_service_from_template(
         await db.commit()
         await db.refresh(nuevo_servicio)
 
+        # Obtener información adicional para la respuesta completa
+        categoria_query = select(CategoriaModel).where(CategoriaModel.id_categoria == nuevo_servicio.id_categoria)
+        categoria_result = await db.execute(categoria_query)
+        categoria = categoria_result.scalar_one_or_none()
+
+        moneda_query = select(Moneda).where(Moneda.id_moneda == nuevo_servicio.id_moneda)
+        moneda_result = await db.execute(moneda_query)
+        moneda = moneda_result.scalar_one_or_none()
+
+        # Devolver el servicio completo con la misma estructura que getProviderServices
         return {
-            "message": "Servicio creado exitosamente desde plantilla",
-            "servicio": {
-                "id_servicio": nuevo_servicio.id_servicio,
-                "nombre": nuevo_servicio.nombre,
-                "descripcion": nuevo_servicio.descripcion,
-                "precio": nuevo_servicio.precio,
-                "id_categoria": nuevo_servicio.id_categoria,
-                "estado": nuevo_servicio.estado
-            }
+            "id_servicio": nuevo_servicio.id_servicio,
+            "nombre": nuevo_servicio.nombre,
+            "descripcion": nuevo_servicio.descripcion,
+            "precio": nuevo_servicio.precio,
+            "id_categoria": nuevo_servicio.id_categoria,
+            "id_perfil": nuevo_servicio.id_perfil,
+            "id_moneda": nuevo_servicio.id_moneda,
+            "estado": nuevo_servicio.estado,
+            "imagen": nuevo_servicio.imagen,
+            "created_at": nuevo_servicio.created_at.isoformat() if nuevo_servicio.created_at else None,
+            "updated_at": nuevo_servicio.updated_at.isoformat() if nuevo_servicio.updated_at else None,
+            "categoria": {
+                "id_categoria": categoria.id_categoria if categoria else nuevo_servicio.id_categoria,
+                "nombre": categoria.nombre if categoria else "Categoría",
+                "descripcion": categoria.descripcion if categoria else "",
+                "estado": categoria.estado if categoria else True
+            } if categoria else None,
+            "moneda": {
+                "id_moneda": moneda.id_moneda if moneda else nuevo_servicio.id_moneda,
+                "nombre": moneda.nombre if moneda else "Moneda",
+                "codigo_iso_moneda": moneda.codigo_iso_moneda if moneda else "PYG",
+                "simbolo": moneda.simbolo if moneda else "₲"
+            } if moneda else None,
+            "tarifas": []
         }
 
     except HTTPException:

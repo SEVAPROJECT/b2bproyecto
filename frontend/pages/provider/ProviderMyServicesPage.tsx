@@ -555,6 +555,7 @@ const ProviderMyServicesPage: React.FC = () => {
             };
 
             // Crear servicio optimista para evitar refresco de pantalla
+            const selectedCurrency = currencies.find(c => c.id_moneda === templateData.id_moneda) || currencies[0];
             const optimisticService = {
                 id_servicio: Date.now(), // ID temporal
                 nombre: templateData.nombre,
@@ -564,13 +565,23 @@ const ProviderMyServicesPage: React.FC = () => {
                 id_perfil: selectedTemplate.id_perfil,
                 id_moneda: templateData.id_moneda,
                 estado: true,
-                imagen: selectedTemplate.imagen,
+                imagen: selectedTemplate.imagen || null,
                 tarifas: [],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                // Datos adicionales para mostrar
-                categoria: selectedTemplate.categoria,
-                moneda: currencies.find(c => c.id_moneda === templateData.id_moneda) || currencies[0],
+                // Datos adicionales necesarios para el renderizado
+                categoria: {
+                    id_categoria: selectedTemplate.id_categoria,
+                    nombre: selectedTemplate.categoria?.nombre || 'Categoría',
+                    descripcion: selectedTemplate.categoria?.descripcion || '',
+                    estado: true
+                },
+                moneda: {
+                    id_moneda: selectedCurrency.id_moneda,
+                    nombre: selectedCurrency.nombre,
+                    codigo_iso_moneda: selectedCurrency.codigo_iso_moneda,
+                    simbolo: selectedCurrency.simbolo
+                },
                 isOptimistic: true // Marcar como optimista
             };
 
