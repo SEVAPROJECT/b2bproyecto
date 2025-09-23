@@ -554,22 +554,47 @@ const ProviderMyServicesPage: React.FC = () => {
                 id_moneda: templateForm.id_moneda
             };
 
+            // Debug: Verificar datos del formulario
+            console.log('🔍 Datos del formulario:', {
+                nombre: templateData.nombre,
+                descripcion: templateData.descripcion,
+                precio: templateData.precio,
+                id_moneda: templateData.id_moneda
+            });
+
+            // Debug: Verificar plantilla seleccionada
+            console.log('🔍 Plantilla seleccionada:', {
+                id_categoria: selectedTemplate.id_categoria,
+                categoria: selectedTemplate.categoria,
+                nombre: selectedTemplate.nombre
+            });
+
             // Crear servicio optimista para evitar refresco de pantalla
             const tempId = Date.now(); // ID temporal
             const selectedCurrency = currencies.find(c => c.id_moneda === templateData.id_moneda) || currencies[0];
             
-            // Usar los datos completos de la plantilla como base
+            // Crear servicio optimista con estructura completa
             const optimisticService = {
-                ...selectedTemplate, // Copiar todos los datos de la plantilla
-                id_servicio: tempId, // Solo cambiar el ID
-                nombre: templateData.nombre, // Usar el nombre del formulario
-                descripcion: templateData.descripcion, // Usar la descripción del formulario
-                precio: templateData.precio, // Usar el precio del formulario
-                id_moneda: templateData.id_moneda, // Usar la moneda del formulario
-                estado: true, // Activo por defecto
+                id_servicio: tempId,
+                nombre: templateData.nombre,
+                descripcion: templateData.descripcion,
+                precio: templateData.precio,
+                id_categoria: selectedTemplate.id_categoria, // ✅ Usar el ID de categoría de la plantilla
+                id_perfil: selectedTemplate.id_perfil,
+                id_moneda: templateData.id_moneda,
+                estado: true, // ✅ Activo por defecto
+                imagen: selectedTemplate.imagen || null,
+                tarifas: selectedTemplate.tarifas || [],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                // Asegurar que la moneda esté actualizada
+                // Datos de categoría completos (para renderizado directo)
+                categoria: {
+                    id_categoria: selectedTemplate.id_categoria,
+                    nombre: selectedTemplate.categoria?.nombre || 'Categoría',
+                    descripcion: selectedTemplate.categoria?.descripcion || '',
+                    estado: true
+                },
+                // Datos de moneda completos
                 moneda: {
                     id_moneda: selectedCurrency.id_moneda,
                     nombre: selectedCurrency.nombre,
@@ -578,6 +603,16 @@ const ProviderMyServicesPage: React.FC = () => {
                 },
                 isOptimistic: true // Marcar como optimista
             };
+
+            // Debug: Verificar datos del servicio optimista
+            console.log('🔍 Servicio optimista creado:', {
+                nombre: optimisticService.nombre,
+                descripcion: optimisticService.descripcion,
+                precio: optimisticService.precio,
+                id_categoria: optimisticService.id_categoria,
+                estado: optimisticService.estado,
+                categoria: optimisticService.categoria
+            });
 
             // Actualización optimista: agregar el servicio inmediatamente
             setServices(prev => [optimisticService, ...prev]);
