@@ -431,21 +431,44 @@ const ProviderMyServicesPage: React.FC = () => {
                 }))
             };
 
-            await providerServicesAPI.updateProviderService(editingService.id_servicio, serviceData, accessToken);
-
-            // Actualizar solo el servicio específico en la lista sin recargar todo
+            // Actualización optimista: actualizar inmediatamente en la lista
             const updatedService = {
                 ...editingService,
                 ...serviceData
             };
 
-            setServices(prevServices => 
-                prevServices.map(service => 
-                    service.id_servicio === editingService.id_servicio ? updatedService : service
-                )
-            );
+            console.log('🔍 Actualización optimista de servicio:', {
+                id: editingService.id_servicio,
+                nombre: updatedService.nombre,
+                tarifas: updatedService.tarifas.length,
+                datos: updatedService
+            });
 
-            setSuccess('Servicio actualizado exitosamente');
+            setServices(prevServices => {
+                const newServices = prevServices.map(service => 
+                    service.id_servicio === editingService.id_servicio ? updatedService : service
+                );
+                console.log('🔍 Servicios después de actualización optimista:', {
+                    total: newServices.length,
+                    updated: newServices.find(s => s.id_servicio === editingService.id_servicio)
+                });
+                return newServices;
+            });
+
+            // Llamar a la API en segundo plano
+            try {
+                await providerServicesAPI.updateProviderService(editingService.id_servicio, serviceData, accessToken);
+                setSuccess('Servicio actualizado exitosamente');
+            } catch (apiError) {
+                // Si falla la API, revertir la actualización optimista
+                setServices(prevServices => 
+                    prevServices.map(service => 
+                        service.id_servicio === editingService.id_servicio ? editingService : service
+                    )
+                );
+                throw apiError;
+            }
+
             setShowEditModal(false);
             setEditingService(null);
 
