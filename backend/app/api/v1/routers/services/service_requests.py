@@ -417,7 +417,7 @@ async def get_my_service_requests(
                 UserModel.nombre_persona.label('nombre_contacto')
             )
             .select_from(SolicitudServicio)
-            .join(Categoria, SolicitudServicio.id_categoria == Categoria.id_categoria, isouter=True)
+            .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)
             .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)
             .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)
             .where(SolicitudServicio.id_perfil == perfil.id_perfil)

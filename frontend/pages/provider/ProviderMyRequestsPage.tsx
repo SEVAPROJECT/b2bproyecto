@@ -61,7 +61,8 @@ const formatDateStringSpanish = (dateString: string): string => {
 };
 
 // Función de filtrado de solicitudes (actualizada para manejar ambos tipos)
-const filterRequests = (requests: UnifiedRequest[], filters: any) => {
+// Recibe también el listado de categorías para comparar por nombre
+const filterRequests = (requests: UnifiedRequest[], filters: any, categories: any[]) => {
     return requests.filter(request => {
         // Filtro por fecha
         if (filters.dateFilter !== 'all') {
@@ -96,7 +97,7 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
         // Filtro por categoría (para servicios y categorías)
         if (filters.categoryFilter !== 'all') {
             // Encontrar el nombre de la categoría seleccionada
-            const selectedCategory = categories.find(cat => cat.id_categoria.toString() === filters.categoryFilter);
+            const selectedCategory = categories?.find((cat: any) => cat.id_categoria?.toString() === filters.categoryFilter);
             if (selectedCategory) {
                 const selectedCategoryName = selectedCategory.nombre;
                 // Para servicios: comparar con el nombre de la categoría del servicio
@@ -164,11 +165,11 @@ const ProviderMyRequestsPage: React.FC = () => {
         loadData();
     }, []);
 
-    // Aplicar filtros cuando cambien
+    // Aplicar filtros cuando cambien (pasar categorías para evitar ReferenceError)
     useEffect(() => {
-        const filtered = filterRequests(requests, filters);
+        const filtered = filterRequests(requests, filters, categories);
         setFilteredRequests(filtered);
-    }, [requests, filters]);
+    }, [requests, filters, categories]);
 
     const loadData = async () => {
         try {
