@@ -416,12 +416,11 @@ const ProviderMyServicesPage: React.FC = () => {
 
     const handleSaveService = async () => {
         console.log('🔍 handleSaveService llamado');
-        if (!editingService) {
-            console.log('❌ No hay servicio en edición');
-            return;
-        }
-
         try {
+            if (!editingService) {
+                console.log('❌ No hay servicio en edición');
+                return;
+            }
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) {
                 console.log('❌ No hay token de acceso');
@@ -500,6 +499,7 @@ const ProviderMyServicesPage: React.FC = () => {
             setTimeout(() => setSuccess(null), 3000);
 
         } catch (err: any) {
+            console.error('❌ Error en handleSaveService:', err);
             setError(err.detail || 'Error al actualizar el servicio');
             setTimeout(() => setError(null), 3000);
         }
@@ -1383,7 +1383,10 @@ const ProviderMyServicesPage: React.FC = () => {
                                     Cancelar
                                 </button>
                                 <button
-                                    onClick={handleSaveService}
+                                    onClick={() => {
+                                        console.log('🔍 Botón Guardar Cambios presionado');
+                                        handleSaveService();
+                                    }}
                                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
                                 >
                                     Guardar Cambios
