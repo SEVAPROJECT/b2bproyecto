@@ -314,7 +314,7 @@ const ProviderMyRequestsPage: React.FC = () => {
             const categoriaSeleccionada = categories.find(cat => cat.id_categoria === selectedCategoryId);
 
             const optimisticRequest: UnifiedRequest = {
-                id: tempId,
+                id_solicitud: tempId,
                 nombre_servicio: requestType === 'servicio' ? newServiceName.trim() : '',
                 nombre_categoria: requestType === 'categoria' ? newServiceName.trim() : (categoriaSeleccionada?.nombre || 'No especificado'),
                 descripcion: newServiceDescription.trim(),
@@ -373,7 +373,7 @@ const ProviderMyRequestsPage: React.FC = () => {
 
                 setRequests(prevRequests =>
                     prevRequests.map(req =>
-                        req.id === tempId
+                        req.id_solicitud === tempId
                             ? enrichedRequest
                             : req
                     )
@@ -385,7 +385,10 @@ const ProviderMyRequestsPage: React.FC = () => {
 
             setTimeout(() => setSuccess(null), 3000);
         } catch (err: any) {
-            // No agregar la solicitud optimista si hubo error en la API
+            // Revertir la solicitud optimista si hubo error en la API
+            setRequests(prevRequests =>
+                prevRequests.filter(req => req.id_solicitud !== tempId)
+            );
             setError(err.detail || 'Error al enviar solicitud');
             setTimeout(() => setError(null), 3000);
         } finally {
@@ -587,7 +590,7 @@ const ProviderMyRequestsPage: React.FC = () => {
                         <div className="divide-y divide-gray-200">
                             {filteredRequests.map((request) => {
                                 // Detectar si es una solicitud temporal (optimista)
-                                const isOptimistic = request.id > 1000000000000; // IDs temporales son timestamps
+                                const isOptimistic = request.id_solicitud > 1000000000000; // IDs temporales son timestamps
                                 
                                 return (
                                 <div key={request.id_solicitud} className={`p-4 hover:bg-gray-50 transition-colors duration-200 ${isOptimistic ? 'bg-blue-50 border-l-4 border-blue-400' : ''}`}>
