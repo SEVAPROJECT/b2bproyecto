@@ -4,7 +4,8 @@ import {
     ClipboardDocumentListIcon, 
     PlusCircleIcon, 
     BuildingStorefrontIcon, 
-    MagnifyingGlassIcon 
+    MagnifyingGlassIcon,
+    ClockIcon
 } from '../../components/icons';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, serviceRequestsAPI, categoryRequestsAPI } from '../../services/api';
@@ -700,11 +701,9 @@ const ProviderMyRequestsPage: React.FC = () => {
                         </div>
                     ) : (
                         <div className="text-center py-12">
-                            <MagnifyingGlassIcon className="mx-auto h-12 w-12 text-gray-400" />
-                            <h3 className="mt-2 text-sm font-medium text-gray-900">No hay solicitudes que coincidan con los filtros</h3>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Prueba ajustando los filtros para ver más resultados.
-                            </p>
+                            <ClockIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">No hay solicitudes</h3>
+                            <p className="text-gray-500">No se encontraron solicitudes que coincidan con los filtros aplicados.</p>
                             <button
                                 onClick={resetFilters}
                                 className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
