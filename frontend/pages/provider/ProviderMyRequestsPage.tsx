@@ -190,7 +190,10 @@ const ProviderMyRequestsPage: React.FC = () => {
             filteredCount: filtered.length,
             filtered: filtered.slice(0, 2) // Solo los primeros 2 para debug
         });
-        setFilteredRequests(filtered);
+        
+        // Forzar actualización del estado
+        setFilteredRequests([]);
+        setTimeout(() => setFilteredRequests(filtered), 0);
     }, [requests, filters]);
 
     const loadData = async () => {
@@ -588,7 +591,15 @@ const ProviderMyRequestsPage: React.FC = () => {
                 )}
 
                 {/* Requests List */}
-                <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                <div key={`requests-${filteredRequests.length}-${filters.categoryFilter}`} className="bg-white shadow overflow-hidden sm:rounded-md">
+                    {(() => {
+                        console.log('🎨 RENDERIZANDO:', {
+                            filteredRequestsLength: filteredRequests.length,
+                            filteredRequestsIds: filteredRequests.map(r => r.id_solicitud),
+                            showingList: filteredRequests.length > 0
+                        });
+                        return null;
+                    })()}
                     {filteredRequests.length > 0 ? (
                         <div className="divide-y divide-gray-200">
                             {filteredRequests.map((request) => {
