@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { 
     ClipboardDocumentListIcon, 
@@ -61,6 +61,23 @@ const formatDateStringSpanish = (dateString: string): string => {
     return formatDateSpanish(date);
 };
 
+// Funciones auxiliares fuera del componente para evitar errores de referencia
+const getRequestName = (request: UnifiedRequest): string => {
+    if (request.tipo === 'servicio') {
+        return request.nombre_servicio || '';
+    } else {
+        return request.nombre_categoria || '';
+    }
+};
+
+const getRequestTypeLabel = (request: UnifiedRequest): string => {
+    return request.tipo === 'servicio' ? 'Servicio' : 'Categoría';
+};
+
+const getRequestTypeIcon = (request: UnifiedRequest): string => {
+    return request.tipo === 'servicio' ? '🛠️' : '📂';
+};
+
 // Función de filtrado de solicitudes (igual que pantalla de administración)
 const filterRequests = (requests: UnifiedRequest[], filters: any) => {
     return requests.filter(request => {
@@ -112,7 +129,7 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
         // Filtro por búsqueda de texto
         if (filters.searchFilter && filters.searchFilter.trim() !== '') {
             const searchTerm = filters.searchFilter.toLowerCase().trim();
-            const requestName = getRequestName(request).toLowerCase();
+            const requestName = getRequestName(request)?.toLowerCase() || '';
             const requestDescription = request.descripcion?.toLowerCase() || '';
             
             if (!requestName.includes(searchTerm) && !requestDescription.includes(searchTerm)) {
@@ -127,7 +144,6 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
 const ProviderMyRequestsPage: React.FC = () => {
     const { user } = useContext(AuthContext);
     const [requests, setRequests] = useState<UnifiedRequest[]>([]);
-    const [filteredRequests, setFilteredRequests] = useState<UnifiedRequest[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -151,15 +167,14 @@ const ProviderMyRequestsPage: React.FC = () => {
         searchFilter: ''
     });
 
+    // Aplicar filtros inmediatamente con useMemo
+    const filteredRequests = useMemo(() => {
+        return filterRequests(requests, filters);
+    }, [requests, filters]);
+
     useEffect(() => {
         loadData();
     }, []);
-
-    // Aplicar filtros cuando cambien
-    useEffect(() => {
-        const filtered = filterRequests(requests, filters);
-        setFilteredRequests(filtered);
-    }, [requests, filters]);
 
     const loadData = async () => {
         try {
@@ -272,22 +287,6 @@ const ProviderMyRequestsPage: React.FC = () => {
         }
     };
 
-    // Funciones auxiliares para manejar ambos tipos de solicitudes
-    const getRequestName = (request: UnifiedRequest): string => {
-        if (request.tipo === 'servicio') {
-            return request.nombre_servicio;
-        } else {
-            return request.nombre_categoria;
-        }
-    };
-
-    const getRequestTypeLabel = (request: UnifiedRequest): string => {
-        return request.tipo === 'servicio' ? 'Servicio' : 'Categoría';
-    };
-
-    const getRequestTypeIcon = (request: UnifiedRequest): string => {
-        return request.tipo === 'servicio' ? '🛠️' : '📂';
-    };
 
     const handleCreateRequest = async () => {
         if (!newServiceName.trim() || !newServiceDescription.trim()) {
