@@ -931,15 +931,28 @@ const ProviderMyServicesPage: React.FC = () => {
                 <div className="bg-white shadow overflow-hidden sm:rounded-md">
                     {filteredServices.length > 0 ? (
                         <div className="divide-y divide-gray-200">
-                            {filteredServices.map((service) => (
-                                <div key={service.id_servicio} className={`p-4 transition-colors duration-200 ${service.isOptimistic ? 'bg-blue-50 border-l-4 border-blue-400' : 'hover:bg-gray-50'}`}>
+                            {filteredServices.map((service) => {
+                                // Debug: Verificar cada servicio que se renderiza
+                                console.log('🔍 Renderizando servicio:', {
+                                    id: service.id_servicio,
+                                    nombre: service.nombre,
+                                    precio: service.precio,
+                                    isOptimistic: service.isOptimistic,
+                                    hasServicio: !!service.servicio
+                                });
+                                
+                                // Si el servicio tiene una propiedad 'servicio', usar esa
+                                const actualService = service.servicio || service;
+                                
+                                return (
+                                <div key={actualService.id_servicio} className={`p-4 transition-colors duration-200 ${service.isOptimistic ? 'bg-blue-50 border-l-4 border-blue-400' : 'hover:bg-gray-50'}`}>
                                     <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
                                         {/* Imagen del servicio */}
                                         <div className="flex-shrink-0 mx-auto sm:mx-0">
-                                            {service.imagen ? (
+                                            {actualService.imagen ? (
                                                 <img
-                                                    src={`${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
-                                                    alt={service.nombre}
+                                                    src={`${API_CONFIG.BASE_URL.replace('/api/v1', '')}${actualService.imagen}`}
+                                                    alt={actualService.nombre}
                                                     className="h-16 w-16 object-cover rounded-lg border border-gray-200"
                                                     onError={(e) => {
                                                         const target = e.target as HTMLImageElement;
@@ -956,7 +969,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                         {/* Información principal */}
                                         <div className="flex-1 min-w-0 text-center sm:text-left">
                                             <div className="flex items-center gap-2 justify-center sm:justify-start">
-                                                <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
+                                                <h3 className="text-lg font-semibold text-gray-900 break-words">{actualService.nombre}</h3>
                                                 {service.isOptimistic && (
                                                     <div className="flex items-center gap-1">
                                                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
@@ -964,7 +977,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                                     </div>
                                                 )}
                                             </div>
-                                            <p className="text-sm text-gray-600 mt-1 break-words">{service.descripcion}</p>
+                                            <p className="text-sm text-gray-600 mt-1 break-words">{actualService.descripcion}</p>
                                         </div>
 
                                         {/* Información compacta - responsive */}
@@ -973,7 +986,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">💰 Precio</p>
                                                 <p className="font-semibold text-green-600">
-                                                    {formatNumber(service.precio || 0)} ₲
+                                                    {formatNumber(actualService.precio || 0)} ₲
                                                 </p>
                                             </div>
 
@@ -981,7 +994,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">📂 Categoría</p>
                                                 <p className="font-semibold text-blue-600 break-words">
-                                                    {categories.find(c => c.id_categoria === service.id_categoria)?.nombre || 'No especificado'}
+                                                    {categories.find(c => c.id_categoria === actualService.id_categoria)?.nombre || 'No especificado'}
                                                 </p>
                                             </div>
 
@@ -989,11 +1002,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">📊 Estado</p>
                                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                                    service.estado 
+                                                    actualService.estado 
                                                         ? 'bg-green-100 text-green-800' 
                                                         : 'bg-red-100 text-red-800'
                                                 }`}>
-                                                    {service.estado ? 'Activo' : 'Inactivo'}
+                                                    {actualService.estado ? 'Activo' : 'Inactivo'}
                                                 </span>
                                             </div>
 
@@ -1001,7 +1014,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">📋 Tarifas</p>
                                                 <p className="font-semibold text-orange-600">
-                                                    {service.tarifas?.length || 0}
+                                                    {actualService.tarifas?.length || 0}
                                                 </p>
                                             </div>
                                         </div>
@@ -1009,14 +1022,14 @@ const ProviderMyServicesPage: React.FC = () => {
                                         {/* Botones de acción - responsive */}
                                         <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 mt-4 sm:mt-0">
                                             <button
-                                                onClick={() => handleToggleServiceStatus(service.id_servicio, service.estado)}
+                                                onClick={() => handleToggleServiceStatus(actualService.id_servicio, actualService.estado)}
                                                 className={`w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border shadow-sm text-sm font-medium rounded-md transition-colors ${
-                                                    service.estado
+                                                    actualService.estado
                                                         ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500'
                                                         : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
                                                 }`}
                                             >
-                                                {service.estado ? (
+                                                {actualService.estado ? (
                                                     <>
                                                         <XMarkIcon className="h-4 w-4 mr-1" />
                                                         <span className="hidden sm:inline">Desactivar</span>
@@ -1031,7 +1044,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                                 )}
                                             </button>
                                             <button
-                                                onClick={() => handleEditService(service)}
+                                                onClick={() => handleEditService(actualService)}
                                                 className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
                                             >
                                                 <PencilIcon className="h-4 w-4 mr-1" />
@@ -1042,20 +1055,21 @@ const ProviderMyServicesPage: React.FC = () => {
                                     </div>
 
                                     {/* Resumen de tarifas (expandible) */}
-                                    {service.tarifas && service.tarifas.length > 0 && (
+                                    {actualService.tarifas && actualService.tarifas.length > 0 && (
                                         <div className="mt-3 pt-3 border-t border-gray-100">
                                             <div className="space-y-2">
                                                 <p className="text-xs font-medium text-gray-500">📋 Detalle de tarifas:</p>
                                                 <div className="bg-gray-50 rounded-md p-2">
                                                     <p className="text-xs text-gray-700 leading-relaxed">
-                                                        {getTariffsSummary(service.tarifas, rateTypes)}
+                                                        {getTariffsSummary(actualService.tarifas, rateTypes)}
                                                     </p>
                                                 </div>
                                             </div>
                                         </div>
                                     )}
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     ) : services.length === 0 ? (
                         <div className="text-center py-12">
