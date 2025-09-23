@@ -414,8 +414,7 @@ async def get_my_service_requests(
                 SolicitudServicio.id_perfil,
                 Categoria.nombre.label('nombre_categoria'),
                 PerfilEmpresa.razon_social.label('nombre_empresa'),
-                UserModel.nombre_persona.label('nombre_contacto'),
-                UserModel.email.label('email_contacto')
+                UserModel.nombre_persona.label('nombre_contacto')
             )
             .select_from(SolicitudServicio)
             .join(Categoria, SolicitudServicio.id_categoria == Categoria.id_categoria, isouter=True)
@@ -441,7 +440,7 @@ async def get_my_service_requests(
                 "nombre_categoria": row.nombre_categoria or "No especificado",
                 "nombre_empresa": row.nombre_empresa or "No especificado",
                 "nombre_contacto": row.nombre_contacto or "No especificado",
-                "email_contacto": row.email_contacto or "No especificado"
+                "email_contacto": None
             }
             formatted_requests.append(formatted_request)
 
@@ -473,7 +472,7 @@ async def get_my_service_requests(
                 "nombre_categoria": "No especificado",
                 "nombre_empresa": perfil.razon_social or "No especificado",
                 "nombre_contacto": "No especificado",
-                "email_contacto": "No especificado"
+                "email_contacto": None
             }
             formatted_requests.append(formatted_request)
 

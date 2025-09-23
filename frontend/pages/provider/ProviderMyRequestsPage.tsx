@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { 
     ClipboardDocumentListIcon, 
@@ -106,8 +106,12 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
                     break;
                 case 'custom':
                     if (filters.customDate) {
-                        const selectedDate = parseDateString(filters.customDate);
-                        if (!datesEqual(requestDate, selectedDate)) {
+                        // Crear fechas normalizadas para comparación
+                        const selectedDate = new Date(filters.customDate + 'T00:00:00');
+                        const requestDateNormalized = new Date(requestDate.getFullYear(), requestDate.getMonth(), requestDate.getDate());
+                        const selectedDateNormalized = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+
+                        if (requestDateNormalized.getTime() !== selectedDateNormalized.getTime()) {
                             return false;
                         }
                     }
@@ -116,8 +120,11 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
         }
 
         // Filtro por categoría (solo para solicitudes de servicios)
-        if (filters.categoryFilter !== 'all' && request.tipo === 'servicio' && request.id_categoria?.toString() !== filters.categoryFilter) {
-            return false;
+        if (filters.categoryFilter !== 'all' && request.tipo === 'servicio') {
+            const categoryId = request.id_categoria;
+            if (!categoryId || categoryId.toString() !== filters.categoryFilter) {
+                return false;
+            }
         }
 
         // Filtro por estado
@@ -148,7 +155,6 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
 const ProviderMyRequestsPage: React.FC = () => {
     const { user } = useContext(AuthContext);
     const [requests, setRequests] = useState<UnifiedRequest[]>([]);
-    const [filteredRequests, setFilteredRequests] = useState<UnifiedRequest[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -172,15 +178,12 @@ const ProviderMyRequestsPage: React.FC = () => {
         searchFilter: ''
     });
 
+    // Calcular solicitudes filtradas usando useMemo para mejor rendimiento
+    const filteredRequests = useMemo(() => filterRequests(requests, filters), [requests, filters]);
+
     useEffect(() => {
         loadData();
     }, []);
-
-    // Aplicar filtros cuando cambien
-    useEffect(() => {
-        const filtered = filterRequests(requests, filters);
-        setFilteredRequests(filtered);
-    }, [requests, filters]);
 
     const loadData = async () => {
         try {
