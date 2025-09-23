@@ -493,11 +493,29 @@ async def remove_tarifa_from_service(
 
     return {"message": "Tarifa eliminada exitosamente."}
 
-# Directorio para almacenar imágenes subidas
-UPLOAD_DIRECTORY = "uploads/services"
+# Importar servicios de almacenamiento
+from app.idrive.idrive_service import idrive_service
 
-# Crear directorio si no existe
-os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
+@router.get("/storage-status")
+async def get_storage_status(current_user: dict = Depends(get_current_user)):
+    """
+    Verifica el estado del servicio iDrive.
+    """
+    try:
+        success, message = idrive_service.test_connection()
+        return {
+            "message": "Estado del servicio iDrive",
+            "idrive": {
+                "status": "ok" if success else "error",
+                "message": message
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error verificando estado de iDrive: {e}")
+        return {
+            "message": "Error verificando servicio iDrive",
+            "error": str(e)
+        }
 
 @router.post("/upload-image")
 async def upload_service_image(
@@ -505,7 +523,7 @@ async def upload_service_image(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Sube una imagen para un servicio (PNG/JPG, máximo 5MB).
+    Sube una imagen para un servicio (PNG/JPG, máximo 5MB) usando iDrive.
     """
     # Validar tipo de archivo
     if file.content_type not in ["image/png", "image/jpeg", "image/jpg"]:
@@ -515,11 +533,8 @@ async def upload_service_image(
         )
 
     # Validar tamaño del archivo (5MB máximo)
-    file_size = 0
     content = await file.read()
-    file_size = len(content)
-
-    if file_size > 5 * 1024 * 1024:  # 5MB
+    if len(content) > 5 * 1024 * 1024:  # 5MB
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El archivo no puede superar los 5MB."
@@ -529,24 +544,38 @@ async def upload_service_image(
     import uuid
     file_extension = Path(file.filename).suffix.lower()
     unique_filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = os.path.join(UPLOAD_DIRECTORY, unique_filename)
+    
+    # Crear ruta para iDrive: uploads/services/filename
+    file_key = f"uploads/services/{unique_filename}"
 
-    # Guardar archivo
+    # Subir archivo directamente a iDrive (mismo sistema que documentos)
     try:
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
+        success, message, file_url = idrive_service.upload_file(
+            file_content=content,
+            file_key=file_key,
+            content_type=file.content_type
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error al subir la imagen: {message}"
+            )
+        
+        logger.info(f"✅ Imagen subida exitosamente a iDrive: {file_url}")
+        
+        # Retornar la ruta relativa para la base de datos
+        return {
+            "message": "Imagen subida exitosamente.",
+            "image_path": f"/uploads/services/{unique_filename}"
+        }
+        
     except Exception as e:
-        logger.error(f"Error al guardar imagen: {e}")
+        logger.error(f"Error al subir imagen: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al guardar la imagen."
+            detail="Error al subir la imagen."
         )
-
-    # Retornar la ruta relativa del archivo
-    return {
-        "message": "Imagen subida exitosamente.",
-        "image_path": f"/{UPLOAD_DIRECTORY}/{unique_filename}"
-    }
 
 # Modelo para actualizar estado del servicio
 class ServicioStatusUpdate(BaseModel):
