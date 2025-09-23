@@ -113,6 +113,12 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
 
         // Filtro por categoría (igual que en pantalla de administración)
         if (filters.categoryFilter !== 'all' && request.id_categoria?.toString() !== filters.categoryFilter) {
+            console.log('🚫 Filtro categoría rechaza:', {
+                requestId: request.id_solicitud,
+                requestCategory: request.id_categoria,
+                filterCategory: filters.categoryFilter,
+                requestName: getRequestName(request)
+            });
             return false;
         }
 
@@ -172,10 +178,22 @@ const ProviderMyRequestsPage: React.FC = () => {
         loadData();
     }, []);
 
-    // Aplicar filtros cuando cambien
+    // Aplicar filtros cuando cambien (con logging para debug)
     useEffect(() => {
+        console.log('🔍 Aplicando filtros:', {
+            totalRequests: requests.length,
+            filters: filters,
+            requests: requests.slice(0, 2) // Solo los primeros 2 para debug
+        });
         const filtered = filterRequests(requests, filters);
-        setFilteredRequests(filtered);
+        console.log('✅ Filtros aplicados:', {
+            filteredCount: filtered.length,
+            filtered: filtered.slice(0, 2) // Solo los primeros 2 para debug
+        });
+        
+        // Forzar actualización del estado
+        setFilteredRequests([]);
+        setTimeout(() => setFilteredRequests(filtered), 0);
     }, [requests, filters]);
 
     const loadData = async () => {
@@ -573,7 +591,15 @@ const ProviderMyRequestsPage: React.FC = () => {
                 )}
 
                 {/* Requests List */}
-                <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                <div key={`requests-${filteredRequests.length}-${filters.categoryFilter}`} className="bg-white shadow overflow-hidden sm:rounded-md">
+                    {(() => {
+                        console.log('🎨 RENDERIZANDO:', {
+                            filteredRequestsLength: filteredRequests.length,
+                            filteredRequestsIds: filteredRequests.map(r => r.id_solicitud),
+                            showingList: filteredRequests.length > 0
+                        });
+                        return null;
+                    })()}
                     {filteredRequests.length > 0 ? (
                         <div className="divide-y divide-gray-200">
                             {filteredRequests.map((request) => {
