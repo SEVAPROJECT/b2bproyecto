@@ -60,13 +60,35 @@ const formatDateStringSpanish = (dateString: string): string => {
     return formatDateSpanish(date);
 };
 
+// Funciones auxiliares para manejar ambos tipos de solicitudes
+const getRequestName = (request: UnifiedRequest): string => {
+    if (request.tipo === 'servicio') {
+        return request.nombre_servicio || '';
+    } else {
+        return request.nombre_categoria || '';
+    }
+};
+
+const getRequestTypeLabel = (request: UnifiedRequest): string => {
+    return request.tipo === 'servicio' ? 'Servicio' : 'Categoría';
+};
+
+const getRequestTypeIcon = (request: UnifiedRequest): string => {
+    return request.tipo === 'servicio' ? '🛠️' : '📂';
+};
+
 // Función de filtrado de solicitudes (actualizada para manejar ambos tipos)
 const filterRequests = (requests: UnifiedRequest[], filters: any) => {
     return requests.filter(request => {
         // Filtro por fecha
         if (filters.dateFilter !== 'all') {
+            const createdAt = request.created_at;
+            if (!createdAt) return false; // Si no hay fecha, no mostrar
+
+            const requestDate = new Date(createdAt);
+            if (isNaN(requestDate.getTime())) return false; // Si fecha inválida, no mostrar
+
             const now = new Date();
-            const requestDate = new Date(request.created_at);
 
             switch (filters.dateFilter) {
                 case 'today':
@@ -113,7 +135,7 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
             const searchTerm = filters.searchFilter.toLowerCase().trim();
             const requestName = getRequestName(request).toLowerCase();
             const requestDescription = request.descripcion?.toLowerCase() || '';
-            
+
             if (!requestName.includes(searchTerm) && !requestDescription.includes(searchTerm)) {
                 return false;
             }
@@ -271,22 +293,6 @@ const ProviderMyRequestsPage: React.FC = () => {
         }
     };
 
-    // Funciones auxiliares para manejar ambos tipos de solicitudes
-    const getRequestName = (request: UnifiedRequest): string => {
-        if (request.tipo === 'servicio') {
-            return request.nombre_servicio;
-        } else {
-            return request.nombre_categoria;
-        }
-    };
-
-    const getRequestTypeLabel = (request: UnifiedRequest): string => {
-        return request.tipo === 'servicio' ? 'Servicio' : 'Categoría';
-    };
-
-    const getRequestTypeIcon = (request: UnifiedRequest): string => {
-        return request.tipo === 'servicio' ? '🛠️' : '📂';
-    };
 
     const handleCreateRequest = async () => {
         if (!newServiceName.trim() || !newServiceDescription.trim()) {
