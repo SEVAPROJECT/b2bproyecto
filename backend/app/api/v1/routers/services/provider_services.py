@@ -632,8 +632,6 @@ async def create_service_from_template(
     Crea un nuevo servicio basado en una plantilla existente.
     """
     try:
-        logger.info(f"📝 Creando servicio desde plantilla: {service_data.dict()}")
-        logger.info(f"👤 Usuario: {current_user.id}")
         # Obtener el perfil de la empresa del usuario actual
         perfil_query = select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
         perfil_result = await db.execute(perfil_query)
@@ -656,24 +654,7 @@ async def create_service_from_template(
                 detail="Plantilla de servicio no encontrada"
             )
 
-        # Verificar si ya existe un servicio con el mismo nombre para este proveedor
-        existing_service_query = select(ServicioModel).where(
-            ServicioModel.nombre == service_data.nombre,
-            ServicioModel.id_perfil == perfil.id_perfil
-        )
-        existing_service_result = await db.execute(existing_service_query)
-        existing_service = existing_service_result.scalar_one_or_none()
-        
-        if existing_service:
-            logger.warning(f"⚠️ Servicio duplicado detectado: {service_data.nombre} para perfil {perfil.id_perfil}")
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Ya existe un servicio con el nombre '{service_data.nombre}'"
-            )
-
         # Crear nuevo servicio basado en la plantilla
-        logger.info(f"🏗️ Creando ServicioModel con datos: nombre={service_data.nombre}, precio={service_data.precio}, id_categoria={template.id_categoria}, id_moneda={service_data.id_moneda}")
-        
         nuevo_servicio = ServicioModel(
             nombre=service_data.nombre,
             descripcion=service_data.descripcion,
@@ -689,52 +670,24 @@ async def create_service_from_template(
         await db.commit()
         await db.refresh(nuevo_servicio)
 
-        # Obtener información adicional para la respuesta completa
-        categoria_query = select(CategoriaModel).where(CategoriaModel.id_categoria == nuevo_servicio.id_categoria)
-        categoria_result = await db.execute(categoria_query)
-        categoria = categoria_result.scalar_one_or_none()
-
-        moneda_query = select(Moneda).where(Moneda.id_moneda == nuevo_servicio.id_moneda)
-        moneda_result = await db.execute(moneda_query)
-        moneda = moneda_result.scalar_one_or_none()
-
-        # Devolver el servicio completo con la misma estructura que getProviderServices
         return {
-            "id_servicio": nuevo_servicio.id_servicio,
-            "nombre": nuevo_servicio.nombre,
-            "descripcion": nuevo_servicio.descripcion,
-            "precio": nuevo_servicio.precio,
-            "id_categoria": nuevo_servicio.id_categoria,
-            "id_perfil": nuevo_servicio.id_perfil,
-            "id_moneda": nuevo_servicio.id_moneda,
-            "estado": nuevo_servicio.estado,
-            "imagen": nuevo_servicio.imagen,
-            "created_at": nuevo_servicio.created_at.isoformat() if nuevo_servicio.created_at else None,
-            "updated_at": nuevo_servicio.updated_at.isoformat() if nuevo_servicio.updated_at else None,
-            "categoria": {
-                "id_categoria": categoria.id_categoria if categoria else nuevo_servicio.id_categoria,
-                "nombre": categoria.nombre if categoria else "Categoría",
-                "descripcion": categoria.descripcion if categoria else "",
-                "estado": categoria.estado if categoria else True
-            } if categoria else None,
-            "moneda": {
-                "id_moneda": moneda.id_moneda if moneda else nuevo_servicio.id_moneda,
-                "nombre": moneda.nombre if moneda else "Moneda",
-                "codigo_iso_moneda": moneda.codigo_iso_moneda if moneda else "PYG",
-                "simbolo": moneda.simbolo if moneda else "₲"
-            } if moneda else None,
-            "tarifas": []
+            "message": "Servicio creado exitosamente desde plantilla",
+            "servicio": {
+                "id_servicio": nuevo_servicio.id_servicio,
+                "nombre": nuevo_servicio.nombre,
+                "descripcion": nuevo_servicio.descripcion,
+                "precio": nuevo_servicio.precio,
+                "id_categoria": nuevo_servicio.id_categoria,
+                "estado": nuevo_servicio.estado
+            }
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error detallado al crear servicio desde plantilla: {str(e)}")
-        logger.error(f"❌ Tipo de error: {type(e).__name__}")
-        import traceback
-        logger.error(f"❌ Traceback completo: {traceback.format_exc()}")
+        logger.error(f"Error al crear servicio desde plantilla: {e}")
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno del servidor: {str(e)}"
+            detail="Error interno del servidor al crear el servicio desde plantilla"
         )

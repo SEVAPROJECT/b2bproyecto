@@ -541,11 +541,6 @@ const ProviderMyServicesPage: React.FC = () => {
             return;
         }
 
-        // Prevenir múltiples clics
-        if (isCreatingFromTemplate) {
-            return;
-        }
-
         try {
             setIsCreatingFromTemplate(true);
             const accessToken = localStorage.getItem('access_token');
@@ -555,84 +550,22 @@ const ProviderMyServicesPage: React.FC = () => {
                 template_id: selectedTemplate.id_servicio,
                 nombre: templateForm.nombre.trim(),
                 descripcion: templateForm.descripcion.trim(),
-                precio: parsePriceInput(templateForm.precio),
+                precio: parseFloat(templateForm.precio),
                 id_moneda: templateForm.id_moneda
             };
 
-            // Crear servicio optimista para evitar refresco de pantalla
-            const selectedCurrency = currencies.find(c => c.id_moneda === templateData.id_moneda) || currencies[0];
-            const optimisticService = {
-                id_servicio: Date.now(), // ID temporal
-                nombre: templateData.nombre,
-                descripcion: templateData.descripcion,
-                precio: templateData.precio,
-                id_categoria: selectedTemplate.id_categoria,
-                id_perfil: selectedTemplate.id_perfil,
-                id_moneda: templateData.id_moneda,
-                estado: true,
-                imagen: selectedTemplate.imagen || null,
-                tarifas: [],
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                // Datos adicionales necesarios para el renderizado
-                categoria: {
-                    id_categoria: selectedTemplate.id_categoria,
-                    nombre: selectedTemplate.categoria?.nombre || 'Categoría',
-                    descripcion: selectedTemplate.categoria?.descripcion || '',
-                    estado: true
-                },
-                moneda: {
-                    id_moneda: selectedCurrency.id_moneda,
-                    nombre: selectedCurrency.nombre,
-                    codigo_iso_moneda: selectedCurrency.codigo_iso_moneda,
-                    simbolo: selectedCurrency.simbolo
-                },
-                isOptimistic: true // Marcar como optimista
-            };
-
-            // Agregar el servicio optimista inmediatamente
-            setServices(prev => [optimisticService, ...prev]);
+            await providerServicesAPI.createServiceFromTemplate(templateData, accessToken);
             
-            try {
-                const newService = await providerServicesAPI.createServiceFromTemplate(templateData, accessToken);
-                
-                // Reemplazar el servicio optimista con el real
-                setServices(prev => prev.map(service => 
-                    service.id_servicio === optimisticService.id_servicio 
-                        ? { ...newService, isOptimistic: false }
-                        : service
-                ));
-                
-                setSuccess('Servicio creado exitosamente desde plantilla');
-            } catch (apiError) {
-                // Si falla, remover el servicio optimista
-                setServices(prev => prev.filter(service => service.id_servicio !== optimisticService.id_servicio));
-                console.error('❌ Error en API al crear servicio:', apiError);
-                throw apiError;
-            }
-            
+            setSuccess('Servicio creado exitosamente desde plantilla');
             setShowTemplateModal(false);
             setSelectedTemplate(null);
             setTemplateForm({ nombre: '', descripcion: '', precio: '', id_moneda: 1 });
+            loadData(); // Recargar servicios
             setTimeout(() => setSuccess(null), 3000);
 
         } catch (err: any) {
-            console.error('❌ Error completo al crear servicio:', err);
-            let errorMessage = 'Error al crear servicio desde plantilla';
-            
-            if (err?.detail) {
-                errorMessage = err.detail;
-            } else if (err?.message) {
-                errorMessage = err.message;
-            }
-            
-            // Manejar errores específicos
-            if (err?.detail?.includes('Ya existe un servicio')) {
-                errorMessage = `⚠️ ${err.detail}. Por favor, usa un nombre diferente.`;
-            }
-            
-            setError(errorMessage);
-            setTimeout(() => setError(null), 5000); // Mostrar error por más tiempo
+            setError(err.detail || 'Error al crear servicio desde plantilla');
+            setTimeout(() => setError(null), 3000);
         } finally {
             setIsCreatingFromTemplate(false);
         }
@@ -913,15 +846,7 @@ const ProviderMyServicesPage: React.FC = () => {
 
                                         {/* Información principal */}
                                         <div className="flex-1 min-w-0 text-center sm:text-left">
-                                            <div className="flex items-center gap-2 justify-center sm:justify-start">
-                                                <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
-                                                {service.isOptimistic && (
-                                                    <div className="flex items-center gap-1">
-                                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                                                        <span className="text-xs text-blue-600 font-medium">Creando...</span>
-                                                    </div>
-                                                )}
-                                            </div>
+                                            <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
                                             <p className="text-sm text-gray-600 mt-1 break-words">{service.descripcion}</p>
                                         </div>
 
@@ -1406,16 +1331,13 @@ const ProviderMyServicesPage: React.FC = () => {
                                                                         Precio *
                                                                     </label>
                                                                     <input
-                                                                        type="text"
+                                                                        type="number"
                                                                         value={templateForm.precio}
-                                                                        onChange={(e) => {
-                                                                            const inputValue = e.target.value;
-                                                                            // Formatear el precio con puntos de mil mientras se escribe
-                                                                            const formattedValue = formatPriceInput(inputValue);
-                                                                            setTemplateForm(prev => ({ ...prev, precio: formattedValue }));
-                                                                        }}
+                                                                        onChange={(e) => setTemplateForm(prev => ({ ...prev, precio: e.target.value }))}
                                                                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                                                                         placeholder="0"
+                                                                        min="0"
+                                                                        step="0.01"
                                                                     />
                                                                 </div>
                                                             </div>
