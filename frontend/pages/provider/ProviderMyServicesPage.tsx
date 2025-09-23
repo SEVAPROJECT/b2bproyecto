@@ -932,15 +932,6 @@ const ProviderMyServicesPage: React.FC = () => {
                     {filteredServices.length > 0 ? (
                         <div className="divide-y divide-gray-200">
                             {filteredServices.map((service) => {
-                                // Debug: Verificar cada servicio que se renderiza
-                                console.log('🔍 Renderizando servicio:', {
-                                    id: service.id_servicio,
-                                    nombre: service.nombre,
-                                    precio: service.precio,
-                                    isOptimistic: service.isOptimistic,
-                                    hasServicio: !!service.servicio
-                                });
-                                
                                 // Si el servicio tiene una propiedad 'servicio', usar esa
                                 const actualService = service.servicio || service;
                                 
