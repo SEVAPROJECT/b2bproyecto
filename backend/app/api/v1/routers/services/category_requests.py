@@ -37,8 +37,7 @@ async def enrich_category_request_response(request: SolicitudCategoria, db: Asyn
         SolicitudCategoria.comentario_admin,
         SolicitudCategoria.created_at,
         PerfilEmpresa.razon_social.label('nombre_empresa'),
-        UserModel.nombre_persona.label('nombre_contacto'),
-        UserModel.email.label('email_contacto')
+        UserModel.nombre_persona.label('nombre_contacto')
     ).select_from(SolicitudCategoria)\
      .join(PerfilEmpresa, SolicitudCategoria.id_perfil == PerfilEmpresa.id_perfil, isouter=True)\
      .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)\
@@ -58,7 +57,7 @@ async def enrich_category_request_response(request: SolicitudCategoria, db: Asyn
             "created_at": enriched_row.created_at.isoformat() if enriched_row.created_at else None,
             "nombre_empresa": enriched_row.nombre_empresa or "No especificado",
             "nombre_contacto": enriched_row.nombre_contacto or "No especificado",
-            "email_contacto": enriched_row.email_contacto or "No especificado"
+            "email_contacto": None  # Email no disponible en UserModel
         }
     else:
         # Fallback básico si la consulta enriquecida falla
@@ -72,7 +71,7 @@ async def enrich_category_request_response(request: SolicitudCategoria, db: Asyn
             "created_at": request.created_at.isoformat() if request.created_at else None,
             "nombre_empresa": "No especificado",
             "nombre_contacto": "No especificado",
-            "email_contacto": "No especificado"
+            "email_contacto": None
         }
 
 @router.post(
