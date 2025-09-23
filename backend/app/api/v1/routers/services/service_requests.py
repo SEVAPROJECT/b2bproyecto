@@ -71,11 +71,11 @@ async def get_service_requests(
             SolicitudServicio.created_at,
             SolicitudServicio.id_categoria,
             SolicitudServicio.id_perfil,
-            Categoria.nombre.label('nombre_categoria'),
+            CategoriaModel.nombre.label('nombre_categoria'),
             PerfilEmpresa.razon_social.label('nombre_empresa'),
             UserModel.nombre_persona.label('nombre_contacto')
         ).select_from(SolicitudServicio)\
-         .join(Categoria, SolicitudServicio.id_categoria == Categoria.id_categoria, isouter=True)\
+         .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)\
          .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)\
          .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)
 
@@ -183,7 +183,7 @@ async def get_all_service_requests_for_admin(
                 SolicitudServicio.created_at,
                 SolicitudServicio.id_categoria,
                 SolicitudServicio.id_perfil,
-                Categoria.nombre.label('nombre_categoria'),
+                CategoriaModel.nombre.label('nombre_categoria'),
                 PerfilEmpresa.razon_social.label('nombre_empresa'),
                 UserModel.nombre_persona.label('nombre_contacto')
             )
@@ -412,7 +412,7 @@ async def get_my_service_requests(
                 SolicitudServicio.created_at,
                 SolicitudServicio.id_categoria,
                 SolicitudServicio.id_perfil,
-                Categoria.nombre.label('nombre_categoria'),
+                CategoriaModel.nombre.label('nombre_categoria'),
                 PerfilEmpresa.razon_social.label('nombre_empresa'),
                 UserModel.nombre_persona.label('nombre_contacto')
             )

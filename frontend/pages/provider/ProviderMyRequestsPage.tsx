@@ -93,9 +93,19 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
             }
         }
 
-        // Filtro por categoría (solo para solicitudes de servicios)
-        if (filters.categoryFilter !== 'all' && request.tipo === 'servicio' && request.id_categoria?.toString() !== filters.categoryFilter) {
-            return false;
+        // Filtro por categoría (para servicios y categorías)
+        if (filters.categoryFilter !== 'all') {
+            // Encontrar el nombre de la categoría seleccionada
+            const selectedCategory = categories.find(cat => cat.id_categoria.toString() === filters.categoryFilter);
+            if (selectedCategory) {
+                const selectedCategoryName = selectedCategory.nombre;
+                // Para servicios: comparar con el nombre de la categoría del servicio
+                // Para categorías: comparar con el nombre de la categoría de la solicitud
+                const requestCategoryName = request.nombre_categoria;
+                if (requestCategoryName !== selectedCategoryName) {
+                    return false;
+                }
+            }
         }
 
         // Filtro por estado
