@@ -604,6 +604,11 @@ const ProviderMyServicesPage: React.FC = () => {
                 isOptimistic: true // Marcar como optimista
             };
 
+            // Debug: Verificar si la categoría existe en el array categories
+            const foundCategory = categories.find(c => c.id_categoria === selectedTemplate.id_categoria);
+            console.log('🔍 Categoría encontrada en array:', foundCategory);
+            console.log('🔍 Array de categorías:', categories.map(c => ({ id: c.id_categoria, nombre: c.nombre })));
+
             // Debug: Verificar datos del servicio optimista
             console.log('🔍 Servicio optimista creado:', {
                 nombre: optimisticService.nombre,
@@ -614,8 +619,18 @@ const ProviderMyServicesPage: React.FC = () => {
                 categoria: optimisticService.categoria
             });
 
+            // Debug: Verificar qué categoría se encontrará en el renderizado
+            const categoryForRender = categories.find(c => c.id_categoria === optimisticService.id_categoria);
+            console.log('🔍 Categoría para renderizado:', categoryForRender);
+            console.log('🔍 Nombre de categoría que se mostrará:', categoryForRender?.nombre || 'No especificado');
+
             // Actualización optimista: agregar el servicio inmediatamente
-            setServices(prev => [optimisticService, ...prev]);
+            setServices(prev => {
+                const newServices = [optimisticService, ...prev];
+                console.log('🔍 Servicios después de agregar optimista:', newServices.length);
+                console.log('🔍 Primer servicio (optimista):', newServices[0]);
+                return newServices;
+            });
 
             // Limpiar formulario y cerrar modal inmediatamente
             setShowTemplateModal(false);
