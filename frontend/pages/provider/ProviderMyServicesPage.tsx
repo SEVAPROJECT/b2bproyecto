@@ -541,6 +541,11 @@ const ProviderMyServicesPage: React.FC = () => {
             return;
         }
 
+        // Prevenir múltiples clics
+        if (isCreatingFromTemplate) {
+            return;
+        }
+
         try {
             setIsCreatingFromTemplate(true);
             const accessToken = localStorage.getItem('access_token');
@@ -602,6 +607,7 @@ const ProviderMyServicesPage: React.FC = () => {
             } catch (apiError) {
                 // Si falla, remover el servicio optimista
                 setServices(prev => prev.filter(service => service.id_servicio !== optimisticService.id_servicio));
+                console.error('❌ Error en API al crear servicio:', apiError);
                 throw apiError;
             }
             
@@ -611,8 +617,22 @@ const ProviderMyServicesPage: React.FC = () => {
             setTimeout(() => setSuccess(null), 3000);
 
         } catch (err: any) {
-            setError(err.detail || 'Error al crear servicio desde plantilla');
-            setTimeout(() => setError(null), 3000);
+            console.error('❌ Error completo al crear servicio:', err);
+            let errorMessage = 'Error al crear servicio desde plantilla';
+            
+            if (err?.detail) {
+                errorMessage = err.detail;
+            } else if (err?.message) {
+                errorMessage = err.message;
+            }
+            
+            // Manejar errores específicos
+            if (err?.detail?.includes('Ya existe un servicio')) {
+                errorMessage = `⚠️ ${err.detail}. Por favor, usa un nombre diferente.`;
+            }
+            
+            setError(errorMessage);
+            setTimeout(() => setError(null), 5000); // Mostrar error por más tiempo
         } finally {
             setIsCreatingFromTemplate(false);
         }

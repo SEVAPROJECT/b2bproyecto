@@ -632,6 +632,8 @@ async def create_service_from_template(
     Crea un nuevo servicio basado en una plantilla existente.
     """
     try:
+        logger.info(f"📝 Creando servicio desde plantilla: {service_data.dict()}")
+        logger.info(f"👤 Usuario: {current_user.id}")
         # Obtener el perfil de la empresa del usuario actual
         perfil_query = select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
         perfil_result = await db.execute(perfil_query)
@@ -654,7 +656,24 @@ async def create_service_from_template(
                 detail="Plantilla de servicio no encontrada"
             )
 
+        # Verificar si ya existe un servicio con el mismo nombre para este proveedor
+        existing_service_query = select(ServicioModel).where(
+            ServicioModel.nombre == service_data.nombre,
+            ServicioModel.id_perfil == perfil.id_perfil
+        )
+        existing_service_result = await db.execute(existing_service_query)
+        existing_service = existing_service_result.scalar_one_or_none()
+        
+        if existing_service:
+            logger.warning(f"⚠️ Servicio duplicado detectado: {service_data.nombre} para perfil {perfil.id_perfil}")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ya existe un servicio con el nombre '{service_data.nombre}'"
+            )
+
         # Crear nuevo servicio basado en la plantilla
+        logger.info(f"🏗️ Creando ServicioModel con datos: nombre={service_data.nombre}, precio={service_data.precio}, id_categoria={template.id_categoria}, id_moneda={service_data.id_moneda}")
+        
         nuevo_servicio = ServicioModel(
             nombre=service_data.nombre,
             descripcion=service_data.descripcion,
@@ -710,9 +729,12 @@ async def create_service_from_template(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error al crear servicio desde plantilla: {e}")
+        logger.error(f"❌ Error detallado al crear servicio desde plantilla: {str(e)}")
+        logger.error(f"❌ Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ Traceback completo: {traceback.format_exc()}")
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor al crear el servicio desde plantilla"
+            detail=f"Error interno del servidor: {str(e)}"
         )
