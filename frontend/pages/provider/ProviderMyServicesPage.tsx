@@ -259,7 +259,6 @@ const ProviderMyServicesPage: React.FC = () => {
     };
 
     const handleEditService = (service: any) => {
-        console.log('🔍 Abriendo modal de edición para servicio:', service.id_servicio);
         setEditingService(service);
         
         // Buscar la moneda Guaraní en la lista de monedas
@@ -287,7 +286,6 @@ const ProviderMyServicesPage: React.FC = () => {
 
         setSelectedImage(null);
         setShowEditModal(true);
-        console.log('🔍 Modal de edición abierto');
     };
 
     const handleToggleServiceStatus = async (serviceId: number, currentStatus: boolean) => {
@@ -417,21 +415,11 @@ const ProviderMyServicesPage: React.FC = () => {
     };
 
     const handleSaveService = async () => {
-        console.log('🔍 handleSaveService llamado');
+        if (!editingService) return;
+
         try {
-            if (!editingService) {
-                console.log('❌ No hay servicio en edición');
-                return;
-            }
             const accessToken = localStorage.getItem('access_token');
-            if (!accessToken) {
-                console.log('❌ No hay token de acceso');
-                return;
-            }
-            
-            console.log('🔍 Iniciando actualización de servicio:', editingService.id_servicio);
-            console.log('🔍 Estado actual de servicios:', services.length);
-            console.log('🔍 Servicio en edición:', editingService);
+            if (!accessToken) return;
 
             // Preparar datos para envío, convirtiendo precio y montos a números
             const serviceData = {
@@ -443,72 +431,33 @@ const ProviderMyServicesPage: React.FC = () => {
                 }))
             };
 
-            console.log('🔍 Datos del servicio a actualizar:', {
-                id: editingService.id_servicio,
-                nombre: serviceData.nombre,
-                tarifas: serviceData.tarifas.length,
-                tarifasData: serviceData.tarifas
-            });
+            await providerServicesAPI.updateProviderService(editingService.id_servicio, serviceData, accessToken);
 
-            // Actualización optimista: actualizar inmediatamente en la lista
+            // Actualizar solo el servicio específico en la lista sin recargar todo
             const updatedService = {
                 ...editingService,
                 ...serviceData
             };
 
-            console.log('🔍 Actualización optimista de servicio:', {
-                id: editingService.id_servicio,
-                nombre: updatedService.nombre,
-                tarifas: updatedService.tarifas.length,
-                datos: updatedService
-            });
-
-            setServices(prevServices => {
-                const newServices = prevServices.map(service => 
+            setServices(prevServices => 
+                prevServices.map(service => 
                     service.id_servicio === editingService.id_servicio ? updatedService : service
-                );
-                console.log('🔍 Servicios después de actualización optimista:', {
-                    total: newServices.length,
-                    updated: newServices.find(s => s.id_servicio === editingService.id_servicio),
-                    tarifas: newServices.find(s => s.id_servicio === editingService.id_servicio)?.tarifas?.length || 0
-                });
-                return newServices;
-            });
+                )
+            );
 
-            // Forzar re-renderizado del filtrado
-            setTimeout(() => {
-                console.log('🔄 Forzando re-renderizado después de actualización');
-                setServices(prev => [...prev]);
-            }, 100);
-
-            // Llamar a la API en segundo plano
-            try {
-                await providerServicesAPI.updateProviderService(editingService.id_servicio, serviceData, accessToken);
-                setSuccess('Servicio actualizado exitosamente');
-            } catch (apiError) {
-                // Si falla la API, revertir la actualización optimista
-                setServices(prevServices => 
-                    prevServices.map(service => 
-                        service.id_servicio === editingService.id_servicio ? editingService : service
-                    )
-                );
-                throw apiError;
-            }
-
+            setSuccess('Servicio actualizado exitosamente');
             setShowEditModal(false);
             setEditingService(null);
 
             setTimeout(() => setSuccess(null), 3000);
 
         } catch (err: any) {
-            console.error('❌ Error en handleSaveService:', err);
             setError(err.detail || 'Error al actualizar el servicio');
             setTimeout(() => setError(null), 3000);
         }
     };
 
     const addTarifa = () => {
-        console.log('🔍 Agregando nueva tarifa');
         const newTarifa = {
             monto: '',
             descripcion: '',
@@ -517,14 +466,10 @@ const ProviderMyServicesPage: React.FC = () => {
             id_tarifa: rateTypes[0]?.id_tarifa || 0
         };
 
-        setEditForm(prev => {
-            const newTarifas = [...prev.tarifas, newTarifa];
-            console.log('🔍 Tarifas después de agregar:', newTarifas.length);
-            return {
-                ...prev,
-                tarifas: newTarifas
-            };
-        });
+        setEditForm(prev => ({
+            ...prev,
+            tarifas: [...prev.tarifas, newTarifa]
+        }));
     };
 
     const updateTarifa = (index: number, field: string, value: any) => {
@@ -1390,10 +1335,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                     Cancelar
                                 </button>
                                 <button
-                                    onClick={() => {
-                                        console.log('🔍 Botón Guardar Cambios presionado');
-                                        handleSaveService();
-                                    }}
+                                    onClick={handleSaveService}
                                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
                                 >
                                     Guardar Cambios
