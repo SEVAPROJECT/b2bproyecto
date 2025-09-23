@@ -302,27 +302,30 @@ const ProviderMyRequestsPage: React.FC = () => {
             return;
         }
 
-        // Crear objeto de solicitud optimista
+        // Crear objeto de solicitud optimista con TODOS los datos necesarios
         const tempId = Date.now(); // ID temporal para la actualización optimista
-        
+
         try {
             setSubmittingRequest(true);
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) return;
+
+            // Encontrar el nombre de la categoría para enriquecer la solicitud optimista
+            const categoriaSeleccionada = categories.find(cat => cat.id_categoria === selectedCategoryId);
+
             const optimisticRequest: UnifiedRequest = {
                 id: tempId,
                 nombre_servicio: requestType === 'servicio' ? newServiceName.trim() : '',
-                nombre_categoria: requestType === 'categoria' ? newServiceName.trim() : '',
+                nombre_categoria: requestType === 'categoria' ? newServiceName.trim() : (categoriaSeleccionada?.nombre || 'No especificado'),
                 descripcion: newServiceDescription.trim(),
-                estado: 'pendiente',
+                estado_aprobacion: 'pendiente',
                 fecha_solicitud: new Date().toISOString().split('T')[0],
+                created_at: new Date().toISOString(),
                 id_categoria: selectedCategoryId || 0,
                 comentario_admin: null,
+                nombre_empresa: user?.nombre_empresa || 'No especificado', // Agregar nombre de empresa del usuario
                 tipo: requestType
             } as UnifiedRequest;
-
-            // Actualización optimista: agregar la solicitud inmediatamente
-            setRequests(prevRequests => [optimisticRequest, ...prevRequests]);
 
             // Limpiar formulario inmediatamente
             setNewServiceName('');
@@ -353,28 +356,36 @@ const ProviderMyRequestsPage: React.FC = () => {
                 }, accessToken);
             }
 
-            // Actualizar la solicitud optimista con los datos reales
-            if (createdRequest) {
-                setRequests(prevRequests => 
-                    prevRequests.map(req => 
-                        req.id === tempId 
-                            ? { ...createdRequest, tipo: requestType } as UnifiedRequest
+            // Actualización optimista: agregar la solicitud inmediatamente (solo después de que la API responda correctamente)
+            setRequests(prevRequests => [optimisticRequest, ...prevRequests]);
+
+            // Si la API devolvió datos válidos, actualizar la solicitud optimista con los datos reales enriquecidos
+            if (createdRequest && createdRequest.id) {
+                // Enriquecer los datos reales con información de categorías y empresa
+                const enrichedRequest = {
+                    ...createdRequest,
+                    tipo: requestType,
+                    nombre_categoria: requestType === 'servicio'
+                        ? (categoriaSeleccionada?.nombre || 'No especificado')
+                        : (createdRequest.nombre_categoria || newServiceName.trim()),
+                    nombre_empresa: createdRequest.nombre_empresa || user?.nombre_empresa || 'No especificado'
+                } as UnifiedRequest;
+
+                setRequests(prevRequests =>
+                    prevRequests.map(req =>
+                        req.id === tempId
+                            ? enrichedRequest
                             : req
                     )
                 );
             } else {
-                // Si no se devuelve la solicitud creada, recargar solo los datos
-                // pero sin mostrar el estado de carga
+                // Si la API no devolvió datos válidos, mantener la solicitud optimista pero recargar datos en background
                 await loadDataSilently();
             }
-            
+
             setTimeout(() => setSuccess(null), 3000);
         } catch (err: any) {
-            // Revertir la actualización optimista en caso de error
-            setRequests(prevRequests => 
-                prevRequests.filter(req => req.id !== tempId)
-            );
-            
+            // No agregar la solicitud optimista si hubo error en la API
             setError(err.detail || 'Error al enviar solicitud');
             setTimeout(() => setError(null), 3000);
         } finally {
