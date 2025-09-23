@@ -6,7 +6,6 @@ export interface FilterConfig {
     companyFilter: string;
     statusFilter: string;
     customDate: string;
-    searchFilter?: string;
 }
 
 export interface FilterOptions {

@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { Link } from 'react-router-dom';
-import {
-    ClipboardDocumentListIcon,
-    PlusCircleIcon,
-    BuildingStorefrontIcon,
-    MagnifyingGlassIcon
+import { 
+    ClipboardDocumentListIcon, 
+    PlusCircleIcon, 
+    BuildingStorefrontIcon, 
+    MagnifyingGlassIcon 
 } from '../../components/icons';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, serviceRequestsAPI, categoryRequestsAPI } from '../../services/api';
-import { useStandardFilters } from '../../hooks/useStandardFilters';
-import StandardFilters from '../../components/ui/StandardFilters';
-import StandardStatistics from '../../components/ui/StandardStatistics';
 
 // Función helper para ajustar fecha a zona horaria de Argentina (UTC-3)
 const adjustToArgentinaTime = (date: Date): Date => {
@@ -63,26 +60,73 @@ const formatDateStringSpanish = (dateString: string): string => {
     return formatDateSpanish(date);
 };
 
-// Funciones auxiliares para manejar ambos tipos de solicitudes
-const getRequestName = (request: UnifiedRequest): string => {
-    if (request.tipo === 'servicio') {
-        return request.nombre_servicio || '';
-    } else {
-        return request.nombre_categoria || '';
-    }
-};
+// Función de filtrado de solicitudes (actualizada para manejar ambos tipos)
+const filterRequests = (requests: UnifiedRequest[], filters: any) => {
+    return requests.filter(request => {
+        // Filtro por fecha
+        if (filters.dateFilter !== 'all') {
+            const now = new Date();
+            const requestDate = new Date(request.created_at);
 
-const getRequestTypeLabel = (request: UnifiedRequest): string => {
-    return request.tipo === 'servicio' ? 'Servicio' : 'Categoría';
-};
+            switch (filters.dateFilter) {
+                case 'today':
+                    if (requestDate.toDateString() !== now.toDateString()) return false;
+                    break;
+                case 'week':
+                    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    if (requestDate < weekAgo) return false;
+                    break;
+                case 'month':
+                    if (requestDate.getMonth() !== now.getMonth() || requestDate.getFullYear() !== now.getFullYear()) return false;
+                    break;
+                case 'year':
+                    if (requestDate.getFullYear() !== now.getFullYear()) return false;
+                    break;
+                case 'custom':
+                    if (filters.customDate) {
+                        const selectedDate = parseDateString(filters.customDate);
+                        if (!datesEqual(requestDate, selectedDate)) {
+                            return false;
+                        }
+                    }
+                    break;
+            }
+        }
 
-const getRequestTypeIcon = (request: UnifiedRequest): string => {
-    return request.tipo === 'servicio' ? '🛠️' : '📂';
+        // Filtro por categoría (solo para solicitudes de servicios)
+        if (filters.categoryFilter !== 'all' && request.tipo === 'servicio' && request.id_categoria?.toString() !== filters.categoryFilter) {
+            return false;
+        }
+
+        // Filtro por estado
+        if (filters.statusFilter !== 'all' && request.estado_aprobacion !== filters.statusFilter) {
+            return false;
+        }
+
+        // Filtro por tipo de solicitud
+        if (filters.typeFilter !== 'all' && request.tipo !== filters.typeFilter) {
+            return false;
+        }
+
+        // Filtro por búsqueda de texto
+        if (filters.searchFilter && filters.searchFilter.trim() !== '') {
+            const searchTerm = filters.searchFilter.toLowerCase().trim();
+            const requestName = getRequestName(request).toLowerCase();
+            const requestDescription = request.descripcion?.toLowerCase() || '';
+            
+            if (!requestName.includes(searchTerm) && !requestDescription.includes(searchTerm)) {
+                return false;
+            }
+        }
+
+        return true;
+    });
 };
 
 const ProviderMyRequestsPage: React.FC = () => {
     const { user } = useContext(AuthContext);
     const [requests, setRequests] = useState<UnifiedRequest[]>([]);
+    const [filteredRequests, setFilteredRequests] = useState<UnifiedRequest[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -96,19 +140,25 @@ const ProviderMyRequestsPage: React.FC = () => {
     const [newServiceDescription, setNewServiceDescription] = useState('');
     const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
 
-    // Hook de filtros estandarizados
-    const {
-        filters,
-        filteredItems: filteredRequests,
-        statistics,
-        filterOptions,
-        resetFilters,
-        updateFilters
-    } = useStandardFilters(requests);
+    // Estados de filtros
+    const [filters, setFilters] = useState({
+        dateFilter: 'all',
+        customDate: '',
+        categoryFilter: 'all',
+        statusFilter: 'all',
+        typeFilter: 'all',
+        searchFilter: ''
+    });
 
     useEffect(() => {
         loadData();
     }, []);
+
+    // Aplicar filtros cuando cambien
+    useEffect(() => {
+        const filtered = filterRequests(requests, filters);
+        setFilteredRequests(filtered);
+    }, [requests, filters]);
 
     const loadData = async () => {
         try {
@@ -184,6 +234,16 @@ const ProviderMyRequestsPage: React.FC = () => {
         }
     };
 
+    const resetFilters = () => {
+        setFilters({
+            dateFilter: 'all',
+            customDate: '',
+            categoryFilter: 'all',
+            statusFilter: 'all',
+            typeFilter: 'all',
+            searchFilter: ''
+        });
+    };
 
     const getStatusColor = (estado: string) => {
         switch (estado) {
@@ -211,6 +271,22 @@ const ProviderMyRequestsPage: React.FC = () => {
         }
     };
 
+    // Funciones auxiliares para manejar ambos tipos de solicitudes
+    const getRequestName = (request: UnifiedRequest): string => {
+        if (request.tipo === 'servicio') {
+            return request.nombre_servicio;
+        } else {
+            return request.nombre_categoria;
+        }
+    };
+
+    const getRequestTypeLabel = (request: UnifiedRequest): string => {
+        return request.tipo === 'servicio' ? 'Servicio' : 'Categoría';
+    };
+
+    const getRequestTypeIcon = (request: UnifiedRequest): string => {
+        return request.tipo === 'servicio' ? '🛠️' : '📂';
+    };
 
     const handleCreateRequest = async () => {
         if (!newServiceName.trim() || !newServiceDescription.trim()) {
@@ -226,30 +302,27 @@ const ProviderMyRequestsPage: React.FC = () => {
             return;
         }
 
-        // Crear objeto de solicitud optimista con TODOS los datos necesarios
+        // Crear objeto de solicitud optimista
         const tempId = Date.now(); // ID temporal para la actualización optimista
-
+        
         try {
             setSubmittingRequest(true);
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) return;
-
-            // Encontrar el nombre de la categoría para enriquecer la solicitud optimista
-            const categoriaSeleccionada = categories.find(cat => cat.id_categoria === selectedCategoryId);
-
             const optimisticRequest: UnifiedRequest = {
-                id_solicitud: tempId,
+                id: tempId,
                 nombre_servicio: requestType === 'servicio' ? newServiceName.trim() : '',
-                nombre_categoria: requestType === 'categoria' ? newServiceName.trim() : (categoriaSeleccionada?.nombre || 'No especificado'),
+                nombre_categoria: requestType === 'categoria' ? newServiceName.trim() : '',
                 descripcion: newServiceDescription.trim(),
-                estado_aprobacion: 'pendiente',
+                estado: 'pendiente',
                 fecha_solicitud: new Date().toISOString().split('T')[0],
-                created_at: new Date().toISOString(),
                 id_categoria: selectedCategoryId || 0,
                 comentario_admin: null,
-                nombre_empresa: user?.nombre_empresa || 'No especificado', // Agregar nombre de empresa del usuario
                 tipo: requestType
             } as UnifiedRequest;
+
+            // Actualización optimista: agregar la solicitud inmediatamente
+            setRequests(prevRequests => [optimisticRequest, ...prevRequests]);
 
             // Limpiar formulario inmediatamente
             setNewServiceName('');
@@ -280,39 +353,28 @@ const ProviderMyRequestsPage: React.FC = () => {
                 }, accessToken);
             }
 
-            // Actualización optimista: agregar la solicitud inmediatamente (solo después de que la API responda correctamente)
-            setRequests(prevRequests => [optimisticRequest, ...prevRequests]);
-
-            // Si la API devolvió datos válidos, actualizar la solicitud optimista con los datos reales enriquecidos
-            if (createdRequest && createdRequest.id) {
-                // Enriquecer los datos reales con información de categorías y empresa
-                const enrichedRequest = {
-                    ...createdRequest,
-                    tipo: requestType,
-                    nombre_categoria: requestType === 'servicio'
-                        ? (categoriaSeleccionada?.nombre || 'No especificado')
-                        : (createdRequest.nombre_categoria || newServiceName.trim()),
-                    nombre_empresa: createdRequest.nombre_empresa || user?.nombre_empresa || 'No especificado'
-                } as UnifiedRequest;
-
-                setRequests(prevRequests =>
-                    prevRequests.map(req =>
-                        req.id_solicitud === tempId
-                            ? enrichedRequest
+            // Actualizar la solicitud optimista con los datos reales
+            if (createdRequest) {
+                setRequests(prevRequests => 
+                    prevRequests.map(req => 
+                        req.id === tempId 
+                            ? { ...createdRequest, tipo: requestType } as UnifiedRequest
                             : req
                     )
                 );
             } else {
-                // Si la API no devolvió datos válidos, mantener la solicitud optimista pero recargar datos en background
+                // Si no se devuelve la solicitud creada, recargar solo los datos
+                // pero sin mostrar el estado de carga
                 await loadDataSilently();
             }
-
+            
             setTimeout(() => setSuccess(null), 3000);
         } catch (err: any) {
-            // Revertir la solicitud optimista si hubo error en la API
-            setRequests(prevRequests =>
-                prevRequests.filter(req => req.id_solicitud !== tempId)
+            // Revertir la actualización optimista en caso de error
+            setRequests(prevRequests => 
+                prevRequests.filter(req => req.id !== tempId)
             );
+            
             setError(err.detail || 'Error al enviar solicitud');
             setTimeout(() => setError(null), 3000);
         } finally {
@@ -379,42 +441,104 @@ const ProviderMyRequestsPage: React.FC = () => {
                     </div>
                 )}
 
-                {/* Estadísticas */}
-                <StandardStatistics statistics={statistics} />
-
                 {/* Filtros */}
-                <StandardFilters
-                    filters={filters}
-                    onFiltersChange={updateFilters}
-                    onResetFilters={resetFilters}
-                    options={{
-                        categories: filterOptions.categories,
-                        companies: filterOptions.companies,
-                        statuses: filterOptions.statuses,
-                        showCompanyFilter: true
-                    }}
-                />
+                <div className="bg-white p-6 rounded-lg shadow border border-gray-200 mb-8">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-lg font-medium text-gray-900">Filtros</h2>
+                        <button
+                            onClick={resetFilters}
+                            className="text-sm text-blue-600 hover:text-blue-800"
+                        >
+                            Limpiar Filtros
+                        </button>
+                    </div>
 
-                {/* Filtro de búsqueda */}
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-200 mb-6">
-                    <div className="flex items-center space-x-4">
-                        <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Buscar por nombre o descripción..."
-                            value={filters.searchFilter || ''}
-                            onChange={(e) => updateFilters({ ...filters, searchFilter: e.target.value })}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        {(filters.searchFilter || '').trim() && (
-                            <button
-                                onClick={() => updateFilters({ ...filters, searchFilter: '' })}
-                                className="text-gray-400 hover:text-gray-600"
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        {/* Filtro por fecha */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
+                            <select
+                                value={filters.dateFilter}
+                                onChange={(e) => setFilters(prev => ({ ...prev, dateFilter: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
-                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
+                                <option value="all">Todas las fechas</option>
+                                <option value="today">Hoy</option>
+                                <option value="week">Esta semana</option>
+                                <option value="month">Este mes</option>
+                                <option value="year">Este año</option>
+                                <option value="custom">Fecha específica</option>
+                            </select>
+                        </div>
+
+                        {/* Filtro por categoría */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Categoría</label>
+                            <select
+                                value={filters.categoryFilter}
+                                onChange={(e) => setFilters(prev => ({ ...prev, categoryFilter: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="all">Todas las categorías</option>
+                                {categories.map(category => (
+                                    <option key={category.id_categoria} value={category.id_categoria}>
+                                        {category.nombre}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Filtro por estado */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+                            <select
+                                value={filters.statusFilter}
+                                onChange={(e) => setFilters(prev => ({ ...prev, statusFilter: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="all">Todos los estados</option>
+                                <option value="pendiente">Pendiente</option>
+                                <option value="aprobada">Aprobada</option>
+                                <option value="rechazada">Rechazada</option>
+                            </select>
+                        </div>
+
+                        {/* Filtro por tipo de solicitud */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
+                            <select
+                                value={filters.typeFilter || 'all'}
+                                onChange={(e) => setFilters(prev => ({ ...prev, typeFilter: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="all">Todos los tipos</option>
+                                <option value="servicio">Servicios</option>
+                                <option value="categoria">Categorías</option>
+                            </select>
+                        </div>
+
+                        {/* Fecha personalizada */}
+                        {filters.dateFilter === 'custom' ? (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Fecha específica</label>
+                                <input
+                                    type="date"
+                                    value={filters.customDate}
+                                    onChange={(e) => setFilters(prev => ({ ...prev, customDate: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        ) : (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
+                                <input
+                                    type="text"
+                                    value={filters.searchFilter || ''}
+                                    onChange={(e) => setFilters(prev => ({ ...prev, searchFilter: e.target.value }))}
+                                    placeholder="Buscar por nombre..."
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
                         )}
                     </div>
                 </div>
@@ -452,7 +576,7 @@ const ProviderMyRequestsPage: React.FC = () => {
                         <div className="divide-y divide-gray-200">
                             {filteredRequests.map((request) => {
                                 // Detectar si es una solicitud temporal (optimista)
-                                const isOptimistic = request.id_solicitud > 1000000000000; // IDs temporales son timestamps
+                                const isOptimistic = request.id > 1000000000000; // IDs temporales son timestamps
                                 
                                 return (
                                 <div key={request.id_solicitud} className={`p-4 hover:bg-gray-50 transition-colors duration-200 ${isOptimistic ? 'bg-blue-50 border-l-4 border-blue-400' : ''}`}>
