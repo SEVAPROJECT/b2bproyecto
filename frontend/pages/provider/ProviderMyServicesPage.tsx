@@ -415,11 +415,22 @@ const ProviderMyServicesPage: React.FC = () => {
     };
 
     const handleSaveService = async () => {
-        if (!editingService) return;
+        console.log('🔍 handleSaveService llamado');
+        if (!editingService) {
+            console.log('❌ No hay servicio en edición');
+            return;
+        }
 
         try {
             const accessToken = localStorage.getItem('access_token');
-            if (!accessToken) return;
+            if (!accessToken) {
+                console.log('❌ No hay token de acceso');
+                return;
+            }
+            
+            console.log('🔍 Iniciando actualización de servicio:', editingService.id_servicio);
+            console.log('🔍 Estado actual de servicios:', services.length);
+            console.log('🔍 Servicio en edición:', editingService);
 
             // Preparar datos para envío, convirtiendo precio y montos a números
             const serviceData = {
@@ -430,6 +441,13 @@ const ProviderMyServicesPage: React.FC = () => {
                     monto: parsePriceInput(tarifa.monto.toString())
                 }))
             };
+
+            console.log('🔍 Datos del servicio a actualizar:', {
+                id: editingService.id_servicio,
+                nombre: serviceData.nombre,
+                tarifas: serviceData.tarifas.length,
+                tarifasData: serviceData.tarifas
+            });
 
             // Actualización optimista: actualizar inmediatamente en la lista
             const updatedService = {
@@ -450,10 +468,17 @@ const ProviderMyServicesPage: React.FC = () => {
                 );
                 console.log('🔍 Servicios después de actualización optimista:', {
                     total: newServices.length,
-                    updated: newServices.find(s => s.id_servicio === editingService.id_servicio)
+                    updated: newServices.find(s => s.id_servicio === editingService.id_servicio),
+                    tarifas: newServices.find(s => s.id_servicio === editingService.id_servicio)?.tarifas?.length || 0
                 });
                 return newServices;
             });
+
+            // Forzar re-renderizado del filtrado
+            setTimeout(() => {
+                console.log('🔄 Forzando re-renderizado después de actualización');
+                setServices(prev => [...prev]);
+            }, 100);
 
             // Llamar a la API en segundo plano
             try {
