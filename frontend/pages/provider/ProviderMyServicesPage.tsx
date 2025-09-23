@@ -550,7 +550,7 @@ const ProviderMyServicesPage: React.FC = () => {
                 template_id: selectedTemplate.id_servicio,
                 nombre: templateForm.nombre.trim(),
                 descripcion: templateForm.descripcion.trim(),
-                precio: parseFloat(templateForm.precio),
+                precio: parsePriceInput(templateForm.precio),
                 id_moneda: templateForm.id_moneda
             };
 
@@ -1331,13 +1331,16 @@ const ProviderMyServicesPage: React.FC = () => {
                                                                         Precio *
                                                                     </label>
                                                                     <input
-                                                                        type="number"
+                                                                        type="text"
                                                                         value={templateForm.precio}
-                                                                        onChange={(e) => setTemplateForm(prev => ({ ...prev, precio: e.target.value }))}
-                                                                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        onChange={(e) => {
+                                                                            const inputValue = e.target.value;
+                                                                            // Formatear el precio con puntos de mil mientras se escribe
+                                                                            const formattedValue = formatPriceInput(inputValue);
+                                                                            setTemplateForm(prev => ({ ...prev, precio: formattedValue }));
+                                                                        }}
+                                                                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                                                         placeholder="0"
-                                                                        min="0"
-                                                                        step="0.01"
                                                                     />
                                                                 </div>
                                                             </div>
