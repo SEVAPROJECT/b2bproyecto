@@ -213,6 +213,12 @@ const ProviderMyServicesPage: React.FC = () => {
     // Aplicar filtros cuando cambien
     useEffect(() => {
         const filtered = filterServices(services, filters);
+        console.log('🔍 Filtrado de servicios:', {
+            totalServices: services.length,
+            filteredServices: filtered.length,
+            firstService: services[0],
+            firstFiltered: filtered[0]
+        });
         setFilteredServices(filtered);
     }, [services, filters]);
 
@@ -631,6 +637,15 @@ const ProviderMyServicesPage: React.FC = () => {
                 console.log('🔍 Primer servicio (optimista):', newServices[0]);
                 return newServices;
             });
+
+            // Forzar re-renderizado del componente
+            setTimeout(() => {
+                setServices(prev => {
+                    console.log('🔄 Forzando re-renderizado, servicios actuales:', prev.length);
+                    console.log('🔄 Primer servicio después de re-render:', prev[0]);
+                    return [...prev];
+                });
+            }, 100);
 
             // Limpiar formulario y cerrar modal inmediatamente
             setShowTemplateModal(false);
