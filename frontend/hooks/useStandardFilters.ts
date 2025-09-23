@@ -24,6 +24,7 @@ export const useStandardFilters = <T extends FilterableItem>(
         companyFilter: 'all',
         statusFilter: 'all',
         customDate: '',
+        searchFilter: '',
         ...initialFilters
     });
 
@@ -81,6 +82,28 @@ export const useStandardFilters = <T extends FilterableItem>(
             if (filters.statusFilter !== 'all') {
                 const itemStatus = item.estado_aprobacion || item.estado;
                 if (itemStatus !== filters.statusFilter) return false;
+            }
+
+            // Filtro por búsqueda de texto
+            if (filters.searchFilter && filters.searchFilter.trim() !== '') {
+                const searchTerm = filters.searchFilter.toLowerCase().trim();
+
+                // Buscar en nombre del item (depende del tipo)
+                let itemName = '';
+                if ('nombre_servicio' in item && item.nombre_servicio) {
+                    itemName = item.nombre_servicio;
+                } else if ('nombre_categoria' in item && item.nombre_categoria) {
+                    itemName = item.nombre_categoria;
+                } else if ('nombre' in item && item.nombre) {
+                    itemName = item.nombre;
+                }
+
+                const itemDescription = item.descripcion || item.description || '';
+
+                if (!itemName.toLowerCase().includes(searchTerm) &&
+                    !itemDescription.toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
             }
 
             return true;
@@ -152,7 +175,8 @@ export const useStandardFilters = <T extends FilterableItem>(
             categoryFilter: 'all',
             companyFilter: 'all',
             statusFilter: 'all',
-            customDate: ''
+            customDate: '',
+            searchFilter: ''
         });
     }, []);
 
