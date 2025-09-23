@@ -259,6 +259,7 @@ const ProviderMyServicesPage: React.FC = () => {
     };
 
     const handleEditService = (service: any) => {
+        console.log('🔍 Abriendo modal de edición para servicio:', service.id_servicio);
         setEditingService(service);
         
         // Buscar la moneda Guaraní en la lista de monedas
@@ -286,6 +287,7 @@ const ProviderMyServicesPage: React.FC = () => {
 
         setSelectedImage(null);
         setShowEditModal(true);
+        console.log('🔍 Modal de edición abierto');
     };
 
     const handleToggleServiceStatus = async (serviceId: number, currentStatus: boolean) => {
@@ -506,6 +508,7 @@ const ProviderMyServicesPage: React.FC = () => {
     };
 
     const addTarifa = () => {
+        console.log('🔍 Agregando nueva tarifa');
         const newTarifa = {
             monto: '',
             descripcion: '',
@@ -514,10 +517,14 @@ const ProviderMyServicesPage: React.FC = () => {
             id_tarifa: rateTypes[0]?.id_tarifa || 0
         };
 
-        setEditForm(prev => ({
-            ...prev,
-            tarifas: [...prev.tarifas, newTarifa]
-        }));
+        setEditForm(prev => {
+            const newTarifas = [...prev.tarifas, newTarifa];
+            console.log('🔍 Tarifas después de agregar:', newTarifas.length);
+            return {
+                ...prev,
+                tarifas: newTarifas
+            };
+        });
     };
 
     const updateTarifa = (index: number, field: string, value: any) => {
