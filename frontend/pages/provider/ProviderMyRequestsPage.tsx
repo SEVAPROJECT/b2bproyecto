@@ -113,6 +113,12 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
 
         // Filtro por categoría (igual que en pantalla de administración)
         if (filters.categoryFilter !== 'all' && request.id_categoria?.toString() !== filters.categoryFilter) {
+            console.log('🚫 Filtro categoría rechaza:', {
+                requestId: request.id_solicitud,
+                requestCategory: request.id_categoria,
+                filterCategory: filters.categoryFilter,
+                requestName: getRequestName(request)
+            });
             return false;
         }
 
@@ -144,6 +150,7 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
 const ProviderMyRequestsPage: React.FC = () => {
     const { user } = useContext(AuthContext);
     const [requests, setRequests] = useState<UnifiedRequest[]>([]);
+    const [filteredRequests, setFilteredRequests] = useState<UnifiedRequest[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -167,14 +174,24 @@ const ProviderMyRequestsPage: React.FC = () => {
         searchFilter: ''
     });
 
-    // Aplicar filtros inmediatamente con useMemo
-    const filteredRequests = useMemo(() => {
-        return filterRequests(requests, filters);
-    }, [requests, filters]);
-
     useEffect(() => {
         loadData();
     }, []);
+
+    // Aplicar filtros cuando cambien (con logging para debug)
+    useEffect(() => {
+        console.log('🔍 Aplicando filtros:', {
+            totalRequests: requests.length,
+            filters: filters,
+            requests: requests.slice(0, 2) // Solo los primeros 2 para debug
+        });
+        const filtered = filterRequests(requests, filters);
+        console.log('✅ Filtros aplicados:', {
+            filteredCount: filtered.length,
+            filtered: filtered.slice(0, 2) // Solo los primeros 2 para debug
+        });
+        setFilteredRequests(filtered);
+    }, [requests, filters]);
 
     const loadData = async () => {
         try {
