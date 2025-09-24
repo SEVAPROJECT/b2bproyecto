@@ -215,17 +215,17 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
             imagen_original = row[7]
             imagen_procesada = imagen_original
             
-            # Solo procesar servicios con imágenes válidas (Supabase Storage o iDrive)
+            # Procesar imagen si existe, pero no filtrar servicios sin imagen
             if imagen_original and (imagen_original.startswith('http') or imagen_original.startswith('/uploads/')):
                 print(f"✅ Imagen válida mantenida: {imagen_original}")
                 imagen_procesada = imagen_original
             else:
-                # Filtrar servicios sin imagen o con rutas inválidas
+                # Mantener servicio sin imagen o con imagen inválida
                 if imagen_original:
-                    print(f"🚫 Imagen inválida filtrada: {imagen_original}")
+                    print(f"⚠️ Imagen inválida pero servicio mantenido: {imagen_original}")
                 else:
-                    print(f"🚫 Servicio sin imagen filtrado")
-                continue  # Saltar este servicio completamente
+                    print(f"ℹ️ Servicio sin imagen mantenido")
+                imagen_procesada = None  # Sin imagen
             
             service_dict = {
                 'id_servicio': row[0],
