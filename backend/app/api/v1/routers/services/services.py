@@ -568,9 +568,11 @@ async def update_service_status(
         )
 
 @router.get("/servir-imagen/{servicio_id}")
-async def servir_imagen(servicio_id: int, current_user: dict = Depends(get_current_user)):
-    """Endpoint para servir imágenes de servicios con autenticación"""
+async def servir_imagen(servicio_id: int):
+    """Endpoint para servir imágenes de servicios (público para marketplace)"""
     try:
+        print(f"🔍 Sirviendo imagen para servicio {servicio_id}")
+        
         # Obtener la imagen del servicio
         query = """
         SELECT id_servicio, nombre, imagen 
@@ -581,14 +583,17 @@ async def servir_imagen(servicio_id: int, current_user: dict = Depends(get_curre
         result = await database.fetch_one(query, {"servicio_id": servicio_id})
         
         if not result:
+            print(f"❌ Servicio {servicio_id} no encontrado")
             raise HTTPException(status_code=404, detail="Servicio no encontrado")
         
         imagen = result[2]
+        print(f"🔍 Imagen encontrada: {imagen}")
         
         if not imagen or not imagen.startswith('http'):
+            print(f"❌ Servicio {servicio_id} sin imagen de iDrive")
             raise HTTPException(status_code=404, detail="Servicio sin imagen de iDrive")
         
-        print(f"🔍 Sirviendo imagen para servicio {servicio_id}: {imagen}")
+        print(f"✅ Redirigiendo a imagen de iDrive: {imagen}")
         
         # Redirigir a la URL de iDrive
         from fastapi.responses import RedirectResponse
