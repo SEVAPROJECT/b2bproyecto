@@ -107,6 +107,28 @@ const ManageProfilePage: React.FC = () => {
             if (selectedImage) {
                 setIsUploadingImage(true);
                 try {
+                    // Eliminar foto anterior si existe y es de Supabase Storage
+                    if (user?.foto_perfil && user.foto_perfil.startsWith('https://') && user.foto_perfil.includes('supabase.co')) {
+                        try {
+                            const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
+                            const deleteResponse = await fetch(`${apiBaseUrl}/api/v1/auth/delete-profile-photo?image_url=${encodeURIComponent(user.foto_perfil)}`, {
+                                method: 'DELETE',
+                                headers: {
+                                    'Authorization': `Bearer ${user.accessToken}`
+                                }
+                            });
+
+                            if (deleteResponse.ok) {
+                                console.log('✅ Foto de perfil anterior eliminada del bucket de Supabase Storage');
+                            } else {
+                                console.warn('⚠️ No se pudo eliminar la foto anterior del bucket, pero se continuará con la subida');
+                            }
+                        } catch (deleteError) {
+                            console.warn('⚠️ Error eliminando foto anterior:', deleteError);
+                            // Continuar con la subida aunque falle la eliminación
+                        }
+                    }
+
                     const uploadResult = await profileAPI.uploadProfilePhoto(selectedImage, user.accessToken);
                     profileData.foto_perfil = uploadResult.image_path;
                 } catch (uploadError: any) {

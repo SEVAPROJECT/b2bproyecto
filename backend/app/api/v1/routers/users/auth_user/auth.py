@@ -668,6 +668,53 @@ async def upload_profile_photo(
             detail=f"Error al subir foto de perfil: {str(e)}"
         )
 
+@router.delete("/delete-profile-photo")
+async def delete_profile_photo(
+    image_url: str,
+    current_user: UserProfileAndRolesOut = Depends(get_current_user)
+):
+    """
+    Elimina una foto de perfil del bucket de Supabase Storage.
+    """
+    try:
+        from app.services.supabase_storage_service import supabase_storage_service
+        
+        # Verificar que la URL es de Supabase Storage
+        if not image_url or not image_url.startswith('https://') or 'supabase.co' not in image_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL de imagen no válida para eliminación"
+            )
+        
+        # Extraer el nombre del archivo de la URL
+        import os
+        file_name = os.path.basename(image_url.split('?')[0])  # Remover query parameters
+        
+        # Eliminar imagen del bucket
+        success = await supabase_storage_service.delete_image(image_url)
+        
+        if success:
+            print(f"✅ Foto de perfil eliminada exitosamente del bucket: {file_name}")
+            return {
+                "message": "Foto de perfil eliminada exitosamente del bucket de Supabase Storage.",
+                "deleted_file": file_name
+            }
+        else:
+            print(f"❌ Error eliminando foto de perfil del bucket: {file_name}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al eliminar la foto de perfil del bucket"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error en delete_profile_photo: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al eliminar la foto de perfil: {str(e)}"
+        )
+
 
 @router.get(
     "/verificacion-datos",
