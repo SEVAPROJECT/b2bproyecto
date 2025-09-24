@@ -49,10 +49,12 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
         
         console.log('🔍 MarketplaceServiceCard - Imagen original:', imagePath);
         
-        // Si es una URL de iDrive, usarla directamente (requiere autenticación especial)
+        // Si es una URL de iDrive, usar el endpoint de descarga
         if (imagePath.startsWith('http')) {
-            console.log('✅ MarketplaceServiceCard - Usando URL de iDrive directamente:', imagePath);
-            return imagePath;
+            const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
+            const downloadUrl = `${baseUrl}/api/v1/services/servir-imagen/${servicioId}`;
+            console.log('✅ MarketplaceServiceCard - Usando endpoint de descarga:', downloadUrl);
+            return downloadUrl;
         }
         
         // Si es una ruta local, construir URL completa
@@ -145,9 +147,9 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
                             console.log('✅ Imagen cargada exitosamente:', (service as any).imagen);
                         }}
                         onError={(e) => {
-                            console.log('❌ Error cargando imagen de iDrive:', (e.target as HTMLImageElement).src);
+                            console.log('❌ Error cargando imagen:', (e.target as HTMLImageElement).src);
                             console.log('❌ Imagen original del servicio:', (service as any).imagen);
-                            console.log('ℹ️ Las imágenes de iDrive requieren autenticación especial');
+                            console.log('ℹ️ Intentando cargar imagen a través del endpoint de descarga');
                             
                             const target = e.target as HTMLImageElement;
                             target.style.display = 'none';
@@ -159,8 +161,8 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                                         </svg>
                                         <div class="text-xs text-primary-600 text-center">
-                                            <div class="font-medium">Imagen de iDrive</div>
-                                            <div class="text-primary-500">Requiere autenticación</div>
+                                            <div class="font-medium">Cargando imagen...</div>
+                                            <div class="text-primary-500">Desde iDrive</div>
                                         </div>
                                     </div>
                                 `;
