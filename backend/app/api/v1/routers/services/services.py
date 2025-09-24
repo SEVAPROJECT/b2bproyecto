@@ -207,10 +207,29 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
             first_row = services_data[0]
             print(f"🔍 Backend - First row: {first_row}")
             print(f"🔍 Backend - Barrio value: '{first_row[14]}', type: {type(first_row[14])}")
+            print(f"🔍 Backend - Imagen del primer servicio: '{first_row[7]}'")
+            
+            # Verificar todas las imágenes
+            for i, row in enumerate(services_data[:5]):  # Solo los primeros 5
+                print(f"🔍 Backend - Servicio {i+1} imagen: '{row[7]}'")
         
         # Convertir los resultados a diccionarios para que funcionen correctamente
         services_list = []
         for row in services_data:
+            # Procesar la imagen para que funcione correctamente
+            imagen_original = row[7]
+            imagen_procesada = imagen_original
+            
+            if imagen_original:
+                # Solo mostrar imágenes de iDrive (URLs completas)
+                if imagen_original.startswith('http'):
+                    print(f"✅ Imagen iDrive mantenida: {imagen_original}")
+                    imagen_procesada = imagen_original
+                else:
+                    # Filtrar rutas locales - no mostrar estas imágenes
+                    print(f"🚫 Imagen local filtrada: {imagen_original}")
+                    imagen_procesada = None
+            
             service_dict = {
                 'id_servicio': row[0],
                 'id_categoria': row[1],
@@ -219,7 +238,7 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
                 'nombre': row[4],
                 'descripcion': row[5],
                 'precio': row[6],
-                'imagen': row[7],
+                'imagen': imagen_procesada,  # Usar imagen procesada
                 'estado': row[8],
                 'created_at': row[9],
                 'razon_social': row[10],
@@ -307,6 +326,53 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
         
     except Exception as e:
         print(f"❌ Error en get_services_with_providers: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
+@router.get(
+    "/debug-images",
+    status_code=status.HTTP_200_OK,
+    description="Endpoint de debug para verificar las imágenes en la base de datos."
+)
+async def debug_images(db: AsyncSession = Depends(get_async_db)):
+    """
+    Endpoint de debug para verificar las imágenes en la base de datos.
+    """
+    try:
+        from sqlalchemy import text
+        query = text("""
+            SELECT 
+                s.id_servicio,
+                s.nombre,
+                s.imagen
+            FROM servicio s
+            WHERE s.imagen IS NOT NULL
+            ORDER BY s.created_at DESC
+            LIMIT 10
+        """)
+        
+        result = await db.execute(query)
+        images_data = result.fetchall()
+        
+        debug_info = []
+        for row in images_data:
+            debug_info.append({
+                'id_servicio': row[0],
+                'nombre': row[1],
+                'imagen': row[2],
+                'es_url_completa': row[2].startswith('http') if row[2] else False,
+                'es_ruta_local': row[2].startswith('/uploads/') if row[2] else False
+            })
+        
+        return {
+            'total_servicios_con_imagen': len(images_data),
+            'imagenes': debug_info
+        }
+        
+    except Exception as e:
+        print(f"❌ Error en debug_images: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error interno del servidor: {str(e)}"
