@@ -521,11 +521,10 @@ async def get_storage_status(current_user: dict = Depends(get_current_user)):
 async def servir_imagen_servicio(
     servicio_id: int,
     token: str = None,
-    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Sirve la imagen de un servicio con autenticación.
+    Sirve la imagen de un servicio (público para marketplace).
     """
     try:
         # Obtener el servicio
@@ -546,16 +545,19 @@ async def servir_imagen_servicio(
                 detail="El servicio no tiene imagen"
             )
         
-        # Verificar que el servicio pertenece al usuario actual
-        if service.id_perfil != current_user.get('id_perfil'):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permisos para ver esta imagen"
-            )
+        # Debug: Verificar datos del servicio
+        logger.info(f"🔍 Debug servir-imagen: servicio_id={servicio_id}")
+        logger.info(f"🔍 Debug servir-imagen: service.id_perfil={service.id_perfil}")
+        logger.info(f"🔍 Debug servir-imagen: service.imagen={service.imagen}")
+        logger.info(f"🔍 Debug servir-imagen: token={token}")
+        
+        # Para el marketplace, permitir acceso público a las imágenes
+        logger.info(f"✅ Acceso permitido a imagen del servicio {servicio_id}")
         
         # Si es una URL de iDrive, redirigir directamente
         if service.imagen.startswith('http'):
             from fastapi.responses import RedirectResponse
+            logger.info(f"🔄 Redirigiendo a iDrive: {service.imagen}")
             return RedirectResponse(url=service.imagen)
         
         # Si es una ruta local, servir desde el backend
@@ -564,14 +566,18 @@ async def servir_imagen_servicio(
             import os
             
             file_path = service.imagen[1:]  # Remover el / inicial
+            logger.info(f"📁 Intentando servir archivo local: {file_path}")
             if os.path.exists(file_path):
+                logger.info(f"✅ Archivo local encontrado: {file_path}")
                 return FileResponse(file_path)
             else:
+                logger.warning(f"❌ Archivo local no encontrado: {file_path}")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Archivo de imagen no encontrado"
                 )
         
+        logger.warning(f"❌ Formato de imagen no válido: {service.imagen}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Formato de imagen no válido"
@@ -580,7 +586,8 @@ async def servir_imagen_servicio(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error sirviendo imagen: {e}")
+        logger.error(f"❌ Error sirviendo imagen: {e}")
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor"
