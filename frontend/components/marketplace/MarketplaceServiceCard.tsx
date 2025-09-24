@@ -36,6 +36,13 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
     // });
     const getImageUrl = (imagePath: string | null) => {
         if (!imagePath) return null;
+        
+        // Si es una URL completa (Supabase Storage o iDrive), usarla directamente
+        if (imagePath.startsWith('http')) {
+            return imagePath;
+        }
+        
+        // Si es una ruta local, construir URL completa
         const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
         return `${baseUrl}${imagePath}`;
     };

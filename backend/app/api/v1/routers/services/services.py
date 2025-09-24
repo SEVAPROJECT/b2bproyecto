@@ -211,6 +211,22 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
         # Convertir los resultados a diccionarios para que funcionen correctamente
         services_list = []
         for row in services_data:
+            # Procesar la imagen para que funcione correctamente
+            imagen_original = row[7]
+            imagen_procesada = imagen_original
+            
+            # Solo procesar servicios con imágenes válidas (Supabase Storage o iDrive)
+            if imagen_original and (imagen_original.startswith('http') or imagen_original.startswith('/uploads/')):
+                print(f"✅ Imagen válida mantenida: {imagen_original}")
+                imagen_procesada = imagen_original
+            else:
+                # Filtrar servicios sin imagen o con rutas inválidas
+                if imagen_original:
+                    print(f"🚫 Imagen inválida filtrada: {imagen_original}")
+                else:
+                    print(f"🚫 Servicio sin imagen filtrado")
+                continue  # Saltar este servicio completamente
+            
             service_dict = {
                 'id_servicio': row[0],
                 'id_categoria': row[1],
@@ -219,7 +235,7 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
                 'nombre': row[4],
                 'descripcion': row[5],
                 'precio': row[6],
-                'imagen': row[7],
+                'imagen': imagen_procesada,  # Usar imagen procesada
                 'estado': row[8],
                 'created_at': row[9],
                 'razon_social': row[10],
