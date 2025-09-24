@@ -595,32 +595,11 @@ async def servir_imagen(servicio_id: int, db: AsyncSession = Depends(get_async_d
             print(f"❌ Servicio {servicio_id} sin imagen de iDrive")
             raise HTTPException(status_code=404, detail="Servicio sin imagen de iDrive")
         
-        print(f"✅ Descargando imagen de iDrive: {imagen}")
+        print(f"✅ Redirigiendo a imagen de iDrive: {imagen}")
         
-        # Descargar la imagen de iDrive y servirla directamente
-        import httpx
-        import asyncio
-        
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(imagen, timeout=30.0)
-                if response.status_code == 200:
-                    print(f"✅ Imagen descargada exitosamente de iDrive")
-                    from fastapi.responses import Response
-                    return Response(
-                        content=response.content,
-                        media_type=response.headers.get("content-type", "image/jpeg"),
-                        headers={
-                            "Cache-Control": "public, max-age=3600",
-                            "Content-Disposition": f"inline; filename=service_{servicio_id}.jpg"
-                        }
-                    )
-                else:
-                    print(f"❌ Error descargando imagen de iDrive: {response.status_code}")
-                    raise HTTPException(status_code=404, detail="Imagen no disponible en iDrive")
-        except Exception as e:
-            print(f"❌ Error descargando imagen: {e}")
-            raise HTTPException(status_code=404, detail="Error accediendo a la imagen")
+        # Redirigir a la URL de iDrive (las imágenes de iDrive requieren autenticación especial)
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=imagen, status_code=302)
         
     except HTTPException:
         raise

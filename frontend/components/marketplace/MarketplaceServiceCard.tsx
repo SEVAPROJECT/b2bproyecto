@@ -49,12 +49,10 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
         
         console.log('🔍 MarketplaceServiceCard - Imagen original:', imagePath);
         
-        // Si es una URL de iDrive, usar el endpoint autenticado
+        // Si es una URL de iDrive, usarla directamente (requiere autenticación especial)
         if (imagePath.startsWith('http')) {
-            const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
-            const authenticatedUrl = `${baseUrl}/api/v1/services/servir-imagen/${servicioId}`;
-            console.log('✅ MarketplaceServiceCard - Usando endpoint autenticado:', authenticatedUrl);
-            return authenticatedUrl;
+            console.log('✅ MarketplaceServiceCard - Usando URL de iDrive directamente:', imagePath);
+            return imagePath;
         }
         
         // Si es una ruta local, construir URL completa
