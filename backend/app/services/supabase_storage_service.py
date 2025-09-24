@@ -202,7 +202,7 @@ class SupabaseStorageService:
         Eliminar una imagen del storage
         
         Args:
-            file_path: Ruta del archivo en el storage
+            file_path: URL completa del archivo en el storage
         
         Returns:
             bool: True si se eliminó exitosamente
@@ -212,17 +212,32 @@ class SupabaseStorageService:
                 logger.error("❌ Cliente Supabase no configurado")
                 return False
             
-            # Extraer el nombre del archivo de la URL
-            file_name = os.path.basename(file_path)
+            # Extraer la ruta del archivo de la URL completa
+            # Ejemplo: https://tu-proyecto.supabase.co/storage/v1/object/public/imagenes/servicios/uuid.png
+            # Necesitamos: servicios/uuid.png
             
-            # Eliminar el archivo
-            result = self.supabase.storage.from_(self.bucket_name).remove([file_name])
-            
-            if result:
-                logger.info(f"✅ Imagen eliminada exitosamente: {file_name}")
-                return True
+            if 'imagenes/' in file_path:
+                # Extraer la parte después de 'imagenes/'
+                path_parts = file_path.split('imagenes/')
+                if len(path_parts) > 1:
+                    # Remover query parameters si existen
+                    full_path = path_parts[1].split('?')[0]
+                    logger.info(f"🔍 Eliminando archivo: {full_path}")
+                    
+                    # Eliminar el archivo usando la ruta completa
+                    result = self.supabase.storage.from_(self.bucket_name).remove([full_path])
+                    
+                    if result:
+                        logger.info(f"✅ Imagen eliminada exitosamente: {full_path}")
+                        return True
+                    else:
+                        logger.error(f"❌ Error eliminando imagen: {full_path}")
+                        return False
+                else:
+                    logger.error(f"❌ No se pudo extraer la ruta del archivo de: {file_path}")
+                    return False
             else:
-                logger.error(f"❌ Error eliminando imagen: {file_name}")
+                logger.error(f"❌ URL no válida para eliminación: {file_path}")
                 return False
                 
         except Exception as e:
