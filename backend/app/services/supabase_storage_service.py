@@ -108,7 +108,7 @@ class SupabaseStorageService:
             for folder in folders:
                 try:
                     # Crear un archivo dummy para crear la carpeta
-                    dummy_content = b"# Carpeta creada automáticamente"
+                    dummy_content = b"Carpeta creada automaticamente"
                     dummy_path = f"{folder}/.gitkeep"
                     
                     self.supabase.storage.from_(self.bucket_name).upload(
