@@ -656,8 +656,7 @@ async def upload_profile_photo(
         return {
             "success": True,
             "mensaje": "Foto de perfil subida exitosamente",
-            "image_path": relative_path,
-            "filename": filename
+            "image_path": relative_path
         }
         
     except HTTPException:
