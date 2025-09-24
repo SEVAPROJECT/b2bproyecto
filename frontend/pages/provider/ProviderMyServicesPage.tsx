@@ -110,8 +110,8 @@ const filterServices = (services: any[], filters: any) => {
         const minPriceStr = filters.minPrice?.toString().trim() || '';
         const maxPriceStr = filters.maxPrice?.toString().trim() || '';
 
-        const minPriceValue = minPriceStr !== '' && !isNaN(parseFloat(minPriceStr)) ? parseFloat(minPriceStr) : null;
-        const maxPriceValue = maxPriceStr !== '' && !isNaN(parseFloat(maxPriceStr)) ? parseFloat(maxPriceStr) : null;
+        const minPriceValue = minPriceStr !== '' ? parsePriceInput(minPriceStr) : null;
+        const maxPriceValue = maxPriceStr !== '' ? parsePriceInput(maxPriceStr) : null;
 
         const hasMinPriceFilter = minPriceValue !== null && minPriceValue > 0;
         const hasMaxPriceFilter = maxPriceValue !== null && maxPriceValue > 0;
@@ -798,11 +798,13 @@ const ProviderMyServicesPage: React.FC = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Precio Mínimo</label>
                             <input
-                                type="number"
+                                type="text"
                                 value={filters.minPrice}
-                                onChange={(e) => setFilters(prev => ({ ...prev, minPrice: e.target.value }))}
+                                onChange={(e) => {
+                                    const formattedValue = formatPriceInput(e.target.value);
+                                    setFilters(prev => ({ ...prev, minPrice: formattedValue }));
+                                }}
                                 placeholder="0"
-                                min="0"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
@@ -811,11 +813,13 @@ const ProviderMyServicesPage: React.FC = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Precio Máximo</label>
                             <input
-                                type="number"
+                                type="text"
                                 value={filters.maxPrice}
-                                onChange={(e) => setFilters(prev => ({ ...prev, maxPrice: e.target.value }))}
+                                onChange={(e) => {
+                                    const formattedValue = formatPriceInput(e.target.value);
+                                    setFilters(prev => ({ ...prev, maxPrice: formattedValue }));
+                                }}
                                 placeholder="Sin límite"
-                                min="0"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
