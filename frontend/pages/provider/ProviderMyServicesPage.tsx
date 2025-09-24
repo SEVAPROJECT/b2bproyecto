@@ -402,7 +402,38 @@ const ProviderMyServicesPage: React.FC = () => {
         }
     };
 
-    const handleRemoveImage = () => {
+    const handleRemoveImage = async () => {
+        try {
+            // Si hay una imagen actual en el servicio, eliminarla del bucket
+            if (editForm.imagen && editForm.imagen.startsWith('https://') && editForm.imagen.includes('supabase.co')) {
+                const accessToken = localStorage.getItem('access_token');
+                if (accessToken) {
+                    try {
+                        const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
+                        const response = await fetch(`${apiBaseUrl}/api/v1/provider/services/delete-image?image_url=${encodeURIComponent(editForm.imagen)}`, {
+                            method: 'DELETE',
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`
+                            }
+                        });
+
+                        if (response.ok) {
+                            console.log('✅ Imagen eliminada del bucket de Supabase Storage');
+                        } else {
+                            console.warn('⚠️ No se pudo eliminar la imagen del bucket, pero se continuará con la eliminación local');
+                        }
+                    } catch (error) {
+                        console.warn('⚠️ Error eliminando imagen del bucket:', error);
+                        // Continuar con la eliminación local aunque falle la eliminación del bucket
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('⚠️ Error en eliminación de imagen:', error);
+            // Continuar con la eliminación local aunque falle
+        }
+
+        // Eliminar imagen del estado local
         setSelectedImage(null);
         setImagePreview(null);
         setEditForm(prev => ({ ...prev, imagen: '' }));

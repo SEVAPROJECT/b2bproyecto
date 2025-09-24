@@ -556,6 +556,53 @@ async def upload_service_image(
             detail=f"Error al procesar la imagen: {str(e)}"
         )
 
+@router.delete("/delete-image")
+async def delete_service_image(
+    image_url: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Elimina una imagen de servicio del bucket de Supabase Storage.
+    """
+    try:
+        from app.services.supabase_storage_service import supabase_storage_service
+        
+        # Verificar que la URL es de Supabase Storage
+        if not image_url or not image_url.startswith('https://') or 'supabase.co' not in image_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL de imagen no válida para eliminación"
+            )
+        
+        # Extraer el nombre del archivo de la URL
+        import os
+        file_name = os.path.basename(image_url.split('?')[0])  # Remover query parameters
+        
+        # Eliminar imagen del bucket
+        success = await supabase_storage_service.delete_image(image_url)
+        
+        if success:
+            logger.info(f"✅ Imagen eliminada exitosamente del bucket: {file_name}")
+            return {
+                "message": "Imagen eliminada exitosamente del bucket de Supabase Storage.",
+                "deleted_file": file_name
+            }
+        else:
+            logger.error(f"❌ Error eliminando imagen del bucket: {file_name}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al eliminar la imagen del bucket"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error en delete_service_image: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al eliminar la imagen: {str(e)}"
+        )
+
 # Modelo para actualizar estado del servicio
 class ServicioStatusUpdate(BaseModel):
     estado: bool
