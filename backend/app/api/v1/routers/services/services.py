@@ -8,6 +8,7 @@ from typing import List
 from pydantic import BaseModel
 
 from app.api.v1.dependencies.database_supabase import get_async_db
+from app.api.v1.dependencies.auth_user import get_current_user
 from app.models.servicio.service import ServicioModel
 from app.models.publicar_servicio.category import CategoriaModel
 from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
@@ -565,3 +566,36 @@ async def update_service_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar el estado del servicio: {str(e)}"
         )
+
+@router.get("/servir-imagen/{servicio_id}")
+async def servir_imagen(servicio_id: int, current_user: dict = Depends(get_current_user)):
+    """Endpoint para servir imágenes de servicios con autenticación"""
+    try:
+        # Obtener la imagen del servicio
+        query = """
+        SELECT id_servicio, nombre, imagen 
+        FROM servicio 
+        WHERE id_servicio = :servicio_id
+        """
+        
+        result = await database.fetch_one(query, {"servicio_id": servicio_id})
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Servicio no encontrado")
+        
+        imagen = result[2]
+        
+        if not imagen or not imagen.startswith('http'):
+            raise HTTPException(status_code=404, detail="Servicio sin imagen de iDrive")
+        
+        print(f"🔍 Sirviendo imagen para servicio {servicio_id}: {imagen}")
+        
+        # Redirigir a la URL de iDrive
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=imagen, status_code=302)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error sirviendo imagen: {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
