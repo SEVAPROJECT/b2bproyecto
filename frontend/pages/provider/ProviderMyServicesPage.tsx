@@ -953,14 +953,17 @@ const ProviderMyServicesPage: React.FC = () => {
                                         <div className="flex-shrink-0 mx-auto sm:mx-0">
                                             {actualService.imagen ? (
                                                 (() => {
-                                                    const imageUrl = actualService.imagen.startsWith('http') 
-                                                        ? actualService.imagen 
-                                                        : `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${actualService.imagen}`;
-                                                    console.log('🖼️ Renderizando imagen:', {
-                                                        original: actualService.imagen,
-                                                        final: imageUrl,
-                                                        isHttp: actualService.imagen.startsWith('http')
+                                                    // Usar endpoint de autenticación para servir imágenes
+                                                    const accessToken = localStorage.getItem('access_token');
+                                                    const imageUrl = `${API_CONFIG.BASE_URL.replace('/api/v1', '')}/api/v1/provider/services/servir-imagen/${actualService.id_servicio}?token=${accessToken}`;
+                                                    
+                                                    console.log('🖼️ Renderizando imagen con autenticación:', {
+                                                        servicio_id: actualService.id_servicio,
+                                                        url_autenticada: imageUrl,
+                                                        imagen_original: actualService.imagen,
+                                                        hasToken: !!accessToken
                                                     });
+                                                    
                                                     return (
                                                         <img
                                                             src={imageUrl}
@@ -968,7 +971,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                                             className="h-16 w-16 object-cover rounded-lg border border-gray-200"
                                                             onError={(e) => {
                                                                 const target = e.target as HTMLImageElement;
-                                                                console.error('❌ Error cargando imagen:', actualService.imagen, 'URL:', imageUrl);
+                                                                console.error('❌ Error cargando imagen autenticada:', actualService.id_servicio, 'URL:', imageUrl);
                                                                 target.style.display = 'none';
                                                             }}
                                                         />

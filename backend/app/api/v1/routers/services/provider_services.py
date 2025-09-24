@@ -517,6 +517,113 @@ async def get_storage_status(current_user: dict = Depends(get_current_user)):
             "error": str(e)
         }
 
+@router.get("/servir-imagen/{servicio_id}")
+async def servir_imagen_servicio(
+    servicio_id: int,
+    token: str = None,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Sirve la imagen de un servicio con autenticación.
+    """
+    try:
+        # Obtener el servicio
+        result = await db.execute(
+            select(ServicioModel).where(ServicioModel.id_servicio == servicio_id)
+        )
+        service = result.scalars().first()
+        
+        if not service:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Servicio no encontrado"
+            )
+        
+        if not service.imagen:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="El servicio no tiene imagen"
+            )
+        
+        # Verificar que el servicio pertenece al usuario actual
+        if service.id_perfil != current_user.get('id_perfil'):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes permisos para ver esta imagen"
+            )
+        
+        # Si es una URL de iDrive, redirigir directamente
+        if service.imagen.startswith('http'):
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=service.imagen)
+        
+        # Si es una ruta local, servir desde el backend
+        if service.imagen.startswith('/uploads/'):
+            from fastapi.responses import FileResponse
+            import os
+            
+            file_path = service.imagen[1:]  # Remover el / inicial
+            if os.path.exists(file_path):
+                return FileResponse(file_path)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Archivo de imagen no encontrado"
+                )
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Formato de imagen no válido"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sirviendo imagen: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )
+
+@router.post("/fix-image-urls")
+async def fix_image_urls(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_async_db)):
+    """
+    Corrige las URLs de imágenes en la base de datos.
+    """
+    try:
+        from app.models.servicio.service import ServicioModel
+        
+        # Obtener todos los servicios con imágenes
+        result = await db.execute(
+            select(ServicioModel).where(ServicioModel.imagen.isnot(None))
+        )
+        services = result.scalars().all()
+        
+        fixed_count = 0
+        for service in services:
+            if service.imagen and 'idrivee2-92.com' in service.imagen:
+                # Corregir URL
+                old_url = service.imagen
+                service.imagen = service.imagen.replace('idrivee2-92.com', 'idrive.com')
+                fixed_count += 1
+                logger.info(f"🔧 URL corregida para servicio {service.id_servicio}: {old_url} → {service.imagen}")
+        
+        await db.commit()
+        
+        return {
+            "message": f"URLs corregidas exitosamente",
+            "fixed_count": fixed_count,
+            "total_services": len(services)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error corrigiendo URLs: {e}")
+        return {
+            "message": "Error corrigiendo URLs",
+            "error": str(e)
+        }
+
 @router.post("/upload-image")
 async def upload_service_image(
     file: UploadFile = File(...),
@@ -573,6 +680,13 @@ async def upload_service_image(
             )
         
         logger.info(f"✅ Imagen subida exitosamente a iDrive: {file_url}")
+        
+        # Verificar y corregir URL de iDrive si es necesario
+        if file_url and 'idrivee2-92.com' in file_url:
+            # Corregir dominio malformado
+            corrected_url = file_url.replace('idrivee2-92.com', 'idrive.com')
+            logger.warning(f"🔧 URL corregida: {file_url} → {corrected_url}")
+            file_url = corrected_url
         
         # Retornar la URL completa de iDrive para la base de datos
         return {
