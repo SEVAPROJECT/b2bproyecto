@@ -525,8 +525,11 @@ async def upload_service_image(
     """
     Sube una imagen para un servicio (PNG/JPG, máximo 5MB) usando iDrive.
     """
+    logger.info(f"📸 Iniciando subida de imagen: {file.filename}")
+    
     # Validar tipo de archivo
     if file.content_type not in ["image/png", "image/jpeg", "image/jpg"]:
+        logger.error(f"❌ Tipo de archivo no permitido: {file.content_type}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Solo se permiten archivos PNG y JPG."
@@ -534,7 +537,11 @@ async def upload_service_image(
 
     # Validar tamaño del archivo (5MB máximo)
     content = await file.read()
-    if len(content) > 5 * 1024 * 1024:  # 5MB
+    file_size = len(content)
+    logger.info(f"📏 Tamaño del archivo: {file_size} bytes")
+    
+    if file_size > 5 * 1024 * 1024:  # 5MB
+        logger.error(f"❌ Archivo demasiado grande: {file_size} bytes")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El archivo no puede superar los 5MB."
@@ -547,9 +554,11 @@ async def upload_service_image(
     
     # Crear ruta para iDrive: uploads/services/filename
     file_key = f"uploads/services/{unique_filename}"
+    logger.info(f"🔑 Clave del archivo en iDrive: {file_key}")
 
     # Subir archivo directamente a iDrive (mismo sistema que documentos)
     try:
+        logger.info("🚀 Subiendo imagen a iDrive...")
         success, message, file_url = idrive_service.upload_file(
             file_content=content,
             file_key=file_key,
@@ -557,6 +566,7 @@ async def upload_service_image(
         )
         
         if not success:
+            logger.error(f"❌ Error subiendo a iDrive: {message}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error al subir la imagen: {message}"
@@ -564,14 +574,14 @@ async def upload_service_image(
         
         logger.info(f"✅ Imagen subida exitosamente a iDrive: {file_url}")
         
-        # Retornar la ruta relativa para la base de datos
+        # Retornar la URL completa de iDrive para la base de datos
         return {
             "message": "Imagen subida exitosamente.",
-            "image_path": f"/uploads/services/{unique_filename}"
+            "image_path": file_url
         }
         
     except Exception as e:
-        logger.error(f"Error al subir imagen: {e}")
+        logger.error(f"❌ Error al subir imagen: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al subir la imagen."

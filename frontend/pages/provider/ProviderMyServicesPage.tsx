@@ -364,10 +364,12 @@ const ProviderMyServicesPage: React.FC = () => {
     const handleImageUpload = async () => {
         if (!selectedImage) return;
 
+        console.log('📸 Iniciando subida de imagen:', selectedImage.name);
         setIsUploadingImage(true);
         try {
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) {
+                console.error('❌ No hay token de acceso');
                 setError('No tienes permisos para subir imágenes.');
                 setTimeout(() => setError(null), 3000);
                 setIsUploadingImage(false);
@@ -376,9 +378,13 @@ const ProviderMyServicesPage: React.FC = () => {
 
             const formData = new FormData();
             formData.append('file', selectedImage);
+            console.log('📦 FormData creado con archivo:', selectedImage.name);
 
             const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
-            const response = await fetch(`${apiBaseUrl}/api/v1/provider/services/upload-image`, {
+            const uploadUrl = `${apiBaseUrl}/api/v1/provider/services/upload-image`;
+            console.log('🌐 URL de subida:', uploadUrl);
+
+            const response = await fetch(uploadUrl, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${accessToken}`
@@ -386,13 +392,18 @@ const ProviderMyServicesPage: React.FC = () => {
                 body: formData
             });
 
+            console.log('📡 Respuesta del servidor:', response.status, response.statusText);
+
             if (!response.ok) {
                 const errorData = await response.json();
+                console.error('❌ Error en respuesta:', errorData);
                 throw new Error(errorData.detail || 'Error al subir la imagen');
             }
 
             const result = await response.json();
+            console.log('✅ Resultado de subida:', result);
             const imagePath = result.image_path;
+            console.log('🖼️ Ruta de imagen recibida:', imagePath);
 
             setEditForm(prev => ({ ...prev, imagen: imagePath }));
             setSelectedImage(null);
@@ -401,7 +412,7 @@ const ProviderMyServicesPage: React.FC = () => {
             setTimeout(() => setSuccess(null), 3000);
 
         } catch (error) {
-            console.error('Error al subir imagen:', error);
+            console.error('❌ Error al subir imagen:', error);
             setError(error instanceof Error ? error.message : 'Error al subir la imagen.');
             setTimeout(() => setError(null), 3000);
             setIsUploadingImage(false);
@@ -941,15 +952,28 @@ const ProviderMyServicesPage: React.FC = () => {
                                         {/* Imagen del servicio */}
                                         <div className="flex-shrink-0 mx-auto sm:mx-0">
                                             {actualService.imagen ? (
-                                                <img
-                                                    src={`${API_CONFIG.BASE_URL.replace('/api/v1', '')}${actualService.imagen}`}
-                                                    alt={actualService.nombre}
-                                                    className="h-16 w-16 object-cover rounded-lg border border-gray-200"
-                                                    onError={(e) => {
-                                                        const target = e.target as HTMLImageElement;
-                                                        target.style.display = 'none';
-                                                    }}
-                                                />
+                                                (() => {
+                                                    const imageUrl = actualService.imagen.startsWith('http') 
+                                                        ? actualService.imagen 
+                                                        : `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${actualService.imagen}`;
+                                                    console.log('🖼️ Renderizando imagen:', {
+                                                        original: actualService.imagen,
+                                                        final: imageUrl,
+                                                        isHttp: actualService.imagen.startsWith('http')
+                                                    });
+                                                    return (
+                                                        <img
+                                                            src={imageUrl}
+                                                            alt={actualService.nombre}
+                                                            className="h-16 w-16 object-cover rounded-lg border border-gray-200"
+                                                            onError={(e) => {
+                                                                const target = e.target as HTMLImageElement;
+                                                                console.error('❌ Error cargando imagen:', actualService.imagen, 'URL:', imageUrl);
+                                                                target.style.display = 'none';
+                                                            }}
+                                                        />
+                                                    );
+                                                })()
                                             ) : (
                                                 <div className="h-16 w-16 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
                                                     <BriefcaseIcon className="h-6 w-6 text-gray-400" />
