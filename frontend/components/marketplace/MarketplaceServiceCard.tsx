@@ -13,6 +13,13 @@ interface MarketplaceServiceCardProps {
 }
 
 const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ service, category, onViewProviders, isAuthenticated: propIsAuthenticated }) => {
+    // Debug: verificar datos del servicio
+    console.log('🔍 MarketplaceServiceCard - Datos del servicio:', {
+        id: service.id_servicio,
+        nombre: service.nombre,
+        imagen: (service as any).imagen,
+        tieneImagen: !!(service as any).imagen
+    });
     const { user, isAuthenticated: contextIsAuthenticated } = useAuth();
     const isAuthenticated = propIsAuthenticated !== undefined ? propIsAuthenticated : contextIsAuthenticated;
     
@@ -35,16 +42,24 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
     //     moneda: (service as any).moneda
     // });
     const getImageUrl = (imagePath: string | null) => {
-        if (!imagePath) return null;
+        if (!imagePath) {
+            console.log('🔍 MarketplaceServiceCard - No hay imagen para el servicio');
+            return null;
+        }
+        
+        console.log('🔍 MarketplaceServiceCard - Imagen original:', imagePath);
         
         // Si ya es una URL completa (iDrive), usarla directamente
         if (imagePath.startsWith('http')) {
+            console.log('✅ MarketplaceServiceCard - Usando URL de iDrive:', imagePath);
             return imagePath;
         }
         
         // Si es una ruta local, construir URL completa
         const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
-        return `${baseUrl}${imagePath}`;
+        const finalUrl = `${baseUrl}${imagePath}`;
+        console.log('🔧 MarketplaceServiceCard - Construyendo URL local:', finalUrl);
+        return finalUrl;
     };
 
     const formatPriceProfessional = (price: number, service: BackendService) => {
@@ -126,7 +141,12 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
                         src={getImageUrl((service as any).imagen)}
                         alt={`Imagen de ${service.nombre}`}
                         className="w-full h-full object-cover"
+                        onLoad={() => {
+                            console.log('✅ Imagen cargada exitosamente:', (service as any).imagen);
+                        }}
                         onError={(e) => {
+                            console.log('❌ Error cargando imagen:', (e.target as HTMLImageElement).src);
+                            console.log('❌ Imagen original del servicio:', (service as any).imagen);
                             const target = e.target as HTMLImageElement;
                             target.style.display = 'none';
                             const parent = target.parentElement;

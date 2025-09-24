@@ -220,15 +220,17 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
             imagen_original = row[7]
             imagen_procesada = imagen_original
             
-            if imagen_original:
-                # Solo mostrar imágenes de iDrive (URLs completas)
-                if imagen_original.startswith('http'):
-                    print(f"✅ Imagen iDrive mantenida: {imagen_original}")
-                    imagen_procesada = imagen_original
-                else:
-                    # Filtrar rutas locales - no mostrar estas imágenes
+            # Solo procesar servicios con imágenes de iDrive
+            if imagen_original and imagen_original.startswith('http'):
+                print(f"✅ Imagen iDrive mantenida: {imagen_original}")
+                imagen_procesada = imagen_original
+            else:
+                # Filtrar servicios sin imagen o con rutas locales
+                if imagen_original:
                     print(f"🚫 Imagen local filtrada: {imagen_original}")
-                    imagen_procesada = None
+                else:
+                    print(f"🚫 Servicio sin imagen filtrado")
+                continue  # Saltar este servicio completamente
             
             service_dict = {
                 'id_servicio': row[0],
