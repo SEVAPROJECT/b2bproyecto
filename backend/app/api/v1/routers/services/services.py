@@ -568,25 +568,27 @@ async def update_service_status(
         )
 
 @router.get("/servir-imagen/{servicio_id}")
-async def servir_imagen(servicio_id: int):
+async def servir_imagen(servicio_id: int, db: AsyncSession = Depends(get_async_db)):
     """Endpoint para servir imágenes de servicios (público para marketplace)"""
     try:
         print(f"🔍 Sirviendo imagen para servicio {servicio_id}")
         
         # Obtener la imagen del servicio
-        query = """
-        SELECT id_servicio, nombre, imagen 
-        FROM servicio 
-        WHERE id_servicio = :servicio_id
-        """
+        from sqlalchemy import text
+        query = text("""
+            SELECT id_servicio, nombre, imagen 
+            FROM servicio 
+            WHERE id_servicio = :servicio_id
+        """)
         
-        result = await database.fetch_one(query, {"servicio_id": servicio_id})
+        result = await db.execute(query, {"servicio_id": servicio_id})
+        row = result.fetchone()
         
-        if not result:
+        if not row:
             print(f"❌ Servicio {servicio_id} no encontrado")
             raise HTTPException(status_code=404, detail="Servicio no encontrado")
         
-        imagen = result[2]
+        imagen = row[2]
         print(f"🔍 Imagen encontrada: {imagen}")
         
         if not imagen or not imagen.startswith('http'):
