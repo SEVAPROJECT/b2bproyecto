@@ -213,12 +213,6 @@ const ProviderMyServicesPage: React.FC = () => {
     // Aplicar filtros cuando cambien
     useEffect(() => {
         const filtered = filterServices(services, filters);
-        console.log('🔍 Filtrado de servicios:', {
-            totalServices: services.length,
-            filteredServices: filtered.length,
-            firstService: services[0],
-            firstFiltered: filtered[0]
-        });
         setFilteredServices(filtered);
     }, [services, filters]);
 
@@ -364,12 +358,10 @@ const ProviderMyServicesPage: React.FC = () => {
     const handleImageUpload = async () => {
         if (!selectedImage) return;
 
-        console.log('📸 Iniciando subida de imagen:', selectedImage.name);
         setIsUploadingImage(true);
         try {
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) {
-                console.error('❌ No hay token de acceso');
                 setError('No tienes permisos para subir imágenes.');
                 setTimeout(() => setError(null), 3000);
                 setIsUploadingImage(false);
@@ -378,13 +370,9 @@ const ProviderMyServicesPage: React.FC = () => {
 
             const formData = new FormData();
             formData.append('file', selectedImage);
-            console.log('📦 FormData creado con archivo:', selectedImage.name);
 
             const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
-            const uploadUrl = `${apiBaseUrl}/api/v1/provider/services/upload-image`;
-            console.log('🌐 URL de subida:', uploadUrl);
-
-            const response = await fetch(uploadUrl, {
+            const response = await fetch(`${apiBaseUrl}/api/v1/provider/services/upload-image`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${accessToken}`
@@ -392,18 +380,13 @@ const ProviderMyServicesPage: React.FC = () => {
                 body: formData
             });
 
-            console.log('📡 Respuesta del servidor:', response.status, response.statusText);
-
             if (!response.ok) {
                 const errorData = await response.json();
-                console.error('❌ Error en respuesta:', errorData);
                 throw new Error(errorData.detail || 'Error al subir la imagen');
             }
 
             const result = await response.json();
-            console.log('✅ Resultado de subida:', result);
             const imagePath = result.image_path;
-            console.log('🖼️ Ruta de imagen recibida:', imagePath);
 
             setEditForm(prev => ({ ...prev, imagen: imagePath }));
             setSelectedImage(null);
@@ -412,7 +395,7 @@ const ProviderMyServicesPage: React.FC = () => {
             setTimeout(() => setSuccess(null), 3000);
 
         } catch (error) {
-            console.error('❌ Error al subir imagen:', error);
+            console.error('Error al subir imagen:', error);
             setError(error instanceof Error ? error.message : 'Error al subir la imagen.');
             setTimeout(() => setError(null), 3000);
             setIsUploadingImage(false);
@@ -571,117 +554,14 @@ const ProviderMyServicesPage: React.FC = () => {
                 id_moneda: templateForm.id_moneda
             };
 
-            // Debug: Verificar datos del formulario
-            console.log('🔍 Datos del formulario:', {
-                nombre: templateData.nombre,
-                descripcion: templateData.descripcion,
-                precio: templateData.precio,
-                id_moneda: templateData.id_moneda
-            });
-
-            // Debug: Verificar plantilla seleccionada
-            console.log('🔍 Plantilla seleccionada:', {
-                id_categoria: selectedTemplate.id_categoria,
-                categoria: selectedTemplate.categoria,
-                nombre: selectedTemplate.nombre
-            });
-
-            // Crear servicio optimista para evitar refresco de pantalla
-            const tempId = Date.now(); // ID temporal
-            const selectedCurrency = currencies.find(c => c.id_moneda === templateData.id_moneda) || currencies[0];
+            await providerServicesAPI.createServiceFromTemplate(templateData, accessToken);
             
-            // Crear servicio optimista con estructura completa
-            const optimisticService = {
-                id_servicio: tempId,
-                nombre: templateData.nombre,
-                descripcion: templateData.descripcion,
-                precio: templateData.precio,
-                id_categoria: selectedTemplate.id_categoria, // ✅ Usar el ID de categoría de la plantilla
-                id_perfil: selectedTemplate.id_perfil,
-                id_moneda: templateData.id_moneda,
-                estado: true, // ✅ Activo por defecto
-                imagen: selectedTemplate.imagen || null,
-                tarifas: selectedTemplate.tarifas || [],
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                // Datos de categoría completos (para renderizado directo)
-                categoria: {
-                    id_categoria: selectedTemplate.id_categoria,
-                    nombre: selectedTemplate.categoria?.nombre || 'Categoría',
-                    descripcion: selectedTemplate.categoria?.descripcion || '',
-                    estado: true
-                },
-                // Datos de moneda completos
-                moneda: {
-                    id_moneda: selectedCurrency.id_moneda,
-                    nombre: selectedCurrency.nombre,
-                    codigo_iso_moneda: selectedCurrency.codigo_iso_moneda,
-                    simbolo: selectedCurrency.simbolo
-                },
-                isOptimistic: true // Marcar como optimista
-            };
-
-            // Debug: Verificar si la categoría existe en el array categories
-            const foundCategory = categories.find(c => c.id_categoria === selectedTemplate.id_categoria);
-            console.log('🔍 Categoría encontrada en array:', foundCategory);
-            console.log('🔍 Array de categorías:', categories.map(c => ({ id: c.id_categoria, nombre: c.nombre })));
-
-            // Debug: Verificar datos del servicio optimista
-            console.log('🔍 Servicio optimista creado:', {
-                nombre: optimisticService.nombre,
-                descripcion: optimisticService.descripcion,
-                precio: optimisticService.precio,
-                id_categoria: optimisticService.id_categoria,
-                estado: optimisticService.estado,
-                categoria: optimisticService.categoria
-            });
-
-            // Debug: Verificar qué categoría se encontrará en el renderizado
-            const categoryForRender = categories.find(c => c.id_categoria === optimisticService.id_categoria);
-            console.log('🔍 Categoría para renderizado:', categoryForRender);
-            console.log('🔍 Nombre de categoría que se mostrará:', categoryForRender?.nombre || 'No especificado');
-
-            // Actualización optimista: agregar el servicio inmediatamente
-            setServices(prev => {
-                const newServices = [optimisticService, ...prev];
-                console.log('🔍 Servicios después de agregar optimista:', newServices.length);
-                console.log('🔍 Primer servicio (optimista):', newServices[0]);
-                return newServices;
-            });
-
-            // Forzar re-renderizado del componente
-            setTimeout(() => {
-                setServices(prev => {
-                    console.log('🔄 Forzando re-renderizado, servicios actuales:', prev.length);
-                    console.log('🔄 Primer servicio después de re-render:', prev[0]);
-                    return [...prev];
-                });
-            }, 100);
-
-            // Limpiar formulario y cerrar modal inmediatamente
+            setSuccess('Servicio creado exitosamente desde plantilla');
             setShowTemplateModal(false);
             setSelectedTemplate(null);
             setTemplateForm({ nombre: '', descripcion: '', precio: '', id_moneda: 1 });
-            
-            // Mostrar mensaje de éxito inmediatamente
-            setSuccess('Servicio creado exitosamente desde plantilla');
+            loadData(); // Recargar servicios
             setTimeout(() => setSuccess(null), 3000);
-
-            // Llamar a la API en segundo plano
-            try {
-                const newService = await providerServicesAPI.createServiceFromTemplate(templateData, accessToken);
-                
-                // Reemplazar el servicio optimista con el real
-                setServices(prev => prev.map(service => 
-                    service.id_servicio === tempId 
-                        ? { ...newService, isOptimistic: false }
-                        : service
-                ));
-            } catch (apiError) {
-                // Si falla, remover el servicio optimista
-                setServices(prev => prev.filter(service => service.id_servicio !== tempId));
-                throw apiError;
-            }
 
         } catch (err: any) {
             setError(err.detail || 'Error al crear servicio desde plantilla');
@@ -942,41 +822,21 @@ const ProviderMyServicesPage: React.FC = () => {
                 <div className="bg-white shadow overflow-hidden sm:rounded-md">
                     {filteredServices.length > 0 ? (
                         <div className="divide-y divide-gray-200">
-                            {filteredServices.map((service) => {
-                                // Si el servicio tiene una propiedad 'servicio', usar esa
-                                const actualService = service.servicio || service;
-                                
-                                return (
-                                <div key={actualService.id_servicio} className={`p-4 transition-colors duration-200 ${service.isOptimistic ? 'bg-blue-50 border-l-4 border-blue-400' : 'hover:bg-gray-50'}`}>
+                            {filteredServices.map((service) => (
+                                <div key={service.id_servicio} className="p-4 hover:bg-gray-50 transition-colors duration-200">
                                     <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
                                         {/* Imagen del servicio */}
                                         <div className="flex-shrink-0 mx-auto sm:mx-0">
-                                            {actualService.imagen ? (
-                                                (() => {
-                                                    // Usar endpoint de autenticación para servir imágenes
-                                                    const accessToken = localStorage.getItem('access_token');
-                                                    const imageUrl = `${API_CONFIG.BASE_URL.replace('/api/v1', '')}/api/v1/provider/services/servir-imagen/${actualService.id_servicio}?token=${accessToken}`;
-                                                    
-                                                    console.log('🖼️ Renderizando imagen con autenticación:', {
-                                                        servicio_id: actualService.id_servicio,
-                                                        url_autenticada: imageUrl,
-                                                        imagen_original: actualService.imagen,
-                                                        hasToken: !!accessToken
-                                                    });
-                                                    
-                                                    return (
-                                                        <img
-                                                            src={imageUrl}
-                                                            alt={actualService.nombre}
-                                                            className="h-16 w-16 object-cover rounded-lg border border-gray-200"
-                                                            onError={(e) => {
-                                                                const target = e.target as HTMLImageElement;
-                                                                console.error('❌ Error cargando imagen autenticada:', actualService.id_servicio, 'URL:', imageUrl);
-                                                                target.style.display = 'none';
-                                                            }}
-                                                        />
-                                                    );
-                                                })()
+                                            {service.imagen ? (
+                                                <img
+                                                    src={`${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
+                                                    alt={service.nombre}
+                                                    className="h-16 w-16 object-cover rounded-lg border border-gray-200"
+                                                    onError={(e) => {
+                                                        const target = e.target as HTMLImageElement;
+                                                        target.style.display = 'none';
+                                                    }}
+                                                />
                                             ) : (
                                                 <div className="h-16 w-16 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
                                                     <BriefcaseIcon className="h-6 w-6 text-gray-400" />
@@ -986,16 +846,8 @@ const ProviderMyServicesPage: React.FC = () => {
 
                                         {/* Información principal */}
                                         <div className="flex-1 min-w-0 text-center sm:text-left">
-                                            <div className="flex items-center gap-2 justify-center sm:justify-start">
-                                                <h3 className="text-lg font-semibold text-gray-900 break-words">{actualService.nombre}</h3>
-                                                {service.isOptimistic && (
-                                                    <div className="flex items-center gap-1">
-                                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                                                        <span className="text-xs text-blue-600 font-medium">Creando...</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <p className="text-sm text-gray-600 mt-1 break-words">{actualService.descripcion}</p>
+                                            <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
+                                            <p className="text-sm text-gray-600 mt-1 break-words">{service.descripcion}</p>
                                         </div>
 
                                         {/* Información compacta - responsive */}
@@ -1004,7 +856,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">💰 Precio</p>
                                                 <p className="font-semibold text-green-600">
-                                                    {formatNumber(actualService.precio || 0)} ₲
+                                                    {formatNumber(service.precio || 0)} ₲
                                                 </p>
                                             </div>
 
@@ -1012,7 +864,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">📂 Categoría</p>
                                                 <p className="font-semibold text-blue-600 break-words">
-                                                    {categories.find(c => c.id_categoria === actualService.id_categoria)?.nombre || 'No especificado'}
+                                                    {categories.find(c => c.id_categoria === service.id_categoria)?.nombre || 'No especificado'}
                                                 </p>
                                             </div>
 
@@ -1020,11 +872,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">📊 Estado</p>
                                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                                    actualService.estado 
+                                                    service.estado 
                                                         ? 'bg-green-100 text-green-800' 
                                                         : 'bg-red-100 text-red-800'
                                                 }`}>
-                                                    {actualService.estado ? 'Activo' : 'Inactivo'}
+                                                    {service.estado ? 'Activo' : 'Inactivo'}
                                                 </span>
                                             </div>
 
@@ -1032,7 +884,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                             <div className="text-center">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">📋 Tarifas</p>
                                                 <p className="font-semibold text-orange-600">
-                                                    {actualService.tarifas?.length || 0}
+                                                    {service.tarifas?.length || 0}
                                                 </p>
                                             </div>
                                         </div>
@@ -1040,14 +892,14 @@ const ProviderMyServicesPage: React.FC = () => {
                                         {/* Botones de acción - responsive */}
                                         <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 mt-4 sm:mt-0">
                                             <button
-                                                onClick={() => handleToggleServiceStatus(actualService.id_servicio, actualService.estado)}
+                                                onClick={() => handleToggleServiceStatus(service.id_servicio, service.estado)}
                                                 className={`w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border shadow-sm text-sm font-medium rounded-md transition-colors ${
-                                                    actualService.estado
+                                                    service.estado
                                                         ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500'
                                                         : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
                                                 }`}
                                             >
-                                                {actualService.estado ? (
+                                                {service.estado ? (
                                                     <>
                                                         <XMarkIcon className="h-4 w-4 mr-1" />
                                                         <span className="hidden sm:inline">Desactivar</span>
@@ -1062,7 +914,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                                 )}
                                             </button>
                                             <button
-                                                onClick={() => handleEditService(actualService)}
+                                                onClick={() => handleEditService(service)}
                                                 className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
                                             >
                                                 <PencilIcon className="h-4 w-4 mr-1" />
@@ -1073,21 +925,20 @@ const ProviderMyServicesPage: React.FC = () => {
                                     </div>
 
                                     {/* Resumen de tarifas (expandible) */}
-                                    {actualService.tarifas && actualService.tarifas.length > 0 && (
+                                    {service.tarifas && service.tarifas.length > 0 && (
                                         <div className="mt-3 pt-3 border-t border-gray-100">
                                             <div className="space-y-2">
                                                 <p className="text-xs font-medium text-gray-500">📋 Detalle de tarifas:</p>
                                                 <div className="bg-gray-50 rounded-md p-2">
                                                     <p className="text-xs text-gray-700 leading-relaxed">
-                                                        {getTariffsSummary(actualService.tarifas, rateTypes)}
+                                                        {getTariffsSummary(service.tarifas, rateTypes)}
                                                     </p>
                                                 </div>
                                             </div>
                                         </div>
                                     )}
                                 </div>
-                                );
-                            })}
+                            ))}
                         </div>
                     ) : services.length === 0 ? (
                         <div className="text-center py-12">

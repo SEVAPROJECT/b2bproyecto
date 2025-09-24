@@ -21,13 +21,6 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
 
     const getImageUrl = (imagePath: string | null) => {
         if (!imagePath) return null;
-        
-        // Si ya es una URL completa (iDrive), usarla directamente
-        if (imagePath.startsWith('http')) {
-            return imagePath;
-        }
-        
-        // Si es una ruta local, construir URL completa
         const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
         return `${baseUrl}${imagePath}`;
     };

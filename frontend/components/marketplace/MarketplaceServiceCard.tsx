@@ -13,13 +13,6 @@ interface MarketplaceServiceCardProps {
 }
 
 const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ service, category, onViewProviders, isAuthenticated: propIsAuthenticated }) => {
-    // Debug: verificar datos del servicio
-    console.log('🔍 MarketplaceServiceCard - Datos del servicio:', {
-        id: service.id_servicio,
-        nombre: service.nombre,
-        imagen: (service as any).imagen,
-        tieneImagen: !!(service as any).imagen
-    });
     const { user, isAuthenticated: contextIsAuthenticated } = useAuth();
     const isAuthenticated = propIsAuthenticated !== undefined ? propIsAuthenticated : contextIsAuthenticated;
     
@@ -41,27 +34,10 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
     //     precio: service.precio,
     //     moneda: (service as any).moneda
     // });
-    const getImageUrl = (imagePath: string | null, servicioId: number) => {
-        if (!imagePath) {
-            console.log('🔍 MarketplaceServiceCard - No hay imagen para el servicio');
-            return null;
-        }
-        
-        console.log('🔍 MarketplaceServiceCard - Imagen original:', imagePath);
-        
-        // Si es una URL de iDrive, usar el endpoint de descarga
-        if (imagePath.startsWith('http')) {
-            const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
-            const downloadUrl = `${baseUrl}/api/v1/services/servir-imagen/${servicioId}`;
-            console.log('✅ MarketplaceServiceCard - Usando endpoint de descarga:', downloadUrl);
-            return downloadUrl;
-        }
-        
-        // Si es una ruta local, construir URL completa
+    const getImageUrl = (imagePath: string | null) => {
+        if (!imagePath) return null;
         const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
-        const finalUrl = `${baseUrl}${imagePath}`;
-        console.log('🔧 MarketplaceServiceCard - Construyendo URL local:', finalUrl);
-        return finalUrl;
+        return `${baseUrl}${imagePath}`;
     };
 
     const formatPriceProfessional = (price: number, service: BackendService) => {
@@ -140,30 +116,19 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
             <div className="h-40 bg-gradient-to-br from-primary-100 to-primary-200 relative overflow-hidden flex-shrink-0">
                 {(service as any).imagen ? (
                     <img
-                        src={getImageUrl((service as any).imagen, service.id_servicio)}
+                        src={getImageUrl((service as any).imagen)}
                         alt={`Imagen de ${service.nombre}`}
                         className="w-full h-full object-cover"
-                        onLoad={() => {
-                            console.log('✅ Imagen cargada exitosamente:', (service as any).imagen);
-                        }}
                         onError={(e) => {
-                            console.log('❌ Error cargando imagen:', (e.target as HTMLImageElement).src);
-                            console.log('❌ Imagen original del servicio:', (service as any).imagen);
-                            console.log('ℹ️ Intentando cargar imagen a través del endpoint de descarga');
-                            
                             const target = e.target as HTMLImageElement;
                             target.style.display = 'none';
                             const parent = target.parentElement;
                             if (parent) {
                                 parent.innerHTML = `
-                                    <div class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-primary-100 to-primary-200 p-4">
-                                        <svg class="w-12 h-12 text-primary-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-100 to-primary-200">
+                                        <svg class="w-16 h-16 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                                         </svg>
-                                        <div class="text-xs text-primary-600 text-center">
-                                            <div class="font-medium">Cargando imagen...</div>
-                                            <div class="text-primary-500">Desde iDrive</div>
-                                        </div>
                                     </div>
                                 `;
                             }

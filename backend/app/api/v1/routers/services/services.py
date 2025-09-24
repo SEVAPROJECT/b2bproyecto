@@ -8,7 +8,6 @@ from typing import List
 from pydantic import BaseModel
 
 from app.api.v1.dependencies.database_supabase import get_async_db
-from app.api.v1.dependencies.auth_user import get_current_user
 from app.models.servicio.service import ServicioModel
 from app.models.publicar_servicio.category import CategoriaModel
 from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
@@ -208,31 +207,10 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
             first_row = services_data[0]
             print(f"🔍 Backend - First row: {first_row}")
             print(f"🔍 Backend - Barrio value: '{first_row[14]}', type: {type(first_row[14])}")
-            print(f"🔍 Backend - Imagen del primer servicio: '{first_row[7]}'")
-            
-            # Verificar todas las imágenes
-            for i, row in enumerate(services_data[:5]):  # Solo los primeros 5
-                print(f"🔍 Backend - Servicio {i+1} imagen: '{row[7]}'")
         
         # Convertir los resultados a diccionarios para que funcionen correctamente
         services_list = []
         for row in services_data:
-            # Procesar la imagen para que funcione correctamente
-            imagen_original = row[7]
-            imagen_procesada = imagen_original
-            
-            # Solo procesar servicios con imágenes de iDrive
-            if imagen_original and imagen_original.startswith('http'):
-                print(f"✅ Imagen iDrive mantenida: {imagen_original}")
-                imagen_procesada = imagen_original
-            else:
-                # Filtrar servicios sin imagen o con rutas locales
-                if imagen_original:
-                    print(f"🚫 Imagen local filtrada: {imagen_original}")
-                else:
-                    print(f"🚫 Servicio sin imagen filtrado")
-                continue  # Saltar este servicio completamente
-            
             service_dict = {
                 'id_servicio': row[0],
                 'id_categoria': row[1],
@@ -241,7 +219,7 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
                 'nombre': row[4],
                 'descripcion': row[5],
                 'precio': row[6],
-                'imagen': imagen_procesada,  # Usar imagen procesada
+                'imagen': row[7],
                 'estado': row[8],
                 'created_at': row[9],
                 'razon_social': row[10],
@@ -329,53 +307,6 @@ async def get_services_with_providers(db: AsyncSession = Depends(get_async_db)):
         
     except Exception as e:
         print(f"❌ Error en get_services_with_providers: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno del servidor: {str(e)}"
-        )
-
-@router.get(
-    "/debug-images",
-    status_code=status.HTTP_200_OK,
-    description="Endpoint de debug para verificar las imágenes en la base de datos."
-)
-async def debug_images(db: AsyncSession = Depends(get_async_db)):
-    """
-    Endpoint de debug para verificar las imágenes en la base de datos.
-    """
-    try:
-        from sqlalchemy import text
-        query = text("""
-            SELECT 
-                s.id_servicio,
-                s.nombre,
-                s.imagen
-            FROM servicio s
-            WHERE s.imagen IS NOT NULL
-            ORDER BY s.created_at DESC
-            LIMIT 10
-        """)
-        
-        result = await db.execute(query)
-        images_data = result.fetchall()
-        
-        debug_info = []
-        for row in images_data:
-            debug_info.append({
-                'id_servicio': row[0],
-                'nombre': row[1],
-                'imagen': row[2],
-                'es_url_completa': row[2].startswith('http') if row[2] else False,
-                'es_ruta_local': row[2].startswith('/uploads/') if row[2] else False
-            })
-        
-        return {
-            'total_servicios_con_imagen': len(images_data),
-            'imagenes': debug_info
-        }
-        
-    except Exception as e:
-        print(f"❌ Error en debug_images: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error interno del servidor: {str(e)}"
@@ -566,96 +497,3 @@ async def update_service_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar el estado del servicio: {str(e)}"
         )
-
-@router.get("/servir-imagen/{servicio_id}")
-async def servir_imagen(servicio_id: int, db: AsyncSession = Depends(get_async_db)):
-    """Endpoint para servir imágenes de servicios descargándolas de iDrive"""
-    try:
-        print(f"🔍 Sirviendo imagen para servicio {servicio_id}")
-        
-        # Obtener la imagen del servicio
-        from sqlalchemy import text
-        query = text("""
-            SELECT id_servicio, nombre, imagen 
-            FROM servicio 
-            WHERE id_servicio = :servicio_id
-        """)
-        
-        result = await db.execute(query, {"servicio_id": servicio_id})
-        row = result.fetchone()
-        
-        if not row:
-            print(f"❌ Servicio {servicio_id} no encontrado")
-            raise HTTPException(status_code=404, detail="Servicio no encontrado")
-        
-        imagen = row[2]
-        print(f"🔍 Imagen encontrada: {imagen}")
-        
-        if not imagen or not imagen.startswith('http'):
-            print(f"❌ Servicio {servicio_id} sin imagen de iDrive")
-            raise HTTPException(status_code=404, detail="Servicio sin imagen de iDrive")
-        
-        print(f"✅ Descargando imagen de iDrive: {imagen}")
-        
-        # Descargar la imagen de iDrive con headers de autenticación
-        import httpx
-        import asyncio
-        
-        try:
-            # Headers para simular un navegador y evitar bloqueos
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-            }
-            
-            async with httpx.AsyncClient(
-                timeout=30.0,
-                follow_redirects=True,
-                verify=False  # Deshabilitar verificación SSL para evitar problemas de certificado
-            ) as client:
-                response = await client.get(imagen, headers=headers)
-                
-                if response.status_code == 200:
-                    print(f"✅ Imagen descargada exitosamente de iDrive")
-                    from fastapi.responses import Response
-                    
-                    # Determinar el tipo de contenido
-                    content_type = response.headers.get("content-type", "image/jpeg")
-                    if "image" not in content_type:
-                        content_type = "image/jpeg"
-                    
-                    return Response(
-                        content=response.content,
-                        media_type=content_type,
-                        headers={
-                            "Cache-Control": "public, max-age=3600",
-                            "Content-Disposition": f"inline; filename=service_{servicio_id}.jpg"
-                        }
-                    )
-                else:
-                    print(f"❌ Error descargando imagen de iDrive: {response.status_code}")
-                    # Si falla, devolver un placeholder
-                    return Response(
-                        content=b"",  # Imagen vacía
-                        media_type="image/jpeg",
-                        status_code=404
-                    )
-                    
-        except Exception as e:
-            print(f"❌ Error descargando imagen: {e}")
-            # Si falla, devolver un placeholder
-            return Response(
-                content=b"",  # Imagen vacía
-                media_type="image/jpeg",
-                status_code=404
-            )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Error sirviendo imagen: {e}")
-        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
