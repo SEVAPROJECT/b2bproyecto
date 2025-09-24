@@ -10,6 +10,13 @@ export const getApiBaseUrl = (): string => {
  */
 export const getImageUrl = (imagePath: string | null): string | null => {
     if (!imagePath) return null;
+    
+    // Si ya es una URL completa (iDrive), usarla directamente
+    if (imagePath.startsWith('http')) {
+        return imagePath;
+    }
+    
+    // Si es una ruta local, construir URL completa
     const baseUrl = getApiBaseUrl();
     return `${baseUrl}${imagePath}`;
 };

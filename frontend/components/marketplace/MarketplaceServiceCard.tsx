@@ -34,8 +34,16 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
     //     precio: service.precio,
     //     moneda: (service as any).moneda
     // });
-    const getImageUrl = (imagePath: string | null) => {
+    const getImageUrl = (imagePath: string | null, servicioId?: number) => {
         if (!imagePath) return null;
+        
+        // Si ya es una URL completa (iDrive), usar endpoint de autenticación
+        if (imagePath.startsWith('http') && servicioId) {
+            const accessToken = localStorage.getItem('access_token');
+            return `${API_CONFIG.BASE_URL.replace('/api/v1', '')}/api/v1/provider/services/servir-imagen/${servicioId}?token=${accessToken}`;
+        }
+        
+        // Si es una ruta local, construir URL completa
         const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
         return `${baseUrl}${imagePath}`;
     };
@@ -116,7 +124,7 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
             <div className="h-40 bg-gradient-to-br from-primary-100 to-primary-200 relative overflow-hidden flex-shrink-0">
                 {(service as any).imagen ? (
                     <img
-                        src={getImageUrl((service as any).imagen)}
+                        src={getImageUrl((service as any).imagen, (service as any).id_servicio)}
                         alt={`Imagen de ${service.nombre}`}
                         className="w-full h-full object-cover"
                         onError={(e) => {

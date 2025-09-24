@@ -19,8 +19,16 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
 
     if (!isOpen || !service) return null;
 
-    const getImageUrl = (imagePath: string | null) => {
+    const getImageUrl = (imagePath: string | null, servicioId?: number) => {
         if (!imagePath) return null;
+        
+        // Si ya es una URL completa (iDrive), usar endpoint de autenticación
+        if (imagePath.startsWith('http') && servicioId) {
+            const accessToken = localStorage.getItem('access_token');
+            return `${API_CONFIG.BASE_URL.replace('/api/v1', '')}/api/v1/provider/services/servir-imagen/${servicioId}?token=${accessToken}`;
+        }
+        
+        // Si es una ruta local, construir URL completa
         const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
         return `${baseUrl}${imagePath}`;
     };
@@ -176,7 +184,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                             {(service as any).imagen && (
                                 <div className="relative">
                                     <img 
-                                        src={getImageUrl((service as any).imagen)} 
+                                        src={getImageUrl((service as any).imagen, (service as any).id_servicio)} 
                                         alt={service.nombre}
                                         className="w-full h-64 object-cover rounded-xl shadow-lg"
                                         onError={(e) => {
