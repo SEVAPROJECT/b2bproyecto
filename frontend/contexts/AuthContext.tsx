@@ -172,11 +172,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setProviderStatus(userData.providerStatus);
             setProviderApplication(userData.providerApplication);
 
-            // Refrescar la pantalla para asegurar datos actualizados
-            console.log('🔄 Login exitoso, refrescando pantalla para datos actualizados...');
-            setTimeout(() => {
-                window.location.reload();
-            }, 100); // Pequeño delay para asegurar que el estado se actualice
+            // Login exitoso sin refresco de pantalla
+            console.log('✅ Login exitoso, datos actualizados sin refresco de pantalla');
 
         } catch (err: any) {
             // Manejar específicamente el error de cuenta inactiva

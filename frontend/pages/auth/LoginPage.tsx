@@ -19,7 +19,8 @@ const LoginPage: React.FC = () => {
         e.preventDefault();
         try {
             await login(formData.email, formData.password);
-            navigate('/');
+            // Redirigir directamente al dashboard después del login exitoso
+            navigate('/dashboard');
         } catch (err) {
             // El error ya se maneja en el contexto
             console.error('Error de login:', err);
