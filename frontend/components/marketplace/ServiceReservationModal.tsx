@@ -21,6 +21,13 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
 
     const getImageUrl = (imagePath: string | null) => {
         if (!imagePath) return null;
+        
+        // Si es una URL completa (Supabase Storage o iDrive), usarla directamente
+        if (imagePath.startsWith('http')) {
+            return imagePath;
+        }
+        
+        // Si es una ruta local, construir URL completa
         const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
         return `${baseUrl}${imagePath}`;
     };
@@ -180,8 +187,22 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                         alt={service.nombre}
                                         className="w-full h-64 object-cover rounded-xl shadow-lg"
                                         onError={(e) => {
+                                            console.log('❌ Error cargando imagen en modal:', (e.target as HTMLImageElement).src);
                                             const target = e.target as HTMLImageElement;
                                             target.style.display = 'none';
+                                            const parent = target.parentElement;
+                                            if (parent) {
+                                                parent.innerHTML = `
+                                                    <div class="w-full h-64 flex items-center justify-center bg-gradient-to-br from-primary-100 to-primary-200 rounded-xl">
+                                                        <div class="text-center">
+                                                            <svg class="w-16 h-16 text-primary-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                                            </svg>
+                                                            <div class="text-primary-600 font-medium">Imagen no disponible</div>
+                                                        </div>
+                                                    </div>
+                                                `;
+                                            }
                                         }}
                                     />
                                 </div>
