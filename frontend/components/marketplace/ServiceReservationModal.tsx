@@ -141,7 +141,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
         }
 
         try {
-            const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+               const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-ee3b.up.railway.app';
             
             // Crear la reserva
             const reservaData = {

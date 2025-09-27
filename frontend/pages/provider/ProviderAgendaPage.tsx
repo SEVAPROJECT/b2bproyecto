@@ -39,7 +39,7 @@ const ProviderAgendaPage: React.FC = () => {
         observaciones: ''
     });
 
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-ee3b.up.railway.app';
 
     // Cargar servicios del proveedor
     useEffect(() => {

@@ -2,7 +2,7 @@
  * Obtiene la URL base de la API desde las variables de entorno
  */
 export const getApiBaseUrl = (): string => {
-    return (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+    return (import.meta as any).env?.VITE_API_URL || 'https://backend-production-ee3b.up.railway.app';
 };
 
 /**

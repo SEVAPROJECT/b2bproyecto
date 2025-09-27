@@ -35,7 +35,7 @@ const ReservasPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'mis-reservas' | 'reservas-proveedor' | 'agenda'>('mis-reservas');
 
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-ee3b.up.railway.app';
 
   useEffect(() => {
     if (user) {

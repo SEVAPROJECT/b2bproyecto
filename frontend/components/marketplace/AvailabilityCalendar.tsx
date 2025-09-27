@@ -29,7 +29,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
     const [availableDates, setAvailableDates] = useState<Set<string>>(new Set());
     const [availableTimes, setAvailableTimes] = useState<Map<string, string[]>>(new Map());
 
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-ee3b.up.railway.app';
 
     // Cargar disponibilidades del servicio
     useEffect(() => {
