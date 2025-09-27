@@ -12,7 +12,9 @@ Thumbs.db
 
 # Ignorar archivos de frontend (se despliega por separado)
 frontend/
+# Ignorar configuración local de Supabase (raíz del proyecto)
 supabase/
+# PERO permitir app/supabase/ que es parte del backend
 
 # Ignorar archivos temporales del backend
 backend/venv/
