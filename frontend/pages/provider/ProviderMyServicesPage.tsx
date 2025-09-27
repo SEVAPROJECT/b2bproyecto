@@ -9,7 +9,7 @@ import {
     XMarkIcon,
     CameraIcon,
     UploadCloudIcon,
-    CalendarIcon
+    CalendarDaysIcon
 } from '../../components/icons';
 import { API_CONFIG, buildApiUrl } from '../../config/api';
 import { AuthContext } from '../../contexts/AuthContext';
@@ -1018,7 +1018,7 @@ const ProviderMyServicesPage: React.FC = () => {
             {filteredServices.length > 0 && (
                 <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-6">
                     <div className="flex items-center gap-3 mb-4">
-                        <CalendarIcon className="h-6 w-6 text-blue-600" />
+                        <CalendarDaysIcon className="h-6 w-6 text-blue-600" />
                         <h2 className="text-xl font-semibold text-blue-900">📅 Configurar Disponibilidades</h2>
                     </div>
                     <p className="text-blue-800 mb-4">
@@ -1029,7 +1029,7 @@ const ProviderMyServicesPage: React.FC = () => {
                         to="/dashboard/agenda" 
                         className="btn-blue inline-flex items-center gap-2"
                     >
-                        <CalendarIcon className="h-5 w-5" />
+                        <CalendarDaysIcon className="h-5 w-5" />
                         Ir a Mi Agenda
                     </Link>
                 </div>
