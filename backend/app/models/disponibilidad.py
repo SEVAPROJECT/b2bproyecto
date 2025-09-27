@@ -10,6 +10,7 @@ from app.supabase.db.db_supabase import Base
 
 if TYPE_CHECKING:
     from app.models.servicio.service import ServicioModel
+    from app.models.reserva_servicio.reserva import ReservaModel
 
 class DisponibilidadModel(Base):
     __tablename__ = "disponibilidad"
@@ -24,5 +25,6 @@ class DisponibilidadModel(Base):
     created_at: Mapped[Optional[datetime]] = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[Optional[datetime]] = Column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relación con servicio
+    # Relaciones
     servicio = relationship("ServicioModel", back_populates="disponibilidades")
+    reservas = relationship("ReservaModel", back_populates="disponibilidad")

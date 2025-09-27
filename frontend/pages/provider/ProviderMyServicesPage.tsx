@@ -12,6 +12,7 @@ import {
 import { API_CONFIG, buildApiUrl } from '../../config/api';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, providerServicesAPI, servicesAPI, categoryRequestsAPI, serviceRequestsAPI } from '../../services/api';
+import AvailabilityManager from '../../components/availability/AvailabilityManager';
 
 // Funciones auxiliares
 const formatNumber = (num: number): string => {
@@ -1011,6 +1012,21 @@ const ProviderMyServicesPage: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* Availability Managers para cada servicio */}
+            {filteredServices.length > 0 && (
+                <div className="mt-8">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-6">📅 Configurar Disponibilidades</h2>
+                    {filteredServices.map((service) => (
+                        <div key={`availability-${service.id_servicio}`} className="mb-6">
+                            <AvailabilityManager
+                                servicioId={service.id_servicio}
+                                servicioNombre={service.nombre}
+                            />
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Edit Service Modal */}
             {showEditModal && editingService && (

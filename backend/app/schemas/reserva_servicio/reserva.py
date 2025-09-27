@@ -12,6 +12,7 @@ class ReservaIn(BaseModel):
     descripcion: str = Field(..., max_length=500)
     observacion: Optional[str] = Field(None, max_length=1000)
     fecha: date
+    id_disponibilidad: Optional[int] = Field(None, description="ID de la disponibilidad específica reservada")
 
 class ReservaOut(BaseModel):
     """
@@ -24,6 +25,7 @@ class ReservaOut(BaseModel):
     observacion: Optional[str]
     fecha: date
     estado: str
+    id_disponibilidad: Optional[int] = None
 
     #class Config:
         #orm_mode = True

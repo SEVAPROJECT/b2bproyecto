@@ -36,7 +36,10 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
         const loadDisponibilidades = async () => {
             try {
                 setLoading(true);
-                const response = await fetch(`${API_URL}/api/v1/disponibilidades/servicio/${serviceId}`, {
+                setError(null);
+                
+                // Usar el endpoint correcto para disponibilidades disponibles
+                const response = await fetch(`${API_URL}/api/v1/disponibilidades/servicio/${serviceId}/disponibles`, {
                     headers: {
                         'Authorization': `Bearer ${user?.accessToken}`,
                         'Content-Type': 'application/json',
@@ -44,7 +47,14 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                 });
 
                 if (!response.ok) {
-                    throw new Error('Error al cargar disponibilidades');
+                    if (response.status === 404) {
+                        // No hay disponibilidades configuradas para este servicio
+                        setDisponibilidades([]);
+                        setAvailableDates(new Set());
+                        setAvailableTimes(new Map());
+                        return;
+                    }
+                    throw new Error(`Error ${response.status}: ${response.statusText}`);
                 }
 
                 const data = await response.json();
@@ -75,7 +85,12 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                 setAvailableDates(dates);
                 setAvailableTimes(timesMap);
             } catch (err) {
+                console.error('Error al cargar disponibilidades:', err);
                 setError(err instanceof Error ? err.message : 'Error desconocido');
+                // En caso de error, mostrar mensaje informativo
+                setDisponibilidades([]);
+                setAvailableDates(new Set());
+                setAvailableTimes(new Map());
             } finally {
                 setLoading(false);
             }
@@ -163,8 +178,13 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                         </option>
                     ))}
                 </select>
-                {dateOptions.length === 0 && (
-                    <p className="text-sm text-amber-600">⚠️ No hay fechas disponibles para este servicio</p>
+                {dateOptions.length === 0 && !loading && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                        <p className="text-sm text-amber-800">
+                            ⚠️ Este servicio no tiene disponibilidades configuradas. 
+                            Contacta al proveedor para coordinar una cita.
+                        </p>
+                    </div>
                 )}
             </div>
 
