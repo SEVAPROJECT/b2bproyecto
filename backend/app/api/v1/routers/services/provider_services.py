@@ -65,16 +65,29 @@ async def get_provider_services(
     """
     Obtiene todos los servicios del proveedor actual con información completa.
     """
-    # Obtener el perfil del usuario
-    perfil_result = await db.execute(
-        select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
-    )
-    perfil = perfil_result.scalars().first()
+    try:
+        logger.info(f"🔍 Obteniendo servicios para usuario: {current_user.email}")
+        
+        # Obtener el perfil del usuario
+        perfil_result = await db.execute(
+            select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
+        )
+        perfil = perfil_result.scalars().first()
 
-    if not perfil:
+        if not perfil:
+            logger.warning(f"❌ Perfil no encontrado para usuario: {current_user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Perfil de empresa no encontrado."
+            )
+        
+        logger.info(f"✅ Perfil encontrado: {perfil.id_perfil}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error en get_provider_services: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Perfil de empresa no encontrado."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
         )
 
     # Obtener servicios del proveedor con información relacionada (simplificada para evitar errores de columna)
