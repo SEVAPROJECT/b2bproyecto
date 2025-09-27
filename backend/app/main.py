@@ -96,4 +96,15 @@ async def options_handler(path: str):
     """
     Maneja peticiones OPTIONS (preflight) para CORS.
     """
-    return {"message": "OK"}
+    from fastapi.responses import Response
+    return Response(
+        content="OK",
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "https://frontend-production-ee3b.up.railway.app",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
