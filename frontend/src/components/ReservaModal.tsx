@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
 
 interface Servicio {
   id_servicio: number;
@@ -89,8 +88,7 @@ const ReservaModal: React.FC<ReservaModalProps> = ({
       setLoading(true);
       setError(null);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      if (!user) {
         throw new Error('No hay sesión activa');
       }
 
@@ -109,7 +107,7 @@ const ReservaModal: React.FC<ReservaModalProps> = ({
       const response = await fetch(`${API_URL}/api/v1/reservas`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${user.accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(reservaData),

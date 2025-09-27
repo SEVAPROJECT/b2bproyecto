@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
 
 interface Reserva {
   id_reserva: number;
@@ -65,12 +64,11 @@ const ReservasPage: React.FC = () => {
   };
 
   const loadMisReservas = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!user) return;
 
     const response = await fetch(`${API_URL}/api/v1/reservas`, {
       headers: {
-        'Authorization': `Bearer ${session.access_token}`,
+        'Authorization': `Bearer ${user.accessToken}`,
         'Content-Type': 'application/json',
       },
     });
@@ -84,12 +82,11 @@ const ReservasPage: React.FC = () => {
   };
 
   const loadReservasProveedor = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!user) return;
 
     const response = await fetch(`${API_URL}/api/v1/reservas/proveedor`, {
       headers: {
-        'Authorization': `Bearer ${session.access_token}`,
+        'Authorization': `Bearer ${user.accessToken}`,
         'Content-Type': 'application/json',
       },
     });
@@ -103,12 +100,11 @@ const ReservasPage: React.FC = () => {
   };
 
   const loadDisponibilidades = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!user) return;
 
     const response = await fetch(`${API_URL}/api/v1/disponibilidades`, {
       headers: {
-        'Authorization': `Bearer ${session.access_token}`,
+        'Authorization': `Bearer ${user.accessToken}`,
         'Content-Type': 'application/json',
       },
     });
@@ -123,13 +119,12 @@ const ReservasPage: React.FC = () => {
 
   const actualizarEstadoReserva = async (reservaId: number, nuevoEstado: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!user) return;
 
       const response = await fetch(`${API_URL}/api/v1/reservas/${reservaId}/estado?nuevo_estado=${nuevoEstado}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${user.accessToken}`,
           'Content-Type': 'application/json',
         },
       });
