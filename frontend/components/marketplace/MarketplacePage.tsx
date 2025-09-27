@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { MagnifyingGlassIcon, SparklesIcon, ExclamationCircleIcon } from '../icons';
 import MarketplaceServiceCard from './MarketplaceServiceCard';
 import ServiceReservationModal from './ServiceReservationModal';
-import ReservaModal from '../../src/components/ReservaModal';
 import { BackendService, BackendCategory } from '../../types';
 import { categoriesAPI, servicesAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -51,7 +50,7 @@ const MarketplacePage: React.FC = () => {
     const itemsPerPage = 12;
     
     // Estados para modal de reserva
-    const [showReservaModal, setShowReservaModal] = useState(false);
+    const [showServiceReservationModal, setShowServiceReservationModal] = useState(false);
     const [showServiceDetail, setShowServiceDetail] = useState(false);
     const [selectedService, setSelectedService] = useState<BackendService | null>(null);
 
@@ -206,12 +205,12 @@ const MarketplacePage: React.FC = () => {
     // Función para manejar reserva
     const handleReservar = useCallback((service: BackendService) => {
         setSelectedService(service);
-        setShowReservaModal(true);
+        setShowServiceReservationModal(true);
     }, []);
 
     // Función para cerrar modal de reserva
-    const handleCloseReservaModal = useCallback(() => {
-        setShowReservaModal(false);
+    const handleCloseServiceReservationModal = useCallback(() => {
+        setShowServiceReservationModal(false);
         setSelectedService(null);
     }, []);
 
@@ -1080,12 +1079,12 @@ const MarketplacePage: React.FC = () => {
             )}
 
             {/* Modal de reserva */}
-            {showReservaModal && (
-                <ReservaModal
-                    isOpen={showReservaModal}
-                    onClose={handleCloseReservaModal}
-                    servicio={selectedService}
-                    onReservaCreada={handleReservaCreada}
+            {showServiceReservationModal && (
+                <ServiceReservationModal
+                    isOpen={showServiceReservationModal}
+                    onClose={handleCloseServiceReservationModal}
+                    service={selectedService}
+                    category={selectedService ? categories.find(c => c.id_categoria === selectedService.id_categoria) : undefined}
                 />
             )}
         </div>
