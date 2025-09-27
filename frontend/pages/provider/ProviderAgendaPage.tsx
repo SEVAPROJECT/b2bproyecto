@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useApiWithAuth } from '../../hooks/useApiWithAuth';
 import { CalendarDaysIcon, ClockIcon, PlusIcon, TrashIcon, PencilIcon } from '../../components/icons';
 
 interface Disponibilidad {
@@ -23,6 +24,7 @@ interface Servicio {
 
 const ProviderAgendaPage: React.FC = () => {
     const { user } = useAuth();
+    const { apiRequest } = useApiWithAuth();
     const [disponibilidades, setDisponibilidades] = useState<Disponibilidad[]>([]);
     const [servicios, setServicios] = useState<Servicio[]>([]);
     const [loading, setLoading] = useState(false);
@@ -60,11 +62,9 @@ const ProviderAgendaPage: React.FC = () => {
             
             console.log(`🔍 Cargando servicios desde: ${API_URL}/api/v1/provider/services/`);
             
-            const response = await fetch(`${API_URL}/api/v1/provider/services/`, {
-                headers: {
-                    'Authorization': `Bearer ${user?.accessToken}`,
-                    'Content-Type': 'application/json',
-                },
+            const response = await apiRequest({
+                url: `${API_URL}/api/v1/provider/services/`,
+                method: 'GET',
             });
 
             console.log(`📡 Respuesta del servidor: ${response.status} ${response.statusText}`);
@@ -81,7 +81,6 @@ const ProviderAgendaPage: React.FC = () => {
         } catch (err) {
             console.error('❌ Error al cargar servicios:', err);
             setError(err instanceof Error ? err.message : 'Error desconocido');
-            // En caso de error, mostrar mensaje más específico
             setServicios([]);
         } finally {
             setLoading(false);

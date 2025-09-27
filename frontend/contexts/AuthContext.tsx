@@ -289,6 +289,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     };
 
+    // Función para renovar token automáticamente
+    const refreshToken = async () => {
+        try {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (!refreshToken) {
+                throw new Error('No hay refresh token');
+            }
+
+            console.log('🔄 Renovando token...');
+            const response = await authAPI.refreshToken(refreshToken);
+            
+            // Actualizar tokens en localStorage
+            localStorage.setItem('access_token', response.access_token);
+            if (response.refresh_token) {
+                localStorage.setItem('refresh_token', response.refresh_token);
+            }
+
+            // Actualizar usuario con nuevo token
+            if (user) {
+                setUser({ ...user, accessToken: response.access_token });
+            }
+
+            console.log('✅ Token renovado exitosamente');
+            return response.access_token;
+        } catch (error) {
+            console.error('❌ Error al renovar token:', error);
+            logout(); // Desloguear si no se puede renovar
+            throw error;
+        }
+    };
+
     const reloadUserProfile = async () => {
         console.log('🔄 Recargando perfil del usuario...');
         try {
@@ -579,6 +610,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         login,
         register,
         logout,
+        refreshToken,
         reloadUserProfile,
         submitProviderApplication,
         resubmitProviderApplication,
