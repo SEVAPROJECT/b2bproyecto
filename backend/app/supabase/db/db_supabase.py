@@ -54,17 +54,20 @@ try:
     logger.info("🔄 Creando engine asíncrono...")
     logger.info("🔧 Configurando para compatibilidad con PgBouncer (prepared statements deshabilitados)")
 
-    # SOLUCIÓN ALTERNATIVA: Usar conexiones directas sin pool para evitar PgBouncer
+    # SOLUCIÓN: Configurar para PgBouncer con prepared statements deshabilitados
     async_engine = create_async_engine(
         async_database_url,
-        poolclass=None,  # Sin pool de conexiones para evitar PgBouncer
+        pool_size=5,  # Pool pequeño para PgBouncer
+        max_overflow=10,
+        pool_pre_ping=True,
+        pool_recycle=1800,
         echo=False,
         connect_args={
-            "statement_cache_size": 0,  # Deshabilitar prepared statements para PgBouncer
-            "prepared_statement_cache_size": 0,
-            "command_timeout": 60,  # Timeout para comandos
+            "statement_cache_size": 0,  # CRÍTICO: Deshabilitar prepared statements
+            "prepared_statement_cache_size": 0,  # CRÍTICO: Deshabilitar cache de prepared statements
+            "command_timeout": 30,
             "server_settings": {
-                "jit": "off",  # Deshabilitar JIT para evitar problemas con PgBouncer
+                "jit": "off",
                 "application_name": "seva_b2b_app",
                 "default_transaction_isolation": "read committed"
             }

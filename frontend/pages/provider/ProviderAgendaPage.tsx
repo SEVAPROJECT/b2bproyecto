@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { CalendarDaysIcon, ClockIcon, PlusIcon, TrashIcon, PencilIcon } from '../../components/icons';
 
@@ -57,6 +58,8 @@ const ProviderAgendaPage: React.FC = () => {
             setLoading(true);
             setError(null);
             
+            console.log(`🔍 Cargando servicios desde: ${API_URL}/api/v1/provider/services`);
+            
             const response = await fetch(`${API_URL}/api/v1/provider/services`, {
                 headers: {
                     'Authorization': `Bearer ${user?.accessToken}`,
@@ -64,15 +67,22 @@ const ProviderAgendaPage: React.FC = () => {
                 },
             });
 
+            console.log(`📡 Respuesta del servidor: ${response.status} ${response.statusText}`);
+
             if (!response.ok) {
-                throw new Error('Error al cargar servicios');
+                const errorText = await response.text();
+                console.error(`❌ Error del servidor: ${errorText}`);
+                throw new Error(`Error ${response.status}: ${response.statusText}`);
             }
 
             const data = await response.json();
+            console.log(`✅ Servicios cargados: ${data.length} servicios`);
             setServicios(data);
         } catch (err) {
-            console.error('Error al cargar servicios:', err);
+            console.error('❌ Error al cargar servicios:', err);
             setError(err instanceof Error ? err.message : 'Error desconocido');
+            // En caso de error, mostrar mensaje más específico
+            setServicios([]);
         } finally {
             setLoading(false);
         }
@@ -386,8 +396,23 @@ const ProviderAgendaPage: React.FC = () => {
                 ) : disponibilidades.length === 0 ? (
                     <div className="text-center p-8 bg-white rounded-xl border border-gray-200">
                         <CalendarDaysIcon className="mx-auto h-12 w-12 text-gray-400" />
-                        <h3 className="mt-2 text-sm font-medium text-gray-900">No hay disponibilidades configuradas</h3>
-                        <p className="mt-1 text-sm text-gray-500">Agrega disponibilidades para que los clientes puedan reservar tus servicios.</p>
+                        <h3 className="mt-2 text-sm font-medium text-gray-900">
+                            {servicios.length === 0 ? 'No hay servicios disponibles' : 'No hay disponibilidades configuradas'}
+                        </h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                            {servicios.length === 0 
+                                ? 'Primero necesitas crear servicios en "Mis Servicios" para poder configurar disponibilidades.'
+                                : 'Agrega disponibilidades para que los clientes puedan reservar tus servicios.'
+                            }
+                        </p>
+                        {servicios.length === 0 && (
+                            <Link 
+                                to="/dashboard/my-services" 
+                                className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                Ir a Mis Servicios
+                            </Link>
+                        )}
                     </div>
                 ) : (
                     <div className="space-y-4">
