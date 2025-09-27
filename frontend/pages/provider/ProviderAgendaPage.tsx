@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { CalendarIcon, ClockIcon, PlusIcon, TrashIcon, PencilIcon } from '../../components/icons';
+import { CalendarDaysIcon, ClockIcon, PlusIcon, TrashIcon, PencilIcon } from '../../components/icons';
 
 interface Disponibilidad {
     id_disponibilidad?: number;
@@ -239,7 +239,7 @@ const ProviderAgendaPage: React.FC = () => {
                     <div className="flex items-center justify-between">
                         <div>
                             <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                                <CalendarIcon className="h-8 w-8 text-primary-600" />
+                                <CalendarDaysIcon className="h-8 w-8 text-primary-600" />
                                 Mi Agenda
                             </h1>
                             <p className="mt-2 text-gray-600">
@@ -385,7 +385,7 @@ const ProviderAgendaPage: React.FC = () => {
                     </div>
                 ) : disponibilidades.length === 0 ? (
                     <div className="text-center p-8 bg-white rounded-xl border border-gray-200">
-                        <CalendarIcon className="mx-auto h-12 w-12 text-gray-400" />
+                        <CalendarDaysIcon className="mx-auto h-12 w-12 text-gray-400" />
                         <h3 className="mt-2 text-sm font-medium text-gray-900">No hay disponibilidades configuradas</h3>
                         <p className="mt-1 text-sm text-gray-500">Agrega disponibilidades para que los clientes puedan reservar tus servicios.</p>
                     </div>
