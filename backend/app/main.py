@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import logging
 
 # Instancia de la aplicación de FastAPI
 app = FastAPI(
@@ -38,6 +40,37 @@ app.add_middleware(
     ],
     expose_headers=["*"],
 )
+
+# Middleware personalizado para asegurar headers CORS en errores
+@app.middleware("http")
+async def cors_error_handler(request: Request, call_next):
+    """
+    Middleware para asegurar que los headers CORS se devuelvan incluso en errores.
+    """
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        logging.error(f"Error en request: {str(e)}")
+        # Crear respuesta de error con headers CORS
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": "Error interno del servidor"},
+            headers={
+                "Access-Control-Allow-Origin": "https://frontend-production-ee3b.up.railway.app",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+                "Access-Control-Allow-Credentials": "true",
+            }
+        )
+    
+    # Asegurar que los headers CORS estén presentes en todas las respuestas
+    if "Access-Control-Allow-Origin" not in response.headers:
+        response.headers["Access-Control-Allow-Origin"] = "https://frontend-production-ee3b.up.railway.app"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    
+    return response
 
 
 from fastapi.staticfiles import StaticFiles
