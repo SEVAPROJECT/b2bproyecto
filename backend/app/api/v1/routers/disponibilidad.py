@@ -309,3 +309,53 @@ async def eliminar_disponibilidad(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al eliminar la disponibilidad."
         )
+
+@router.get(
+    "/servicio/{servicio_id}/disponibles",
+    response_model=List[DisponibilidadOut],
+    summary="Obtener disponibilidades disponibles de un servicio",
+    description="Obtiene solo las disponibilidades disponibles (disponible=true) de un servicio específico"
+)
+async def obtener_disponibilidades_disponibles_servicio(
+    servicio_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Obtiene solo las disponibilidades disponibles de un servicio específico.
+    """
+    try:
+        # Verificar que el servicio existe
+        servicio_stmt = select(ServicioModel).where(ServicioModel.id_servicio == servicio_id)
+        servicio_result = await db.execute(servicio_stmt)
+        servicio = servicio_result.scalar_one_or_none()
+        
+        if not servicio:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Servicio no encontrado"
+            )
+        
+        # Obtener solo disponibilidades disponibles del servicio
+        stmt = select(DisponibilidadModel).where(
+            and_(
+                DisponibilidadModel.id_servicio == servicio_id,
+                DisponibilidadModel.disponible == True
+            )
+        ).order_by(DisponibilidadModel.fecha_inicio)
+        
+        result = await db.execute(stmt)
+        disponibilidades = result.scalars().all()
+        
+        logger.info(f"Disponibilidades disponibles obtenidas para servicio {servicio_id}: {len(disponibilidades)}")
+        
+        return disponibilidades
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al obtener disponibilidades disponibles del servicio {servicio_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )

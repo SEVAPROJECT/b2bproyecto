@@ -66,19 +66,24 @@ const ReservasPage: React.FC = () => {
   const loadMisReservas = async () => {
     if (!user) return;
 
-    const response = await fetch(`${API_URL}/api/v1/reservas`, {
-      headers: {
-        'Authorization': `Bearer ${user.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    try {
+      const response = await fetch(`${API_URL}/api/v1/reservas`, {
+        headers: {
+          'Authorization': `Bearer ${user.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (!response.ok) {
-      throw new Error('Error al cargar reservas');
+      if (!response.ok) {
+        throw new Error('Error al cargar reservas');
+      }
+
+      const data = await response.json();
+      setReservas(data);
+    } catch (error) {
+      console.error('Error al cargar reservas:', error);
+      setError('Error al cargar las reservas');
     }
-
-    const data = await response.json();
-    setReservas(data);
   };
 
   const loadReservasProveedor = async () => {
