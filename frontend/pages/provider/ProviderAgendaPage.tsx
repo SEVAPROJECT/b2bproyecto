@@ -39,7 +39,7 @@ const ProviderAgendaPage: React.FC = () => {
         observaciones: ''
     });
 
-    const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-ee3b.up.railway.app';
+    const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
 
     // Cargar servicios del proveedor
     useEffect(() => {
@@ -58,9 +58,9 @@ const ProviderAgendaPage: React.FC = () => {
             setLoading(true);
             setError(null);
             
-            console.log(`🔍 Cargando servicios desde: ${API_URL}/api/v1/provider/services`);
+            console.log(`🔍 Cargando servicios desde: ${API_URL}/api/v1/provider/services/`);
             
-            const response = await fetch(`${API_URL}/api/v1/provider/services`, {
+            const response = await fetch(`${API_URL}/api/v1/provider/services/`, {
                 headers: {
                     'Authorization': `Bearer ${user?.accessToken}`,
                     'Content-Type': 'application/json',

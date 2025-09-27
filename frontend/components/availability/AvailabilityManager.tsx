@@ -32,7 +32,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ servicioId, s
         observaciones: ''
     });
 
-    const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-ee3b.up.railway.app';
+    const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
 
     // Cargar disponibilidades del servicio
     useEffect(() => {
