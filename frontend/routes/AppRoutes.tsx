@@ -25,7 +25,7 @@ import AdminCategoryRequestsPage from '../components/admin/AdminCategoryRequests
 import ServiceDetailPage from '../pages/ServiceDetailPage';
 import ResetPasswordPage from '../pages/auth/ResetPasswordPage';
 import ReservationsPage from '../pages/ReservationsPage';
-import ReservasPage from '../src/pages/ReservasPage';
+import ReservasPage from '../pages/ReservasPage';
 import ManageProfilePage from '../pages/ManageProfilePage';
 import ProviderOnboardingPage from '../pages/provider/ProviderOnboardingPage';
 import AdminVerificationsPage from '../components/admin/AdminVerificationsPage';

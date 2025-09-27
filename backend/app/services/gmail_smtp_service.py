@@ -49,7 +49,7 @@ class GmailSMTPService:
         self.mailgun_domain = os.getenv("MAILGUN_DOMAIN")
         self.resend_api_key = os.getenv("RESEND_API_KEY")  # último respaldo
         self.api_enabled = bool(self.brevo_api_key or self.sendgrid_api_key or self.mailgun_api_key or self.resend_api_key)
-
+        
         # Verificar configuración
         smtp_configurado = bool(self.sender_email and self.sender_password)
 
@@ -71,21 +71,21 @@ class GmailSMTPService:
             logger.warning("⚠️ API Email no configurada - Railway bloquea SMTP en planes gratuitos")
     
     def send_email(
-        self,
-        to_email: str,
-        subject: str,
-        html_content: str,
+        self, 
+        to_email: str, 
+        subject: str, 
+        html_content: str, 
         text_content: Optional[str] = None
     ) -> bool:
         """
         Envía un correo electrónico intentando múltiples configuraciones SMTP
-
+        
         Args:
             to_email: Email del destinatario
             subject: Asunto del correo
             html_content: Contenido HTML del correo
             text_content: Contenido de texto plano (opcional)
-
+        
         Returns:
             bool: True si se envió correctamente, False en caso contrario
         """
@@ -94,22 +94,22 @@ class GmailSMTPService:
             if not self.sender_email or not self.sender_password:
                 logger.error("❌ SMTP no configurado. Verifica las variables de entorno.")
                 return False
-
+            
             # Crear mensaje
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
             message["From"] = f"{self.sender_name} <{self.sender_email}>"
             message["To"] = to_email
-
+            
             # Agregar contenido de texto plano si se proporciona
             if text_content:
                 text_part = MIMEText(text_content, "plain", "utf-8")
                 message.attach(text_part)
-
+            
             # Agregar contenido HTML
             html_part = MIMEText(html_content, "html", "utf-8")
             message.attach(html_part)
-
+            
             # Intentar cada configuración disponible
             for config in self.configurations:
                 try:
@@ -117,7 +117,7 @@ class GmailSMTPService:
 
                     # Crear contexto SSL para todas las configuraciones
                     context = ssl.create_default_context()
-
+            
                     # Intentar conexión según la configuración
                     if config.get("use_ssl"):
                         # Conexión SSL directa (puerto 465)
@@ -131,10 +131,10 @@ class GmailSMTPService:
                                 server.starttls(context=context)
                             server.login(self.sender_email, self.sender_password)
                             server.sendmail(self.sender_email, to_email, message.as_string())
-
+                    
                     logger.info(f"✅ Correo enviado exitosamente a {to_email} usando {config['name']}")
                     return True
-
+                    
                 except Exception as e:
                     logger.warning(f"⚠️ Configuración {config['name']} falló: {str(e)}")
                     continue
