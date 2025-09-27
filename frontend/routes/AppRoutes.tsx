@@ -25,6 +25,7 @@ import AdminCategoryRequestsPage from '../components/admin/AdminCategoryRequests
 import ServiceDetailPage from '../pages/ServiceDetailPage';
 import ResetPasswordPage from '../pages/auth/ResetPasswordPage';
 import ReservationsPage from '../pages/ReservationsPage';
+import ReservasPage from '../src/pages/ReservasPage';
 import ManageProfilePage from '../pages/ManageProfilePage';
 import ProviderOnboardingPage from '../pages/provider/ProviderOnboardingPage';
 import AdminVerificationsPage from '../components/admin/AdminVerificationsPage';
@@ -128,6 +129,7 @@ const AppRoutes: React.FC = () => {
                    <Route index element={<DashboardPage />} />
                    <Route path="marketplace" element={<MarketplacePage />} />
                    <Route path="reservations" element={<ReservationsPage />} />
+                   <Route path="reservas" element={<ReservasPage />} />
                    <Route path="profile" element={<ManageProfilePage />} />
                    <Route path="become-provider" element={<ProviderOnboardingPage />} />
                    {/* Rutas de administrador */}

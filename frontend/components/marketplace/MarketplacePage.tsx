@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { MagnifyingGlassIcon, SparklesIcon, ExclamationCircleIcon } from '../icons';
 import MarketplaceServiceCard from './MarketplaceServiceCard';
 import ServiceReservationModal from './ServiceReservationModal';
+import ReservaModal from '../ReservaModal';
 import { BackendService, BackendCategory } from '../../types';
 import { categoriesAPI, servicesAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -48,8 +49,9 @@ const MarketplacePage: React.FC = () => {
     // Estados de paginación
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 12;
-
+    
     // Estados para modal de reserva
+    const [showReservaModal, setShowReservaModal] = useState(false);
     const [showServiceDetail, setShowServiceDetail] = useState(false);
     const [selectedService, setSelectedService] = useState<BackendService | null>(null);
 
@@ -200,6 +202,24 @@ const MarketplacePage: React.FC = () => {
     const handleEndDateChange = (endDate: string) => {
         setCustomDateRange(prev => ({ ...prev, end: endDate }));
     };
+
+    // Función para manejar reserva
+    const handleReservar = useCallback((service: BackendService) => {
+        setSelectedService(service);
+        setShowReservaModal(true);
+    }, []);
+
+    // Función para cerrar modal de reserva
+    const handleCloseReservaModal = useCallback(() => {
+        setShowReservaModal(false);
+        setSelectedService(null);
+    }, []);
+
+    // Función para cuando se crea una reserva
+    const handleReservaCreada = useCallback(() => {
+        // Aquí podrías mostrar una notificación de éxito
+        console.log('Reserva creada exitosamente');
+    }, []);
 
     // Filtrar servicios
     const filteredServices = useMemo(() => {
@@ -872,6 +892,7 @@ const MarketplacePage: React.FC = () => {
                                                 service={service} 
                                                 category={categories.find(c => c.id_categoria === service.id_categoria)}
                                                 onViewProviders={handleContactProvider}
+                                                onReservar={handleReservar}
                                                 isAuthenticated={isAuthenticated}
                                             />
                                         </div>
@@ -1055,6 +1076,16 @@ const MarketplacePage: React.FC = () => {
                     onClose={() => setShowServiceDetail(false)}
                     service={selectedService}
                     category={selectedService ? categories.find(c => c.id_categoria === selectedService.id_categoria) : undefined}
+                />
+            )}
+
+            {/* Modal de reserva */}
+            {showReservaModal && (
+                <ReservaModal
+                    isOpen={showReservaModal}
+                    onClose={handleCloseReservaModal}
+                    servicio={selectedService}
+                    onReservaCreada={handleReservaCreada}
                 />
             )}
         </div>

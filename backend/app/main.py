@@ -50,7 +50,8 @@ from app.api.v1.routers.services.provider_services import router as provider_ser
 from app.api.v1.routers.auth.password_reset import router as password_reset_router
 from app.api.v1.routers.auth.supabase_password_reset import router as supabase_password_reset_router
 from app.api.v1.routers.auth.direct_password_reset import router as direct_password_reset_router
-from app.api.v1.routers.reserva_service import reserva
+from app.api.v1.routers.reserva_service.reserva import router as reserva_router
+from app.api.v1.routers.disponibilidad import router as disponibilidad_router
 
 
 # Crear directorio uploads si no existe
@@ -74,7 +75,8 @@ app.include_router(additional_router, prefix="/api/v1")
 app.include_router(password_reset_router, prefix="/api/v1")
 app.include_router(supabase_password_reset_router, prefix="/api/v1")
 app.include_router(direct_password_reset_router, prefix="/api/v1")
-app.include_router(reserva.router, prefix="/api/v1")
+app.include_router(reserva_router, prefix="/api/v1")
+app.include_router(disponibilidad_router, prefix="/api/v1")
 
 # endpoint (una ruta) para la URL raíz ("/")
 @app.get("/")
