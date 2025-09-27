@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { 
     BriefcaseIcon, 
     MagnifyingGlassIcon, 
@@ -7,12 +8,12 @@ import {
     PlusIcon,
     XMarkIcon,
     CameraIcon,
-    UploadCloudIcon
+    UploadCloudIcon,
+    CalendarIcon
 } from '../../components/icons';
 import { API_CONFIG, buildApiUrl } from '../../config/api';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, providerServicesAPI, servicesAPI, categoryRequestsAPI, serviceRequestsAPI } from '../../services/api';
-import AvailabilityManager from '../../components/availability/AvailabilityManager';
 
 // Funciones auxiliares
 const formatNumber = (num: number): string => {
@@ -1013,18 +1014,24 @@ const ProviderMyServicesPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Availability Managers para cada servicio */}
+            {/* Mensaje para dirigir a Mi Agenda */}
             {filteredServices.length > 0 && (
-                <div className="mt-8">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6">📅 Configurar Disponibilidades</h2>
-                    {filteredServices.map((service) => (
-                        <div key={`availability-${service.id_servicio}`} className="mb-6">
-                            <AvailabilityManager
-                                servicioId={service.id_servicio}
-                                servicioNombre={service.nombre}
-                            />
-                        </div>
-                    ))}
+                <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                        <CalendarIcon className="h-6 w-6 text-blue-600" />
+                        <h2 className="text-xl font-semibold text-blue-900">📅 Configurar Disponibilidades</h2>
+                    </div>
+                    <p className="text-blue-800 mb-4">
+                        Para configurar los horarios disponibles de tus servicios, utiliza la nueva sección "Mi Agenda" 
+                        donde podrás gestionar todas las disponibilidades en un solo lugar.
+                    </p>
+                    <Link 
+                        to="/dashboard/agenda" 
+                        className="btn-blue inline-flex items-center gap-2"
+                    >
+                        <CalendarIcon className="h-5 w-5" />
+                        Ir a Mi Agenda
+                    </Link>
                 </div>
             )}
 

@@ -27,6 +27,7 @@ import ResetPasswordPage from '../pages/auth/ResetPasswordPage';
 import ReservationsPage from '../pages/ReservationsPage';
 import ReservasPage from '../pages/ReservasPage';
 import ManageProfilePage from '../pages/ManageProfilePage';
+import ProviderAgendaPage from '../pages/provider/ProviderAgendaPage';
 import ProviderOnboardingPage from '../pages/provider/ProviderOnboardingPage';
 import AdminVerificationsPage from '../components/admin/AdminVerificationsPage';
 
@@ -143,6 +144,7 @@ const AppRoutes: React.FC = () => {
                    <Route path="explore-categories" element={<ProviderRoute><ProviderExploreCategoriesPage /></ProviderRoute>} />
                    <Route path="my-requests" element={<ProviderRoute><ProviderMyRequestsPage /></ProviderRoute>} />
                    <Route path="my-services" element={<ProviderRoute><ProviderMyServicesPage /></ProviderRoute>} />
+                   <Route path="agenda" element={<ProviderRoute><ProviderAgendaPage /></ProviderRoute>} />
                 </Route>
 
             {/* Admin Routes */}

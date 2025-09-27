@@ -39,6 +39,9 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                 setError(null);
                 
                 // Usar el endpoint correcto para disponibilidades disponibles
+                console.log(`🔍 Intentando cargar disponibilidades para servicio ${serviceId}`);
+                console.log(`🔗 URL: ${API_URL}/api/v1/disponibilidades/servicio/${serviceId}/disponibles`);
+                
                 const response = await fetch(`${API_URL}/api/v1/disponibilidades/servicio/${serviceId}/disponibles`, {
                     headers: {
                         'Authorization': `Bearer ${user?.accessToken}`,
@@ -47,8 +50,10 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                 });
 
                 if (!response.ok) {
+                    console.error(`❌ Error en respuesta: ${response.status} ${response.statusText}`);
                     if (response.status === 404) {
                         // No hay disponibilidades configuradas para este servicio
+                        console.log('ℹ️ No hay disponibilidades configuradas para este servicio');
                         setDisponibilidades([]);
                         setAvailableDates(new Set());
                         setAvailableTimes(new Map());
@@ -182,7 +187,9 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                         <p className="text-sm text-amber-800">
                             ⚠️ Este servicio no tiene disponibilidades configuradas. 
-                            Contacta al proveedor para coordinar una cita.
+                        </p>
+                        <p className="text-xs text-amber-700 mt-2">
+                            El proveedor debe configurar horarios disponibles en su agenda.
                         </p>
                     </div>
                 )}
