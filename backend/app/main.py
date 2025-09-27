@@ -22,16 +22,21 @@ app.add_middleware(
         "https://frontend-production-ee3b.up.railway.app",  # Railway deployment
         "https://seva-frontend.vercel.app",  # Vercel deployment
         "https://seva-frontend.netlify.app",  # Netlify deployment
-
-        #"https://*.railway.app",  # Railway URLs
-        #"https://*.vercel.app",   # Vercel URLs
-        #"https://*.netlify.app",  # Netlify URLs
-        #"https://*.railway.app",  # Railway URLs
-        #"*"  # Temporalmente para testing - REMOVER EN PRODUCCIÓN
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+    ],
+    expose_headers=["*"],
 )
 
 
@@ -84,3 +89,11 @@ app.include_router(test_router, prefix="/api/v1")
 @app.get("/")
 def read_root():
     return {"Hello": "World", "message": "SEVA B2B API está funcionando"}
+
+# Endpoint específico para manejar peticiones OPTIONS (preflight)
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """
+    Maneja peticiones OPTIONS (preflight) para CORS.
+    """
+    return {"message": "OK"}
