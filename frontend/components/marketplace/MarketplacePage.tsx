@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { MagnifyingGlassIcon, SparklesIcon, ExclamationCircleIcon } from '../icons';
 import MarketplaceServiceCard from './MarketplaceServiceCard';
 import ServiceReservationModal from './ServiceReservationModal';
-import ReservaModal from '../ReservaModal';
+import ReservaModal from '../../src/components/ReservaModal';
 import { BackendService, BackendCategory } from '../../types';
 import { categoriesAPI, servicesAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
