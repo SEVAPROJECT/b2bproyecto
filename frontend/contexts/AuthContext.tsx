@@ -128,6 +128,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
             // Llamada real a la API
             const response = await authAPI.signIn({ email, password });
+            console.log('🔑 Respuesta del login:', response);
+            console.log('🔑 Access token recibido:', response.access_token ? 'SÍ' : 'NO');
+            console.log('🔑 Refresh token recibido:', response.refresh_token ? 'SÍ' : 'NO');
 
             // Obtener datos reales del usuario desde el backend
             const profile = await authAPI.getProfile(response.access_token);
@@ -167,7 +170,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 foto_perfil: profile.foto_perfil || null
             };
 
+            // Guardar ambos tokens en localStorage
             localStorage.setItem('access_token', response.access_token);
+            if (response.refresh_token) {
+                localStorage.setItem('refresh_token', response.refresh_token);
+                console.log('✅ Refresh token guardado en localStorage');
+            } else {
+                console.warn('⚠️ No se recibió refresh_token del servidor');
+            }
+            
             setUser(userData);
             setProviderStatus(userData.providerStatus);
             setProviderApplication(userData.providerApplication);

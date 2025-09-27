@@ -23,6 +23,8 @@ export const useApiWithAuth = () => {
         // Si es error 401, intentar renovar token y reintentar
         if (response.status === 401) {
             console.log('🔄 Token expirado, intentando renovar...');
+            console.log('🔍 Refresh token disponible:', localStorage.getItem('refresh_token') ? 'SÍ' : 'NO');
+            
             try {
                 const newToken = await refreshToken();
                 console.log('✅ Token renovado, reintentando petición...');
@@ -38,6 +40,7 @@ export const useApiWithAuth = () => {
                 });
             } catch (refreshError) {
                 console.error('❌ Error al renovar token:', refreshError);
+                console.log('🔍 Refresh token en localStorage:', localStorage.getItem('refresh_token'));
                 throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
             }
         }
