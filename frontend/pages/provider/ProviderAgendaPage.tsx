@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApiWithAuth } from '../../hooks/useApiWithAuth';
+import { providerServicesAPI } from '../../services/api';
 import { CalendarDaysIcon, ClockIcon, PlusIcon, TrashIcon, PencilIcon } from '../../components/icons';
 
 interface Disponibilidad {
@@ -60,31 +61,17 @@ const ProviderAgendaPage: React.FC = () => {
             setLoading(true);
             setError(null);
             
-            console.log(`🔍 Cargando servicios desde: ${API_URL}/api/v1/provider/services/`);
+            console.log(`🔍 Cargando servicios usando providerServicesAPI`);
             
-            const response = await apiRequest({
-                url: `${API_URL}/api/v1/provider/services/`,
-                method: 'GET',
-            });
-
-            console.log(`📡 Respuesta del servidor: ${response.status} ${response.statusText}`);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`❌ Error del servidor: ${errorText}`);
-                
-                // Si es error 401 o 500, mostrar mensaje pero no hacer logout
-                if (response.status === 401 || response.status === 500) {
-                    console.log('⚠️ Error de autenticación o servidor, mostrando mensaje pero manteniendo sesión');
-                    setError('Error temporal del servidor. Por favor, intenta nuevamente.');
-                    setServicios([]);
-                    return;
-                }
-                
-                throw new Error(`Error ${response.status}: ${response.statusText}`);
+            const accessToken = localStorage.getItem('access_token');
+            if (!accessToken) {
+                console.log('❌ No hay token de acceso');
+                setError('No hay token de acceso');
+                setServicios([]);
+                return;
             }
 
-            const data = await response.json();
+            const data = await providerServicesAPI.getProviderServices(accessToken);
             console.log(`✅ Servicios cargados: ${data.length} servicios`);
             setServicios(data);
         } catch (err) {

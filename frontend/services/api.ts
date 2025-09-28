@@ -1727,6 +1727,12 @@ export const providerServicesAPI = {
             });
 
             if (!response.ok) {
+                // Si es error 401 o 500, no hacer logout, solo lanzar error controlado
+                if (response.status === 401 || response.status === 500) {
+                    console.log('⚠️ Error 401/500 en getProviderServices, no haciendo logout');
+                    throw new Error('Error temporal del servidor. Por favor, intenta nuevamente.');
+                }
+                
                 const error = await handleApiError(response);
                 throw error;
             }
