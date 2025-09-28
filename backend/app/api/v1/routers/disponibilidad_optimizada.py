@@ -5,7 +5,7 @@ from app.api.v1.dependencies.database_supabase import get_async_db
 from app.api.v1.dependencies.auth_user import get_current_user
 from app.models.disponibilidad import DisponibilidadModel
 from app.models.servicio import ServicioModel
-from app.schemas.disponibilidad.disponibilidad import DisponibilidadOut
+from app.schemas.disponibilidad import DisponibilidadOut
 from typing import List
 
 router = APIRouter()
