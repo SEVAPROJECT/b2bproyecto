@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useApiWithAuth } from '../../hooks/useApiWithAuth';
 import { providerServicesAPI } from '../../services/api';
 import { CalendarDaysIcon, ClockIcon, PlusIcon, TrashIcon, PencilIcon } from '../../components/icons';
 
@@ -25,13 +24,11 @@ interface Servicio {
 
 const ProviderAgendaPage: React.FC = () => {
     const { user } = useAuth();
-    const { apiRequest } = useApiWithAuth();
     const [disponibilidades, setDisponibilidades] = useState<Disponibilidad[]>([]);
     const [servicios, setServicios] = useState<Servicio[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
-    const [editingId, setEditingId] = useState<number | null>(null);
 
     const [formData, setFormData] = useState({
         id_servicio: '',
