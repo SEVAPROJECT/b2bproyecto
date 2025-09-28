@@ -29,6 +29,7 @@ export interface AuthContextType {
     login: (email: string, password: string) => Promise<void>;
     register: (data: { companyName: string; name: string; email: string; password: string }) => Promise<void>;
     logout: () => Promise<void>;
+    refreshToken: () => Promise<string>;
     reloadUserProfile: () => Promise<void>;
     submitProviderApplication: (data: any) => Promise<void>;
     resubmitProviderApplication: (data: any) => Promise<void>;

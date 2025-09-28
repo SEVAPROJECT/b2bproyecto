@@ -43,15 +43,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     setIsLoading(false);
                     return;
                 }
-                
-                // Agregar timeout para evitar esperas infinitas
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Timeout de conexión')), 5000) // Reducido de 10s a 5s
-                );
-                
-                // Intentar autenticación con access_token de localStorage
-                const profilePromise = authAPI.getProfile(accessToken);
-                const profile = await Promise.race([profilePromise, timeoutPromise]);
+
+                console.log('🔑 Token encontrado, obteniendo perfil...');
+                const profile = await authAPI.getProfile(accessToken);
+                console.log('👤 Perfil obtenido:', profile);
+                console.log('🔍 Campos disponibles en el perfil:', Object.keys(profile));
+                console.log('📝 Valores de campos de nombre posibles:', {
+                    nombre_persona: profile.nombre_persona,
+                    nombre: profile.nombre,
+                    first_name: profile.first_name,
+                    name: profile.name,
+                    email: profile.email,
+                    correo: profile.correo
+                });
+                console.log('📸 Foto de perfil en perfil:', profile.foto_perfil);
 
                 // Validación robusta de roles como en Apporiginal.tsx
                 let userRole: UserRole = 'client';
@@ -160,11 +165,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
             // Llamada real a la API (solo refresh_token se establece en cookie)
             const response = await authAPI.signIn({ email, password });
-            
-            // Guardar access_token en localStorage
-            localStorage.setItem('access_token', response.access_token);
 
-            // Obtener datos reales del usuario desde el backend (usando access_token)
+            // Obtener datos reales del usuario desde el backend
             const profile = await authAPI.getProfile(response.access_token);
 
             // Validación robusta de roles como en Apporiginal.tsx
@@ -202,12 +204,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 foto_perfil: profile.foto_perfil || null
             };
 
+            // Guardar ambos tokens en localStorage
             localStorage.setItem('access_token', response.access_token);
+            if (response.refresh_token) {
+                localStorage.setItem('refresh_token', response.refresh_token);
+                console.log('✅ Refresh token guardado en localStorage');
+            } else {
+                console.warn('⚠️ No se recibió refresh_token del servidor');
+            }
+            
             setUser(userData);
             setProviderStatus(userData.providerStatus);
             setProviderApplication(userData.providerApplication);
 
-            // Login exitoso
+            // Refrescar la pantalla para asegurar datos actualizados
+            console.log('🔄 Login exitoso, refrescando pantalla para datos actualizados...');
+            setTimeout(() => {
+                window.location.reload();
+            }, 100); // Pequeño delay para asegurar que el estado se actualice
 
         } catch (err: any) {
             // Manejar específicamente el error de cuenta inactiva
@@ -330,6 +344,62 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     };
 
+    // Función para renovar token automáticamente
+    const refreshToken = async () => {
+        try {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (!refreshToken) {
+                throw new Error('No hay refresh token');
+            }
+
+            console.log('🔄 Renovando token...');
+            const response = await authAPI.refreshToken(refreshToken);
+            
+            // Actualizar tokens en localStorage
+            localStorage.setItem('access_token', response.access_token);
+            if (response.refresh_token) {
+                localStorage.setItem('refresh_token', response.refresh_token);
+            }
+
+            // Actualizar usuario con nuevo token
+            if (user) {
+                setUser({ ...user, accessToken: response.access_token });
+            }
+
+            console.log('✅ Token renovado exitosamente');
+            return response.access_token;
+        } catch (error) {
+            console.error('❌ Error al renovar token:', error);
+            
+            // No hacer logout automático en errores 500 del servidor
+            if (error instanceof Error && (
+                error.message.includes('500') || 
+                error.message.includes('Error temporal del servidor') ||
+                error.message.includes('Error interno del servidor')
+            )) {
+                console.log('⚠️ Error 500 en refresh, manteniendo sesión');
+                // Lanzar un error específico para que useApiWithAuth lo maneje
+                throw new Error('Error temporal del servidor. Por favor, intenta nuevamente.');
+            }
+            
+            // Solo hacer logout en errores de autenticación reales (401, 403, etc.)
+            if (error instanceof Error && (
+                error.message.includes('401') ||
+                error.message.includes('403') ||
+                error.message.includes('Sesión expirada') ||
+                error.message.includes('Token inválido')
+            )) {
+                console.log('🔐 Error de autenticación real, cerrando sesión');
+                logout();
+                throw error;
+            }
+            
+            // Para otros errores, no hacer logout automático
+            console.log('⚠️ Error en refresh, manteniendo sesión');
+            throw error;
+        }
+    };
+
     const reloadUserProfile = async () => {
         console.log('🔄 Recargando perfil del usuario...');
         try {
@@ -338,8 +408,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 setTimeout(() => reject(new Error('Timeout de conexión')), 5000)
             );
 
-            // Usar cookies HttpOnly para recargar perfil
-            const profilePromise = authAPI.getProfile();
+            const profilePromise = authAPI.getProfile(accessToken);
             const profile = await Promise.race([profilePromise, timeoutPromise]);
             console.log('👤 Perfil recargado:', profile);
             console.log('🔍 Campos disponibles:', Object.keys(profile));
@@ -615,6 +684,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         login,
         register,
         logout,
+        refreshToken,
         reloadUserProfile,
         submitProviderApplication,
         resubmitProviderApplication,

@@ -22,9 +22,60 @@ from app.api.v1.dependencies.auth_user import get_current_user
 
 router = APIRouter(prefix="/category-requests", tags=["Solicitudes de Categorías"])
 
+# Función helper para enriquecer respuesta de solicitud de categoría creada
+async def enrich_category_request_response(request: SolicitudCategoria, db: AsyncSession) -> dict:
+    """
+    Enriquecer la respuesta de una solicitud de categoría con datos adicionales.
+    """
+    # Consulta para obtener datos completos
+    enriched_query = select(
+        SolicitudCategoria.id_solicitud,
+        SolicitudCategoria.id_perfil,
+        SolicitudCategoria.nombre_categoria,
+        SolicitudCategoria.descripcion,
+        SolicitudCategoria.estado_aprobacion,
+        SolicitudCategoria.comentario_admin,
+        SolicitudCategoria.created_at,
+        PerfilEmpresa.razon_social.label('nombre_empresa'),
+        UserModel.nombre_persona.label('nombre_contacto')
+    ).select_from(SolicitudCategoria)\
+     .join(PerfilEmpresa, SolicitudCategoria.id_perfil == PerfilEmpresa.id_perfil, isouter=True)\
+     .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)\
+     .where(SolicitudCategoria.id_solicitud == request.id_solicitud)
+
+    enriched_result = await db.execute(enriched_query)
+    enriched_row = enriched_result.first()
+
+    if enriched_row:
+        return {
+            "id_solicitud": enriched_row.id_solicitud,
+            "id_perfil": enriched_row.id_perfil,
+            "nombre_categoria": enriched_row.nombre_categoria,
+            "descripcion": enriched_row.descripcion,
+            "estado_aprobacion": enriched_row.estado_aprobacion or "pendiente",
+            "comentario_admin": enriched_row.comentario_admin,
+            "created_at": enriched_row.created_at.isoformat() if enriched_row.created_at else None,
+            "nombre_empresa": enriched_row.nombre_empresa or "No especificado",
+            "nombre_contacto": enriched_row.nombre_contacto or "No especificado",
+            "email_contacto": None  # Email no disponible en UserModel
+        }
+    else:
+        # Fallback básico si la consulta enriquecida falla
+        return {
+            "id_solicitud": request.id_solicitud,
+            "id_perfil": request.id_perfil,
+            "nombre_categoria": request.nombre_categoria,
+            "descripcion": request.descripcion,
+            "estado_aprobacion": request.estado_aprobacion or "pendiente",
+            "comentario_admin": request.comentario_admin,
+            "created_at": request.created_at.isoformat() if request.created_at else None,
+            "nombre_empresa": "No especificado",
+            "nombre_contacto": "No especificado",
+            "email_contacto": None
+        }
+
 @router.post(
     "/",
-    response_model=SolicitudCategoriaOut,
     status_code=status.HTTP_201_CREATED,
     description="Crear una nueva solicitud de categoría"
 )
@@ -35,6 +86,7 @@ async def create_category_request(
 ):
     """
     Permite a un proveedor crear una solicitud para agregar una nueva categoría.
+    Devuelve la solicitud creada con datos enriquecidos.
     """
     try:
         # Obtener el perfil de empresa del usuario
@@ -83,12 +135,17 @@ async def create_category_request(
         await db.commit()
         await db.refresh(nueva_solicitud)
 
-        return nueva_solicitud
+        # Enriquecer la respuesta con datos adicionales
+        enriched_response = await enrich_category_request_response(nueva_solicitud, db)
+
+        print(f"✅ Solicitud de categoría creada: {nueva_solicitud.nombre_categoria}")
+        return enriched_response
 
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
+        print(f"❌ Error al crear solicitud de categoría: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al crear la solicitud: {str(e)}"

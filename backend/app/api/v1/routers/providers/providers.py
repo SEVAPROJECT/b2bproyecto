@@ -1132,9 +1132,72 @@ async def test_datos_solicitud(
 
   # noqa: E402
 
+# Función helper para enriquecer respuesta de solicitud de servicio creada
+async def enrich_service_request_response(request: SolicitudServicio, db: AsyncSession) -> dict:
+    """
+    Enriquecer la respuesta de una solicitud de servicio con datos adicionales.
+    """
+    from sqlalchemy import select
+    from app.models.publicar_servicio.category import CategoriaModel
+    from app.models.empresa.perfil_empresa import PerfilEmpresa
+    from app.models.perfil import UserModel
+
+    # Consulta para obtener datos completos
+    enriched_query = select(
+        SolicitudServicio.id_solicitud,
+        SolicitudServicio.nombre_servicio,
+        SolicitudServicio.descripcion,
+        SolicitudServicio.estado_aprobacion,
+        SolicitudServicio.comentario_admin,
+        SolicitudServicio.created_at,
+        SolicitudServicio.id_categoria,
+        SolicitudServicio.id_perfil,
+        CategoriaModel.nombre.label('nombre_categoria'),
+        PerfilEmpresa.razon_social.label('nombre_empresa'),
+        UserModel.nombre_persona.label('nombre_contacto')
+    ).select_from(SolicitudServicio)\
+     .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)\
+     .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)\
+     .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)\
+     .where(SolicitudServicio.id_solicitud == request.id_solicitud)
+
+    enriched_result = await db.execute(enriched_query)
+    enriched_row = enriched_result.first()
+
+    if enriched_row:
+        return {
+            "id_solicitud": enriched_row.id_solicitud,
+            "nombre_servicio": enriched_row.nombre_servicio,
+            "descripcion": enriched_row.descripcion,
+            "estado_aprobacion": enriched_row.estado_aprobacion or "pendiente",
+            "comentario_admin": enriched_row.comentario_admin,
+            "created_at": enriched_row.created_at.isoformat() if enriched_row.created_at else None,
+            "id_categoria": enriched_row.id_categoria,
+            "id_perfil": enriched_row.id_perfil,
+            "nombre_categoria": enriched_row.nombre_categoria or "No especificado",
+            "nombre_empresa": enriched_row.nombre_empresa or "No especificado",
+            "nombre_contacto": enriched_row.nombre_contacto or "No especificado",
+            "email_contacto": None  # Email no disponible en UserModel
+        }
+    else:
+        # Fallback básico si la consulta enriquecida falla
+        return {
+            "id_solicitud": request.id_solicitud,
+            "nombre_servicio": request.nombre_servicio,
+            "descripcion": request.descripcion,
+            "estado_aprobacion": request.estado_aprobacion or "pendiente",
+            "comentario_admin": request.comentario_admin,
+            "created_at": request.created_at.isoformat() if request.created_at else None,
+            "id_categoria": request.id_categoria,
+            "id_perfil": request.id_perfil,
+            "nombre_categoria": "No especificado",
+            "nombre_empresa": "No especificado",
+            "nombre_contacto": "No especificado",
+            "email_contacto": None
+        }
+
 @router.post(
     "/services/proponer",
-    response_model=SolicitudServicioOut,
     status_code=status.HTTP_201_CREATED,
     description="Permite a un proveedor proponer un nuevo servicio."
 )
@@ -1146,6 +1209,7 @@ async def propose_service(
     """
     Recibe una propuesta de servicio de un proveedor
     aprobado y la guarda para que el administrador la revise y apruebe o rechace.
+    Devuelve la solicitud creada con datos enriquecidos.
     """
     try:
         nueva_solicitud = SolicitudServicio(
@@ -1160,9 +1224,15 @@ async def propose_service(
         await db.commit()
         await db.refresh(nueva_solicitud)
 
-        return nueva_solicitud
+        # Enriquecer la respuesta con datos adicionales
+        enriched_response = await enrich_service_request_response(nueva_solicitud, db)
+
+        print(f"✅ Solicitud de servicio creada: {nueva_solicitud.nombre_servicio}")
+        return enriched_response
+
     except Exception as e:
         await db.rollback()
+        print(f"❌ Error al crear solicitud de servicio: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error inesperado al proponer el servicio: {str(e)}"

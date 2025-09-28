@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { 
     BriefcaseIcon, 
     MagnifyingGlassIcon, 
@@ -7,7 +8,8 @@ import {
     PlusIcon,
     XMarkIcon,
     CameraIcon,
-    UploadCloudIcon
+    UploadCloudIcon,
+    CalendarDaysIcon
 } from '../../components/icons';
 import { API_CONFIG, buildApiUrl } from '../../config/api';
 import { AuthContext } from '../../contexts/AuthContext';
@@ -110,8 +112,8 @@ const filterServices = (services: any[], filters: any) => {
         const minPriceStr = filters.minPrice?.toString().trim() || '';
         const maxPriceStr = filters.maxPrice?.toString().trim() || '';
 
-        const minPriceValue = minPriceStr !== '' && !isNaN(parseFloat(minPriceStr)) ? parseFloat(minPriceStr) : null;
-        const maxPriceValue = maxPriceStr !== '' && !isNaN(parseFloat(maxPriceStr)) ? parseFloat(maxPriceStr) : null;
+        const minPriceValue = minPriceStr !== '' ? parsePriceInput(minPriceStr) : null;
+        const maxPriceValue = maxPriceStr !== '' ? parsePriceInput(maxPriceStr) : null;
 
         const hasMinPriceFilter = minPriceValue !== null && minPriceValue > 0;
         const hasMaxPriceFilter = maxPriceValue !== null && maxPriceValue > 0;
@@ -402,7 +404,38 @@ const ProviderMyServicesPage: React.FC = () => {
         }
     };
 
-    const handleRemoveImage = () => {
+    const handleRemoveImage = async () => {
+        try {
+            // Si hay una imagen actual en el servicio, eliminarla del bucket
+            if (editForm.imagen && editForm.imagen.startsWith('https://') && editForm.imagen.includes('supabase.co')) {
+                const accessToken = localStorage.getItem('access_token');
+                if (accessToken) {
+                    try {
+                        const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
+                        const response = await fetch(`${apiBaseUrl}/api/v1/provider/services/delete-image?image_url=${encodeURIComponent(editForm.imagen)}`, {
+                            method: 'DELETE',
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`
+                            }
+                        });
+
+                        if (response.ok) {
+                            console.log('✅ Imagen eliminada del bucket de Supabase Storage');
+                        } else {
+                            console.warn('⚠️ No se pudo eliminar la imagen del bucket, pero se continuará con la eliminación local');
+                        }
+                    } catch (error) {
+                        console.warn('⚠️ Error eliminando imagen del bucket:', error);
+                        // Continuar con la eliminación local aunque falle la eliminación del bucket
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('⚠️ Error en eliminación de imagen:', error);
+            // Continuar con la eliminación local aunque falle
+        }
+
+        // Eliminar imagen del estado local
         setSelectedImage(null);
         setImagePreview(null);
         setEditForm(prev => ({ ...prev, imagen: '' }));
@@ -550,7 +583,7 @@ const ProviderMyServicesPage: React.FC = () => {
                 template_id: selectedTemplate.id_servicio,
                 nombre: templateForm.nombre.trim(),
                 descripcion: templateForm.descripcion.trim(),
-                precio: parseFloat(templateForm.precio),
+                precio: parsePriceInput(templateForm.precio),
                 id_moneda: templateForm.id_moneda
             };
 
@@ -767,11 +800,13 @@ const ProviderMyServicesPage: React.FC = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Precio Mínimo</label>
                             <input
-                                type="number"
+                                type="text"
                                 value={filters.minPrice}
-                                onChange={(e) => setFilters(prev => ({ ...prev, minPrice: e.target.value }))}
+                                onChange={(e) => {
+                                    const formattedValue = formatPriceInput(e.target.value);
+                                    setFilters(prev => ({ ...prev, minPrice: formattedValue }));
+                                }}
                                 placeholder="0"
-                                min="0"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
@@ -780,11 +815,13 @@ const ProviderMyServicesPage: React.FC = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Precio Máximo</label>
                             <input
-                                type="number"
+                                type="text"
                                 value={filters.maxPrice}
-                                onChange={(e) => setFilters(prev => ({ ...prev, maxPrice: e.target.value }))}
+                                onChange={(e) => {
+                                    const formattedValue = formatPriceInput(e.target.value);
+                                    setFilters(prev => ({ ...prev, maxPrice: formattedValue }));
+                                }}
                                 placeholder="Sin límite"
-                                min="0"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
@@ -829,12 +866,23 @@ const ProviderMyServicesPage: React.FC = () => {
                                         <div className="flex-shrink-0 mx-auto sm:mx-0">
                                             {service.imagen ? (
                                                 <img
-                                                    src={`${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
+                                                    src={service.imagen.startsWith('http') ? service.imagen : `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
                                                     alt={service.nombre}
                                                     className="h-16 w-16 object-cover rounded-lg border border-gray-200"
                                                     onError={(e) => {
+                                                        console.log('❌ Error cargando imagen en vista de servicios:', (e.target as HTMLImageElement).src);
                                                         const target = e.target as HTMLImageElement;
                                                         target.style.display = 'none';
+                                                        const parent = target.parentElement;
+                                                        if (parent) {
+                                                            parent.innerHTML = `
+                                                                <div class="h-16 w-16 bg-gradient-to-br from-primary-100 to-primary-200 rounded-lg border border-gray-200 flex items-center justify-center">
+                                                                    <svg class="h-6 w-6 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                                                    </svg>
+                                                                </div>
+                                                            `;
+                                                        }
                                                     }}
                                                 />
                                             ) : (
@@ -965,6 +1013,27 @@ const ProviderMyServicesPage: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* Mensaje para dirigir a Mi Agenda */}
+            {filteredServices.length > 0 && (
+                <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                        <CalendarDaysIcon className="h-6 w-6 text-blue-600" />
+                        <h2 className="text-xl font-semibold text-blue-900">📅 Configurar Disponibilidades</h2>
+                    </div>
+                    <p className="text-blue-800 mb-4">
+                        Para configurar los horarios disponibles de tus servicios, utiliza la nueva sección "Mi Agenda" 
+                        donde podrás gestionar todas las disponibilidades en un solo lugar.
+                    </p>
+                    <Link 
+                        to="/dashboard/agenda" 
+                        className="btn-blue inline-flex items-center gap-2"
+                    >
+                        <CalendarDaysIcon className="h-5 w-5" />
+                        Ir a Mi Agenda
+                    </Link>
+                </div>
+            )}
 
             {/* Edit Service Modal */}
             {showEditModal && editingService && (
@@ -1331,13 +1400,16 @@ const ProviderMyServicesPage: React.FC = () => {
                                                                         Precio *
                                                                     </label>
                                                                     <input
-                                                                        type="number"
+                                                                        type="text"
                                                                         value={templateForm.precio}
-                                                                        onChange={(e) => setTemplateForm(prev => ({ ...prev, precio: e.target.value }))}
-                                                                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        onChange={(e) => {
+                                                                            const inputValue = e.target.value;
+                                                                            // Formatear el precio con puntos de mil mientras se escribe
+                                                                            const formattedValue = formatPriceInput(inputValue);
+                                                                            setTemplateForm(prev => ({ ...prev, precio: formattedValue }));
+                                                                        }}
+                                                                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                                                         placeholder="0"
-                                                                        min="0"
-                                                                        step="0.01"
                                                                     />
                                                                 </div>
                                                             </div>

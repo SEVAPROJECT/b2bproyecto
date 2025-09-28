@@ -746,30 +746,33 @@ async def upload_profile_photo(
                 detail="El archivo no puede ser mayor a 5MB"
             )
         
-        # Crear directorio de uploads si no existe
-        upload_dir = "uploads/profile_photos"
-        os.makedirs(upload_dir, exist_ok=True)
+        # Usar Supabase Storage para fotos de perfil
+        from app.services.supabase_storage_service import supabase_storage_service
         
-        # Generar nombre único para el archivo
-        file_id = str(uuid.uuid4())
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{current_user.id}_{timestamp}_{file_id}{file_extension}"
-        file_path = os.path.join(upload_dir, filename)
+        # Subir imagen a Supabase Storage en la carpeta perfiles/
+        success, public_url = await supabase_storage_service.upload_profile_image(
+            file_content=file_content,
+            file_name=file.filename,
+            content_type=file.content_type
+        )
         
-        # Guardar archivo
-        with open(file_path, "wb") as buffer:
-            buffer.write(file_content)
+        if not success or not public_url:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al subir la imagen a Supabase Storage"
+            )
         
-        # Generar URL relativa
-        relative_path = f"/uploads/profile_photos/{filename}"
+        print(f"✅ Foto de perfil subida exitosamente a Supabase Storage: {public_url}")
+        
+        # Usar la URL pública de Supabase Storage
+        relative_path = public_url
         
         print(f"✅ Foto de perfil guardada: {relative_path}")
         
         return {
             "success": True,
             "mensaje": "Foto de perfil subida exitosamente",
-            "image_path": relative_path,
-            "filename": filename
+            "image_path": relative_path
         }
         
     except HTTPException:
@@ -779,6 +782,53 @@ async def upload_profile_photo(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al subir foto de perfil: {str(e)}"
+        )
+
+@router.delete("/delete-profile-photo")
+async def delete_profile_photo(
+    image_url: str,
+    current_user: UserProfileAndRolesOut = Depends(get_current_user)
+):
+    """
+    Elimina una foto de perfil del bucket de Supabase Storage.
+    """
+    try:
+        from app.services.supabase_storage_service import supabase_storage_service
+        
+        # Verificar que la URL es de Supabase Storage
+        if not image_url or not image_url.startswith('https://') or 'supabase.co' not in image_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL de imagen no válida para eliminación"
+            )
+        
+        # Extraer el nombre del archivo de la URL
+        import os
+        file_name = os.path.basename(image_url.split('?')[0])  # Remover query parameters
+        
+        # Eliminar imagen del bucket
+        success = await supabase_storage_service.delete_image(image_url)
+        
+        if success:
+            print(f"✅ Foto de perfil eliminada exitosamente del bucket: {file_name}")
+            return {
+                "message": "Foto de perfil eliminada exitosamente del bucket de Supabase Storage.",
+                "deleted_file": file_name
+            }
+        else:
+            print(f"❌ Error eliminando foto de perfil del bucket: {file_name}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al eliminar la foto de perfil del bucket"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error en delete_profile_photo: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al eliminar la foto de perfil: {str(e)}"
         )
 
 

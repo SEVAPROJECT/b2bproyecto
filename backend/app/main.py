@@ -1,6 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.startup import startup_events, shutdown_events
+from fastapi.responses import JSONResponse
+import logging
 
 # Instancia de la aplicación de FastAPI
 app = FastAPI(
@@ -32,17 +34,53 @@ app.add_middleware(
         "https://frontend-production-ee3b.up.railway.app",  # Railway deployment
         "https://seva-frontend.vercel.app",  # Vercel deployment
         "https://seva-frontend.netlify.app",  # Netlify deployment
-
-        #"https://*.railway.app",  # Railway URLs
-        #"https://*.vercel.app",   # Vercel URLs
-        #"https://*.netlify.app",  # Netlify URLs
-        #"https://*.railway.app",  # Railway URLs
-        #"*"  # Temporalmente para testing - REMOVER EN PRODUCCIÓN
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+    ],
+    expose_headers=["*"],
 )
+
+# Middleware personalizado para asegurar headers CORS en errores
+@app.middleware("http")
+async def cors_error_handler(request: Request, call_next):
+    """
+    Middleware para asegurar que los headers CORS se devuelvan incluso en errores.
+    """
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        logging.error(f"Error en request: {str(e)}")
+        # Crear respuesta de error con headers CORS
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": "Error interno del servidor"},
+            headers={
+                "Access-Control-Allow-Origin": "https://frontend-production-ee3b.up.railway.app",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+                "Access-Control-Allow-Credentials": "true",
+            }
+        )
+    
+    # Asegurar que los headers CORS estén presentes en todas las respuestas
+    if "Access-Control-Allow-Origin" not in response.headers:
+        response.headers["Access-Control-Allow-Origin"] = "https://frontend-production-ee3b.up.railway.app"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    
+    return response
 
 
 from fastapi.staticfiles import StaticFiles
@@ -61,7 +99,9 @@ from app.api.v1.routers.services.provider_services import router as provider_ser
 from app.api.v1.routers.auth.password_reset import router as password_reset_router
 from app.api.v1.routers.auth.supabase_password_reset import router as supabase_password_reset_router
 from app.api.v1.routers.auth.direct_password_reset import router as direct_password_reset_router
-from app.api.v1.routers.reserva_service import reserva
+from app.api.v1.routers.reserva_service.reserva import router as reserva_router
+from app.api.v1.routers.disponibilidad import router as disponibilidad_router
+from app.api.v1.routers.test import router as test_router
 
 
 # Crear directorio uploads si no existe
@@ -86,9 +126,30 @@ app.include_router(additional_router, prefix="/api/v1")
 app.include_router(password_reset_router, prefix="/api/v1")
 app.include_router(supabase_password_reset_router, prefix="/api/v1")
 app.include_router(direct_password_reset_router, prefix="/api/v1")
-app.include_router(reserva.router, prefix="/api/v1")
+app.include_router(reserva_router, prefix="/api/v1")
+app.include_router(disponibilidad_router, prefix="/api/v1")
+app.include_router(test_router, prefix="/api/v1")
 
 # endpoint (una ruta) para la URL raíz ("/")
 @app.get("/")
 def read_root():
     return {"Hello": "World", "message": "SEVA B2B API está funcionando"}
+
+# Endpoint específico para manejar peticiones OPTIONS (preflight)
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """
+    Maneja peticiones OPTIONS (preflight) para CORS.
+    """
+    from fastapi.responses import Response
+    return Response(
+        content="OK",
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "https://frontend-production-ee3b.up.railway.app",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "86400"
+        }
+    )

@@ -72,6 +72,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         { name: 'Explorar Categorías', href: '/dashboard/explore-categories', icon: BuildingStorefrontIcon },
         { name: 'Mis Solicitudes', href: '/dashboard/my-requests', icon: PlusCircleIcon },
         { name: 'Mis Servicios', href: '/dashboard/my-services', icon: BriefcaseIcon },
+        { name: 'Mi Agenda', href: '/dashboard/agenda', icon: CalendarDaysIcon },
         { name: 'Mis Reservas', href: '/dashboard/reservations', icon: CalendarDaysIcon },
     ] : [
         { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },

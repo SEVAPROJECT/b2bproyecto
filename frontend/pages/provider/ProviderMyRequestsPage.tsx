@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { 
     ClipboardDocumentListIcon, 
     PlusCircleIcon, 
     BuildingStorefrontIcon, 
-    MagnifyingGlassIcon 
+    MagnifyingGlassIcon,
+    ClockIcon
 } from '../../components/icons';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, serviceRequestsAPI, categoryRequestsAPI } from '../../services/api';
@@ -60,7 +61,24 @@ const formatDateStringSpanish = (dateString: string): string => {
     return formatDateSpanish(date);
 };
 
-// Función de filtrado de solicitudes (actualizada para manejar ambos tipos)
+// Funciones auxiliares fuera del componente para evitar errores de referencia
+const getRequestName = (request: UnifiedRequest): string => {
+    if (request.tipo === 'servicio') {
+        return request.nombre_servicio || '';
+    } else {
+        return request.nombre_categoria || '';
+    }
+};
+
+const getRequestTypeLabel = (request: UnifiedRequest): string => {
+    return request.tipo === 'servicio' ? 'Servicio' : 'Categoría';
+};
+
+const getRequestTypeIcon = (request: UnifiedRequest): string => {
+    return request.tipo === 'servicio' ? '🛠️' : '📂';
+};
+
+// Función de filtrado de solicitudes (igual que pantalla de administración)
 const filterRequests = (requests: UnifiedRequest[], filters: any) => {
     return requests.filter(request => {
         // Filtro por fecha
@@ -93,8 +111,14 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
             }
         }
 
-        // Filtro por categoría (solo para solicitudes de servicios)
-        if (filters.categoryFilter !== 'all' && request.tipo === 'servicio' && request.id_categoria?.toString() !== filters.categoryFilter) {
+        // Filtro por categoría (igual que en pantalla de administración)
+        if (filters.categoryFilter !== 'all' && request.id_categoria?.toString() !== filters.categoryFilter) {
+            console.log('🚫 Filtro categoría rechaza:', {
+                requestId: request.id_solicitud,
+                requestCategory: request.id_categoria,
+                filterCategory: filters.categoryFilter,
+                requestName: getRequestName(request)
+            });
             return false;
         }
 
@@ -111,7 +135,7 @@ const filterRequests = (requests: UnifiedRequest[], filters: any) => {
         // Filtro por búsqueda de texto
         if (filters.searchFilter && filters.searchFilter.trim() !== '') {
             const searchTerm = filters.searchFilter.toLowerCase().trim();
-            const requestName = getRequestName(request).toLowerCase();
+            const requestName = getRequestName(request)?.toLowerCase() || '';
             const requestDescription = request.descripcion?.toLowerCase() || '';
             
             if (!requestName.includes(searchTerm) && !requestDescription.includes(searchTerm)) {
@@ -154,10 +178,22 @@ const ProviderMyRequestsPage: React.FC = () => {
         loadData();
     }, []);
 
-    // Aplicar filtros cuando cambien
+    // Aplicar filtros cuando cambien (con logging para debug)
     useEffect(() => {
+        console.log('🔍 Aplicando filtros:', {
+            totalRequests: requests.length,
+            filters: filters,
+            requests: requests.slice(0, 2) // Solo los primeros 2 para debug
+        });
         const filtered = filterRequests(requests, filters);
-        setFilteredRequests(filtered);
+        console.log('✅ Filtros aplicados:', {
+            filteredCount: filtered.length,
+            filtered: filtered.slice(0, 2) // Solo los primeros 2 para debug
+        });
+        
+        // Forzar actualización del estado
+        setFilteredRequests([]);
+        setTimeout(() => setFilteredRequests(filtered), 0);
     }, [requests, filters]);
 
     const loadData = async () => {
@@ -271,22 +307,6 @@ const ProviderMyRequestsPage: React.FC = () => {
         }
     };
 
-    // Funciones auxiliares para manejar ambos tipos de solicitudes
-    const getRequestName = (request: UnifiedRequest): string => {
-        if (request.tipo === 'servicio') {
-            return request.nombre_servicio;
-        } else {
-            return request.nombre_categoria;
-        }
-    };
-
-    const getRequestTypeLabel = (request: UnifiedRequest): string => {
-        return request.tipo === 'servicio' ? 'Servicio' : 'Categoría';
-    };
-
-    const getRequestTypeIcon = (request: UnifiedRequest): string => {
-        return request.tipo === 'servicio' ? '🛠️' : '📂';
-    };
 
     const handleCreateRequest = async () => {
         if (!newServiceName.trim() || !newServiceDescription.trim()) {
@@ -571,7 +591,15 @@ const ProviderMyRequestsPage: React.FC = () => {
                 )}
 
                 {/* Requests List */}
-                <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                <div key={`requests-${filteredRequests.length}-${filters.categoryFilter}`} className="bg-white shadow overflow-hidden sm:rounded-md">
+                    {(() => {
+                        console.log('🎨 RENDERIZANDO:', {
+                            filteredRequestsLength: filteredRequests.length,
+                            filteredRequestsIds: filteredRequests.map(r => r.id_solicitud),
+                            showingList: filteredRequests.length > 0
+                        });
+                        return null;
+                    })()}
                     {filteredRequests.length > 0 ? (
                         <div className="divide-y divide-gray-200">
                             {filteredRequests.map((request) => {
@@ -700,11 +728,9 @@ const ProviderMyRequestsPage: React.FC = () => {
                         </div>
                     ) : (
                         <div className="text-center py-12">
-                            <MagnifyingGlassIcon className="mx-auto h-12 w-12 text-gray-400" />
-                            <h3 className="mt-2 text-sm font-medium text-gray-900">No hay solicitudes que coincidan con los filtros</h3>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Prueba ajustando los filtros para ver más resultados.
-                            </p>
+                            <ClockIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">No hay solicitudes</h3>
+                            <p className="text-gray-500">No se encontraron solicitudes que coincidan con los filtros aplicados.</p>
                             <button
                                 onClick={resetFilters}
                                 className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"

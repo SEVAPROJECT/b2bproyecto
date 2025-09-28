@@ -71,11 +71,11 @@ async def get_service_requests(
             SolicitudServicio.created_at,
             SolicitudServicio.id_categoria,
             SolicitudServicio.id_perfil,
-            Categoria.nombre.label('nombre_categoria'),
+            CategoriaModel.nombre.label('nombre_categoria'),
             PerfilEmpresa.razon_social.label('nombre_empresa'),
             UserModel.nombre_persona.label('nombre_contacto')
         ).select_from(SolicitudServicio)\
-         .join(Categoria, SolicitudServicio.id_categoria == Categoria.id_categoria, isouter=True)\
+         .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)\
          .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)\
          .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)
 
@@ -183,7 +183,7 @@ async def get_all_service_requests_for_admin(
                 SolicitudServicio.created_at,
                 SolicitudServicio.id_categoria,
                 SolicitudServicio.id_perfil,
-                Categoria.nombre.label('nombre_categoria'),
+                CategoriaModel.nombre.label('nombre_categoria'),
                 PerfilEmpresa.razon_social.label('nombre_empresa'),
                 UserModel.nombre_persona.label('nombre_contacto')
             )
@@ -284,7 +284,7 @@ async def approve_service_request(
             print(f"✅ Usando moneda: {codigo_moneda} (ID: {id_moneda_default})")
 
             # Crear el servicio
-            nuevo_servicio = Servicio(
+            nuevo_servicio = ServicioModel(
                 nombre=request.nombre_servicio,
                 descripcion=request.descripcion,
                 precio=0.0,  # Precio por defecto, el proveedor lo configurará después
@@ -412,13 +412,12 @@ async def get_my_service_requests(
                 SolicitudServicio.created_at,
                 SolicitudServicio.id_categoria,
                 SolicitudServicio.id_perfil,
-                Categoria.nombre.label('nombre_categoria'),
+                CategoriaModel.nombre.label('nombre_categoria'),
                 PerfilEmpresa.razon_social.label('nombre_empresa'),
-                UserModel.nombre_persona.label('nombre_contacto'),
-                UserModel.email.label('email_contacto')
+                UserModel.nombre_persona.label('nombre_contacto')
             )
             .select_from(SolicitudServicio)
-            .join(Categoria, SolicitudServicio.id_categoria == Categoria.id_categoria, isouter=True)
+            .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)
             .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)
             .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)
             .where(SolicitudServicio.id_perfil == perfil.id_perfil)
@@ -441,7 +440,7 @@ async def get_my_service_requests(
                 "nombre_categoria": row.nombre_categoria or "No especificado",
                 "nombre_empresa": row.nombre_empresa or "No especificado",
                 "nombre_contacto": row.nombre_contacto or "No especificado",
-                "email_contacto": row.email_contacto or "No especificado"
+                "email_contacto": None
             }
             formatted_requests.append(formatted_request)
 
@@ -473,7 +472,7 @@ async def get_my_service_requests(
                 "nombre_categoria": "No especificado",
                 "nombre_empresa": perfil.razon_social or "No especificado",
                 "nombre_contacto": "No especificado",
-                "email_contacto": "No especificado"
+                "email_contacto": None
             }
             formatted_requests.append(formatted_request)
 

@@ -65,16 +65,29 @@ async def get_provider_services(
     """
     Obtiene todos los servicios del proveedor actual con información completa.
     """
-    # Obtener el perfil del usuario
-    perfil_result = await db.execute(
-        select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
-    )
-    perfil = perfil_result.scalars().first()
+    try:
+        logger.info(f"🔍 Obteniendo servicios para usuario: {current_user.email}")
+        
+        # Obtener el perfil del usuario
+        perfil_result = await db.execute(
+            select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
+        )
+        perfil = perfil_result.scalars().first()
 
-    if not perfil:
+        if not perfil:
+            logger.warning(f"❌ Perfil no encontrado para usuario: {current_user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Perfil de empresa no encontrado."
+            )
+        
+        logger.info(f"✅ Perfil encontrado: {perfil.id_perfil}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error en get_provider_services: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Perfil de empresa no encontrado."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
         )
 
     # Obtener servicios del proveedor con información relacionada (simplificada para evitar errores de columna)
@@ -499,23 +512,23 @@ UPLOAD_DIRECTORY = "uploads/services"
 # Crear directorio si no existe
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 
+
 @router.post("/upload-image")
 async def upload_service_image(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Sube una imagen para un servicio (PNG/JPG, máximo 5MB).
+    Sube una imagen para un servicio usando Supabase Storage (PNG/JPG, máximo 5MB).
     """
     # Validar tipo de archivo
-    if file.content_type not in ["image/png", "image/jpeg", "image/jpg"]:
+    if file.content_type not in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Solo se permiten archivos PNG y JPG."
+            detail="Solo se permiten archivos PNG, JPG y WEBP."
         )
 
     # Validar tamaño del archivo (5MB máximo)
-    file_size = 0
     content = await file.read()
     file_size = len(content)
 
@@ -525,28 +538,83 @@ async def upload_service_image(
             detail="El archivo no puede superar los 5MB."
         )
 
-    # Generar nombre único para el archivo
-    import uuid
-    file_extension = Path(file.filename).suffix.lower()
-    unique_filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = os.path.join(UPLOAD_DIRECTORY, unique_filename)
-
-    # Guardar archivo
+    # Usar Supabase Storage
+    from app.services.supabase_storage_service import supabase_storage_service
+    
     try:
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
+        # Subir imagen a Supabase Storage en la carpeta servicios/
+        success, public_url = await supabase_storage_service.upload_service_image(
+            file_content=content,
+            file_name=file.filename,
+            content_type=file.content_type
+        )
+        
+        if success and public_url:
+            logger.info(f"✅ Imagen subida exitosamente a Supabase Storage: {public_url}")
+            return {
+                "message": "Imagen subida exitosamente a Supabase Storage.",
+                "image_path": public_url
+            }
+        else:
+            logger.error("❌ Error subiendo imagen a Supabase Storage")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al subir la imagen a Supabase Storage."
+            )
+            
     except Exception as e:
-        logger.error(f"Error al guardar imagen: {e}")
+        logger.error(f"❌ Error en upload_service_image: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al guardar la imagen."
+            detail=f"Error al procesar la imagen: {str(e)}"
         )
 
-    # Retornar la ruta relativa del archivo
-    return {
-        "message": "Imagen subida exitosamente.",
-        "image_path": f"/{UPLOAD_DIRECTORY}/{unique_filename}"
-    }
+@router.delete("/delete-image")
+async def delete_service_image(
+    image_url: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Elimina una imagen de servicio del bucket de Supabase Storage.
+    """
+    try:
+        from app.services.supabase_storage_service import supabase_storage_service
+        
+        # Verificar que la URL es de Supabase Storage
+        if not image_url or not image_url.startswith('https://') or 'supabase.co' not in image_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL de imagen no válida para eliminación"
+            )
+        
+        # Extraer el nombre del archivo de la URL
+        import os
+        file_name = os.path.basename(image_url.split('?')[0])  # Remover query parameters
+        
+        # Eliminar imagen del bucket
+        success = await supabase_storage_service.delete_image(image_url)
+        
+        if success:
+            logger.info(f"✅ Imagen eliminada exitosamente del bucket: {file_name}")
+            return {
+                "message": "Imagen eliminada exitosamente del bucket de Supabase Storage.",
+                "deleted_file": file_name
+            }
+        else:
+            logger.error(f"❌ Error eliminando imagen del bucket: {file_name}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al eliminar la imagen del bucket"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error en delete_service_image: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al eliminar la imagen: {str(e)}"
+        )
 
 # Modelo para actualizar estado del servicio
 class ServicioStatusUpdate(BaseModel):

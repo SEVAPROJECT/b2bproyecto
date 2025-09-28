@@ -55,6 +55,7 @@ const MarketplacePage: React.FC = () => {
     const itemsPerPage = 5; // Cambiado de 12 a 5 servicios por página
 
     // Estados para modal de reserva
+    const [showServiceReservationModal, setShowServiceReservationModal] = useState(false);
     const [showServiceDetail, setShowServiceDetail] = useState(false);
     const [selectedService, setSelectedService] = useState<BackendService | null>(null);
 
@@ -412,6 +413,24 @@ const MarketplacePage: React.FC = () => {
     const handleEndDateChange = (endDate: string) => {
         setCustomDateRange(prev => ({ ...prev, end: endDate }));
     };
+
+    // Función para manejar reserva
+    const handleReservar = useCallback((service: BackendService) => {
+        setSelectedService(service);
+        setShowServiceReservationModal(true);
+    }, []);
+
+    // Función para cerrar modal de reserva
+    const handleCloseServiceReservationModal = useCallback(() => {
+        setShowServiceReservationModal(false);
+        setSelectedService(null);
+    }, []);
+
+    // Función para cuando se crea una reserva
+    const handleReservaCreada = useCallback(() => {
+        // Aquí podrías mostrar una notificación de éxito
+        console.log('Reserva creada exitosamente');
+    }, []);
 
     // Filtrar servicios
     const filteredServices = useMemo(() => {
@@ -1186,26 +1205,17 @@ const MarketplacePage: React.FC = () => {
                         })() && (
                             <>
                                 {/* Grid responsivo optimizado para más espacio */}
-                                <div className="relative">
-                                    {/* Indicador sutil de loading de filtros */}
-                                    {isLoadingFilters && (
-                                        <div className="absolute top-0 right-0 z-10 bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-sm font-medium shadow-sm">
-                                            🔄 Aplicando filtros...
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+                                    {paginatedServices.map(service => (
+                                        <div key={service.id_servicio} className="transform transition-transform duration-200 hover:scale-[1.02]">
+                                            <MarketplaceServiceCard 
+                                                service={service} 
+                                                category={categories.find(c => c.id_categoria === service.id_categoria)}
+                                                onViewProviders={handleContactProvider}
+                                                isAuthenticated={isAuthenticated}
+                                            />
                                         </div>
-                                    )}
-                                    
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 transition-all duration-300 ease-in-out">
-                                        {paginatedServices.map(service => (
-                                            <div key={service.id_servicio} className="transform transition-transform duration-200 hover:scale-[1.02]">
-                                                <MarketplaceServiceCard 
-                                                    service={service} 
-                                                    category={categories.find(c => c.id_categoria === service.id_categoria)}
-                                                    onViewProviders={handleContactProvider}
-                                                    isAuthenticated={isAuthenticated}
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
+                                    ))}
                                 </div>
 
                                 {/* Paginación mejorada */}
@@ -1384,6 +1394,16 @@ const MarketplacePage: React.FC = () => {
                 <ServiceReservationModal
                     isOpen={showServiceDetail}
                     onClose={() => setShowServiceDetail(false)}
+                    service={selectedService}
+                    category={selectedService ? categories.find(c => c.id_categoria === selectedService.id_categoria) : undefined}
+                />
+            )}
+
+            {/* Modal de reserva */}
+            {showServiceReservationModal && (
+                <ServiceReservationModal
+                    isOpen={showServiceReservationModal}
+                    onClose={handleCloseServiceReservationModal}
                     service={selectedService}
                     category={selectedService ? categories.find(c => c.id_categoria === selectedService.id_categoria) : undefined}
                 />

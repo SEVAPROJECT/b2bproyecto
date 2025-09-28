@@ -68,13 +68,14 @@ try:
     
     async_engine = create_async_engine(
         async_database_url,
-        poolclass=NullPool,  # Sin pool de SQLAlchemy
+        poolclass=None,  # Sin pool de conexiones para evitar PgBouncer
         echo=False,
         connect_args={
-            "statement_cache_size": 0,  # CRÍTICO: Deshabilitar prepared statements
-            "prepared_statement_cache_size": 0,  # CRÍTICO: Sin cache de statements
-            "command_timeout": 30,  # Timeout para consultas
+            "statement_cache_size": 0,  # Deshabilitar prepared statements para PgBouncer
+            "prepared_statement_cache_size": 0,
+            "command_timeout": 60,  # Timeout para comandos
             "server_settings": {
+                "jit": "off",  # Deshabilitar JIT para evitar problemas con PgBouncer
                 "application_name": "seva_b2b_app",
                 "default_transaction_isolation": "read committed"
             }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ClockIcon, UserCircleIcon, StarIcon } from '../icons';
-import { BackendService, BackendCategory } from '../../types';
-import { API_CONFIG } from '../../config/api';
+import { BackendService, BackendCategory, TarifaServicio } from '../../types';
+import AvailabilityCalendar from './AvailabilityCalendar';
 
 interface ServiceReservationModalProps {
     isOpen: boolean;
@@ -21,7 +21,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
 
     const getImageUrl = (imagePath: string | null) => {
         if (!imagePath) return null;
-        const baseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
+        const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
         return `${baseUrl}${imagePath}`;
     };
 
@@ -74,8 +74,8 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
         }
 
         // Si no hay ID de moneda, usar código ISO limpio como fallback
-        if (!serviceCurrency && (service as any).codigo_iso_moneda) {
-            serviceCurrency = (service as any).codigo_iso_moneda.trim();
+        if (!serviceCurrency && service.codigo_iso_moneda) {
+            serviceCurrency = service.codigo_iso_moneda.trim();
         }
 
         // Si aún no hay moneda, asumir Guaraní
@@ -112,8 +112,8 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
             }
         }
 
-        if (!serviceCurrency && (service as any).codigo_iso_moneda) {
-            serviceCurrency = (service as any).codigo_iso_moneda.trim();
+        if (!serviceCurrency && service.codigo_iso_moneda) {
+            serviceCurrency = service.codigo_iso_moneda.trim();
         }
 
         if (!serviceCurrency) {
@@ -135,12 +135,47 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        // TODO: Implementar lógica de reserva
-        console.log('Reserva enviada:', reservationData);
-        alert('Reserva enviada exitosamente. El proveedor se pondrá en contacto contigo.');
-        onClose();
+        
+        if (!service || !reservationData.date || !reservationData.time) {
+            alert('Por favor selecciona una fecha y hora disponible');
+            return;
+        }
+
+        try {
+               const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
+            
+            // Crear la reserva
+            const reservaData = {
+                id_servicio: service.id_servicio,
+                descripcion: reservationData.observations || `Reserva para ${service.nombre}`,
+                observacion: reservationData.observations || null,
+                fecha: reservationData.date
+            };
+
+            const response = await fetch(`${API_URL}/api/v1/reservas`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(reservaData),
+            });
+
+            if (!response.ok) {
+                throw new Error('Error al crear la reserva');
+            }
+
+            const result = await response.json();
+            console.log('Reserva creada:', result);
+            
+            alert('Reserva creada exitosamente. El proveedor se pondrá en contacto contigo.');
+            onClose();
+        } catch (error) {
+            console.error('Error al crear reserva:', error);
+            alert('Error al crear la reserva. Por favor intenta nuevamente.');
+        }
     };
 
     return (
@@ -176,10 +211,10 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                         {/* COLUMNA IZQUIERDA - INFORMACIÓN DEL SERVICIO Y PROVEEDOR */}
                         <div className="lg:col-span-2 space-y-6">
                             {/* IMAGEN DESTACADA DEL SERVICIO */}
-                            {(service as any).imagen && (
+                            {service.imagen && (
                                 <div className="relative">
                                     <img 
-                                        src={getImageUrl((service as any).imagen)} 
+                                        src={getImageUrl(service.imagen)} 
                                         alt={service.nombre}
                                         className="w-full h-64 object-cover rounded-xl shadow-lg"
                                         onError={(e) => {
@@ -213,7 +248,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                     </div>
                                     <div className="flex-1">
                                         <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                                            {(service as any).nombre_contacto || 'Contacto disponible'}
+                                            {service.nombre_contacto || 'Contacto disponible'}
                                         </h3>
                                         
                                         {/* Lista organizada de información del proveedor */}
@@ -221,33 +256,33 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                             <div className="flex items-center gap-3">
                                                 <span className="text-slate-500">🏢</span>
                                                 <span className="text-slate-700">
-                                                    <span className="font-medium">Empresa:</span> {(service as any).razon_social || 'Información disponible al contactar'}
+                                                    <span className="font-medium">Empresa:</span> {service.razon_social || 'Información disponible al contactar'}
                                                 </span>
                                             </div>
                                             
-                                            {(service as any).departamento && (
+                                            {service.departamento && (
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-slate-500">🗺️</span>
                                                     <span className="text-slate-700">
-                                                        <span className="font-medium">Departamento:</span> {(service as any).departamento}
+                                                        <span className="font-medium">Departamento:</span> {service.departamento}
                                                     </span>
                                                 </div>
                                             )}
                                             
-                                            {(service as any).ciudad && (
+                                            {service.ciudad && (
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-slate-500">📍</span>
                                                     <span className="text-slate-700">
-                                                        <span className="font-medium">Ciudad:</span> {(service as any).ciudad}
+                                                        <span className="font-medium">Ciudad:</span> {service.ciudad}
                                                     </span>
                                                 </div>
                                             )}
                                             
-                                            {(service as any).barrio && (
+                                            {service.barrio && (
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-slate-500">🏘️</span>
                                                     <span className="text-slate-700">
-                                                        <span className="font-medium">Barrio:</span> {(service as any).barrio}
+                                                        <span className="font-medium">Barrio:</span> {service.barrio}
                                                     </span>
                                                 </div>
                                             )}
@@ -309,11 +344,11 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                     </div>
                                     
                                     {/* Tarifas específicas si existen */}
-                                    {(service as any).tarifas && (service as any).tarifas.length > 0 && (
+                                    {service.tarifas && service.tarifas.length > 0 && (
                                         <div className="bg-white rounded-lg p-4 border border-slate-200">
                                             <h4 className="font-medium text-slate-900 mb-4">Tarifas Específicas</h4>
                                             <div className="space-y-3">
-                                                {(service as any).tarifas.map((tarifa: any) => (
+                                                {service.tarifas.map((tarifa) => (
                                                     <div key={tarifa.id_tarifa_servicio} className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                                                         <div className="flex justify-between items-start mb-2">
                                                             <div className="flex-1">
@@ -343,7 +378,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                     )}
                                     
                                     {/* Detalle de tarifas adicionales si no hay tarifas específicas */}
-                                    {(!(service as any).tarifas || (service as any).tarifas.length === 0) && (
+                                    {(!service.tarifas || service.tarifas.length === 0) && (
                                         <div className="bg-white rounded-lg p-4 border border-slate-200">
                                             <h4 className="font-medium text-slate-900 mb-2">Tarifas adicionales</h4>
                                             <p className="text-sm text-slate-600">
@@ -369,34 +404,19 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                 </h2>
 
                                 <form onSubmit={handleSubmit} className="w-full space-y-5">
-                                    <div className="space-y-2">
-                                        <label htmlFor="date" className="block text-sm font-medium text-slate-700">
-                                            📅 Fecha de reserva
-                                        </label>
-                                        <input
-                                            type="date"
-                                            id="date"
-                                            required
-                                            value={reservationData.date}
-                                            onChange={(e) => setReservationData(prev => ({ ...prev, date: e.target.value }))}
-                                            min={new Date().toISOString().split('T')[0]}
-                                            className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label htmlFor="time" className="block text-sm font-medium text-slate-700">
-                                            🕐 Hora de reserva
-                                        </label>
-                                        <input
-                                            type="time"
-                                            id="time"
-                                            required
-                                            value={reservationData.time}
-                                            onChange={(e) => setReservationData(prev => ({ ...prev, time: e.target.value }))}
-                                            className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
-                                        />
-                                    </div>
+                                    {/* Calendario inteligente con disponibilidades */}
+                                    <AvailabilityCalendar
+                                        serviceId={service.id_servicio}
+                                        onDateSelect={(date, time) => {
+                                            setReservationData(prev => ({ 
+                                                ...prev, 
+                                                date, 
+                                                time 
+                                            }));
+                                        }}
+                                        selectedDate={reservationData.date}
+                                        selectedTime={reservationData.time}
+                                    />
 
                                     <div className="space-y-2">
                                         <label htmlFor="observations" className="block text-sm font-medium text-slate-700">
@@ -415,6 +435,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                                     <button
                                         type="submit"
                                         className="w-full btn-blue touch-manipulation"
+                                        disabled={!reservationData.date || !reservationData.time}
                                     >
                                         🚀 Reservar
                                     </button>
