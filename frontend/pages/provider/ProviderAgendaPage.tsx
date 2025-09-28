@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { providerServicesAPI } from '../../services/api';
-import { CalendarDaysIcon, ClockIcon, PlusIcon, TrashIcon, PencilIcon } from '../../components/icons';
+import { CalendarDaysIcon, ClockIcon, PlusIcon, TrashIcon, PencilIcon, CheckIcon, XMarkIcon } from '../../components/icons';
 
 interface Disponibilidad {
     id_disponibilidad?: number;
@@ -22,6 +22,23 @@ interface Servicio {
     estado: boolean;
 }
 
+interface HorarioBase {
+    dias_semana: string[];
+    hora_inicio: string;
+    hora_fin: string;
+    duracion_sesion: number;
+    descanso_entre_sesiones: number;
+}
+
+interface PlantillaHorario {
+    id: string;
+    nombre: string;
+    descripcion: string;
+    icono: string;
+    color: string;
+    horario: HorarioBase;
+}
+
 const ProviderAgendaPage: React.FC = () => {
     const { user } = useAuth();
     const [disponibilidades, setDisponibilidades] = useState<Disponibilidad[]>([]);
@@ -29,6 +46,16 @@ const ProviderAgendaPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
+    const [vista, setVista] = useState<'configuracion' | 'calendario' | 'excepciones'>('configuracion');
+    const [serviciosSeleccionados, setServiciosSeleccionados] = useState<number[]>([]);
+    const [creandoHorario, setCreandoHorario] = useState(false);
+    const [horarioBase, setHorarioBase] = useState<HorarioBase>({
+        dias_semana: [],
+        hora_inicio: '09:00',
+        hora_fin: '17:00',
+        duracion_sesion: 60,
+        descanso_entre_sesiones: 15
+    });
 
     const [formData, setFormData] = useState({
         id_servicio: '',
@@ -40,6 +67,52 @@ const ProviderAgendaPage: React.FC = () => {
     });
 
     const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
+
+    // Plantillas predefinidas de horarios
+    const plantillasHorario: PlantillaHorario[] = [
+        {
+            id: 'oficina',
+            nombre: 'Oficina Estándar',
+            descripcion: 'Horario de oficina tradicional de lunes a viernes',
+            icono: '🏢',
+            color: 'blue',
+            horario: {
+                dias_semana: ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'],
+                hora_inicio: '09:00',
+                hora_fin: '17:00',
+                duracion_sesion: 60,
+                descanso_entre_sesiones: 15
+            }
+        },
+        {
+            id: 'consultas',
+            nombre: 'Consultas Médicas',
+            descripcion: 'Horario para consultas médicas con citas programadas',
+            icono: '🏥',
+            color: 'green',
+            horario: {
+                dias_semana: ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'],
+                hora_inicio: '08:00',
+                hora_fin: '18:00',
+                duracion_sesion: 30,
+                descanso_entre_sesiones: 10
+            }
+        },
+        {
+            id: 'tienda',
+            nombre: 'Tienda Comercial',
+            descripcion: 'Horario comercial extendido incluyendo fines de semana',
+            icono: '🛍️',
+            color: 'purple',
+            horario: {
+                dias_semana: ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'],
+                hora_inicio: '10:00',
+                hora_fin: '20:00',
+                duracion_sesion: 45,
+                descanso_entre_sesiones: 15
+            }
+        }
+    ];
 
     // Cargar servicios del proveedor
     useEffect(() => {
@@ -104,7 +177,6 @@ const ProviderAgendaPage: React.FC = () => {
             setLoading(true);
             setError(null);
             
-            // Cargar disponibilidades de todos los servicios usando fetch directo
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) {
                 console.log('❌ No hay token de acceso para cargar disponibilidades');
@@ -112,9 +184,13 @@ const ProviderAgendaPage: React.FC = () => {
                 return;
             }
 
-            console.log('🔍 Cargando disponibilidades para', servicios.length, 'servicios');
+            console.log('🔍 Cargando disponibilidades optimizado para', servicios.length, 'servicios');
             
-            const promises = servicios.map(async servicio => {
+            // Optimización: Cargar solo los primeros 5 servicios para evitar sobrecarga
+            const serviciosLimitados = servicios.slice(0, 5);
+            console.log('🔍 Cargando disponibilidades para servicios limitados:', serviciosLimitados.map(s => s.id_servicio));
+            
+            const promises = serviciosLimitados.map(async servicio => {
                 try {
                     console.log(`🔍 Cargando disponibilidades para servicio ${servicio.id_servicio}`);
                     const response = await fetch(`${API_URL}/api/v1/disponibilidades/servicio/${servicio.id_servicio}`, {
@@ -157,6 +233,7 @@ const ProviderAgendaPage: React.FC = () => {
                 new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
             );
 
+            console.log(`✅ Disponibilidades cargadas: ${allDisponibilidades.length} disponibilidades`);
             setDisponibilidades(allDisponibilidades);
         } catch (err) {
             console.error('Error al cargar disponibilidades:', err);
@@ -322,6 +399,141 @@ const ProviderAgendaPage: React.FC = () => {
         });
     };
 
+    // Aplicar plantilla de horario
+    const aplicarPlantilla = (plantilla: PlantillaHorario) => {
+        setHorarioBase(plantilla.horario);
+        console.log('🎯 Plantilla aplicada:', plantilla.nombre);
+    };
+
+    // Seleccionar todos los servicios
+    const seleccionarTodosLosServicios = () => {
+        const todosLosIds = servicios.filter(s => s.estado).map(s => s.id_servicio);
+        setServiciosSeleccionados(todosLosIds);
+        console.log('✅ Todos los servicios seleccionados:', todosLosIds.length);
+    };
+
+    // Crear horario base para los próximos 30 días
+    const crearHorarioBase = async () => {
+        if (serviciosSeleccionados.length === 0) {
+            setError('Por favor selecciona al menos un servicio');
+            return;
+        }
+
+        if (horarioBase.dias_semana.length === 0) {
+            setError('Por favor selecciona al menos un día de la semana');
+            return;
+        }
+
+        try {
+            setCreandoHorario(true);
+            setError(null);
+
+            console.log('🚀 Creando horario para', serviciosSeleccionados.length, 'servicios');
+            console.log('📅 Días:', horarioBase.dias_semana);
+            console.log('🕐 Horario:', horarioBase.hora_inicio, '-', horarioBase.hora_fin);
+
+            const accessToken = localStorage.getItem('access_token');
+            if (!accessToken) {
+                throw new Error('No hay token de acceso');
+            }
+
+            // Crear disponibilidades para los próximos 30 días
+            const disponibilidadesACrear = [];
+            const hoy = new Date();
+            
+            for (let i = 0; i < 30; i++) {
+                const fecha = new Date(hoy);
+                fecha.setDate(hoy.getDate() + i);
+                
+                const diaSemana = fecha.toLocaleDateString('es-PY', { weekday: 'long' });
+                
+                if (horarioBase.dias_semana.includes(diaSemana)) {
+                    // Crear sesiones para este día
+                    const horaInicio = new Date(fecha);
+                    const [hora, minuto] = horarioBase.hora_inicio.split(':');
+                    horaInicio.setHours(parseInt(hora), parseInt(minuto), 0, 0);
+                    
+                    const horaFin = new Date(fecha);
+                    const [horaF, minutoF] = horarioBase.hora_fin.split(':');
+                    horaFin.setHours(parseInt(horaF), parseInt(minutoF), 0, 0);
+                    
+                    // Crear sesiones cada duracion_sesion + descanso_entre_sesiones
+                    let horaActual = new Date(horaInicio);
+                    while (horaActual < horaFin) {
+                        const horaSesionFin = new Date(horaActual);
+                        horaSesionFin.setMinutes(horaSesionFin.getMinutes() + horarioBase.duracion_sesion);
+                        
+                        if (horaSesionFin <= horaFin) {
+                            for (const idServicio of serviciosSeleccionados) {
+                                disponibilidadesACrear.push({
+                                    id_servicio: idServicio,
+                                    fecha_inicio: horaActual.toISOString(),
+                                    fecha_fin: horaSesionFin.toISOString(),
+                                    disponible: true,
+                                    precio_adicional: 0,
+                                    observaciones: `Horario automático - ${horarioBase.duracion_sesion}min`
+                                });
+                            }
+                        }
+                        
+                        // Siguiente sesión
+                        horaActual.setMinutes(horaActual.getMinutes() + horarioBase.duracion_sesion + horarioBase.descanso_entre_sesiones);
+                    }
+                }
+            }
+
+            console.log(`📊 Creando ${disponibilidadesACrear.length} disponibilidades`);
+
+            // Crear disponibilidades en lotes de 10
+            const lotes = [];
+            for (let i = 0; i < disponibilidadesACrear.length; i += 10) {
+                lotes.push(disponibilidadesACrear.slice(i, i + 10));
+            }
+
+            let creadas = 0;
+            for (const lote of lotes) {
+                const promises = lote.map(async (disp) => {
+                    try {
+                        const response = await fetch(`${API_URL}/api/v1/disponibilidades/`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`,
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(disp),
+                        });
+
+                        if (response.ok) {
+                            creadas++;
+                        }
+                    } catch (error) {
+                        console.error('Error creando disponibilidad:', error);
+                    }
+                });
+
+                await Promise.all(promises);
+                
+                // Pequeña pausa entre lotes
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            console.log(`✅ Creadas ${creadas} disponibilidades`);
+            
+            // Recargar disponibilidades
+            await loadDisponibilidades();
+            
+            // Limpiar selección
+            setServiciosSeleccionados([]);
+            setVista('calendario');
+            
+        } catch (err) {
+            console.error('Error creando horario:', err);
+            setError(err instanceof Error ? err.message : 'Error desconocido');
+        } finally {
+            setCreandoHorario(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 py-8">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -334,16 +546,9 @@ const ProviderAgendaPage: React.FC = () => {
                                 Mi Agenda
                             </h1>
                             <p className="mt-2 text-gray-600">
-                                Gestiona la disponibilidad de todos tus servicios en una sola agenda
+                                Configura tu horario de trabajo y gestiona la disponibilidad de todos tus servicios
                             </p>
                         </div>
-                        <button
-                            onClick={() => setShowForm(!showForm)}
-                            className="btn-blue flex items-center gap-2"
-                        >
-                            <PlusIcon className="h-5 w-5" />
-                            Nueva Disponibilidad
-                        </button>
                     </div>
                 </div>
 
@@ -353,203 +558,294 @@ const ProviderAgendaPage: React.FC = () => {
                     </div>
                 )}
 
-                {/* Formulario para agregar disponibilidad */}
-                {showForm && (
-                    <div className="bg-white border border-gray-200 rounded-xl p-6 mb-8 shadow-sm">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <PlusIcon className="h-5 w-5" />
-                            Nueva Disponibilidad
-                        </h3>
-                        
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Servicio *
-                                    </label>
-                                    <select
-                                        required
-                                        value={formData.id_servicio}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, id_servicio: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                {/* Navegación por pestañas */}
+                <div className="mb-8">
+                    <div className="border-b border-gray-200">
+                        <nav className="-mb-px flex space-x-8">
+                            <button
+                                onClick={() => setVista('configuracion')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                    vista === 'configuracion'
+                                        ? 'border-primary-500 text-primary-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                            >
+                                ⚙️ Configuración Rápida
+                            </button>
+                            <button
+                                onClick={() => setVista('calendario')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                    vista === 'calendario'
+                                        ? 'border-primary-500 text-primary-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                            >
+                                📅 Vista Calendario
+                            </button>
+                            <button
+                                onClick={() => setVista('excepciones')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                    vista === 'excepciones'
+                                        ? 'border-primary-500 text-primary-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                            >
+                                🚫 Gestionar Excepciones
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+
+                {/* Contenido de las pestañas */}
+                {vista === 'configuracion' && (
+                    <div className="space-y-8">
+                        {/* Paso 1: Seleccionar Plantilla */}
+                        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">1️⃣ Selecciona una Plantilla</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {plantillasHorario.map((plantilla) => (
+                                    <button
+                                        key={plantilla.id}
+                                        onClick={() => aplicarPlantilla(plantilla)}
+                                        className={`p-4 rounded-lg border-2 transition-all hover:shadow-md ${
+                                            horarioBase.dias_semana.length > 0 && 
+                                            horarioBase.dias_semana.join(',') === plantilla.horario.dias_semana.join(',')
+                                                ? 'border-primary-500 bg-primary-50'
+                                                : 'border-gray-200 hover:border-gray-300'
+                                        }`}
                                     >
-                                        <option value="">Seleccionar servicio</option>
-                                        {servicios.filter(s => s.estado).map(servicio => (
-                                            <option key={servicio.id_servicio} value={servicio.id_servicio}>
-                                                {servicio.nombre}
-                                            </option>
+                                        <div className="text-2xl mb-2">{plantilla.icono}</div>
+                                        <h4 className="font-medium text-gray-900">{plantilla.nombre}</h4>
+                                        <p className="text-sm text-gray-600 mt-1">{plantilla.descripcion}</p>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Paso 2: Personalizar Horario */}
+                        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">2️⃣ Personaliza tu Horario</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Días de la Semana
+                                    </label>
+                                    <div className="space-y-2">
+                                        {['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'].map((dia) => (
+                                            <label key={dia} className="flex items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={horarioBase.dias_semana.includes(dia)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setHorarioBase(prev => ({
+                                                                ...prev,
+                                                                dias_semana: [...prev.dias_semana, dia]
+                                                            }));
+                                                        } else {
+                                                            setHorarioBase(prev => ({
+                                                                ...prev,
+                                                                dias_semana: prev.dias_semana.filter(d => d !== dia)
+                                                            }));
+                                                        }
+                                                    }}
+                                                    className="rounded mr-3"
+                                                />
+                                                <span className="text-sm text-gray-700 capitalize">{dia}</span>
+                                            </label>
                                         ))}
-                                    </select>
+                                    </div>
                                 </div>
                                 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Precio Adicional (opcional)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={formData.precio_adicional}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, precio_adicional: parseFloat(e.target.value) || 0 }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                                    />
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Fecha y Hora de Inicio *
-                                    </label>
-                                    <input
-                                        type="datetime-local"
-                                        required
-                                        value={formData.fecha_inicio}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, fecha_inicio: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                                    />
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Fecha y Hora de Fin *
-                                    </label>
-                                    <input
-                                        type="datetime-local"
-                                        required
-                                        value={formData.fecha_fin}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, fecha_fin: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                                    />
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Hora de Inicio
+                                        </label>
+                                        <input
+                                            type="time"
+                                            value={horarioBase.hora_inicio}
+                                            onChange={(e) => setHorarioBase(prev => ({ ...prev, hora_inicio: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Hora de Fin
+                                        </label>
+                                        <input
+                                            type="time"
+                                            value={horarioBase.hora_fin}
+                                            onChange={(e) => setHorarioBase(prev => ({ ...prev, hora_fin: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Duración de Sesión (minutos)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="15"
+                                            max="240"
+                                            value={horarioBase.duracion_sesion}
+                                            onChange={(e) => setHorarioBase(prev => ({ ...prev, duracion_sesion: parseInt(e.target.value) }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Descanso entre Sesiones (minutos)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="60"
+                                            value={horarioBase.descanso_entre_sesiones}
+                                            onChange={(e) => setHorarioBase(prev => ({ ...prev, descanso_entre_sesiones: parseInt(e.target.value) }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                            
-                            <div>
-                                <label className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.disponible}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, disponible: e.target.checked }))}
-                                        className="rounded"
-                                    />
-                                    <span className="text-sm font-medium text-gray-700">Disponible para reservas</span>
-                                </label>
-                            </div>
-                            
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Observaciones (opcional)
-                                </label>
-                                <textarea
-                                    value={formData.observaciones}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, observaciones: e.target.value }))}
-                                    rows={2}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
-                                    placeholder="Ej: Horario especial, condiciones especiales, etc."
-                                />
-                            </div>
-                            
-                            <div className="flex gap-2">
+                        </div>
+
+                        {/* Paso 3: Seleccionar Servicios */}
+                        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">3️⃣ Selecciona los Servicios</h3>
+                            <div className="mb-4">
                                 <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="btn-blue"
+                                    onClick={seleccionarTodosLosServicios}
+                                    className="btn-blue flex items-center gap-2"
                                 >
-                                    {loading ? 'Guardando...' : 'Guardar'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowForm(false)}
-                                    className="btn-gray"
-                                >
-                                    Cancelar
+                                    <CheckIcon className="h-4 w-4" />
+                                    Seleccionar Todos
                                 </button>
                             </div>
-                        </form>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {servicios.filter(s => s.estado).map((servicio) => (
+                                    <label key={servicio.id_servicio} className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                                        <input
+                                            type="checkbox"
+                                            checked={serviciosSeleccionados.includes(servicio.id_servicio)}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setServiciosSeleccionados(prev => [...prev, servicio.id_servicio]);
+                                                } else {
+                                                    setServiciosSeleccionados(prev => prev.filter(id => id !== servicio.id_servicio));
+                                                }
+                                            }}
+                                            className="rounded mr-3"
+                                        />
+                                        <div>
+                                            <div className="font-medium text-gray-900">{servicio.nombre}</div>
+                                            <div className="text-sm text-gray-600">{servicio.descripcion}</div>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Botón de Creación */}
+                        <div className="bg-gradient-to-r from-primary-50 to-blue-50 rounded-xl border border-primary-200 p-6">
+                            <div className="text-center">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-2">🚀 Crear mi Horario Automáticamente</h3>
+                                <p className="text-gray-600 mb-4">
+                                    Se crearán disponibilidades para los próximos 30 días según tu configuración
+                                </p>
+                                <button
+                                    onClick={crearHorarioBase}
+                                    disabled={creandoHorario || serviciosSeleccionados.length === 0}
+                                    className="btn-blue text-lg px-8 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {creandoHorario ? (
+                                        <>
+                                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                                            Creando Horario...
+                                        </>
+                                    ) : (
+                                        '🚀 Crear mi horario automáticamente'
+                                    )}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
 
-                {/* Lista de disponibilidades */}
-                {loading ? (
-                    <div className="flex items-center justify-center p-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-                        <span className="ml-2 text-gray-600">Cargando...</span>
-                    </div>
-                ) : disponibilidades.length === 0 ? (
-                    <div className="text-center p-8 bg-white rounded-xl border border-gray-200">
-                        <CalendarDaysIcon className="mx-auto h-12 w-12 text-gray-400" />
-                        <h3 className="mt-2 text-sm font-medium text-gray-900">
-                            {servicios.length === 0 ? 'No hay servicios disponibles' : 'No hay disponibilidades configuradas'}
-                        </h3>
-                        <p className="mt-1 text-sm text-gray-500">
-                            {servicios.length === 0 
-                                ? 'Primero necesitas crear servicios en "Mis Servicios" para poder configurar disponibilidades.'
-                                : 'Agrega disponibilidades para que los clientes puedan reservar tus servicios.'
-                            }
-                        </p>
-                        {servicios.length === 0 && (
-                            <Link 
-                                to="/dashboard/my-services" 
-                                className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                            >
-                                Ir a Mis Servicios
-                            </Link>
-                        )}
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {disponibilidades.map((disp) => (
-                            <div key={disp.id_disponibilidad} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                                <div className="flex justify-between items-start">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-3">
-                                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                                disp.disponible 
-                                                    ? 'bg-green-100 text-green-800' 
-                                                    : 'bg-red-100 text-red-800'
-                                            }`}>
-                                                {disp.disponible ? 'Disponible' : 'No disponible'}
-                                            </span>
-                                            {disp.precio_adicional && disp.precio_adicional > 0 && (
-                                                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                                                    +₲{disp.precio_adicional.toLocaleString()}
-                                                </span>
-                                            )}
-                                            <span className="px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm font-medium">
-                                                {disp.servicio_nombre}
-                                            </span>
-                                        </div>
-                                        
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <p className="text-sm font-medium text-gray-500 mb-1">📅 Fecha</p>
-                                                <p className="text-gray-900">{formatDate(disp.fecha_inicio)}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium text-gray-500 mb-1">🕐 Horario</p>
-                                                <p className="text-gray-900">
-                                                    {formatTime(disp.fecha_inicio)} - {formatTime(disp.fecha_fin)}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        
-                                        {disp.observaciones && (
-                                            <div className="mt-3">
-                                                <p className="text-sm font-medium text-gray-500 mb-1">📝 Observaciones</p>
-                                                <p className="text-gray-700">{disp.observaciones}</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                    
-                                    <button
-                                        onClick={() => handleDelete(disp.id_disponibilidad!)}
-                                        className="text-red-600 hover:text-red-800 p-2 rounded-lg hover:bg-red-50 transition-colors"
-                                        title="Eliminar disponibilidad"
-                                    >
-                                        <TrashIcon className="h-5 w-5" />
-                                    </button>
+                {vista === 'calendario' && (
+                    <div className="space-y-6">
+                        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">📅 Vista de Calendario</h3>
+                            {loading ? (
+                                <div className="flex items-center justify-center p-8">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                                    <span className="ml-2 text-gray-600">Cargando disponibilidades...</span>
                                 </div>
-                            </div>
-                        ))}
+                            ) : disponibilidades.length === 0 ? (
+                                <div className="text-center p-8">
+                                    <CalendarDaysIcon className="mx-auto h-12 w-12 text-gray-400" />
+                                    <h3 className="mt-2 text-sm font-medium text-gray-900">No hay disponibilidades</h3>
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        Configura tu horario en la pestaña "Configuración Rápida"
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {disponibilidades.map((disp) => (
+                                        <div key={disp.id_disponibilidad} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                                                            disp.disponible 
+                                                                ? 'bg-green-100 text-green-800' 
+                                                                : 'bg-red-100 text-red-800'
+                                                        }`}>
+                                                            {disp.disponible ? 'Disponible' : 'No disponible'}
+                                                        </span>
+                                                        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                                                            {disp.servicio_nombre}
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    <div className="text-sm text-gray-600">
+                                                        <p>📅 {formatDate(disp.fecha_inicio)}</p>
+                                                        <p>🕐 {formatTime(disp.fecha_inicio)} - {formatTime(disp.fecha_fin)}</p>
+                                                        {disp.observaciones && (
+                                                            <p>📝 {disp.observaciones}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                
+                                                <button
+                                                    onClick={() => handleDelete(disp.id_disponibilidad!)}
+                                                    className="text-red-600 hover:text-red-800 p-2 rounded-lg hover:bg-red-50 transition-colors"
+                                                    title="Eliminar disponibilidad"
+                                                >
+                                                    <TrashIcon className="h-5 w-5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {vista === 'excepciones' && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">🚫 Gestionar Excepciones</h3>
+                        <div className="text-center p-8">
+                            <XMarkIcon className="mx-auto h-12 w-12 text-gray-400" />
+                            <h3 className="mt-2 text-sm font-medium text-gray-900">Próximamente</h3>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Aquí podrás gestionar días festivos, vacaciones y excepciones especiales
+                            </p>
+                        </div>
                     </div>
                 )}
             </div>
