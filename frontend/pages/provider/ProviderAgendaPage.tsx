@@ -73,6 +73,12 @@ const ProviderAgendaPage: React.FC = () => {
 
             const data = await providerServicesAPI.getProviderServices(accessToken);
             console.log(`✅ Servicios cargados: ${data.length} servicios`);
+            
+            if (data.length === 0) {
+                console.log('⚠️ No hay servicios disponibles, pero manteniendo sesión');
+                setError('No hay servicios disponibles. Por favor, crea un servicio primero en "Mis Servicios".');
+            }
+            
             setServicios(data);
         } catch (err) {
             console.error('❌ Error al cargar servicios:', err);

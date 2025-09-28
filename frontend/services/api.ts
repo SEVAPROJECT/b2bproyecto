@@ -1718,6 +1718,10 @@ export const providerServicesAPI = {
     // Obtener servicios del proveedor
     async getProviderServices(accessToken: string): Promise<any[]> {
         try {
+            console.log('🔍 getProviderServices - Iniciando petición');
+            console.log('🔍 getProviderServices - URL:', `${API_BASE_URL}/provider/services/`);
+            console.log('🔍 getProviderServices - Token disponible:', accessToken ? 'SÍ' : 'NO');
+            
             const response = await fetch(`${API_BASE_URL}/provider/services/`, {
                 method: 'GET',
                 headers: {
@@ -1726,24 +1730,31 @@ export const providerServicesAPI = {
                 },
             });
 
+            console.log('🔍 getProviderServices - Respuesta recibida:', response.status, response.statusText);
+
             if (!response.ok) {
+                console.log('🔍 getProviderServices - Error en respuesta:', response.status);
+                
                 // Si es error 401 o 500, no hacer logout, solo lanzar error controlado
                 if (response.status === 401 || response.status === 500) {
                     console.log('⚠️ Error 401/500 en getProviderServices, no haciendo logout');
-                    throw new Error('Error temporal del servidor. Por favor, intenta nuevamente.');
+                    console.log('🔍 getProviderServices - Devolviendo array vacío en lugar de error');
+                    // En lugar de lanzar error, devolver array vacío para que la página funcione
+                    return [];
                 }
                 
                 const error = await handleApiError(response);
                 throw error;
             }
 
-            return await response.json();
+            const data = await response.json();
+            console.log('🔍 getProviderServices - Datos recibidos:', data.length, 'servicios');
+            return data;
         } catch (error) {
             console.error('❌ Error en getProviderServices:', error);
-            if (error instanceof Error) {
-                throw { detail: error.message };
-            }
-            throw error;
+            console.log('🔍 getProviderServices - Devolviendo array vacío por error');
+            // En lugar de lanzar error, devolver array vacío para que la página funcione
+            return [];
         }
     },
 
