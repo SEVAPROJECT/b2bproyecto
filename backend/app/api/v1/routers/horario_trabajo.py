@@ -1,0 +1,383 @@
+# backend/app/api/v1/routers/horario_trabajo.py
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, delete
+from app.api.v1.dependencies.database_supabase import get_async_db
+from app.api.v1.dependencies.auth_user import get_current_user
+from app.models.horario_trabajo import HorarioTrabajoModel, ExcepcionHorarioModel
+from app.schemas.horario_trabajo import (
+    HorarioTrabajoIn, HorarioTrabajoOut, HorarioTrabajoUpdate,
+    ExcepcionHorarioIn, ExcepcionHorarioOut, ExcepcionHorarioUpdate,
+    ConfiguracionHorarioCompletaIn, ConfiguracionHorarioCompletaOut
+)
+from app.schemas.auth_user import SupabaseUser
+import logging
+from typing import List, Optional
+from datetime import datetime, date, time, timedelta
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/horario-trabajo", tags=["horario-trabajo"])
+
+# ===== HORARIOS DE TRABAJO =====
+
+@router.post(
+    "/",
+    response_model=HorarioTrabajoOut,
+    status_code=status.HTTP_201_CREATED,
+    description="Crea un nuevo horario de trabajo para el proveedor autenticado."
+)
+async def crear_horario_trabajo(
+    horario: HorarioTrabajoIn,
+    current_user: SupabaseUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Crea un nuevo horario de trabajo.
+    Solo los proveedores pueden crear horarios.
+    """
+    logger.info(f"Creando horario de trabajo para proveedor {current_user.id}")
+    
+    # Verificar que el usuario es proveedor
+    if current_user.role != "provider":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los proveedores pueden gestionar horarios de trabajo."
+        )
+    
+    # Verificar que no existe ya un horario para este día
+    horario_existente_query = select(HorarioTrabajoModel).where(
+        and_(
+            HorarioTrabajoModel.id_proveedor == current_user.id,
+            HorarioTrabajoModel.dia_semana == horario.dia_semana
+        )
+    )
+    horario_existente_result = await db.execute(horario_existente_query)
+    horario_existente = horario_existente_result.scalar_one_or_none()
+    
+    if horario_existente:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ya existe un horario para el día {horario.dia_semana}. Actualiza el existente o elimínalo primero."
+        )
+    
+    # Crear nuevo horario
+    nuevo_horario = HorarioTrabajoModel(
+        id_proveedor=current_user.id,
+        dia_semana=horario.dia_semana,
+        hora_inicio=horario.hora_inicio,
+        hora_fin=horario.hora_fin,
+        activo=horario.activo
+    )
+    
+    try:
+        db.add(nuevo_horario)
+        await db.commit()
+        await db.refresh(nuevo_horario)
+        logger.info(f"Horario {nuevo_horario.id_horario} creado exitosamente.")
+        return nuevo_horario
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error al crear horario: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al crear el horario de trabajo."
+        )
+
+@router.get(
+    "/",
+    response_model=List[HorarioTrabajoOut],
+    description="Obtiene todos los horarios de trabajo del proveedor autenticado."
+)
+async def obtener_horarios_trabajo(
+    current_user: SupabaseUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Obtiene todos los horarios de trabajo del proveedor.
+    """
+    if current_user.role != "provider":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los proveedores pueden acceder a sus horarios."
+        )
+    
+    horarios_query = select(HorarioTrabajoModel).where(
+        HorarioTrabajoModel.id_proveedor == current_user.id
+    ).order_by(HorarioTrabajoModel.dia_semana)
+    
+    horarios_result = await db.execute(horarios_query)
+    horarios = horarios_result.scalars().all()
+    
+    return horarios
+
+@router.put(
+    "/{horario_id}",
+    response_model=HorarioTrabajoOut,
+    description="Actualiza un horario de trabajo existente."
+)
+async def actualizar_horario_trabajo(
+    horario_id: int,
+    horario_update: HorarioTrabajoUpdate,
+    current_user: SupabaseUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Actualiza un horario de trabajo existente.
+    """
+    if current_user.role != "provider":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los proveedores pueden gestionar horarios."
+        )
+    
+    # Obtener el horario
+    horario_query = select(HorarioTrabajoModel).where(
+        and_(
+            HorarioTrabajoModel.id_horario == horario_id,
+            HorarioTrabajoModel.id_proveedor == current_user.id
+        )
+    )
+    horario_result = await db.execute(horario_query)
+    horario = horario_result.scalar_one_or_none()
+    
+    if not horario:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Horario no encontrado."
+        )
+    
+    # Actualizar campos
+    update_data = horario_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(horario, field, value)
+    
+    try:
+        await db.commit()
+        await db.refresh(horario)
+        logger.info(f"Horario {horario_id} actualizado exitosamente.")
+        return horario
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error al actualizar horario: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al actualizar el horario."
+        )
+
+@router.delete(
+    "/{horario_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    description="Elimina un horario de trabajo."
+)
+async def eliminar_horario_trabajo(
+    horario_id: int,
+    current_user: SupabaseUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Elimina un horario de trabajo.
+    """
+    if current_user.role != "provider":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los proveedores pueden gestionar horarios."
+        )
+    
+    # Verificar que el horario existe y pertenece al usuario
+    horario_query = select(HorarioTrabajoModel).where(
+        and_(
+            HorarioTrabajoModel.id_horario == horario_id,
+            HorarioTrabajoModel.id_proveedor == current_user.id
+        )
+    )
+    horario_result = await db.execute(horario_query)
+    horario = horario_result.scalar_one_or_none()
+    
+    if not horario:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Horario no encontrado."
+        )
+    
+    try:
+        await db.delete(horario)
+        await db.commit()
+        logger.info(f"Horario {horario_id} eliminado exitosamente.")
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error al eliminar horario: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al eliminar el horario."
+        )
+
+# ===== CONFIGURACIÓN COMPLETA =====
+
+@router.post(
+    "/configuracion-completa",
+    response_model=ConfiguracionHorarioCompletaOut,
+    status_code=status.HTTP_201_CREATED,
+    description="Configura el horario completo de la semana de una vez."
+)
+async def configurar_horario_completo(
+    configuracion: ConfiguracionHorarioCompletaIn,
+    current_user: SupabaseUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Configura el horario completo de la semana.
+    Elimina horarios existentes y crea los nuevos.
+    """
+    if current_user.role != "provider":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los proveedores pueden configurar horarios."
+        )
+    
+    try:
+        # Eliminar horarios existentes
+        delete_horarios_query = delete(HorarioTrabajoModel).where(
+            HorarioTrabajoModel.id_proveedor == current_user.id
+        )
+        await db.execute(delete_horarios_query)
+        
+        # Crear nuevos horarios
+        horarios_creados = []
+        for horario_data in configuracion.horarios:
+            nuevo_horario = HorarioTrabajoModel(
+                id_proveedor=current_user.id,
+                dia_semana=horario_data.dia_semana,
+                hora_inicio=horario_data.hora_inicio,
+                hora_fin=horario_data.hora_fin,
+                activo=horario_data.activo
+            )
+            db.add(nuevo_horario)
+            horarios_creados.append(nuevo_horario)
+        
+        # Crear excepciones si se proporcionan
+        excepciones_creadas = []
+        if configuracion.excepciones:
+            for excepcion_data in configuracion.excepciones:
+                nueva_excepcion = ExcepcionHorarioModel(
+                    id_proveedor=current_user.id,
+                    fecha=excepcion_data.fecha,
+                    tipo=excepcion_data.tipo,
+                    hora_inicio=excepcion_data.hora_inicio,
+                    hora_fin=excepcion_data.hora_fin,
+                    motivo=excepcion_data.motivo
+                )
+                db.add(nueva_excepcion)
+                excepciones_creadas.append(nueva_excepcion)
+        
+        await db.commit()
+        
+        # Refrescar objetos para obtener IDs
+        for horario in horarios_creados:
+            await db.refresh(horario)
+        for excepcion in excepciones_creadas:
+            await db.refresh(excepcion)
+        
+        logger.info(f"Configuración completa creada para proveedor {current_user.id}")
+        
+        return ConfiguracionHorarioCompletaOut(
+            horarios=horarios_creados,
+            excepciones=excepciones_creadas
+        )
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error al configurar horario completo: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al configurar el horario completo."
+        )
+
+# ===== EXCEPCIONES DE HORARIO =====
+
+@router.post(
+    "/excepciones",
+    response_model=ExcepcionHorarioOut,
+    status_code=status.HTTP_201_CREATED,
+    description="Crea una excepción de horario (día cerrado o horario especial)."
+)
+async def crear_excepcion_horario(
+    excepcion: ExcepcionHorarioIn,
+    current_user: SupabaseUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Crea una excepción de horario.
+    """
+    if current_user.role != "provider":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los proveedores pueden gestionar excepciones."
+        )
+    
+    # Verificar que no existe ya una excepción para esta fecha
+    excepcion_existente_query = select(ExcepcionHorarioModel).where(
+        and_(
+            ExcepcionHorarioModel.id_proveedor == current_user.id,
+            ExcepcionHorarioModel.fecha == excepcion.fecha
+        )
+    )
+    excepcion_existente_result = await db.execute(excepcion_existente_query)
+    excepcion_existente = excepcion_existente_result.scalar_one_or_none()
+    
+    if excepcion_existente:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ya existe una excepción para la fecha {excepcion.fecha}. Actualiza la existente o elimínala primero."
+        )
+    
+    # Crear nueva excepción
+    nueva_excepcion = ExcepcionHorarioModel(
+        id_proveedor=current_user.id,
+        fecha=excepcion.fecha,
+        tipo=excepcion.tipo,
+        hora_inicio=excepcion.hora_inicio,
+        hora_fin=excepcion.hora_fin,
+        motivo=excepcion.motivo
+    )
+    
+    try:
+        db.add(nueva_excepcion)
+        await db.commit()
+        await db.refresh(nueva_excepcion)
+        logger.info(f"Excepción {nueva_excepcion.id_excepcion} creada exitosamente.")
+        return nueva_excepcion
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error al crear excepción: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al crear la excepción de horario."
+        )
+
+@router.get(
+    "/excepciones",
+    response_model=List[ExcepcionHorarioOut],
+    description="Obtiene todas las excepciones de horario del proveedor."
+)
+async def obtener_excepciones_horario(
+    current_user: SupabaseUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Obtiene todas las excepciones de horario del proveedor.
+    """
+    if current_user.role != "provider":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los proveedores pueden acceder a sus excepciones."
+        )
+    
+    excepciones_query = select(ExcepcionHorarioModel).where(
+        ExcepcionHorarioModel.id_proveedor == current_user.id
+    ).order_by(ExcepcionHorarioModel.fecha)
+    
+    excepciones_result = await db.execute(excepciones_query)
+    excepciones = excepciones_result.scalars().all()
+    
+    return excepciones
