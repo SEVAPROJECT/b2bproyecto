@@ -283,15 +283,20 @@ async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> J
 
         # Configurar SOLO refresh_token en cookie HttpOnly
         print(f"🍪 Estableciendo cookie refresh_token: {signin_response.session.refresh_token[:20]}...")
+        
+        # Detectar entorno para configurar cookies
+        import os
+        is_production = os.getenv("RAILWAY_ENVIRONMENT") is not None
+        
         response.set_cookie(
             key="refresh_token", 
             value=signin_response.session.refresh_token,
             httponly=True,
-            secure=False,  # False para desarrollo local
+            secure=is_production,  # True en producción (Railway), False en desarrollo
             samesite="lax",
             max_age=7 * 24 * 60 * 60,  # 7 días
             path="/",
-            domain="localhost"  # Configurar dominio para que funcione entre puertos
+            domain=None if is_production else "localhost"  # None en producción, "localhost" en desarrollo
         )
         
         print("✅ Cookies HttpOnly establecidas correctamente")
