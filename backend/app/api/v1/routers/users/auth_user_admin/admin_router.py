@@ -24,6 +24,7 @@ from app.schemas.empresa.verificacion_solicitud import VerificacionSolicitudOut
 from app.schemas.user import UserProfileAndRolesOut
 from app.api.v1.dependencies.auth_user import get_admin_user, get_current_user
 from sqlalchemy import delete
+from sqlalchemy import or_, and_, func
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -112,7 +113,7 @@ async def get_solicitudes_pendientes(
                 except Exception as e:
                     print(f"Error obteniendo email para usuario {empresa.user_id}: {e}")
                     user_email = "No disponible"
-        
+            
         # Categoría eliminada del detalle de solicitud
         
         # Obtener documentos de la solicitud
@@ -936,6 +937,8 @@ async def servir_documento(
 # GESTIÓN DE USUARIOS
 # ========================================
 
+
+
 @router.get(
     "/users/emails-only",
     description="Obtiene solo los emails de usuarios para AdminCategoryRequestsPage (endpoint específico)"
@@ -1054,12 +1057,9 @@ async def get_all_users(
 ):
     """Obtiene usuarios con paginación y búsqueda optimizada"""
     try:
-        print(f"🔍 DEBUG: Endpoint optimizado - Página: {page}, Límite: {limit}")
+        '''print(f"🔍 DEBUG: Endpoint optimizado - Página: {page}, Límite: {limit}")
         print(f"🔍 DEBUG: Búsqueda empresa: {search_empresa}, nombre: {search_nombre}")
-        print(f"🔍 DEBUG: Iniciando consulta de base de datos...")
-
-        from sqlalchemy.future import select
-        from sqlalchemy import or_, and_, func
+        print(f"🔍 DEBUG: Iniciando consulta de base de datos...")'''
 
         # OPTIMIZACIÓN 1: Consulta completa para funcionalidad completa
         base_query = select(

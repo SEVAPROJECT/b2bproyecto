@@ -3,8 +3,7 @@ import { DashboardStatCard } from '../../components/ui';
 import OptimizedLoading from '../../components/ui/OptimizedLoading';
 import { UsersIcon, FolderIcon, BuildingStorefrontIcon, CheckCircleIcon } from '../../components/icons';
 import { useAuth } from '../../contexts/AuthContext';
-import { categoriesAPI, servicesAPI, adminAPI } from '../../services/api';
-import { API_CONFIG, buildApiUrl } from '../../config/api';
+import { adminAPI } from '../../services/api';
 
 const AdminDashboardPage: React.FC = () => {
     const { user } = useAuth();
@@ -34,52 +33,24 @@ const AdminDashboardPage: React.FC = () => {
                 // Carga ultra optimizada: todas las APIs en paralelo sin timeouts
                 console.log('🚀 Carga ultra rápida del dashboard...');
 
-                // Ejecutar todas las llamadas en paralelo sin timeouts para máxima velocidad
-                const apiCalls = [
-                    categoriesAPI.getCategories(user.accessToken, true).catch(() => []),
-                    servicesAPI.getServicesWithProviders(user.accessToken).catch(() =>
-                        servicesAPI.getServices(user.accessToken).catch(() => [])
-                    ),
-                    adminAPI.getAllSolicitudesVerificacion(user.accessToken).catch(() => []),
-                    fetch(buildApiUrl('/admin/users'), {
-                        headers: { 'Authorization': `Bearer ${user.accessToken}` }
-                    }).then(r => r.ok ? r.json() : { usuarios: 0 }).catch(() => ({ usuarios: 0 }))
-                ];
+                // Llamada optimizada usando adminAPI
+                console.log('🔍 Obteniendo estadísticas del dashboard usando adminAPI...');
+                const startTime = performance.now();
+                
+                const dashboardStats = await adminAPI.getDashboardStats(user.accessToken);
 
-                const results = await Promise.allSettled(apiCalls);
+                const endTime = performance.now();
+                const fetchTime = endTime - startTime;
+                console.log(`⏱️ Tiempo de fetch: ${fetchTime.toFixed(2)}ms`);
+                console.log('🔍 Datos recibidos del servidor:', dashboardStats);
 
-                // Procesamiento ultra rápido de resultados
-                const [categoriesResult, servicesResult, verificationResult, usersResult] = results;
+                // Extraer datos del endpoint consolidado
+                const totalUsers = dashboardStats.total_users || 0;
+                const totalCategories = dashboardStats.total_categories || 0;
+                const totalServices = dashboardStats.total_services || 0;
+                const verificationRate = dashboardStats.verification_rate || 0;
 
-                const totalCategories = categoriesResult.status === 'fulfilled' ? (categoriesResult.value?.length || 0) : 0;
-                const totalServices = servicesResult.status === 'fulfilled' ? (servicesResult.value?.length || 0) : 0;
-                const verificationRequests = verificationResult.status === 'fulfilled' ? verificationResult.value : [];
-                const totalUsers = usersResult.status === 'fulfilled' ? (usersResult.value?.usuarios?.length || usersResult.value?.usuarios || 0) : 0;
-
-                console.log('✅ Dashboard cargado:', { totalCategories, totalServices, totalUsers });
-
-                // Debug: ver qué valores llegan para verificación
-                console.log('🔍 Solicitudes de verificación completas:', verificationRequests);
-                console.log('🔍 Estados encontrados:', verificationRequests?.map(req => ({
-                    id: req.id_verificacion,
-                    estado: req.estado_aprobacion,
-                    email: req.email_contacto,
-                    todos_los_campos: Object.keys(req)
-                })));
-
-                // Filtrar las aprobadas (según datos de la tabla: 7 aprobadas)
-                const approvedRequests = verificationRequests?.filter((req: any) => {
-                    const estado = req.estado_aprobacion || req.estado || req.status || req.state;
-                    console.log(`🔍 Revisando solicitud ${req.id_verificacion}: estado="${estado}"`);
-                    return estado === 'aprobada' || estado === 'approved' || estado === 'aceptada';
-                }).length || 0;
-
-                const totalRequests = verificationRequests?.length || 0;
-                // Calcular tasa de verificación: aprobadas / total * 100
-                const verificationRate = totalRequests > 0 ? Math.round((approvedRequests / totalRequests) * 100) : 0;
-
-                console.log(`📊 Verificación - Aprobadas: ${approvedRequests}, Total: ${totalRequests}, Tasa: ${verificationRate}%`);
-                console.log(`👥 Usuarios reales obtenidos: ${totalUsers}`);
+                console.log('✅ Dashboard cargado:', { totalCategories, totalServices, totalUsers, verificationRate });
 
                 setStats({
                     totalUsers,
@@ -89,13 +60,9 @@ const AdminDashboardPage: React.FC = () => {
                 });
 
                 console.log('✅ Estadísticas cargadas:', { totalUsers, totalCategories, totalServices, verificationRate });
-                console.log('🔍 DIAGNÓSTICO COMPLETO:');
-                console.log('- Total solicitudes:', totalRequests);
-                console.log('- Solicitudes aprobadas:', approvedRequests);
-                console.log('- Tasa calculada:', verificationRate + '%');
-                console.log('- Array de solicitudes:', verificationRequests);
 
             } catch (error) {
+                console.error('❌ Error obteniendo estadísticas del dashboard:', error);
                 // Error silencioso, usar datos por defecto
                 setStats({
                     totalUsers: 0,

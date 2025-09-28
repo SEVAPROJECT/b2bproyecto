@@ -75,7 +75,7 @@ class TokenOut(BaseModel):
     Este modelo se utiliza para enviar los tokens de acceso y actualización al usuario.
     """
     access_token: str
-    refresh_token: str
+    #refresh_token: str #comentado para usar httpOnly cookie
     expires_in: int
     token_type: str = "bearer"
 
@@ -90,6 +90,8 @@ class SignUpSuccess(BaseModel):
     nombre_persona: str
     nombre_empresa: str
     ruc: Optional[str] = None
+    instructions: Optional[str] = "Revisa tu bandeja de entrada y haz clic en el enlace de confirmación"
+    next_steps: Optional[str] = "Una vez confirmado tu email, podrás iniciar sesión en la plataforma"
 
 class RefreshTokenIn(BaseModel):
     """

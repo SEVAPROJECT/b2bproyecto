@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, BigInteger, Boolean, DateTime, text
 from sqlalchemy.orm import relationship, Mapped
 from app.supabase.db.db_supabase import Base
-from app.models_backup import TarifaServicio
+from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
 
 class TipoTarifaServicio(Base):
     """

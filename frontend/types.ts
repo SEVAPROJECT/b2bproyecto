@@ -57,6 +57,17 @@ export interface BackendService {
   precio: number;
   estado: boolean;
   created_at: string;
+  // Propiedades adicionales del marketplace
+  razon_social: string | null;
+  nombre_contacto: string | null;
+  departamento: string | null;
+  ciudad: string | null;
+  barrio: string | null;
+  codigo_iso_moneda: string | null;
+  nombre_moneda: string | null;
+  simbolo_moneda: string | null;
+  imagen: string | null;
+  tarifas: any[];
 }
 
 export interface BackendServiceIn {

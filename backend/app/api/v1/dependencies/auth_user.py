@@ -1,6 +1,6 @@
 #logica de autenticacion/validacion de token (jwt, auth0, etc)
 #una dependencia para validar el token JWT en cada request
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import AuthApiError
 from app.schemas.user import UserProfileAndRolesOut
@@ -19,19 +19,29 @@ logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
 
-# Dependencia para validar el token JWT y obtener los datos del usuario autenticado
+# Dependencia para validar el token JWT desde cookies o headers
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> SupabaseUser:
+        request: Request,
+        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False))
+    ) -> SupabaseUser:
     """
-    Dependencia que valida el token JWT y retorna los datos del usuario autenticado.
+    Dependencia que valida el token JWT desde cookies o headers y retorna los datos del usuario autenticado.
     """
-    if not credentials:
+    # Intentar obtener token desde cookies primero
+    token = request.cookies.get("access_token")
+    print(f"🍪 Token desde cookies: {token[:20] + '...' if token else 'None'}")
+    
+    # Si no hay token en cookies, usar el token del header
+    if not token and credentials:
+        token = credentials.credentials
+        print(f"🔑 Token desde header: {token[:20] + '...' if token else 'None'}")
+    
+    if not token:
+        print("❌ No se encontró token en cookies ni headers")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No se proporcionó un token de autorización"
         )
-    token = credentials.credentials
     #user_data = supabase_auth.auth.get_user(token).get("data")
 
     # Manejando el objeto UserResponse en lugar de un diccionario

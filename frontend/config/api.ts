@@ -34,6 +34,7 @@ export const API_CONFIG = {
         VERIFICATIONS: '/admin/verificaciones/pendientes',
         CATEGORIES: '/admin/categories',
         SERVICE_REQUESTS: '/admin/service-requests',
+        DASHBOARD_STATS: '/admin/stats/dashboard/stats',
         REPORTS: {
             PROVIDERS_VERIFIED: '/admin/reports/proveedores-verificados',
         },
@@ -50,7 +51,7 @@ export const API_CONFIG = {
     // Endpoints de servicios
     SERVICES: {
         LIST: '/services/list',
-        WITH_PROVIDERS: '/services/with-providers',
+        UNIFIED: '/services/services', // Endpoint unificado que reemplaza with-providers y filtered
         BY_CATEGORY: '/services/by-category',
     },
     

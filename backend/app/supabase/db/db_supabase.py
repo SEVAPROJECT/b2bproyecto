@@ -50,28 +50,41 @@ except Exception as e:
 # Crear engine asíncrono con manejo de errores
 try:
     # Convertir URL síncrona a asíncrona
-    async_database_url = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
+    if DATABASE_URL.startswith('postgresql://'):
+        async_database_url = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
+    elif DATABASE_URL.startswith('postgresql+asyncpg://'):
+        async_database_url = DATABASE_URL
+    else:
+        # Fallback para otros formatos
+        async_database_url = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
+    
     logger.info("🔄 Creando engine asíncrono...")
-    logger.info("🔧 Configurando para compatibilidad con PgBouncer (prepared statements deshabilitados)")
+    logger.info(f"🔗 URL de base de datos: {async_database_url}")
+    logger.info("🔧 Configurando para compatibilidad con Supavisor (pooler nativo de Supabase)")
 
-    # SOLUCIÓN DEFINITIVA: Configurar para PgBouncer sin prepared statements
+    # CONFIGURACIÓN OPTIMIZADA PARA SUPAVISOR (no PgBouncer)
+    # Supavisor es compatible con prepared statements y SQLAlchemy
+    from sqlalchemy.pool import NullPool
+    
     async_engine = create_async_engine(
         async_database_url,
-        pool_size=1,  # Pool mínimo para evitar conflictos
-        max_overflow=0,  # Sin overflow para evitar prepared statements
-        pool_pre_ping=False,  # Deshabilitar pre_ping que causa prepared statements
-        pool_recycle=60,  # Reciclar conexiones cada minuto para evitar conflictos
+        poolclass=None,  # Sin pool de conexiones para evitar PgBouncer
         echo=False,
         connect_args={
-            "statement_cache_size": 0,  # CRÍTICO: Deshabilitar prepared statements
-            "prepared_statement_cache_size": 0,  # CRÍTICO: Deshabilitar cache de prepared statements
-            "command_timeout": 10,  # Timeout más corto
+            "statement_cache_size": 0,  # Deshabilitar prepared statements para PgBouncer
+            "prepared_statement_cache_size": 0,
+            "command_timeout": 60,  # Timeout para comandos
             "server_settings": {
-                "jit": "off",
+                "jit": "off",  # Deshabilitar JIT para evitar problemas con PgBouncer
                 "application_name": "seva_b2b_app",
                 "default_transaction_isolation": "read committed"
             }
-        }
+        },
+        
+        # Configuración optimizada para PgBouncer (que sigue siendo usado)
+        pool_pre_ping=True,  # Verificar conexiones antes de usar
+        pool_recycle=3600,  # Reciclar conexiones cada hora
+        execution_options={"prepared": False}  # 🚨 Clave para PgBouncer
     )
 
     AsyncSessionLocal = sessionmaker(
