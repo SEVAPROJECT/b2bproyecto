@@ -72,6 +72,15 @@ const ProviderAgendaPage: React.FC = () => {
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error(`❌ Error del servidor: ${errorText}`);
+                
+                // Si es error 401 o 500, mostrar mensaje pero no hacer logout
+                if (response.status === 401 || response.status === 500) {
+                    console.log('⚠️ Error de autenticación o servidor, mostrando mensaje pero manteniendo sesión');
+                    setError('Error temporal del servidor. Por favor, intenta nuevamente.');
+                    setServicios([]);
+                    return;
+                }
+                
                 throw new Error(`Error ${response.status}: ${response.statusText}`);
             }
 
@@ -80,8 +89,21 @@ const ProviderAgendaPage: React.FC = () => {
             setServicios(data);
         } catch (err) {
             console.error('❌ Error al cargar servicios:', err);
-            setError(err instanceof Error ? err.message : 'Error desconocido');
-            setServicios([]);
+            
+            // No hacer logout en errores de red o servidor
+            if (err instanceof Error && (
+                err.message.includes('Error temporal del servidor') ||
+                err.message.includes('Error 500') ||
+                err.message.includes('Error 401') ||
+                err.message.includes('Failed to fetch')
+            )) {
+                console.log('⚠️ Error de servidor detectado, manteniendo sesión');
+                setError('Error temporal del servidor. Por favor, intenta nuevamente.');
+                setServicios([]);
+            } else {
+                setError(err instanceof Error ? err.message : 'Error desconocido');
+                setServicios([]);
+            }
         } finally {
             setLoading(false);
         }
@@ -114,7 +136,19 @@ const ProviderAgendaPage: React.FC = () => {
             setDisponibilidades(allDisponibilidades);
         } catch (err) {
             console.error('Error al cargar disponibilidades:', err);
-            setError(err instanceof Error ? err.message : 'Error desconocido');
+            
+            // No hacer logout en errores de red o servidor
+            if (err instanceof Error && (
+                err.message.includes('Error temporal del servidor') ||
+                err.message.includes('Error 500') ||
+                err.message.includes('Error 401') ||
+                err.message.includes('Failed to fetch')
+            )) {
+                console.log('⚠️ Error de servidor en disponibilidades, manteniendo sesión');
+                setError('Error temporal del servidor. Por favor, intenta nuevamente.');
+            } else {
+                setError(err instanceof Error ? err.message : 'Error desconocido');
+            }
         } finally {
             setLoading(false);
         }

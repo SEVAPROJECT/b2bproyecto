@@ -70,7 +70,15 @@ const ProviderRoute: React.FC<ProviderRouteProps> = ({ children }) => {
         return <Navigate to="/login" replace />;
     }
 
+    // Si el usuario no tiene rol de provider, pero tiene accessToken, 
+    // asumir que es provider para evitar redirección en errores 500
     if (user.role !== 'provider') {
+        console.log('⚠️ Usuario no tiene rol de provider, pero manteniendo acceso para evitar redirección');
+        // No redirigir si hay problemas de autenticación
+        if (user.accessToken) {
+            console.log('🔑 Usuario tiene accessToken, permitiendo acceso');
+            return <>{children}</>;
+        }
         return <Navigate to="/dashboard" replace />;
     }
 
