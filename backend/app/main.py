@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.startup import startup_events, shutdown_events
 
 # Instancia de la aplicación de FastAPI
 app = FastAPI(
@@ -7,6 +8,15 @@ app = FastAPI(
     description="API para la plataforma B2B SEVA Empresas",
     version="1.0.0"
 )
+
+# Eventos de inicialización y limpieza
+@app.on_event("startup")
+async def startup():
+    await startup_events()
+
+@app.on_event("shutdown")
+async def shutdown():
+    await shutdown_events()
 
 
 # Configurar CORS para permitir comunicación con el frontend
@@ -39,6 +49,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 from app.api.v1.routers.users.auth_user import auth
 from app.api.v1.routers.users.auth_user_admin.admin_router import router as auth_admin_router
+from app.api.v1.routers.users.auth_user_admin.admin_stats_router import router as admin_stats_router
 from app.api.v1.routers.locations import locations
 from app.api.v1.routers.providers import providers
 from app.api.v1.routers.services.categorie_service import router as categories_router
@@ -63,6 +74,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # Incluir routers
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(auth_admin_router, prefix="/api/v1")
+app.include_router(admin_stats_router, prefix="/api/v1")
 app.include_router(providers.router, prefix="/api/v1")
 app.include_router(locations.router, prefix="/api/v1")
 app.include_router(categories_router, prefix="/api/v1")

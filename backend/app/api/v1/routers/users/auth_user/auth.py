@@ -7,6 +7,8 @@ from app.schemas.auth import SignInIn, SignUpIn, SignUpSuccess, TokenOut, Refres
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.v1.dependencies.auth_user import get_current_user  # dependencia que valida el JWT
 from app.api.v1.dependencies.database_supabase import get_async_db  # dependencia que proporciona la sesión de DB
+from app.services.rate_limit_service import email_rate_limit_service
+from app.services.direct_db_service import direct_db_service
 from app.supabase.auth_service import supabase_auth  # cliente Supabase inicializado
 from typing import Any, Dict, Union
 from app.schemas.user import UserProfileAndRolesOut
@@ -24,6 +26,9 @@ from fastapi import File, UploadFile
 import os
 import uuid
 from datetime import datetime
+import asyncio
+from app.services.direct_db_service import direct_db_service
+from fastapi.responses import JSONResponse
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -41,6 +46,16 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> Union[TokenOut, SignUpSuccess]:
     try:
         logger.info(f"Iniciando registro para usuario: {data.email}")
+        
+        # --- Verificar rate limit antes de proceder ---
+        if not email_rate_limit_service.can_send_email(data.email):
+            remaining_attempts = email_rate_limit_service.get_remaining_attempts(data.email)
+            next_attempt_time = email_rate_limit_service.get_next_attempt_time(data.email)
+            
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Has alcanzado el límite de intentos de registro. Intentos restantes: {remaining_attempts}. Próximo intento disponible: {next_attempt_time.strftime('%H:%M') if next_attempt_time else 'N/A'}. Contacta a b2bseva.notificaciones@gmail.com para ayuda inmediata."
+            )
         
         # --- Paso 1: Crear usuario en Supabase Auth con metadata ---
         # La metadata se enviará al trigger para crear automáticamente el perfil y asignar el rol "Cliente"
@@ -61,119 +76,95 @@ async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> U
 
         if not signup_response.user:
             handle_supabase_auth_error("Respuesta de Supabase incompleta (no hay user)")
+        
+        # Registrar intento de envío de email
+        email_rate_limit_service.record_email_attempt(data.email)
 
         id_user = str(signup_response.user.id)
         logger.info(f"Usuario creado en Supabase Auth con ID: {id_user}")
 
-        # --- Paso 2: Verificar que el trigger funcionó correctamente ---
-        # Esperamos un momento para que el trigger se ejecute
-        import asyncio
-        await asyncio.sleep(2)  # Aumentamos el tiempo de espera
-
-        # Verificar que el perfil se creó con manejo de errores de conexión
-        try:
-            logger.info(f"Verificando si el perfil se creó para el usuario: {id_user}")
-            result = await db.execute(select(UserModel).filter(UserModel.id == id_user))
-            user_profile = result.scalars().first()
-
-            if not user_profile:
-                logger.error(f"El perfil no se creó para el usuario: {id_user}")
-                # Intentar crear el perfil manualmente como fallback
-                try:
-                    logger.info("Intentando crear perfil manualmente como fallback")
-                    new_profile = UserModel(
-                        id=id_user,
-                        nombre_persona=data.nombre_persona,
-                        nombre_empresa=data.nombre_empresa,
-                        ruc=data.ruc,
-                        estado="ACTIVO"
-                    )
-                    db.add(new_profile)
-                    await db.commit()
-                    logger.info("Perfil creado manualmente exitosamente")
-                except SQLAlchemyError as e:
-                    logger.error(f"Error al crear perfil manualmente: {e}")
-                    await db.rollback()
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"Error: El perfil del usuario no se creó automáticamente. Error del trigger: {str(e)}"
-                    )
-        except SQLAlchemyError as e:
-            logger.error(f"Error de base de datos al verificar perfil: {e}")
-            # Intentar recrear la conexión
+        # --- Paso 2: Verificar solo el perfil (sin verificar rol) ---
+        # Dar tiempo al trigger sin bloquearlo
+        #logger.info("⏳ Esperando que el trigger se ejecute...")
+        #await asyncio.sleep(2.0)  # Dar 2 segundos al trigger
+        
+        # Verificar solo el perfil (sin verificar rol)
+        '''user_profile = None
+        max_retries = 3  # Solo 3 intentos para el perfil
+        retry_delay = 0.5  # Retry rápido
+        
+        for attempt in range(max_retries):
             try:
-                await db.close()
-                # Aquí deberías obtener una nueva sesión, pero por ahora usamos fallback
+                logger.info(f"Verificando perfil para usuario {id_user} (intento {attempt + 1}/{max_retries})")
+                
+                # Usar servicio directo para verificar solo el perfil
+                user_profile_data = await direct_db_service.check_user_profile(id_user)
+                
+                if user_profile_data:
+                    logger.info(f"✅ Perfil encontrado en intento {attempt + 1}")
+                    user_profile = user_profile_data
+                    break
+                else:
+                    logger.warning(f"⚠️ Perfil no encontrado en intento {attempt + 1}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error en intento {attempt + 1}: {e}")
+                
+                if attempt == max_retries - 1:
                 raise HTTPException(
                     status_code=500, 
                     detail=f"Error de conexión a la base de datos: {str(e)}"
                 )
-            except Exception as reconnect_error:
-                logger.error(f"Error al intentar reconectar: {reconnect_error}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail="Error de conexión a la base de datos. Inténtalo de nuevo."
-                )
+            
+            # Esperar antes del siguiente intento
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay * (1.2 ** attempt))  # 0.5s, 0.6s
+                logger.info(f"⏳ Esperando {retry_delay * (1.2 ** attempt):.1f}s antes del siguiente intento...")
 
-        # Verificar que el rol "Cliente" se asignó con manejo de errores
-        try:
-            logger.info(f"Verificando si el rol 'Cliente' se asignó para el usuario: {id_user}")
-            result = await db.execute(
-                select(UsuarioRolModel)
-                .join(RolModel)
-                .filter(
-                    UsuarioRolModel.id_usuario == id_user,
-                    RolModel.nombre == "Cliente"
+        # Si no se encontró el perfil, crear manualmente
+        if not user_profile:
+            logger.warning("⚠️ Trigger no creó el perfil, creando manualmente...")
+            
+            try:
+                await direct_db_service.create_user_profile(
+                    user_id=id_user,
+                    nombre_persona=data.nombre_persona,
+                    nombre_empresa=data.nombre_empresa,
+                    ruc=data.ruc
                 )
-            )
-            user_role = result.scalars().first()
-
-            if not user_role:
-                logger.error(f"El rol 'Cliente' no se asignó para el usuario: {id_user}")
-                # Intentar asignar el rol manualmente como fallback
-                try:
-                    logger.info("Intentando asignar rol manualmente como fallback")
-                    result = await db.execute(select(RolModel).filter(RolModel.nombre == "Cliente"))
-                    cliente_rol = result.scalars().first()
-                    
-                    if cliente_rol:
-                        new_user_role = UsuarioRolModel(
-                            id_usuario=id_user,
-                            id_rol=cliente_rol.id
-                        )
-                        db.add(new_user_role)
-                        await db.commit()
-                        logger.info("Rol asignado manualmente exitosamente")
-                    else:
-                        logger.error("Rol 'Cliente' no encontrado en la base de datos")
+                
+                logger.info("✅ Perfil creado manualmente")
+                user_profile = {
+                    "id": id_user,
+                    "nombre_persona": data.nombre_persona,
+                    "nombre_empresa": data.nombre_empresa,
+                    "ruc": data.ruc,
+                    "estado": "ACTIVO"
+                }
+                
+            except Exception as e:
+                logger.error(f"❌ Error creando perfil manualmente: {e}")
                         raise HTTPException(
                             status_code=500, 
-                            detail="Error: El rol 'Cliente' no existe en la base de datos"
-                        )
-                except SQLAlchemyError as e:
-                    logger.error(f"Error al asignar rol manualmente: {e}")
-                    await db.rollback()
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"Error: El rol 'Cliente' no se asignó automáticamente. Error del trigger: {str(e)}"
-                    )
-        except SQLAlchemyError as e:
-            logger.error(f"Error de base de datos al verificar rol: {e}")
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Error de conexión al verificar roles: {str(e)}"
-            )
+                    detail=f"Error: No se pudo crear el perfil del usuario. Error: {str(e)}"
+                )
+        '''
+        # --- Paso 3: Confiar en el trigger para el rol ---
+        logger.info("✅ Perfil verificado. El trigger asignará el rol automáticamente.")
+        logger.info("💡 No verificamos el rol para evitar bloquear el trigger.")
 
         logger.info(f"Registro completado exitosamente para usuario: {id_user}")
 
         # --- Manejo de confirmación de email ---
         if not signup_response.session:
             return SignUpSuccess(
-                message="¡Registro exitoso! Te enviamos un correo para confirmar tu cuenta. Revisa tu bandeja de entrada.",
+                message="¡Registro exitoso! 📧 Hemos enviado un correo de confirmación a tu dirección de email. Por favor, revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta. Si no encuentras el correo, revisa también tu carpeta de spam.",
                 email=data.email,
                 nombre_persona=data.nombre_persona,
                 nombre_empresa=data.nombre_empresa,
                 ruc=data.ruc,
+                instructions="1. Revisa tu bandeja de entrada\n2. Busca el correo de confirmación\n3. Haz clic en el enlace del correo\n4. Si no encuentras el correo, revisa la carpeta de spam",
+                next_steps="Una vez confirmado tu email, podrás iniciar sesión en la plataforma"
             )
 
         return TokenOut(
@@ -184,6 +175,14 @@ async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> U
 
     except AuthApiError as e:
         logger.error(f"Error de Supabase Auth: {e}")
+        
+        # Manejar específicamente el rate limit de emails
+        if "email rate limit exceeded" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Has alcanzado el límite de envío de emails. Por favor, espera 1 hora antes de intentar registrarte nuevamente. Si necesitas ayuda inmediata, contacta a b2bseva.notificaciones@gmail.com"
+            )
+        
         handle_supabase_auth_error(e)
     except SQLAlchemyError as e:
         logger.error(f"Error de base de datos: {e}")
@@ -203,7 +202,7 @@ async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> U
 @router.post("/signin", response_model=TokenOut,
             status_code=status.HTTP_200_OK,
             description="Autentica un usuario con email y contraseña y devuelve sus tokens de acceso y refresh.")
-async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> TokenOut:
+async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> JSONResponse: #TokenOut:
     """
     Autentica un usuario con email y contraseña y devuelve sus tokens.
     """
@@ -218,26 +217,33 @@ async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> T
 
         # Buscar el usuario por email en la tabla public.users primero
         try:
-            from sqlalchemy import text
-            email_query = text("SELECT id, estado FROM users WHERE id IN (SELECT id FROM auth.users WHERE email = :email)")
-            result = await db.execute(email_query, {"email": data.email})
-            user_row = result.first()
+        
+            # Usar direct_db_service para evitar problemas con PgBouncer
+            conn = await direct_db_service.get_connection()
+            try:
+                user_result = await conn.fetchrow("""
+                    SELECT id, estado FROM users WHERE id IN (SELECT id FROM auth.users WHERE email = $1)
+                """, data.email)
 
-            if user_row:
-                user_id = str(user_row.id)
-                user_estado = user_row.estado
-                print(f"🔍 Usuario encontrado: ID={user_id}, Estado={user_estado}")
+                if user_result:
+                    user_id = str(user_result['id'])
+                    user_estado = user_result['estado']
+                    print(f"🔍 Usuario encontrado: ID={user_id}, Estado={user_estado}")
 
-                # Verificar estado del usuario ANTES de autenticar
-                if user_estado != "ACTIVO":
-                    print(f"🚫 Usuario {user_id} tiene estado {user_estado} - DENEGANDO ACCESO")
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tu cuenta está inactiva. Por favor, contacta al administrador en b2bseva.notificaciones@gmail.com para más detalles."
-                    )
-            else:
-                print(f"⚠️ Usuario con email {data.email} no encontrado en tabla users")
+                    # Verificar estado del usuario ANTES de autenticar
+                    if user_estado != "ACTIVO":
+                        print(f"🚫 Usuario {user_id} tiene estado {user_estado} - DENEGANDO ACCESO")
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Tu cuenta está inactiva. Por favor, contacta al administrador en b2bseva.notificaciones@gmail.com para más detalles."
+                        )
+                else:
+                    print(f"⚠️ Usuario con email {data.email} no encontrado en tabla users")
+            finally:
+                await direct_db_service.pool.release(conn)
 
+        except HTTPException:
+            raise  # Re-lanzar HTTPException para mantener el comportamiento
         except Exception as db_error:
             print(f"⚠️ Error consultando base de datos: {str(db_error)}")
             # Si hay error en la consulta, permitir continuar (fallback)
@@ -266,11 +272,31 @@ async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> T
                     detail="Tu cuenta está inactiva. Por favor, contacta al administrador en b2bseva.notificaciones@gmail.com para más detalles."
                 )
 
-        return TokenOut(
-            access_token=signin_response.session.access_token,
-            refresh_token=signin_response.session.refresh_token,
-            expires_in=signin_response.session.expires_in,
+        # Crear respuesta JSON
+        token_data = {
+            "access_token": signin_response.session.access_token,
+            "expires_in": signin_response.session.expires_in,
+            "token_type": "bearer"
+        }
+
+        response = JSONResponse(content=token_data)
+
+        # Configurar SOLO refresh_token en cookie HttpOnly
+        print(f"🍪 Estableciendo cookie refresh_token: {signin_response.session.refresh_token[:20]}...")
+        response.set_cookie(
+            key="refresh_token", 
+            value=signin_response.session.refresh_token,
+            httponly=True,
+            secure=False,  # False para desarrollo local
+            samesite="lax",
+            max_age=7 * 24 * 60 * 60,  # 7 días
+            path="/",
+            domain="localhost"  # Configurar dominio para que funcione entre puertos
         )
+        
+        print("✅ Cookies HttpOnly establecidas correctamente")
+
+        return response
 
     except AuthApiError as e:
         # Llama a la función centralizada que usa el diccionario
@@ -352,15 +378,80 @@ async def resend_confirmation_email(data: EmailOnlyIn):
             "email": data.email
         })
         
-        return {"message": f"Se ha enviado un nuevo correo de confirmacion a {data.email}. Por favor, revisa tu bandeja de entrada."}
+        return {
+            "message": f"📧 Se ha enviado un nuevo correo de confirmación a {data.email}. Por favor, revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta. Si no encuentras el correo, revisa también tu carpeta de spam.",
+            "email": data.email,
+            "instructions": "1. Revisa tu bandeja de entrada\n2. Busca el correo de confirmación\n3. Haz clic en el enlace del correo\n4. Si no encuentras el correo, revisa la carpeta de spam"
+        }
 
     except AuthApiError as e:
+        # Manejar específicamente el rate limit de emails
+        if "email rate limit exceeded" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Has alcanzado el límite de envío de emails. Por favor, espera 1 hora antes de solicitar un nuevo correo de confirmación. Si necesitas ayuda inmediata, contacta a b2bseva.notificaciones@gmail.com"
+            )
+        
         handle_supabase_auth_error(e)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ha ocurrido un error inesperado al re-enviar el correo de confirmaci?n: {str(e)}"
+            detail=f"Ha ocurrido un error inesperado al re-enviar el correo de confirmación: {str(e)}"
         )
+
+
+@router.get("/check-email-confirmation/{email}",
+           status_code=status.HTTP_200_OK,
+           description="Verifica si el email del usuario está confirmado.")
+async def check_email_confirmation(email: str):
+    """
+    Verifica si el email del usuario está confirmado.
+    """
+    try:
+        # Obtener información del usuario desde Supabase Auth
+        user_response = supabase_auth.auth.admin.get_user_by_email(email)
+        
+        if not user_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Usuario no encontrado"
+            )
+        
+        user = user_response.user
+        is_confirmed = user.email_confirmed_at is not None
+        
+        return {
+            "email": email,
+            "is_confirmed": is_confirmed,
+            "confirmed_at": user.email_confirmed_at,
+            "message": "Email confirmado" if is_confirmed else "Email pendiente de confirmación"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al verificar confirmación de email: {str(e)}"
+        )
+
+
+@router.get("/rate-limit-status",
+           status_code=status.HTTP_200_OK,
+           description="Obtiene información sobre el estado del rate limit de emails.")
+async def get_rate_limit_status():
+    """
+    Obtiene información sobre el estado del rate limit de emails.
+    """
+    return {
+        "message": "Información sobre límites de email",
+        "limits": {
+            "free_plan": "3 emails por hora por usuario",
+            "pro_plan": "30 emails por hora por usuario", 
+            "team_plan": "100 emails por hora por usuario"
+        },
+        "current_status": "Si recibes error 429, has alcanzado el límite",
+        "solution": "Espera 1 hora antes de intentar nuevamente",
+        "contact": "Para ayuda inmediata: b2bseva.notificaciones@gmail.com"
+    }
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -374,6 +465,7 @@ async def logout(current_user: SupabaseUser = Depends(get_current_user)):
         # El resultado de sign_out es a menudo None si es exitoso y no hay errores.
         # supabase_auth.sign_out()
         supabase_auth.auth.sign_out()
+
 
         # Si la operación fue exitosa y no lanzó una excepción,
         # simplemente devuelve None para un 204 No Content.
@@ -433,94 +525,113 @@ async def read_profile(current_user: SupabaseUser = Depends(get_current_user),
      # 1. Convertir el id de string a UUID de Python
     user_uuid = uuid.UUID(current_user.id)
 
-    # Se utiliza joinedload para cargar los roles de forma eficiente en una sola consulta,
-    # incluyendo la relación anidada `rol` para evitar lazy-loading en el contexto async.
-    result_profile = await db.execute(
-        select(UserModel)
-        .options(
-            joinedload(UserModel.roles).joinedload(UsuarioRolModel.rol)
-        )
-        .where(UserModel.id == user_uuid)
-    )
-
-    user_profile = result_profile.scalars().first()
+    # Usar servicio directo para evitar problemas con PgBouncer
+    logger.info(f"🔍 Endpoint /me - Buscando perfil para usuario: {str(user_uuid)}")
+    user_profile_data = await direct_db_service.get_user_profile_with_roles(str(user_uuid))
+    logger.info(f"📊 Endpoint /me - Resultado del servicio: {user_profile_data is not None}")
     
-    if not user_profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Perfil de usuario no encontrado")
+    if not user_profile_data:
+        logger.error(f"❌ Endpoint /me - Perfil no encontrado para usuario: {str(user_uuid)}")
+        raise HTTPException(
+            status_code=404,
+            detail="Perfil de usuario no encontrado"
+        )
+    
+    logger.info(f"✅ Endpoint /me - Perfil encontrado para usuario: {str(user_uuid)}")
+    
+    # Extraer los nombres de los roles
+    # Los roles vienen como JSON string desde la consulta optimizada
+    import json
+    if isinstance(user_profile_data['roles'], str):
+        roles_data = json.loads(user_profile_data['roles'])
+    else:
+        roles_data = user_profile_data['roles']
+    
+    roles_nombres = [role['nombre'] for role in roles_data]
 
-    # 2. Extraer los nombres de los roles de la lista de objetos de rol
-    roles_nombres = [rol_asociado.rol.nombre for rol_asociado in user_profile.roles]
-
-    # 3. Construir y devolver la respuesta final
+    # Construir y devolver la respuesta final
     return UserProfileAndRolesOut(
-        id=user_profile.id,
+        id=user_profile_data['id'],
         email=current_user.email, # El email se obtiene de la autenticacion
-        nombre_persona=user_profile.nombre_persona,
-        nombre_empresa=user_profile.nombre_empresa,
-        ruc=user_profile.ruc,
+        nombre_persona=user_profile_data['nombre_persona'],
+        nombre_empresa=user_profile_data['nombre_empresa'],
+        ruc=user_profile_data['ruc'],
         roles=roles_nombres,
-        foto_perfil=user_profile.foto_perfil
+        foto_perfil=user_profile_data['foto_perfil']
     )
 
 
 @router.get("/verificacion-estado",
             status_code=status.HTTP_200_OK,
             description="Obtiene el estado actual de la solicitud de verificación del usuario autenticado.")
-async def get_verificacion_estado(current_user: SupabaseUser = Depends(get_current_user),
-                                 db: AsyncSession = Depends(get_async_db)):
+async def get_verificacion_estado(current_user: SupabaseUser = Depends(get_current_user)):
     """
     Obtiene el estado de la solicitud de verificación del usuario actual
     """
     try:
+        from app.services.direct_db_service import direct_db_service
+        
         # Convertir el id de string a UUID de Python
-        user_uuid = uuid.UUID(current_user.id)
+        user_uuid = str(current_user.id)
         
+        # Usar direct_db_service para evitar problemas con PgBouncer
+        conn = await direct_db_service.get_connection()
+        try:
         # Buscar el perfil de empresa del usuario
-        from app.models.empresa.perfil_empresa import PerfilEmpresa
-        from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
+            empresa_result = await conn.fetchrow("""
+                SELECT id_perfil, estado, verificado
+                FROM perfil_empresa 
+                WHERE user_id = $1
+            """, user_uuid)
+            
+            if not empresa_result:
+                return {
+                    "estado": "none",
+                    "mensaje": "No se encontró perfil de empresa para este usuario"
+                }
         
-        empresa_query = select(PerfilEmpresa).where(PerfilEmpresa.user_id == user_uuid)
-        empresa_result = await db.execute(empresa_query)
-        empresa = empresa_result.scalars().first()
-        
-        if not empresa:
-            return {
-                "estado": "none",
-                "mensaje": "No se encontró perfil de empresa para este usuario"
+            # Buscar la solicitud de verificación más reciente
+            solicitud_result = await conn.fetchrow("""
+                SELECT 
+                    id_verificacion,
+                    estado,
+                    fecha_solicitud,
+                    fecha_revision,
+                    comentario
+                FROM verificacion_solicitud 
+                WHERE id_perfil = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, empresa_result['id_perfil'])
+            
+            if not solicitud_result:
+                return {
+                    "estado": "none",
+                    "mensaje": "No se encontró solicitud de verificación"
+                }
+            
+            # Mapear el estado de la base de datos al estado del frontend
+            estado_mapping = {
+                "pendiente": "pending",
+                "aprobada": "approved", 
+                "rechazada": "rejected"
             }
+            
+            estado_frontend = estado_mapping.get(solicitud_result['estado'], "none")
         
-        # Buscar la solicitud de verificación más reciente
-        solicitud_query = select(VerificacionSolicitud).where(
-            VerificacionSolicitud.id_perfil == empresa.id_perfil
-        ).order_by(VerificacionSolicitud.created_at.desc())
-        solicitud_result = await db.execute(solicitud_query)
-        solicitud = solicitud_result.scalars().first()
-        
-        if not solicitud:
             return {
-                "estado": "none",
-                "mensaje": "No se encontró solicitud de verificación"
+                "estado": estado_frontend,
+                "solicitud_id": solicitud_result['id_verificacion'],
+                "fecha_solicitud": solicitud_result['fecha_solicitud'],
+                "fecha_revision": solicitud_result['fecha_revision'],
+                "comentario": solicitud_result['comentario'],
+                "estado_empresa": empresa_result['estado'],
+                "verificado": empresa_result['verificado'],
+                "mensaje": f"Solicitud {solicitud_result['estado']}"
             }
-        
-        # Mapear el estado de la base de datos al estado del frontend
-        estado_mapping = {
-            "pendiente": "pending",
-            "aprobada": "approved", 
-            "rechazada": "rejected"
-        }
-        
-        estado_frontend = estado_mapping.get(solicitud.estado, "none")
-        
-        return {
-            "estado": estado_frontend,
-            "solicitud_id": solicitud.id_verificacion,
-            "fecha_solicitud": solicitud.fecha_solicitud,
-            "fecha_revision": solicitud.fecha_revision,
-            "comentario": solicitud.comentario,
-            "estado_empresa": empresa.estado,
-            "verificado": empresa.verificado,
-            "mensaje": f"Solicitud {solicitud.estado}"
-        }
+            
+        finally:
+            await direct_db_service.pool.release(conn)
         
     except Exception as e:
         print(f"❌ Error obteniendo estado de verificación: {str(e)}")

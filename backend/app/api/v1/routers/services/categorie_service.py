@@ -26,31 +26,64 @@ class CategoriaUpdate(BaseModel):
     description="Devuelve una lista de todas las categorías de servicios."
 )
 async def get_all_categories(
-    active_only: bool = True,
-    db: AsyncSession = Depends(get_async_db)
+    active_only: bool = True
 ):
     """
     Obtiene todas las categorías de la base de datos.
     Para administradores: muestra todas las categorías.
     Para otros usuarios: muestra solo las activas.
     """
-    if active_only:
-        result = await db.execute(
-            select(CategoriaModel).where(CategoriaModel.estado == True)
-        )
-    else:
-        result = await db.execute(
-            select(CategoriaModel)
-        )
-
-    categories = result.scalars().all()
-
-    if not categories:
+    try:
+        from app.services.direct_db_service import direct_db_service
+        
+        # Usar direct_db_service para evitar problemas con PgBouncer
+        conn = await direct_db_service.get_connection()
+        try:
+            # Construir consulta SQL
+            if active_only:
+                query = """
+                    SELECT id_categoria, nombre, estado, created_at
+                    FROM categoria
+                    WHERE estado = true
+                    ORDER BY nombre
+                """
+            else:
+                query = """
+                    SELECT id_categoria, nombre, estado, created_at
+                    FROM categoria
+                    ORDER BY nombre
+                """
+            
+            categories_data = await conn.fetch(query)
+            
+            if not categories_data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No se encontraron categorías."
+                )
+            
+            # Convertir a objetos CategoriaOut
+            categories = []
+            for row in categories_data:
+                categories.append(CategoriaOut(
+                    id_categoria=row['id_categoria'],
+                    nombre=row['nombre'],
+                    estado=row['estado'],
+                    created_at=row['created_at']
+                ))
+            
+            return categories
+            
+        finally:
+            await direct_db_service.pool.release(conn)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No se encontraron categorías."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error obteniendo categorías: {str(e)}"
         )
-    return list(categories)
 
 
 @router.post(

@@ -26,6 +26,11 @@ const MarketplacePage: React.FC = () => {
     const [usingMockData, setUsingMockData] = useState(false);
     const [dataVersion, setDataVersion] = useState(Date.now()); // Para forzar recarga
     const dataLoadedRef = useRef(false); // Para evitar cargas duplicadas
+    
+    // Estados para paginación del backend
+    const [totalServices, setTotalServices] = useState<number>(0);
+    const [isLoadingPage, setIsLoadingPage] = useState(false);
+    const [isLoadingFilters, setIsLoadingFilters] = useState(false);
 
     // Estados de filtros
     const [searchQuery, setSearchQuery] = useState('');
@@ -47,81 +52,168 @@ const MarketplacePage: React.FC = () => {
     
     // Estados de paginación
     const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 12;
+    const itemsPerPage = 5; // Cambiado de 12 a 5 servicios por página
 
     // Estados para modal de reserva
     const [showServiceDetail, setShowServiceDetail] = useState(false);
     const [selectedService, setSelectedService] = useState<BackendService | null>(null);
 
-    // Cargar datos iniciales
+
+    // Función para construir filtros del backend
+    const buildBackendFilters = useCallback(() => {
+        const filters: any = {};
+        
+        console.log('🔍 buildBackendFilters ejecutándose con:', {
+            currencyFilter,
+            priceRange,
+            categoryFilter,
+            departmentFilter,
+            cityFilter,
+            searchQuery,
+            dateFilter,
+            ratingFilter
+        });
+        
+        // Filtro por moneda (si está seleccionada)
+        if (currencyFilter !== 'all') {
+            filters.currency = currencyFilter;
+            console.log('💰 Agregando filtro de moneda:', currencyFilter);
+        }
+        
+        // Filtro por precio (solo si el usuario ha cambiado el rango desde el inicial)
+        const isPriceFilterActive = priceRange[0] > 0 || priceRange[1] < 1000000000;
+        if (isPriceFilterActive) {
+            if (priceRange[0] > 0) {
+                filters.min_price = priceRange[0];
+                console.log('💰 Agregando precio mínimo:', priceRange[0]);
+            }
+            if (priceRange[1] < 1000000000) {
+                filters.max_price = priceRange[1];
+                console.log('💰 Agregando precio máximo:', priceRange[1]);
+            }
+        }
+        
+        // Filtro por categoría
+        if (categoryFilter !== 'all') {
+            filters.category_id = parseInt(categoryFilter);
+            console.log('📂 Agregando filtro de categoría:', categoryFilter);
+        }
+        
+        // Filtro por departamento
+        if (departmentFilter !== 'all') {
+            filters.department = departmentFilter;
+            console.log('🏢 Agregando filtro de departamento:', departmentFilter);
+        }
+        
+        // Filtro por ciudad
+        if (cityFilter !== 'all') {
+            filters.city = cityFilter;
+            console.log('🏙️ Agregando filtro de ciudad:', cityFilter);
+        }
+        
+        // Filtro por búsqueda
+        if (searchQuery.trim()) {
+            filters.search = searchQuery.trim();
+            console.log('🔍 Agregando filtro de búsqueda:', searchQuery);
+        }
+        
+        // Filtro por fecha (si está seleccionado)
+        if (dateFilter !== 'all') {
+            const today = new Date();
+            let dateFrom: string | undefined;
+            let dateTo: string | undefined;
+            
+            switch (dateFilter) {
+                case 'today':
+                    dateFrom = today.toISOString().split('T')[0];
+                    dateTo = today.toISOString().split('T')[0];
+                    break;
+                case 'week':
+                    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    dateFrom = weekAgo.toISOString().split('T')[0];
+                    dateTo = today.toISOString().split('T')[0];
+                    break;
+                case 'month':
+                    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    dateFrom = monthAgo.toISOString().split('T')[0];
+                    dateTo = today.toISOString().split('T')[0];
+                    break;
+                case 'custom':
+                    if (customDateRange.start && customDateRange.end) {
+                        dateFrom = customDateRange.start;
+                        dateTo = customDateRange.end;
+                    }
+                    break;
+            }
+            
+            if (dateFrom) {
+                filters.date_from = dateFrom;
+                console.log('📅 Agregando filtro de fecha desde:', dateFrom);
+            }
+            if (dateTo) {
+                filters.date_to = dateTo;
+                console.log('📅 Agregando filtro de fecha hasta:', dateTo);
+            }
+        }
+        
+        // Filtro por calificación (si está seleccionada)
+        if (ratingFilter > 0) {
+            filters.min_rating = ratingFilter;
+            console.log('⭐ Agregando filtro de calificación mínima:', ratingFilter);
+        }
+        
+        console.log('🔍 Filtros construidos:', filters);
+        console.log('🔍 ¿Filtro de precio activo?', isPriceFilterActive);
+        return filters;
+    }, [currencyFilter, priceRange, categoryFilter, departmentFilter, cityFilter, searchQuery, dateFilter, ratingFilter, customDateRange]);
+
+    // Cargar datos iniciales con paginación del backend
     const loadInitialData = useCallback(async () => {
-        if (dataLoadedRef.current) return; // Evitar cargas duplicadas
+        console.log('🚀 Iniciando loadInitialData...');
+        // Removido: if (dataLoadedRef.current) return; // Evitar cargas duplicadas
         
         try {
+            console.log('🔄 Estableciendo isLoading = true');
             setIsLoading(true);
             setError(null);
             
-            // Intentar llamadas reales a la API del backend
+            // Intentar llamadas reales a la API del backend con paginación
             try {
-                console.log('Intentando cargar datos reales de la API...');
-                const [servicesData, categoriesData] = await Promise.all([
-                    servicesAPI.getServicesWithProviders(),
+                console.log('Intentando cargar datos reales de la API con paginación...');
+                
+                // Calcular offset basado en la página actual
+                const offset = (currentPage - 1) * itemsPerPage;
+                
+                // Obtener token de autenticación si está disponible
+                const accessToken = user?.accessToken || localStorage.getItem('access_token');
+                console.log(`🔄 Carga inicial con offset ${offset}, limit ${itemsPerPage}`);
+                
+                // Construir filtros del backend
+                const filters = buildBackendFilters();
+                console.log('🔍 Filtros del backend:', filters);
+                
+                // Usar el nuevo endpoint filtrado que maneja filtros del lado del servidor
+                const [filteredResponse, categoriesData] = await Promise.all([
+                    servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters),
                     categoriesAPI.getCategories(undefined, true) // Solo categorías activas
                 ]);
 
-                const activeServices = servicesData.filter(service => service.estado === true);
-                console.log('📊 Servicios cargados del backend:', activeServices.length);
-                console.log('💰 Ejemplos de monedas en servicios:', activeServices.slice(0, 3).map(s => ({
-                    nombre: s.nombre,
-                    codigo_iso_moneda: s.codigo_iso_moneda,
-                    simbolo_moneda: s.simbolo_moneda,
-                    id_moneda: s.id_moneda,
-                    precio: s.precio
-                })));
-
-                // Log detallado del primer servicio para debug
-                if (activeServices.length > 0) {
-                    const firstService = activeServices[0];
-                    console.log('🔍 Primer servicio completo:', {
-                        nombre: firstService.nombre,
-                        id_moneda: firstService.id_moneda,
-                        codigo_iso_moneda: firstService.codigo_iso_moneda,
-                        simbolo_moneda: firstService.simbolo_moneda,
-                        precio: firstService.precio,
-                        departamento: firstService.departamento,
-                        ciudad: firstService.ciudad,
-                        barrio: firstService.barrio,
-                        barrio_type: typeof firstService.barrio,
-                        barrio_length: firstService.barrio ? firstService.barrio.length : 'N/A',
-                        servicio_completo: firstService
-                    });
-                }
-
-                // Extraer departamentos y ciudades únicos
-                const uniqueDepartments = Array.from(new Set(activeServices
-                    .map(s => s.departamento)
-                    .filter(Boolean)
-                    .sort()
-                ));
-
-                const uniqueCities = Array.from(new Set(activeServices
-                    .map(s => s.ciudad)
-                    .filter(Boolean)
-                    .sort()
-                ));
-
-                setDepartments(uniqueDepartments);
-                setCities(uniqueCities);
-
-                // Verificar que los datos tengan la estructura esperada
-                if (Array.isArray(categoriesData) && Array.isArray(activeServices)) {
-                    setCategories(categoriesData);
-                    setServices(activeServices); // Solo servicios activos
-                    setUsingMockData(false);
-                    console.log('✅ Datos reales aplicados correctamente');
-                } else {
-                    throw new Error('Estructura de datos incorrecta');
-                }
+                console.log('📊 Respuesta del endpoint filtrado:', filteredResponse);
+                console.log('📊 Servicios cargados del backend (filtrados):', filteredResponse.services.length);
+                console.log('📊 Total de servicios disponibles:', filteredResponse.pagination.total);
+                
+                // Actualizar estados
+                console.log('🔄 Actualizando estados...');
+                console.log('📊 filteredResponse.pagination.total:', filteredResponse.pagination.total);
+                console.log('📊 filteredResponse.services.length:', filteredResponse.services.length);
+                console.log('📊 categoriesData.length:', categoriesData.length);
+                
+                setTotalServices(filteredResponse.pagination.total);
+                setServices(filteredResponse.services);
+                setCategories(categoriesData);
+                setUsingMockData(false);
+                
+                console.log('✅ Datos filtrados del servidor aplicados correctamente');
             } catch (apiError) {
                 console.error('❌ Error con API real:', apiError);
                 setError('No se pudo conectar con el servidor. Por favor, verifica que el backend esté funcionando.');
@@ -135,14 +227,134 @@ const MarketplacePage: React.FC = () => {
             console.error('Error cargando datos:', err);
             setError('Error al cargar los datos. Por favor, intentá nuevamente.');
         } finally {
+            console.log('🔄 Finalizando loadInitialData - estableciendo isLoading = false');
             setIsLoading(false);
             dataLoadedRef.current = true;
+            console.log('✅ loadInitialData completado');
         }
-    }, []);
+    }, [buildBackendFilters, currentPage, itemsPerPage, user]); // Agregar dependencias necesarias
+
+
+    // Función para cargar una página específica (optimizada)
+    const loadPage = useCallback(async (page: number) => {
+        console.log(`🔄 loadPage ejecutándose para página ${page}`);
+        
+        // Evitar cargar la misma página
+        if (page === currentPage) {
+            console.log(`⚠️ Ya estás en la página ${page}, evitando recarga`);
+            return;
+        }
+        
+        try {
+            // Solo mostrar loading en los botones, no en toda la interfaz
+            setIsLoadingPage(true);
+            const offset = (page - 1) * itemsPerPage;
+            
+            // Obtener token de autenticación si está disponible
+            const accessToken = user?.accessToken || localStorage.getItem('access_token');
+            console.log(`🔄 Cargando página ${page} con offset ${offset}, limit ${itemsPerPage}`);
+            
+            // Construir filtros para la página
+            const filters = buildBackendFilters();
+            console.log('🔍 Filtros para página:', filters);
+            
+            // Usar el nuevo endpoint filtrado para cargar la página
+            const filteredResponse = await servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters);
+            
+            // Actualizar servicios y página de forma atómica
+            setServices(filteredResponse.services);
+            setCurrentPage(filteredResponse.pagination.page);
+            setTotalServices(filteredResponse.pagination.total);
+            console.log(`📄 Página ${page} cargada: ${filteredResponse.services.length} servicios, total: ${filteredResponse.pagination.total}`);
+        } catch (error) {
+            console.error('❌ Error cargando página:', error);
+            setError('Error cargando la página. Inténtalo de nuevo.');
+        } finally {
+            // Reducir el tiempo de loading para que sea menos notorio
+            setTimeout(() => setIsLoadingPage(false), 100);
+        }
+    }, [itemsPerPage, user, buildBackendFilters, currentPage]);
 
     useEffect(() => {
+        console.log('🎯 useEffect ejecutándose - llamando loadInitialData');
         loadInitialData();
     }, []); // Solo ejecutar una vez al montar
+
+    // Función optimizada para recargar solo los datos filtrados (sin resetear página)
+    const reloadFilteredData = useCallback(async () => {
+        console.log('🔄 Recargando datos filtrados (sin resetear página)...');
+        
+        try {
+            setIsLoadingFilters(true); // Loading específico para filtros
+            const offset = (currentPage - 1) * itemsPerPage;
+            const accessToken = user?.accessToken || localStorage.getItem('access_token');
+            const filters = buildBackendFilters();
+            
+            console.log(`🔄 Recarga filtrada con offset ${offset}, limit ${itemsPerPage}`);
+            
+            const filteredResponse = await servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters);
+            
+            setServices(filteredResponse.services);
+            setTotalServices(filteredResponse.pagination.total);
+            // NO resetear currentPage - mantener la página actual
+            console.log(`📄 Datos filtrados recargados: ${filteredResponse.services.length} servicios, total: ${filteredResponse.pagination.total}`);
+            
+        } catch (error) {
+            console.error('❌ Error recargando datos filtrados:', error);
+            setError('Error aplicando filtros. Inténtalo de nuevo.');
+        } finally {
+            setIsLoadingFilters(false);
+        }
+    }, [currentPage, itemsPerPage, user, buildBackendFilters]);
+
+    // Recargar datos cuando cambien los filtros (con debounce inteligente)
+    useEffect(() => {
+        // Solo recargar si hay filtros activos
+        const hasActiveFilters = currencyFilter !== 'all' || 
+                                priceRange[0] > 0 || 
+                                priceRange[1] < 1000000000 ||
+                                categoryFilter !== 'all' ||
+                                departmentFilter !== 'all' ||
+                                cityFilter !== 'all' ||
+                                searchQuery.trim() !== '' ||
+                                dateFilter !== 'all' ||
+                                ratingFilter > 0;
+        
+        if (hasActiveFilters) {
+            console.log('🔄 Filtros activos detectados, aplicando debounce inteligente...');
+            
+            // Debounce inteligente: más corto para filtros inmediatos, más largo para slider
+            const isSliderChange = priceRange[0] > 0 || priceRange[1] < 1000000000;
+            const debounceTime = isSliderChange ? 500 : 100; // 500ms para slider, 100ms para otros filtros
+            
+            const timeoutId = setTimeout(() => {
+                console.log(`🔄 Ejecutando recarga filtrada después de ${debounceTime}ms...`);
+                reloadFilteredData();
+            }, debounceTime);
+            
+            return () => clearTimeout(timeoutId);
+        }
+    }, [currencyFilter, priceRange, categoryFilter, departmentFilter, cityFilter, searchQuery, dateFilter, ratingFilter, reloadFilteredData]);
+
+    // Aplicar filtros automáticamente cuando cambien
+    // TEMPORALMENTE DESHABILITADO PARA EVITAR BUCLE INFINITO
+    // useEffect(() => {
+    //     if (dataLoadedRef.current) {
+    //         console.log('🔄 Filtros cambiaron, aplicando automáticamente...');
+    //         applyFilters();
+    //     }
+    // }, [currencyFilter, priceRange, applyFilters]);
+
+    // Efecto para aplicar filtros automáticamente cuando cambien
+    // TEMPORALMENTE DESHABILITADO PARA DEBUGGING
+    // useEffect(() => {
+    //     // Solo aplicar filtros si ya se cargaron los datos iniciales
+    //     if (dataLoadedRef.current && totalServices > 0) {
+    //         console.log('🔄 Filtros cambiaron, aplicando automáticamente...');
+    //         applyFilters();
+    //     }
+    // }, [searchQuery, categoryFilter, departmentFilter, cityFilter, currencyFilter, priceRange, dateFilter, applyFilters]);
+
 
     // Función para manejar búsqueda
     const handleSearch = useCallback(() => {
@@ -203,13 +415,25 @@ const MarketplacePage: React.FC = () => {
 
     // Filtrar servicios
     const filteredServices = useMemo(() => {
+        console.log('🔍 filteredServices useMemo ejecutándose');
+        console.log('📊 Estado actual:', {
+            servicesLength: services.length,
+            totalServices: totalServices,
+            itemsPerPage: itemsPerPage
+        });
+        
+        // TEMPORAL: Aplicar filtros locales para que funcionen los filtros de precio
+        // TODO: Implementar filtros del backend para mantener paginación
+        console.log('🔄 Aplicando filtros locales (temporal)');
+        console.log('📊 Servicios del backend:', services.length, 'Total disponible:', totalServices);
+        
         // Eliminar duplicados basándose en el ID del servicio
         const uniqueServices = services.filter((service, index, self) => 
             index === self.findIndex(s => s.id_servicio === service.id_servicio)
         );
         
         let filtered = [...uniqueServices];
-        console.log('🔍 Aplicando filtros - Servicios iniciales:', services.length, 'Únicos:', uniqueServices.length);
+        console.log('🔍 Aplicando filtros locales - Servicios iniciales:', services.length, 'Únicos:', uniqueServices.length);
         console.log('🎯 Filtros activos:', {
             currencyFilter,
             departmentFilter,
@@ -218,19 +442,18 @@ const MarketplacePage: React.FC = () => {
             categoryFilter
         });
 
-        // Filtro por precio válido (excluir servicios sin precio o con precio <= 0)
+        // Filtro por precio válido (excluir solo servicios sin precio, permitir precio 0)
         const beforePriceFilter = filtered.length;
         filtered = filtered.filter(service => {
             const price = service.precio;
-            const hasValidPrice = price !== null && price !== undefined && price > 0;
+            const hasValidPrice = price !== null && price !== undefined;
             
             if (!hasValidPrice) {
                 console.log(`❌ Servicio "${service.nombre}" excluido por precio inválido:`, {
                     precio: price,
                     tipo: typeof price,
                     es_null: price === null,
-                    es_undefined: price === undefined,
-                    es_cero_o_negativo: price <= 0
+                    es_undefined: price === undefined
                 });
             }
             
@@ -313,7 +536,7 @@ const MarketplacePage: React.FC = () => {
                 if (service.id_moneda) {
                     switch (service.id_moneda) {
                         case 1: // Guaraní
-                            serviceCurrency = 'PYG';
+                            serviceCurrency = 'GS';
                             break;
                         case 2: // Dólar
                             serviceCurrency = 'USD';
@@ -324,8 +547,11 @@ const MarketplacePage: React.FC = () => {
                         case 4: // Peso Argentino
                             serviceCurrency = 'ARS';
                             break;
+                        case 8: // Peso Argentino (otro ID)
+                            serviceCurrency = 'ARS';
+                            break;
                         default:
-                            serviceCurrency = 'PYG'; // Fallback a Guaraní
+                            serviceCurrency = 'GS'; // Fallback a Guaraní
                     }
                     console.log(`🔄 Mapeo por ID aplicado: ${service.id_moneda} → ${serviceCurrency}`);
                 }
@@ -338,8 +564,8 @@ const MarketplacePage: React.FC = () => {
 
                 // Si aún no hay moneda, asumir Guaraní
                 if (!serviceCurrency) {
-                    serviceCurrency = 'PYG';
-                    console.log(`🔄 Fallback final: null → PYG`);
+                    serviceCurrency = 'GS';
+                    console.log(`🔄 Fallback final: null → GS`);
                 }
 
                 const matches = serviceCurrency === currencyFilter;
@@ -368,15 +594,21 @@ const MarketplacePage: React.FC = () => {
             console.log('📊 Servicios después del filtro de moneda:', filtered.length);
         }
 
-        // Filtro por precio (solo si hay una moneda específica seleccionada)
-        if (currencyFilter !== 'all') {
-            const beforePrice = filtered.length;
-            filtered = filtered.filter(service => {
-                const price = service.precio || 0;
-                return price >= priceRange[0] && price <= priceRange[1];
-            });
-            console.log(`💰 Filtro precio por rango: ${priceRange[0]} - ${priceRange[1]}: ${beforePrice} → ${filtered.length} servicios`);
-        }
+        // Filtro por precio (aplicar siempre)
+        const beforePrice = filtered.length;
+        console.log(`💰 Aplicando filtro de precio: rango ${priceRange[0]} - ${priceRange[1]}, servicios antes: ${beforePrice}`);
+        filtered = filtered.filter(service => {
+            const price = service.precio || 0;
+            // Si el rango máximo es 0, no mostrar ningún servicio (filtro activo)
+            if (priceRange[1] === 0) {
+                console.log(`💰 Servicio "${service.nombre}" - Precio: ${price}, Rango máximo es 0, excluido`);
+                return false;
+            }
+            const matches = price >= priceRange[0] && price <= priceRange[1];
+            console.log(`💰 Servicio "${service.nombre}" - Precio: ${price}, Rango: ${priceRange[0]}-${priceRange[1]}, Match: ${matches}`);
+            return matches;
+        });
+        console.log(`💰 Filtro precio por rango: ${priceRange[0]} - ${priceRange[1]}: ${beforePrice} → ${filtered.length} servicios`);
 
         // Filtro por fecha
         if (dateFilter !== 'all') {
@@ -426,14 +658,70 @@ const MarketplacePage: React.FC = () => {
 
     // Paginación
     const paginatedServices = useMemo(() => {
+        console.log('📄 paginatedServices useMemo ejecutándose');
+        console.log('📊 Estado para paginación:', {
+            servicesLength: services.length,
+            totalServices: totalServices,
+            currentPage: currentPage,
+            itemsPerPage: itemsPerPage
+        });
+        
+        // NUEVO: Si estamos usando el endpoint filtrado del servidor, NO aplicar filtros locales
+        // Los servicios ya vienen filtrados y paginados del servidor
+        if (totalServices > 0) {
+            console.log('📄 Usando servicios filtrados del servidor (sin filtros locales)');
+            console.log('📊 Servicios del servidor:', services.length);
+            return services; // Usar directamente los servicios del servidor
+        }
+        
+        // Fallback: Si no hay paginación del backend, usar filtros locales
+        console.log('📄 Sin paginación del backend - usando filtros locales');
         const startIndex = (currentPage - 1) * itemsPerPage;
         const paginated = filteredServices.slice(startIndex, startIndex + itemsPerPage);
-        console.log('📄 Paginación - Servicios filtrados:', filteredServices.length, 'Paginados:', paginated.length);
-        console.log('📄 IDs paginados:', paginated.map(s => s.id_servicio));
+        console.log('📄 Paginación local - Servicios filtrados:', filteredServices.length, 'Paginados:', paginated.length);
         return paginated;
-    }, [filteredServices, currentPage, itemsPerPage]);
+    }, [services, filteredServices, currentPage, itemsPerPage, totalServices]);
 
-    const totalPages = Math.ceil(filteredServices.length / itemsPerPage);
+    // Calcular total de páginas basado en servicios filtrados cuando hay filtros activos
+    const totalPages = useMemo(() => {
+        // NUEVO: Si estamos usando el endpoint filtrado del servidor, usar totalServices
+        if (totalServices > 0) {
+            const pages = Math.ceil(totalServices / itemsPerPage);
+            console.log('📄 Calculando páginas con servidor filtrado:', {
+                totalServices,
+                itemsPerPage,
+                totalPages: pages
+            });
+            return pages;
+        }
+        
+        // Fallback: Si no hay paginación del backend, usar filtros locales
+        const hasActiveFilters = priceRange[0] > 0 || priceRange[1] < 1000000000 || 
+                                currencyFilter !== 'all' || 
+                                categoryFilter !== 'all' || 
+                                departmentFilter !== 'all' || 
+                                cityFilter !== 'all' ||
+                                searchQuery.trim() !== '';
+        
+        if (hasActiveFilters) {
+            const pages = Math.ceil(filteredServices.length / itemsPerPage);
+            console.log('📄 Calculando páginas con filtros locales:', {
+                filteredServices: filteredServices.length,
+                itemsPerPage,
+                totalPages: pages
+            });
+            return pages;
+        }
+        
+        // Si no hay filtros activos, usar paginación del backend
+        const pages = Math.ceil(totalServices / itemsPerPage);
+        console.log('📄 Calculando páginas del backend:', {
+            totalServices,
+            itemsPerPage,
+            totalPages: pages
+        });
+        return pages;
+    }, [filteredServices.length, totalServices, itemsPerPage, priceRange, currencyFilter, categoryFilter, departmentFilter, cityFilter, searchQuery]);
 
     // Resetear filtros
     const resetFilters = useCallback(() => {
@@ -667,7 +955,7 @@ const MarketplacePage: React.FC = () => {
                                     className="w-full px-2 py-1.5 border border-slate-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors text-xs"
                                 >
                                     <option value="all">Todas</option>
-                                    <option value="PYG">₲ Guaraní</option>
+                                    <option value="GS">₲ Guaraní</option>
                                     <option value="USD">$ Dólar</option>
                                     <option value="BRL">R$ Real</option>
                                     <option value="ARS">$ Peso</option>
@@ -727,10 +1015,10 @@ const MarketplacePage: React.FC = () => {
                             <div className="space-y-3">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                     <label className="block text-xs sm:text-sm font-medium text-slate-700">
-                                        Precio en {currencyFilter === 'PYG' ? 'Guaraníes' : currencyFilter === 'USD' ? 'Dólares' : currencyFilter === 'BRL' ? 'Reales' : 'Pesos'}
+                                        Precio en {currencyFilter === 'GS' ? 'Guaraníes' : currencyFilter === 'USD' ? 'Dólares' : currencyFilter === 'BRL' ? 'Reales' : 'Pesos'}
                                     </label>
                                     <span className="text-xs sm:text-sm font-semibold text-primary-600">
-                                        Hasta {currencyFilter === 'PYG' ?
+                                        Hasta {currencyFilter === 'GS' ?
                                             `₲ ${priceRange[1].toLocaleString('es-PY')}` :
                                             currencyFilter === 'USD' ?
                                                 `$ ${priceRange[1].toLocaleString('en-US')}` :
@@ -755,8 +1043,8 @@ const MarketplacePage: React.FC = () => {
                                         }}
                                     />
                                     <div className="flex justify-between text-xs text-slate-500">
-                                        <span>{currencyFilter === 'PYG' ? '₲' : currencyFilter === 'USD' ? '$' : currencyFilter === 'BRL' ? 'R$' : '$'} 0</span>
-                                        <span>{currencyFilter === 'PYG' ?
+                                        <span>{currencyFilter === 'GS' ? '₲' : currencyFilter === 'USD' ? '$' : currencyFilter === 'BRL' ? 'R$' : '$'} 0</span>
+                                        <span>{currencyFilter === 'GS' ?
                                             '₲ 1.000.000.000' :
                                             currencyFilter === 'USD' ?
                                                 '$ 1,000,000,000' :
@@ -814,7 +1102,26 @@ const MarketplacePage: React.FC = () => {
                             </div>
                         )}
                         
-                        {/* Estadísticas de resultados - mejoradas */}
+                        {/* 
+                            ========================================
+                            BARRA DE ESTADÍSTICAS DE RESULTADOS
+                            ========================================
+                            
+                            Esta sección muestra información clave sobre los resultados:
+                            1. Cantidad de servicios encontrados (paginados)
+                            2. Información de paginación (página actual / total)
+                            3. Diseño responsivo (diferente en móvil y desktop)
+                            
+                            Variables importantes:
+                            - paginatedServices.length: Servicios en la página actual
+                            - filteredServices.length: Total de servicios filtrados
+                            - currentPage: Página actual (1, 2, 3...)
+                            - totalPages: Total de páginas disponibles
+                            - itemsPerPage: Servicios por página (12)
+                            
+                            COMENTADO: Esta barra está deshabilitada temporalmente
+                        */}
+                        {/* 
                         <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-white rounded-lg border border-primary-200 shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="text-center sm:text-left">
@@ -831,7 +1138,6 @@ const MarketplacePage: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Información adicional en móviles */}
                             <div className="sm:hidden text-center">
                                 <div className="inline-flex items-center bg-primary-50 px-3 py-1 rounded-full border border-primary-200">
                                     <p className="text-sm text-primary-600 font-medium">
@@ -840,6 +1146,7 @@ const MarketplacePage: React.FC = () => {
                                 </div>
                             </div>
                         </div>
+                        */}
 
 
                         {/* Estados vacíos - más compactos */}
@@ -852,30 +1159,53 @@ const MarketplacePage: React.FC = () => {
                                 <p className="mt-1 text-xs text-primary-500">
                                     Probá ajustar los filtros o términos de búsqueda.
                                 </p>
-                                <button
+                                {/* Botón "Limpiar filtros" comentado */}
+                                {/* <button
                                     onClick={resetFilters}
                                     className="mt-3 btn-blue touch-manipulation"
                                 >
                                     <span>Limpiar filtros</span>
-                                </button>
+                                </button> */}
                             </div>
                         )}
 
                         {/* Grid de servicios - optimizado para móviles */}
-                        {filteredServices.length > 0 && (
+                        {(() => {
+                            console.log('🎨 Renderizando grid de servicios');
+                            console.log('📊 Estado del renderizado:', {
+                                paginatedServicesLength: paginatedServices.length,
+                                filteredServicesLength: filteredServices.length,
+                                servicesLength: services.length,
+                                totalServices: totalServices,
+                                currentPage: currentPage,
+                                isLoading: isLoading,
+                                error: error
+                            });
+                            console.log('🔍 ¿Debe mostrar servicios?', paginatedServices.length > 0);
+                            return paginatedServices.length > 0;
+                        })() && (
                             <>
                                 {/* Grid responsivo optimizado para más espacio */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
-                                    {paginatedServices.map(service => (
-                                        <div key={service.id_servicio} className="transform transition-transform duration-200 hover:scale-[1.02]">
-                                            <MarketplaceServiceCard 
-                                                service={service} 
-                                                category={categories.find(c => c.id_categoria === service.id_categoria)}
-                                                onViewProviders={handleContactProvider}
-                                                isAuthenticated={isAuthenticated}
-                                            />
+                                <div className="relative">
+                                    {/* Indicador sutil de loading de filtros */}
+                                    {isLoadingFilters && (
+                                        <div className="absolute top-0 right-0 z-10 bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-sm font-medium shadow-sm">
+                                            🔄 Aplicando filtros...
                                         </div>
-                                    ))}
+                                    )}
+                                    
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 transition-all duration-300 ease-in-out">
+                                        {paginatedServices.map(service => (
+                                            <div key={service.id_servicio} className="transform transition-transform duration-200 hover:scale-[1.02]">
+                                                <MarketplaceServiceCard 
+                                                    service={service} 
+                                                    category={categories.find(c => c.id_categoria === service.id_categoria)}
+                                                    onViewProviders={handleContactProvider}
+                                                    isAuthenticated={isAuthenticated}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
 
                                 {/* Paginación mejorada */}
@@ -885,14 +1215,14 @@ const MarketplacePage: React.FC = () => {
                                         <div className="hidden sm:flex justify-center">
                                             <nav className="flex items-center gap-3">
                                                 <button
-                                                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                                                    disabled={currentPage === 1}
-                                                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                                                    onClick={() => loadPage(Math.max(1, currentPage - 1))}
+                                                    disabled={currentPage === 1 || isLoadingPage}
+                                                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
                                                 >
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                                                     </svg>
-                                                    Anterior
+                                                    {isLoadingPage ? '⏳' : 'Anterior'}
                                                 </button>
                                                 
                                                 <div className="flex items-center gap-2">
@@ -901,27 +1231,28 @@ const MarketplacePage: React.FC = () => {
                                                         if (pageNum > totalPages) return null;
                                                         
                                                         return (
-                                                            <button
-                                                                key={pageNum}
-                                                                onClick={() => setCurrentPage(pageNum)}
-                                                                className={`px-4 py-2 text-sm font-medium border rounded-lg transition-all duration-200 min-w-[44px] ${
-                                                                    currentPage === pageNum
-                                                                        ? 'bg-primary-600 text-white border-primary-600 shadow-md'
-                                                                        : 'text-slate-600 border-slate-300 hover:bg-slate-50 hover:border-slate-400'
-                                                                }`}
-                                                            >
-                                                                {pageNum}
-                                                            </button>
+                                                        <button
+                                                            key={pageNum}
+                                                            onClick={() => loadPage(pageNum)}
+                                                            disabled={isLoadingPage}
+                                                            className={`px-4 py-2 text-sm font-medium border rounded-lg transition-all duration-150 min-w-[44px] disabled:opacity-50 disabled:cursor-not-allowed ${
+                                                                currentPage === pageNum
+                                                                    ? 'bg-primary-600 text-white border-primary-600 shadow-md'
+                                                                    : 'text-slate-600 border-slate-300 hover:bg-slate-50 hover:border-slate-400'
+                                                            }`}
+                                                        >
+                                                            {isLoadingPage && currentPage === pageNum ? '⏳' : pageNum}
+                                                        </button>
                                                         );
                                                     })}
                                                 </div>
                                                 
                                                 <button
-                                                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                                                    disabled={currentPage === totalPages}
-                                                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                                                    onClick={() => loadPage(Math.min(totalPages, currentPage + 1))}
+                                                    disabled={currentPage === totalPages || isLoadingPage}
+                                                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
                                                 >
-                                                    Siguiente
+                                                    {isLoadingPage ? '⏳' : 'Siguiente'}
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                                     </svg>
@@ -933,21 +1264,21 @@ const MarketplacePage: React.FC = () => {
                                         <div className="sm:hidden flex justify-center">
                                             <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg p-2 shadow-sm">
                                                 <button
-                                                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                                                    disabled={currentPage === 1}
+                                                    onClick={() => loadPage(Math.max(1, currentPage - 1))}
+                                                    disabled={currentPage === 1 || isLoadingPage}
                                                     className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                                                 >
-                                                    ←
+                                                    {isLoadingPage ? '⏳' : '←'}
                                                 </button>
                                                 <div className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-50 rounded-md min-w-[80px] text-center">
-                                                    {currentPage} de {totalPages}
+                                                    {isLoadingPage ? 'Cargando...' : `${currentPage} de ${totalPages}`}
                                                 </div>
                                                 <button
-                                                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                                                    disabled={currentPage === totalPages}
+                                                    onClick={() => loadPage(Math.min(totalPages, currentPage + 1))}
+                                                    disabled={currentPage === totalPages || isLoadingPage}
                                                     className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                                                 >
-                                                    →
+                                                    {isLoadingPage ? '⏳' : '→'}
                                                 </button>
                                             </div>
                                         </div>
@@ -1040,7 +1371,7 @@ const MarketplacePage: React.FC = () => {
                                     onClick={() => setShowAdvancedFilters(false)}
                                     className="flex-1 btn-blue touch-manipulation"
                                 >
-                                    <span>Aplicar filtros</span>
+                                    <span>Cerrar filtros</span>
                                 </button>
                             </div>
                         </div>

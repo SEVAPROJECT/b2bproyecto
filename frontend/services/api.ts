@@ -134,13 +134,40 @@ export const authAPI = {
     },
 
     // Obtener perfil del usuario
-    async getProfile(accessToken: string) {
+    async getProfile(accessToken?: string) {
         try {
+            const headers: Record<string, string> = {};
+            
+            if (accessToken) {
+                headers['Authorization'] = `Bearer ${accessToken}`;
+            }
+            
             const response = await fetch(buildApiUrl(API_CONFIG.AUTH.ME), {
                 method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                },
+                headers,
+                credentials: 'include', // Importante: incluir cookies HttpOnly
+            });
+
+            if (!response.ok) {
+                const error = await handleApiError(response);
+                throw error;
+            }
+
+            return await response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw { detail: error.message };
+            }
+            throw error;
+        }
+    },
+
+    // Cerrar sesión
+    async logout() {
+        try {
+            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.LOGOUT), {
+                method: 'POST',
+                credentials: 'include', // Importante: incluir cookies para limpiarlas
             });
 
             if (!response.ok) {
@@ -1105,6 +1132,35 @@ export const adminAPI = {
             }
             throw error;
         }
+    },
+
+    // Obtener estadísticas del dashboard
+    async getDashboardStats(accessToken: string): Promise<any> {
+        try {
+            console.log('📊 Obteniendo estadísticas del dashboard...');
+            const response = await fetch(buildApiUrl(API_CONFIG.ADMIN.DASHBOARD_STATS), {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const error = await handleApiError(response);
+                throw error;
+            }
+
+            const result = await response.json();
+            console.log('✅ Estadísticas del dashboard obtenidas:', result);
+            return result;
+        } catch (error) {
+            console.error('❌ Error en getDashboardStats:', error);
+            if (error instanceof Error) {
+                throw { detail: error.message };
+            }
+            throw error;
+        }
     }
 };
 
@@ -1230,8 +1286,27 @@ export const servicesAPI = {
         }
     },
 
-    // Obtener todos los servicios con información del proveedor
-    async getServicesWithProviders(accessToken?: string): Promise<BackendService[]> {
+    // Obtener servicios con información del proveedor (usando endpoint unificado)
+    async getServicesWithProviders(
+        limit: number = 5, 
+        offset: number = 0, 
+        accessToken?: string,
+        filters?: {
+            currency?: string;
+            min_price?: number;
+            max_price?: number;
+        }
+    ): Promise<{
+        services: BackendService[];
+        pagination: {
+            total: number;
+            page: number;
+            total_pages: number;
+            limit: number;
+            offset: number;
+        };
+        filters_applied: any;
+    }> {
         try {
             const headers: Record<string, string> = {
                 'Content-Type': 'application/json',
@@ -1240,7 +1315,19 @@ export const servicesAPI = {
                 headers['Authorization'] = `Bearer ${accessToken}`;
             }
 
-            const response = await fetch(buildApiUrl(API_CONFIG.SERVICES.WITH_PROVIDERS), {
+            const params = new URLSearchParams({
+                limit: limit.toString(),
+                offset: offset.toString()
+            });
+
+            // Agregar filtros si están presentes
+            if (filters) {
+                if (filters.currency) params.append('currency', filters.currency);
+                if (filters.min_price !== undefined) params.append('min_price', filters.min_price.toString());
+                if (filters.max_price !== undefined) params.append('max_price', filters.max_price.toString());
+            }
+
+            const response = await fetch(`${buildApiUrl(API_CONFIG.SERVICES.UNIFIED)}?${params}`, {
                 method: 'GET',
                 headers,
             });
@@ -1259,6 +1346,76 @@ export const servicesAPI = {
             throw error;
         }
     },
+
+    // Obtener servicios filtrados (usando endpoint unificado)
+    async getFilteredServices(
+        limit: number = 10,
+        offset: number = 0,
+        accessToken?: string,
+        filters?: {
+            currency?: string;
+            min_price?: number;
+            max_price?: number;
+            category_id?: number;
+            department?: string;
+            city?: string;
+            search?: string;
+        }
+    ): Promise<{
+        services: BackendService[];
+        pagination: {
+            total: number;
+            page: number;
+            total_pages: number;
+            limit: number;
+            offset: number;
+        };
+        filters_applied: any;
+    }> {
+        try {
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+            };
+            if (accessToken) {
+                headers['Authorization'] = `Bearer ${accessToken}`;
+            }
+
+            const params = new URLSearchParams({
+                limit: limit.toString(),
+                offset: offset.toString()
+            });
+
+            // Agregar filtros si están presentes
+            if (filters) {
+                if (filters.currency) params.append('currency', filters.currency);
+                if (filters.min_price !== undefined) params.append('min_price', filters.min_price.toString());
+                if (filters.max_price !== undefined) params.append('max_price', filters.max_price.toString());
+                if (filters.category_id) params.append('category_id', filters.category_id.toString());
+                if (filters.department) params.append('department', filters.department);
+                if (filters.city) params.append('city', filters.city);
+                if (filters.search) params.append('search', filters.search);
+            }
+
+            const response = await fetch(`${buildApiUrl(API_CONFIG.SERVICES.UNIFIED)}?${params}`, {
+                method: 'GET',
+                headers,
+            });
+
+            if (!response.ok) {
+                const error = await handleApiError(response);
+                throw error;
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('❌ Error en getFilteredServices:', error);
+            if (error instanceof Error) {
+                throw { detail: error.message };
+            }
+            throw error;
+        }
+    },
+
 
     // Obtener servicios por categoría
     async getServicesByCategory(categoryId: number, accessToken?: string): Promise<BackendService[]> {

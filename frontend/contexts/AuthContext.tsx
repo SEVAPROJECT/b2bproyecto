@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { AuthContextType, User, ProviderApplicationStatus, UserRole } from '../types/auth';
 import { ProviderOnboardingData } from '../types/provider';
 import { authAPI, providersAPI, adminAPI } from '../services/api';
@@ -16,34 +16,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         status: 'none',
         documents: {}
     });
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true); // Iniciar como true para evitar race condition
     const [error, setError] = useState<string | null>(null);
+    const loadingUserRef = useRef(false); // Para evitar cargas duplicadas
 
     // Verificar si hay un usuario logueado al cargar la app
     useEffect(() => {
-        const loadUser = async () => {
-            console.log('🚀 Iniciando carga automática del usuario...');
+    const loadUser = async () => {
+        // Protección: si ya hay un usuario cargado, no volver a cargar
+        if (user) {
+            return;
+        }
+        
+        // Protección adicional: si ya se está cargando, no volver a cargar
+        if (loadingUserRef.current) {
+            return;
+        }
+        
+        loadingUserRef.current = true;
+            
             try {
+                // Obtener access_token de localStorage
                 const accessToken = localStorage.getItem('access_token');
+                
                 if (!accessToken) {
-                    console.log('❌ No hay token de acceso');
                     setIsLoading(false);
                     return;
                 }
-
-                console.log('🔑 Token encontrado, obteniendo perfil...');
-                const profile = await authAPI.getProfile(accessToken);
-                console.log('👤 Perfil obtenido:', profile);
-                console.log('🔍 Campos disponibles en el perfil:', Object.keys(profile));
-                console.log('📝 Valores de campos de nombre posibles:', {
-                    nombre_persona: profile.nombre_persona,
-                    nombre: profile.nombre,
-                    first_name: profile.first_name,
-                    name: profile.name,
-                    email: profile.email,
-                    correo: profile.correo
-                });
-                console.log('📸 Foto de perfil en perfil:', profile.foto_perfil);
+                
+                // Agregar timeout para evitar esperas infinitas
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout de conexión')), 5000) // Reducido de 10s a 5s
+                );
+                
+                // Intentar autenticación con access_token de localStorage
+                const profilePromise = authAPI.getProfile(accessToken);
+                const profile = await Promise.race([profilePromise, timeoutPromise]);
 
                 // Validación robusta de roles como en Apporiginal.tsx
                 let userRole: UserRole = 'client';
@@ -105,31 +113,58 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     foto_perfil: profile.foto_perfil || null
                 };
                 
-                console.log('👤 Usuario configurado:', newUser);
                 setUser(newUser);
                 setProviderStatus(newUser.providerStatus);
                 setProviderApplication(newUser.providerApplication);
             } catch (err: any) {
                 console.error('❌ Error cargando usuario:', err);
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('refresh_token');
+                console.error('❌ Tipo de error:', typeof err);
+                console.error('❌ Propiedades del error:', Object.keys(err));
+                console.error('❌ Status del error:', err.status);
+                console.error('❌ Message del error:', err.message);
+                console.error('❌ Detail del error:', err.detail);
+                
+                // Con autenticación híbrida, limpiar localStorage solo en errores de auth
+                if (err.status === 401 || err.status === 403 || 
+                    (err.message && err.message.includes('401')) ||
+                    (err.message && err.message.includes('403'))) {
+                    console.log('🔐 Error de autenticación, limpiando localStorage');
+                    localStorage.removeItem('access_token');
+                } else if (err.message && err.message.includes('Timeout')) {
+                    console.log('⏰ Timeout de conexión, manteniendo sesión para reintento');
+                } else {
+                    console.log('⚠️ Error de conexión, manteniendo sesión para reintento');
+                }
             } finally {
                 setIsLoading(false);
+                loadingUserRef.current = false; // Resetear el flag de carga
             }
         };
 
         loadUser();
     }, []); // Sin dependencias para ejecutar solo una vez
 
+    // Debug: monitorear cambios en el estado del usuario
+    useEffect(() => {
+        console.log('🔍 Estado del usuario cambió:', {
+            user: user ? 'Usuario presente' : 'Usuario null',
+            isAuthenticated: !!user,
+            isLoading: isLoading
+        });
+    }, [user, isLoading]);
+
     const login = async (email: string, password: string) => {
         try {
             setIsLoading(true);
             setError(null);
 
-            // Llamada real a la API
+            // Llamada real a la API (solo refresh_token se establece en cookie)
             const response = await authAPI.signIn({ email, password });
+            
+            // Guardar access_token en localStorage
+            localStorage.setItem('access_token', response.access_token);
 
-            // Obtener datos reales del usuario desde el backend
+            // Obtener datos reales del usuario desde el backend (usando access_token)
             const profile = await authAPI.getProfile(response.access_token);
 
             // Validación robusta de roles como en Apporiginal.tsx
@@ -172,11 +207,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setProviderStatus(userData.providerStatus);
             setProviderApplication(userData.providerApplication);
 
-            // Refrescar la pantalla para asegurar datos actualizados
-            console.log('🔄 Login exitoso, refrescando pantalla para datos actualizados...');
-            setTimeout(() => {
-                window.location.reload();
-            }, 100); // Pequeño delay para asegurar que el estado se actualice
+            // Login exitoso
 
         } catch (err: any) {
             // Manejar específicamente el error de cuenta inactiva
@@ -283,7 +314,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const logout = async () => {
         try {
+            // Llamar al endpoint de logout (limpia cookies automáticamente)
+            await authAPI.logout();
+            console.log('🍪 Refresh token cookie limpiada automáticamente');
+            
+            // Limpiar localStorage también
             localStorage.removeItem('access_token');
+            console.log('💾 Access token limpiado de localStorage');
+            
             setUser(null);
             setProviderStatus('none');
             setProviderApplication({ status: 'none', documents: {} });
@@ -295,18 +333,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const reloadUserProfile = async () => {
         console.log('🔄 Recargando perfil del usuario...');
         try {
-            const accessToken = localStorage.getItem('access_token');
-            if (!accessToken) {
-                console.log('❌ No hay token para recargar perfil');
-                return;
-            }
-
             // Agregar timeout para evitar esperas infinitas
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout de conexión')), 5000)
             );
 
-            const profilePromise = authAPI.getProfile(accessToken);
+            // Usar cookies HttpOnly para recargar perfil
+            const profilePromise = authAPI.getProfile();
             const profile = await Promise.race([profilePromise, timeoutPromise]);
             console.log('👤 Perfil recargado:', profile);
             console.log('🔍 Campos disponibles:', Object.keys(profile));
@@ -590,6 +623,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isLoading,
         error
     };
+    
+    // Debug: verificar el estado del contexto
+    console.log('🔍 AuthContext value actualizado:', {
+        user: user ? 'Usuario presente' : 'Usuario null',
+        isAuthenticated: !!user,
+        isLoading: isLoading
+    });
 
     return (
         <AuthContext.Provider value={value}>

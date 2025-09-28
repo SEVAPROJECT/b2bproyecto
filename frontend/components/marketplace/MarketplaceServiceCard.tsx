@@ -48,7 +48,7 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
         if (service.id_moneda) {
             switch (service.id_moneda) {
                 case 1: // Guaraní
-                    serviceCurrency = 'PYG';
+                    serviceCurrency = 'GS';
                     break;
                 case 2: // Dólar
                     serviceCurrency = 'USD';
@@ -59,8 +59,11 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
                 case 4: // Peso Argentino
                     serviceCurrency = 'ARS';
                     break;
+                case 8: // Peso Argentino (otro ID)
+                    serviceCurrency = 'ARS';
+                    break;
                 default:
-                    serviceCurrency = 'PYG'; // Fallback a Guaraní
+                    serviceCurrency = 'GS'; // Fallback a Guaraní
             }
         }
 
@@ -71,7 +74,7 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
 
         // Si aún no hay moneda, asumir Guaraní
         if (!serviceCurrency) {
-            serviceCurrency = 'PYG';
+            serviceCurrency = 'GS';
         }
 
         const currencySymbol = serviceCurrency === 'USD' ? '$' :
