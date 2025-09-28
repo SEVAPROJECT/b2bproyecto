@@ -5,6 +5,7 @@ from sqlalchemy import select, and_, delete
 from app.api.v1.dependencies.database_supabase import get_async_db
 from app.api.v1.dependencies.auth_user import get_current_user
 from app.models.horario_trabajo import HorarioTrabajoModel, ExcepcionHorarioModel
+from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.schemas.horario_trabajo import (
     HorarioTrabajoIn, HorarioTrabajoOut, HorarioTrabajoUpdate,
     ExcepcionHorarioIn, ExcepcionHorarioOut, ExcepcionHorarioUpdate,
@@ -18,6 +19,25 @@ from datetime import datetime, date, time, timedelta
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/horario-trabajo", tags=["horario-trabajo"])
+
+# ===== FUNCIONES AUXILIARES =====
+
+async def get_provider_profile(current_user: SupabaseUser, db: AsyncSession) -> PerfilEmpresa:
+    """
+    Obtiene el perfil de empresa del usuario autenticado.
+    """
+    perfil_result = await db.execute(
+        select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
+    )
+    perfil = perfil_result.scalar_one_or_none()
+    
+    if not perfil:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
+        )
+    
+    return perfil
 
 # ===== HORARIOS DE TRABAJO =====
 
@@ -36,19 +56,14 @@ async def crear_horario_trabajo(
     Crea un nuevo horario de trabajo.
     Solo los proveedores pueden crear horarios.
     """
-    logger.info(f"Creando horario de trabajo para proveedor {current_user.id}")
-    
-    # Verificar que el usuario es proveedor
-    if current_user.role != "provider":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los proveedores pueden gestionar horarios de trabajo."
-        )
+    # Obtener el perfil del proveedor
+    perfil = await get_provider_profile(current_user, db)
+    logger.info(f"Creando horario de trabajo para proveedor {perfil.id_perfil}")
     
     # Verificar que no existe ya un horario para este día
     horario_existente_query = select(HorarioTrabajoModel).where(
         and_(
-            HorarioTrabajoModel.id_proveedor == current_user.id,
+            HorarioTrabajoModel.id_proveedor == perfil.id_perfil,
             HorarioTrabajoModel.dia_semana == horario.dia_semana
         )
     )
@@ -63,7 +78,7 @@ async def crear_horario_trabajo(
     
     # Crear nuevo horario
     nuevo_horario = HorarioTrabajoModel(
-        id_proveedor=current_user.id,
+        id_proveedor=perfil.id_perfil,
         dia_semana=horario.dia_semana,
         hora_inicio=horario.hora_inicio,
         hora_fin=horario.hora_fin,
@@ -96,14 +111,11 @@ async def obtener_horarios_trabajo(
     """
     Obtiene todos los horarios de trabajo del proveedor.
     """
-    if current_user.role != "provider":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los proveedores pueden acceder a sus horarios."
-        )
+    # Obtener el perfil del proveedor
+    perfil = await get_provider_profile(current_user, db)
     
     horarios_query = select(HorarioTrabajoModel).where(
-        HorarioTrabajoModel.id_proveedor == current_user.id
+        HorarioTrabajoModel.id_proveedor == perfil.id_perfil
     ).order_by(HorarioTrabajoModel.dia_semana)
     
     horarios_result = await db.execute(horarios_query)
@@ -125,17 +137,14 @@ async def actualizar_horario_trabajo(
     """
     Actualiza un horario de trabajo existente.
     """
-    if current_user.role != "provider":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los proveedores pueden gestionar horarios."
-        )
+    # Obtener el perfil del proveedor
+    perfil = await get_provider_profile(current_user, db)
     
     # Obtener el horario
     horario_query = select(HorarioTrabajoModel).where(
         and_(
             HorarioTrabajoModel.id_horario == horario_id,
-            HorarioTrabajoModel.id_proveedor == current_user.id
+            HorarioTrabajoModel.id_proveedor == perfil.id_perfil
         )
     )
     horario_result = await db.execute(horario_query)
@@ -178,17 +187,14 @@ async def eliminar_horario_trabajo(
     """
     Elimina un horario de trabajo.
     """
-    if current_user.role != "provider":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los proveedores pueden gestionar horarios."
-        )
+    # Obtener el perfil del proveedor
+    perfil = await get_provider_profile(current_user, db)
     
     # Verificar que el horario existe y pertenece al usuario
     horario_query = select(HorarioTrabajoModel).where(
         and_(
             HorarioTrabajoModel.id_horario == horario_id,
-            HorarioTrabajoModel.id_proveedor == current_user.id
+            HorarioTrabajoModel.id_proveedor == perfil.id_perfil
         )
     )
     horario_result = await db.execute(horario_query)
@@ -229,16 +235,13 @@ async def configurar_horario_completo(
     Configura el horario completo de la semana.
     Elimina horarios existentes y crea los nuevos.
     """
-    if current_user.role != "provider":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los proveedores pueden configurar horarios."
-        )
+    # Obtener el perfil del proveedor
+    perfil = await get_provider_profile(current_user, db)
     
     try:
         # Eliminar horarios existentes
         delete_horarios_query = delete(HorarioTrabajoModel).where(
-            HorarioTrabajoModel.id_proveedor == current_user.id
+            HorarioTrabajoModel.id_proveedor == perfil.id_perfil
         )
         await db.execute(delete_horarios_query)
         
@@ -246,7 +249,7 @@ async def configurar_horario_completo(
         horarios_creados = []
         for horario_data in configuracion.horarios:
             nuevo_horario = HorarioTrabajoModel(
-                id_proveedor=current_user.id,
+                id_proveedor=perfil.id_perfil,
                 dia_semana=horario_data.dia_semana,
                 hora_inicio=horario_data.hora_inicio,
                 hora_fin=horario_data.hora_fin,
@@ -260,7 +263,7 @@ async def configurar_horario_completo(
         if configuracion.excepciones:
             for excepcion_data in configuracion.excepciones:
                 nueva_excepcion = ExcepcionHorarioModel(
-                    id_proveedor=current_user.id,
+                    id_proveedor=perfil.id_perfil,
                     fecha=excepcion_data.fecha,
                     tipo=excepcion_data.tipo,
                     hora_inicio=excepcion_data.hora_inicio,
@@ -309,16 +312,13 @@ async def crear_excepcion_horario(
     """
     Crea una excepción de horario.
     """
-    if current_user.role != "provider":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los proveedores pueden gestionar excepciones."
-        )
+    # Obtener el perfil del proveedor
+    perfil = await get_provider_profile(current_user, db)
     
     # Verificar que no existe ya una excepción para esta fecha
     excepcion_existente_query = select(ExcepcionHorarioModel).where(
         and_(
-            ExcepcionHorarioModel.id_proveedor == current_user.id,
+            ExcepcionHorarioModel.id_proveedor == perfil.id_perfil,
             ExcepcionHorarioModel.fecha == excepcion.fecha
         )
     )
@@ -333,7 +333,7 @@ async def crear_excepcion_horario(
     
     # Crear nueva excepción
     nueva_excepcion = ExcepcionHorarioModel(
-        id_proveedor=current_user.id,
+        id_proveedor=perfil.id_perfil,
         fecha=excepcion.fecha,
         tipo=excepcion.tipo,
         hora_inicio=excepcion.hora_inicio,
@@ -367,14 +367,11 @@ async def obtener_excepciones_horario(
     """
     Obtiene todas las excepciones de horario del proveedor.
     """
-    if current_user.role != "provider":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los proveedores pueden acceder a sus excepciones."
-        )
+    # Obtener el perfil del proveedor
+    perfil = await get_provider_profile(current_user, db)
     
     excepciones_query = select(ExcepcionHorarioModel).where(
-        ExcepcionHorarioModel.id_proveedor == current_user.id
+        ExcepcionHorarioModel.id_proveedor == perfil.id_perfil
     ).order_by(ExcepcionHorarioModel.fecha)
     
     excepciones_result = await db.execute(excepciones_query)
