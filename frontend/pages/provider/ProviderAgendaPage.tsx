@@ -107,13 +107,47 @@ const ProviderAgendaPage: React.FC = () => {
             setLoading(true);
             setError(null);
             
-            // Cargar disponibilidades de todos los servicios usando apiRequest
-            const promises = servicios.map(servicio => 
-                apiRequest({
-                    url: `${API_URL}/api/v1/disponibilidades/servicio/${servicio.id_servicio}`,
-                    method: 'GET',
-                }).then(res => res.json())
-            );
+            // Cargar disponibilidades de todos los servicios usando fetch directo
+            const accessToken = localStorage.getItem('access_token');
+            if (!accessToken) {
+                console.log('❌ No hay token de acceso para cargar disponibilidades');
+                setDisponibilidades([]);
+                return;
+            }
+
+            console.log('🔍 Cargando disponibilidades para', servicios.length, 'servicios');
+            
+            const promises = servicios.map(async servicio => {
+                try {
+                    console.log(`🔍 Cargando disponibilidades para servicio ${servicio.id_servicio}`);
+                    const response = await fetch(`${API_URL}/api/v1/disponibilidades/servicio/${servicio.id_servicio}`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                    });
+
+                    console.log(`🔍 Respuesta disponibilidades servicio ${servicio.id_servicio}:`, response.status);
+
+                    if (!response.ok) {
+                        if (response.status === 404) {
+                            console.log(`⚠️ No hay disponibilidades para servicio ${servicio.id_servicio}`);
+                            return [];
+                        }
+                        if (response.status === 401 || response.status === 500) {
+                            console.log(`⚠️ Error 401/500 para servicio ${servicio.id_servicio}, devolviendo array vacío`);
+                            return [];
+                        }
+                        throw new Error(`Error ${response.status}: ${response.statusText}`);
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    console.error(`❌ Error cargando disponibilidades para servicio ${servicio.id_servicio}:`, error);
+                    return [];
+                }
+            });
 
             const results = await Promise.all(promises);
             const allDisponibilidades = results.flat().map(disp => ({
@@ -168,13 +202,29 @@ const ProviderAgendaPage: React.FC = () => {
                 observaciones: formData.observaciones || null
             };
 
-            const response = await apiRequest({
-                url: `${API_URL}/api/v1/disponibilidades/`,
+            console.log('🔍 Creando disponibilidad:', disponibilidadData);
+            
+            const accessToken = localStorage.getItem('access_token');
+            if (!accessToken) {
+                throw new Error('No hay token de acceso');
+            }
+
+            const response = await fetch(`${API_URL}/api/v1/disponibilidades/`, {
                 method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
                 body: JSON.stringify(disponibilidadData),
             });
 
+            console.log('🔍 Respuesta crear disponibilidad:', response.status, response.statusText);
+
             if (!response.ok) {
+                if (response.status === 401 || response.status === 500) {
+                    console.log('⚠️ Error 401/500 al crear disponibilidad, no haciendo logout');
+                    throw new Error('Error temporal del servidor. Por favor, intenta nuevamente.');
+                }
                 throw new Error('Error al crear disponibilidad');
             }
 
@@ -209,12 +259,28 @@ const ProviderAgendaPage: React.FC = () => {
             setLoading(true);
             setError(null);
 
-            const response = await apiRequest({
-                url: `${API_URL}/api/v1/disponibilidades/${id}`,
+            console.log('🔍 Eliminando disponibilidad:', id);
+            
+            const accessToken = localStorage.getItem('access_token');
+            if (!accessToken) {
+                throw new Error('No hay token de acceso');
+            }
+
+            const response = await fetch(`${API_URL}/api/v1/disponibilidades/${id}`, {
                 method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
             });
 
+            console.log('🔍 Respuesta eliminar disponibilidad:', response.status, response.statusText);
+
             if (!response.ok) {
+                if (response.status === 401 || response.status === 500) {
+                    console.log('⚠️ Error 401/500 al eliminar disponibilidad, no haciendo logout');
+                    throw new Error('Error temporal del servidor. Por favor, intenta nuevamente.');
+                }
                 throw new Error('Error al eliminar disponibilidad');
             }
 
