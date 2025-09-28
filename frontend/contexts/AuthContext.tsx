@@ -330,14 +330,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             // No hacer logout automático en errores 500 del servidor
             if (error instanceof Error && (
                 error.message.includes('500') || 
-                error.message.includes('Error temporal del servidor')
+                error.message.includes('Error temporal del servidor') ||
+                error.message.includes('Error interno del servidor')
             )) {
                 console.log('⚠️ Error 500 en refresh, manteniendo sesión');
+                // Lanzar un error específico para que useApiWithAuth lo maneje
+                throw new Error('Error temporal del servidor. Por favor, intenta nuevamente.');
+            }
+            
+            // Solo hacer logout en errores de autenticación reales (401, 403, etc.)
+            if (error instanceof Error && (
+                error.message.includes('401') ||
+                error.message.includes('403') ||
+                error.message.includes('Sesión expirada') ||
+                error.message.includes('Token inválido')
+            )) {
+                console.log('🔐 Error de autenticación real, cerrando sesión');
+                logout();
                 throw error;
             }
             
-            // Solo hacer logout en errores de autenticación reales
-            logout();
+            // Para otros errores, no hacer logout automático
+            console.log('⚠️ Error en refresh, manteniendo sesión');
             throw error;
         }
     };

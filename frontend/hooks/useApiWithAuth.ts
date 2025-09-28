@@ -42,13 +42,35 @@ export const useApiWithAuth = () => {
                 console.error('❌ Error al renovar token:', refreshError);
                 console.log('🔍 Refresh token en localStorage:', localStorage.getItem('refresh_token'));
                 
-                // No hacer logout automático en errores 500 del refresh
-                if (refreshError instanceof Error && refreshError.message.includes('500')) {
-                    console.log('⚠️ Error 500 en refresh, manteniendo sesión');
-                    throw new Error('Error temporal del servidor. Por favor, intenta nuevamente.');
+                // Manejar errores 500 del servidor sin hacer logout
+                if (refreshError instanceof Error) {
+                    if (refreshError.message.includes('500') || 
+                        refreshError.message.includes('Error temporal del servidor') ||
+                        refreshError.message.includes('Error interno del servidor')) {
+                        console.log('⚠️ Error 500 en refresh, manteniendo sesión y reintentando con token actual');
+                        
+                        // Reintentar la petición original con el token actual (sin renovar)
+                        try {
+                            response = await fetch(url, {
+                                ...fetchOptions,
+                                headers: {
+                                    'Authorization': `Bearer ${user?.accessToken}`,
+                                    'Content-Type': 'application/json',
+                                    ...fetchOptions.headers,
+                                },
+                            });
+                            console.log('✅ Petición reintentada con token actual');
+                        } catch (retryError) {
+                            console.error('❌ Error en reintento:', retryError);
+                            throw new Error('Error temporal del servidor. Por favor, intenta nuevamente.');
+                        }
+                    } else {
+                        // Solo hacer logout en errores de autenticación reales (no 500)
+                        throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
+                    }
+                } else {
+                    throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
                 }
-                
-                throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
             }
         }
 
