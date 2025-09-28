@@ -328,9 +328,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const logout = async () => {
         try {
-            // Llamar al endpoint de logout (limpia cookies automáticamente)
-            await authAPI.logout();
-            console.log('🍪 Refresh token cookie limpiada automáticamente');
+            // Obtener access_token de localStorage para enviarlo en el header
+            const accessToken = localStorage.getItem('access_token');
+            
+            if (accessToken) {
+                // Llamar al endpoint de logout con el token en el header
+                await authAPI.logout(accessToken);
+                console.log('🍪 Refresh token cookie limpiada automáticamente');
+            } else {
+                console.warn('⚠️ No se encontró access_token para logout');
+            }
             
             // Limpiar localStorage también
             localStorage.removeItem('access_token');
@@ -341,6 +348,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setProviderApplication({ status: 'none', documents: {} });
         } catch (err) {
             console.error('Error al cerrar sesión:', err);
+            // Aún así, limpiar el estado local aunque falle el logout del servidor
+            localStorage.removeItem('access_token');
+            setUser(null);
+            setProviderStatus('none');
+            setProviderApplication({ status: 'none', documents: {} });
         }
     };
 
@@ -403,6 +415,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const reloadUserProfile = async () => {
         console.log('🔄 Recargando perfil del usuario...');
         try {
+            // Obtener access_token de localStorage
+            const accessToken = localStorage.getItem('access_token');
+            if (!accessToken) {
+                console.warn('⚠️ No se encontró access_token para recargar perfil');
+                return;
+            }
+            
             // Agregar timeout para evitar esperas infinitas
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout de conexión')), 5000)
