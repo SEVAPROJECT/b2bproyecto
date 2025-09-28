@@ -92,13 +92,11 @@ const ProviderAgendaPage: React.FC = () => {
             setLoading(true);
             setError(null);
             
-            // Cargar disponibilidades de todos los servicios
+            // Cargar disponibilidades de todos los servicios usando apiRequest
             const promises = servicios.map(servicio => 
-                fetch(`${API_URL}/api/v1/disponibilidades/servicio/${servicio.id_servicio}`, {
-                    headers: {
-                        'Authorization': `Bearer ${user?.accessToken}`,
-                        'Content-Type': 'application/json',
-                    },
+                apiRequest({
+                    url: `${API_URL}/api/v1/disponibilidades/servicio/${servicio.id_servicio}`,
+                    method: 'GET',
                 }).then(res => res.json())
             );
 
@@ -143,12 +141,9 @@ const ProviderAgendaPage: React.FC = () => {
                 observaciones: formData.observaciones || null
             };
 
-            const response = await fetch(`${API_URL}/api/v1/disponibilidades/`, {
+            const response = await apiRequest({
+                url: `${API_URL}/api/v1/disponibilidades/`,
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${user?.accessToken}`,
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify(disponibilidadData),
             });
 
@@ -187,12 +182,9 @@ const ProviderAgendaPage: React.FC = () => {
             setLoading(true);
             setError(null);
 
-            const response = await fetch(`${API_URL}/api/v1/disponibilidades/${id}`, {
+            const response = await apiRequest({
+                url: `${API_URL}/api/v1/disponibilidades/${id}`,
                 method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${user?.accessToken}`,
-                    'Content-Type': 'application/json',
-                },
             });
 
             if (!response.ok) {
