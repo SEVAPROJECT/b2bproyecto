@@ -102,6 +102,8 @@ from app.api.v1.routers.auth.direct_password_reset import router as direct_passw
 from app.api.v1.routers.reserva_service.reserva import router as reserva_router
 from app.api.v1.routers.disponibilidad import router as disponibilidad_router
 from app.api.v1.routers.disponibilidad_optimizada import router as disponibilidad_optimizada_router
+from app.api.v1.routers.horario_trabajo import router as horario_trabajo_router
+from app.api.v1.routers.horarios_disponibles import router as horarios_disponibles_router
 from app.api.v1.routers.test import router as test_router
 
 
@@ -130,6 +132,8 @@ app.include_router(direct_password_reset_router, prefix="/api/v1")
 app.include_router(reserva_router, prefix="/api/v1")
 app.include_router(disponibilidad_router, prefix="/api/v1")
 app.include_router(disponibilidad_optimizada_router, prefix="/api/v1")
+app.include_router(horario_trabajo_router, prefix="/api/v1")
+app.include_router(horarios_disponibles_router, prefix="/api/v1")
 app.include_router(test_router, prefix="/api/v1")
 
 # endpoint (una ruta) para la URL raíz ("/")
