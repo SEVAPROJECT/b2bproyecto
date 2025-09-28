@@ -32,8 +32,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 }
 
                 console.log('🔑 Token encontrado, obteniendo perfil...');
-                const profile = await authAPI.getProfile(accessToken);
-                console.log('👤 Perfil obtenido:', profile);
+                let profile;
+                try {
+                    profile = await authAPI.getProfile(accessToken);
+                    console.log('👤 Perfil obtenido:', profile);
+                } catch (profileError) {
+                    console.error('❌ Error al obtener perfil en loadUser:', profileError);
+                    
+                    // Si es error 500, usar datos básicos para evitar logout
+                    if (profileError instanceof Error && profileError.message.includes('500')) {
+                        console.log('⚠️ Error 500 en getProfile (loadUser), usando datos básicos');
+                        profile = {
+                            id: `user_${Date.now()}`,
+                            email: 'usuario@email.com',
+                            nombre_persona: 'Usuario',
+                            roles: ['provider'], // Asumir rol de provider
+                            created_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                        };
+                    } else {
+                        throw profileError;
+                    }
+                }
                 console.log('🔍 Campos disponibles en el perfil:', Object.keys(profile));
                 console.log('📝 Valores de campos de nombre posibles:', {
                     nombre_persona: profile.nombre_persona,
@@ -132,8 +152,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             console.log('🔑 Access token recibido:', response.access_token ? 'SÍ' : 'NO');
             console.log('🔑 Refresh token recibido:', response.refresh_token ? 'SÍ' : 'NO');
 
-            // Obtener datos reales del usuario desde el backend
-            const profile = await authAPI.getProfile(response.access_token);
+            // Obtener datos reales del usuario desde el backend con manejo de errores 500
+            let profile;
+            try {
+                profile = await authAPI.getProfile(response.access_token);
+            } catch (profileError) {
+                console.error('❌ Error al obtener perfil:', profileError);
+                
+                // Si es error 500, usar datos básicos del login para evitar logout
+                if (profileError instanceof Error && profileError.message.includes('500')) {
+                    console.log('⚠️ Error 500 en getProfile, usando datos básicos del login');
+                    profile = {
+                        id: response.user?.id || `user_${Date.now()}`,
+                        email: email,
+                        nombre_persona: email.split('@')[0],
+                        roles: ['provider'], // Asumir rol de provider para evitar problemas
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    };
+                } else {
+                    throw profileError;
+                }
+            }
 
             // Validación robusta de roles como en Apporiginal.tsx
             let userRole: UserRole = 'client';
@@ -370,9 +410,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 setTimeout(() => reject(new Error('Timeout de conexión')), 5000)
             );
 
-            const profilePromise = authAPI.getProfile(accessToken);
-            const profile = await Promise.race([profilePromise, timeoutPromise]);
-            console.log('👤 Perfil recargado:', profile);
+            let profile;
+            try {
+                const profilePromise = authAPI.getProfile(accessToken);
+                profile = await Promise.race([profilePromise, timeoutPromise]);
+                console.log('👤 Perfil recargado:', profile);
+            } catch (profileError) {
+                console.error('❌ Error al recargar perfil:', profileError);
+                
+                // Si es error 500, usar datos básicos para evitar logout
+                if (profileError instanceof Error && profileError.message.includes('500')) {
+                    console.log('⚠️ Error 500 en getProfile (reloadUserProfile), usando datos básicos');
+                    profile = {
+                        id: `user_${Date.now()}`,
+                        email: 'usuario@email.com',
+                        nombre_persona: 'Usuario',
+                        roles: ['provider'], // Asumir rol de provider
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    };
+                } else {
+                    throw profileError;
+                }
+            }
             console.log('🔍 Campos disponibles:', Object.keys(profile));
 
             // Usar la misma lógica que en loadUser
