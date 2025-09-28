@@ -326,7 +326,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return response.access_token;
         } catch (error) {
             console.error('❌ Error al renovar token:', error);
-            logout(); // Desloguear si no se puede renovar
+            
+            // No hacer logout automático en errores 500 del servidor
+            if (error instanceof Error && (
+                error.message.includes('500') || 
+                error.message.includes('Error temporal del servidor')
+            )) {
+                console.log('⚠️ Error 500 en refresh, manteniendo sesión');
+                throw error;
+            }
+            
+            // Solo hacer logout en errores de autenticación reales
+            logout();
             throw error;
         }
     };

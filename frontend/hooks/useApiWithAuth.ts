@@ -41,6 +41,13 @@ export const useApiWithAuth = () => {
             } catch (refreshError) {
                 console.error('❌ Error al renovar token:', refreshError);
                 console.log('🔍 Refresh token en localStorage:', localStorage.getItem('refresh_token'));
+                
+                // No hacer logout automático en errores 500 del refresh
+                if (refreshError instanceof Error && refreshError.message.includes('500')) {
+                    console.log('⚠️ Error 500 en refresh, manteniendo sesión');
+                    throw new Error('Error temporal del servidor. Por favor, intenta nuevamente.');
+                }
+                
                 throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
             }
         }
