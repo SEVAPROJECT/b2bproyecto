@@ -186,55 +186,51 @@ const ProviderAgendaPage: React.FC = () => {
 
             console.log('🔍 Cargando disponibilidades optimizado para', servicios.length, 'servicios');
             
-            // Optimización: Cargar solo los primeros 5 servicios para evitar sobrecarga
-            const serviciosLimitados = servicios.slice(0, 5);
-            console.log('🔍 Cargando disponibilidades para servicios limitados:', serviciosLimitados.map(s => s.id_servicio));
-            
-            const promises = serviciosLimitados.map(async servicio => {
-                try {
-                    console.log(`🔍 Cargando disponibilidades para servicio ${servicio.id_servicio}`);
-                    const response = await fetch(`${API_URL}/api/v1/disponibilidades/servicio/${servicio.id_servicio}`, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${accessToken}`,
-                            'Content-Type': 'application/json',
-                        },
-                    });
+            // Optimización: Cargar disponibilidades de todos los servicios con una sola petición
+            try {
+                const response = await fetch(`${API_URL}/api/v1/disponibilidades/proveedor`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
 
-                    console.log(`🔍 Respuesta disponibilidades servicio ${servicio.id_servicio}:`, response.status);
+                console.log(`🔍 Respuesta disponibilidades proveedor:`, response.status);
 
-                    if (!response.ok) {
-                        if (response.status === 404) {
-                            console.log(`⚠️ No hay disponibilidades para servicio ${servicio.id_servicio}`);
-                            return [];
-                        }
-                        if (response.status === 401 || response.status === 500) {
-                            console.log(`⚠️ Error 401/500 para servicio ${servicio.id_servicio}, devolviendo array vacío`);
-                            return [];
-                        }
-                        throw new Error(`Error ${response.status}: ${response.statusText}`);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        console.log(`⚠️ No hay disponibilidades para el proveedor`);
+                        setDisponibilidades([]);
+                        return;
                     }
-
-                    return await response.json();
-                } catch (error) {
-                    console.error(`❌ Error cargando disponibilidades para servicio ${servicio.id_servicio}:`, error);
-                    return [];
+                    if (response.status === 401 || response.status === 500) {
+                        console.log(`⚠️ Error 401/500 para disponibilidades proveedor, devolviendo array vacío`);
+                        setDisponibilidades([]);
+                        return;
+                    }
+                    throw new Error(`Error ${response.status}: ${response.statusText}`);
                 }
-            });
 
-            const results = await Promise.all(promises);
-            const allDisponibilidades = results.flat().map(disp => ({
-                ...disp,
-                servicio_nombre: servicios.find(s => s.id_servicio === disp.id_servicio)?.nombre
-            }));
+                const disponibilidadesData = await response.json();
+                const allDisponibilidades = disponibilidadesData.map((disp: any) => ({
+                    ...disp,
+                    servicio_nombre: servicios.find(s => s.id_servicio === disp.id_servicio)?.nombre
+                }));
 
-            // Ordenar por fecha de inicio
-            allDisponibilidades.sort((a, b) => 
-                new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
-            );
+                // Ordenar por fecha de inicio
+                allDisponibilidades.sort((a: any, b: any) => 
+                    new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
+                );
 
-            console.log(`✅ Disponibilidades cargadas: ${allDisponibilidades.length} disponibilidades`);
-            setDisponibilidades(allDisponibilidades);
+                console.log(`✅ Disponibilidades cargadas: ${allDisponibilidades.length} disponibilidades`);
+                setDisponibilidades(allDisponibilidades);
+            } catch (error) {
+                console.error('❌ Error cargando disponibilidades del proveedor:', error);
+                // Fallback: cargar disponibilidades de forma individual si el endpoint optimizado falla
+                console.log('🔄 Intentando carga individual como fallback...');
+                await loadDisponibilidadesIndividual();
+            }
         } catch (err) {
             console.error('Error al cargar disponibilidades:', err);
             
@@ -399,6 +395,58 @@ const ProviderAgendaPage: React.FC = () => {
         });
     };
 
+    // Función de fallback para cargar disponibilidades individualmente
+    const loadDisponibilidadesIndividual = async () => {
+        try {
+            const accessToken = localStorage.getItem('access_token');
+            if (!accessToken) return;
+
+            // Cargar solo los primeros 3 servicios para evitar sobrecarga
+            const serviciosLimitados = servicios.slice(0, 3);
+            console.log('🔍 Cargando disponibilidades individuales para:', serviciosLimitados.map(s => s.id_servicio));
+            
+            const promises = serviciosLimitados.map(async servicio => {
+                try {
+                    const response = await fetch(`${API_URL}/api/v1/disponibilidades/servicio/${servicio.id_servicio}`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 404) {
+                            return [];
+                        }
+                        return [];
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    console.error(`❌ Error cargando disponibilidades para servicio ${servicio.id_servicio}:`, error);
+                    return [];
+                }
+            });
+
+            const results = await Promise.all(promises);
+            const allDisponibilidades = results.flat().map((disp: any) => ({
+                ...disp,
+                servicio_nombre: servicios.find(s => s.id_servicio === disp.id_servicio)?.nombre
+            }));
+
+            allDisponibilidades.sort((a: any, b: any) => 
+                new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
+            );
+
+            console.log(`✅ Disponibilidades cargadas (fallback): ${allDisponibilidades.length} disponibilidades`);
+            setDisponibilidades(allDisponibilidades);
+        } catch (error) {
+            console.error('❌ Error en fallback de disponibilidades:', error);
+            setDisponibilidades([]);
+        }
+    };
+
     // Aplicar plantilla de horario
     const aplicarPlantilla = (plantilla: PlantillaHorario) => {
         setHorarioBase(plantilla.horario);
@@ -412,7 +460,7 @@ const ProviderAgendaPage: React.FC = () => {
         console.log('✅ Todos los servicios seleccionados:', todosLosIds.length);
     };
 
-    // Crear horario base para los próximos 30 días
+    // Crear horario base para los próximos 7 días (optimizado)
     const crearHorarioBase = async () => {
         if (serviciosSeleccionados.length === 0) {
             setError('Por favor selecciona al menos un servicio');
@@ -421,6 +469,12 @@ const ProviderAgendaPage: React.FC = () => {
 
         if (horarioBase.dias_semana.length === 0) {
             setError('Por favor selecciona al menos un día de la semana');
+            return;
+        }
+
+        // Límite de seguridad: máximo 5 servicios y 7 días
+        if (serviciosSeleccionados.length > 5) {
+            setError('Por seguridad, selecciona máximo 5 servicios para crear el horario automático');
             return;
         }
 
@@ -437,11 +491,11 @@ const ProviderAgendaPage: React.FC = () => {
                 throw new Error('No hay token de acceso');
             }
 
-            // Crear disponibilidades para los próximos 30 días
+            // Crear disponibilidades para los próximos 7 días (optimizado)
             const disponibilidadesACrear = [];
             const hoy = new Date();
             
-            for (let i = 0; i < 30; i++) {
+            for (let i = 0; i < 7; i++) { // Reducido de 30 a 7 días
                 const fecha = new Date(hoy);
                 fecha.setDate(hoy.getDate() + i);
                 
@@ -482,15 +536,17 @@ const ProviderAgendaPage: React.FC = () => {
                 }
             }
 
-            console.log(`📊 Creando ${disponibilidadesACrear.length} disponibilidades`);
+            console.log(`📊 Creando ${disponibilidadesACrear.length} disponibilidades (optimizado)`);
 
-            // Crear disponibilidades en lotes de 10
+            // Crear disponibilidades en lotes más pequeños (5 en lugar de 10)
             const lotes = [];
-            for (let i = 0; i < disponibilidadesACrear.length; i += 10) {
-                lotes.push(disponibilidadesACrear.slice(i, i + 10));
+            for (let i = 0; i < disponibilidadesACrear.length; i += 5) {
+                lotes.push(disponibilidadesACrear.slice(i, i + 5));
             }
 
             let creadas = 0;
+            let errores = 0;
+            
             for (const lote of lotes) {
                 const promises = lote.map(async (disp) => {
                     try {
@@ -505,26 +561,36 @@ const ProviderAgendaPage: React.FC = () => {
 
                         if (response.ok) {
                             creadas++;
+                        } else {
+                            errores++;
+                            console.error('Error creando disponibilidad:', response.status, response.statusText);
                         }
                     } catch (error) {
+                        errores++;
                         console.error('Error creando disponibilidad:', error);
                     }
                 });
 
                 await Promise.all(promises);
                 
-                // Pequeña pausa entre lotes
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // Pausa más larga entre lotes para evitar sobrecarga
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            console.log(`✅ Creadas ${creadas} disponibilidades`);
+            console.log(`✅ Creadas ${creadas} disponibilidades, ${errores} errores`);
             
-            // Recargar disponibilidades
-            await loadDisponibilidades();
-            
-            // Limpiar selección
-            setServiciosSeleccionados([]);
-            setVista('calendario');
+            if (creadas > 0) {
+                // Recargar disponibilidades
+                await loadDisponibilidades();
+                
+                // Limpiar selección
+                setServiciosSeleccionados([]);
+                setVista('calendario');
+                
+                setError(null);
+            } else {
+                setError('No se pudieron crear las disponibilidades. El servidor puede estar sobrecargado. Intenta con menos servicios.');
+            }
             
         } catch (err) {
             console.error('Error creando horario:', err);
@@ -753,12 +819,15 @@ const ProviderAgendaPage: React.FC = () => {
                         <div className="bg-gradient-to-r from-primary-50 to-blue-50 rounded-xl border border-primary-200 p-6">
                             <div className="text-center">
                                 <h3 className="text-lg font-semibold text-gray-900 mb-2">🚀 Crear mi Horario Automáticamente</h3>
-                                <p className="text-gray-600 mb-4">
-                                    Se crearán disponibilidades para los próximos 30 días según tu configuración
+                                <p className="text-gray-600 mb-2">
+                                    Se crearán disponibilidades para los próximos 7 días según tu configuración
                                 </p>
+                                <div className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg mb-4">
+                                    ⚠️ <strong>Límite de seguridad:</strong> Máximo 5 servicios para evitar sobrecarga del servidor
+                                </div>
                                 <button
                                     onClick={crearHorarioBase}
-                                    disabled={creandoHorario || serviciosSeleccionados.length === 0}
+                                    disabled={creandoHorario || serviciosSeleccionados.length === 0 || serviciosSeleccionados.length > 5}
                                     className="btn-blue text-lg px-8 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {creandoHorario ? (
@@ -770,6 +839,11 @@ const ProviderAgendaPage: React.FC = () => {
                                         '🚀 Crear mi horario automáticamente'
                                     )}
                                 </button>
+                                {serviciosSeleccionados.length > 5 && (
+                                    <p className="text-red-600 text-sm mt-2">
+                                        Selecciona máximo 5 servicios para crear el horario automático
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </div>
