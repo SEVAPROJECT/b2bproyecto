@@ -1,11 +1,7 @@
 # backend/app/api/v1/routers/horario_trabajo.py
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, delete
 from app.services.direct_db_service import direct_db_service
 from app.api.v1.dependencies.auth_user import get_current_user
-from app.models.horario_trabajo import HorarioTrabajoModel, ExcepcionHorarioModel
-from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.schemas.horario_trabajo import (
     HorarioTrabajoIn, HorarioTrabajoOut, HorarioTrabajoUpdate,
     ExcepcionHorarioIn, ExcepcionHorarioOut, ExcepcionHorarioUpdate,
@@ -365,23 +361,9 @@ async def configurar_horario_completo(
     logger.info(f"🔍 [POST /configuracion-completa] Configuración recibida: {len(configuracion.horarios)} horarios")
     
     try:
-        # Obtener el perfil del proveedor usando direct_db_service
+        # Obtener el perfil del proveedor usando helper
         logger.info("🔍 [POST /configuracion-completa] Consultando perfil de empresa...")
-        perfil_query = """
-            SELECT id_perfil FROM perfil_empresa 
-            WHERE user_id = $1
-        """
-        perfil_result = await direct_db_service.fetch_one(perfil_query, current_user.id)
-        logger.info(f"🔍 [POST /configuracion-completa] Resultado perfil: {perfil_result}")
-        
-        if not perfil_result:
-            logger.warning(f"❌ [POST /configuracion-completa] Perfil no encontrado para user_id: {current_user.id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
-            )
-        
-        perfil_id = perfil_result['id_perfil']
+        perfil_id = await get_provider_profile_direct(current_user.id)
         logger.info(f"✅ [POST /configuracion-completa] Perfil encontrado: id_perfil = {perfil_id}")
     
         # Eliminar horarios existentes usando direct_db_service
@@ -403,7 +385,7 @@ async def configurar_horario_completo(
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id_horario, id_proveedor, dia_semana, hora_inicio, hora_fin, activo, created_at
             """
-            nuevo_horario = await direct_db_service.fetch_one(
+            nuevo_horario = await fetch_one_query(
                 insert_horario_query,
                 perfil_id,
                 horario_data.dia_semana,
@@ -411,15 +393,7 @@ async def configurar_horario_completo(
                 horario_data.hora_fin,
                 horario_data.activo
             )
-            horarios_creados.append({
-                "id_horario": nuevo_horario['id_horario'],
-                "id_proveedor": nuevo_horario['id_proveedor'],
-                "dia_semana": nuevo_horario['dia_semana'],
-                "hora_inicio": nuevo_horario['hora_inicio'],
-                "hora_fin": nuevo_horario['hora_fin'],
-                "activo": nuevo_horario['activo'],
-                "created_at": nuevo_horario['created_at']
-            })
+            horarios_creados.append(nuevo_horario)
         logger.info(f"✅ [POST /configuracion-completa] {len(horarios_creados)} horarios creados")
         
         # Crear excepciones si se proporcionan
@@ -433,7 +407,7 @@ async def configurar_horario_completo(
                     VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING id_excepcion, id_proveedor, fecha, tipo, hora_inicio, hora_fin, motivo, created_at
                 """
-                nueva_excepcion = await direct_db_service.fetch_one(
+                nueva_excepcion = await fetch_one_query(
                     insert_excepcion_query,
                     perfil_id,
                     excepcion_data.fecha,
@@ -442,16 +416,7 @@ async def configurar_horario_completo(
                     excepcion_data.hora_fin,
                     excepcion_data.motivo
                 )
-                excepciones_creadas.append({
-                    "id_excepcion": nueva_excepcion['id_excepcion'],
-                    "id_proveedor": nueva_excepcion['id_proveedor'],
-                    "fecha": nueva_excepcion['fecha'],
-                    "tipo": nueva_excepcion['tipo'],
-                    "hora_inicio": nueva_excepcion['hora_inicio'],
-                    "hora_fin": nueva_excepcion['hora_fin'],
-                    "motivo": nueva_excepcion['motivo'],
-                    "created_at": nueva_excepcion['created_at']
-                })
+                excepciones_creadas.append(nueva_excepcion)
             logger.info(f"✅ [POST /configuracion-completa] {len(excepciones_creadas)} excepciones creadas")
         
         logger.info(f"✅ [POST /configuracion-completa] Configuración completa creada para proveedor {perfil_id}")
@@ -561,23 +526,9 @@ async def obtener_excepciones_horario(
     logger.info(f"🔍 [GET /horario-trabajo/excepciones] Iniciando obtener_excepciones_horario para user_id: {current_user.id}")
     
     try:
-        # Obtener el perfil del proveedor usando direct_db_service
+        # Obtener el perfil del proveedor usando helper
         logger.info("🔍 [GET /excepciones] Consultando perfil de empresa...")
-        perfil_query = """
-            SELECT id_perfil FROM perfil_empresa 
-            WHERE user_id = $1
-        """
-        perfil_result = await direct_db_service.fetch_one(perfil_query, current_user.id)
-        logger.info(f"🔍 [GET /excepciones] Resultado perfil: {perfil_result}")
-        
-        if not perfil_result:
-            logger.warning(f"❌ [GET /excepciones] Perfil no encontrado para user_id: {current_user.id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
-            )
-        
-        perfil_id = perfil_result['id_perfil']
+        perfil_id = await get_provider_profile_direct(current_user.id)
         logger.info(f"✅ [GET /excepciones] Perfil encontrado: id_perfil = {perfil_id}")
         
         # Verificar si existe la tabla excepciones_horario
@@ -589,10 +540,10 @@ async def obtener_excepciones_horario(
                 AND table_name = 'excepciones_horario'
             );
         """
-        table_exists = await direct_db_service.fetch_one(check_table_query)
+        table_exists = await fetch_one_query(check_table_query)
         logger.info(f"🔍 [GET /excepciones] Tabla excepciones_horario existe: {table_exists}")
         
-        # Obtener excepciones usando direct_db_service
+        # Obtener excepciones usando helper
         logger.info(f"🔍 [GET /excepciones] Consultando excepciones para proveedor {perfil_id}...")
         excepciones_query = """
             SELECT id_excepcion, id_proveedor, fecha, tipo, hora_inicio, hora_fin, motivo, created_at
@@ -600,25 +551,11 @@ async def obtener_excepciones_horario(
             WHERE id_proveedor = $1
             ORDER BY fecha
         """
-        excepciones_result = await direct_db_service.fetch_all(excepciones_query, perfil_id)
+        excepciones_result = await fetch_all_query(excepciones_query, perfil_id)
         logger.info(f"🔍 [GET /excepciones] Excepciones encontradas: {len(excepciones_result) if excepciones_result else 0}")
         
-        # Convertir a formato de respuesta
-        excepciones = []
-        for row in excepciones_result:
-            excepciones.append({
-                "id_excepcion": row['id_excepcion'],
-                "id_proveedor": row['id_proveedor'],
-                "fecha": row['fecha'],
-                "tipo": row['tipo'],
-                "hora_inicio": row['hora_inicio'],
-                "hora_fin": row['hora_fin'],
-                "motivo": row['motivo'],
-                "created_at": row['created_at']
-            })
-        
-        logger.info(f"✅ [GET /excepciones] Devolviendo {len(excepciones)} excepciones")
-        return excepciones
+        logger.info(f"✅ [GET /excepciones] Devolviendo {len(excepciones_result)} excepciones")
+        return excepciones_result
         
     except HTTPException:
         raise
