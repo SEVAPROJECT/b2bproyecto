@@ -18,6 +18,59 @@ from datetime import datetime, date, time, timedelta
 
 logger = logging.getLogger(__name__)
 
+# Helper function para obtener perfil usando direct_db_service
+async def get_provider_profile_direct(user_id: str) -> int:
+    """
+    Obtener el id_perfil del proveedor usando direct_db_service.
+    Retorna el id_perfil (bigint) o lanza HTTPException si no se encuentra.
+    """
+    conn = await direct_db_service.get_connection()
+    try:
+        perfil_query = """
+            SELECT id_perfil FROM perfil_empresa 
+            WHERE user_id = $1
+        """
+        perfil_result = await conn.fetchrow(perfil_query, user_id)
+        
+        if not perfil_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
+            )
+        
+        return perfil_result['id_perfil']
+    finally:
+        await direct_db_service.pool.release(conn)
+
+# Helper function para ejecutar consultas con direct_db_service
+async def execute_query(query: str, *params):
+    """Ejecutar una consulta que no retorna datos"""
+    conn = await direct_db_service.get_connection()
+    try:
+        return await conn.execute(query, *params)
+    finally:
+        await direct_db_service.pool.release(conn)
+
+# Helper function para fetch_one con direct_db_service
+async def fetch_one_query(query: str, *params):
+    """Ejecutar una consulta que retorna una fila"""
+    conn = await direct_db_service.get_connection()
+    try:
+        result = await conn.fetchrow(query, *params)
+        return dict(result) if result else None
+    finally:
+        await direct_db_service.pool.release(conn)
+
+# Helper function para fetch_all con direct_db_service
+async def fetch_all_query(query: str, *params):
+    """Ejecutar una consulta que retorna múltiples filas"""
+    conn = await direct_db_service.get_connection()
+    try:
+        result = await conn.fetch(query, *params)
+        return [dict(row) for row in result]
+    finally:
+        await direct_db_service.pool.release(conn)
+
 router = APIRouter(prefix="/horario-trabajo", tags=["horario-trabajo"])
 
 # ===== FUNCIONES AUXILIARES =====
@@ -55,43 +108,39 @@ async def crear_horario_trabajo(
     Crea un nuevo horario de trabajo usando direct_db_service.
     Solo los proveedores pueden crear horarios.
     """
+    logger.info(f"🔍 [POST /horario-trabajo/] Iniciando crear_horario_trabajo para user_id: {current_user.id}")
+    logger.info(f"🔍 [POST /horario-trabajo/] Datos del horario: {horario.dict()}")
+    
     try:
-        # Obtener el perfil del proveedor usando direct_db_service
-        perfil_query = """
-            SELECT id_perfil FROM perfil_empresa 
-            WHERE user_id = $1
-        """
-        perfil_result = await direct_db_service.fetch_one(perfil_query, current_user.id)
-        
-        if not perfil_result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
-            )
-        
-        perfil_id = perfil_result['id_perfil']
-        logger.info(f"Creando horario de trabajo para proveedor {perfil_id}")
+        # Obtener el perfil del proveedor usando helper
+        logger.info("🔍 [POST /horario-trabajo/] Consultando perfil de empresa...")
+        perfil_id = await get_provider_profile_direct(current_user.id)
+        logger.info(f"✅ [POST /horario-trabajo/] Perfil encontrado: id_perfil = {perfil_id}")
         
         # Verificar que no existe ya un horario para este día
+        logger.info(f"🔍 [POST /horario-trabajo/] Verificando horario existente para día {horario.dia_semana}...")
         verificar_query = """
             SELECT id_horario FROM horario_trabajo 
             WHERE id_proveedor = $1 AND dia_semana = $2
         """
-        horario_existente = await direct_db_service.fetch_one(verificar_query, perfil_id, horario.dia_semana)
+        horario_existente = await fetch_one_query(verificar_query, perfil_id, horario.dia_semana)
+        logger.info(f"🔍 [POST /horario-trabajo/] Horario existente: {horario_existente}")
         
         if horario_existente:
+            logger.warning(f"❌ [POST /horario-trabajo/] Ya existe horario para día {horario.dia_semana}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Ya existe un horario para el día {horario.dia_semana}. Actualiza el existente o elimínalo primero."
             )
         
-        # Crear nuevo horario usando direct_db_service
+        # Crear nuevo horario usando helper
+        logger.info("🔍 [POST /horario-trabajo/] Creando nuevo horario en base de datos...")
         insert_query = """
             INSERT INTO horario_trabajo (id_proveedor, dia_semana, hora_inicio, hora_fin, activo)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING id_horario, id_proveedor, dia_semana, hora_inicio, hora_fin, activo, created_at
         """
-        nuevo_horario = await direct_db_service.fetch_one(
+        nuevo_horario = await fetch_one_query(
             insert_query, 
             perfil_id, 
             horario.dia_semana, 
@@ -99,26 +148,22 @@ async def crear_horario_trabajo(
             horario.hora_fin, 
             horario.activo
         )
+        logger.info(f"🔍 [POST /horario-trabajo/] Horario insertado: {nuevo_horario}")
         
-        logger.info(f"Horario creado exitosamente: {nuevo_horario['id_horario']}")
+        logger.info(f"✅ [POST /horario-trabajo/] Horario creado exitosamente: {nuevo_horario['id_horario']}")
         
-        return {
-            "id_horario": nuevo_horario['id_horario'],
-            "id_proveedor": nuevo_horario['id_proveedor'],
-            "dia_semana": nuevo_horario['dia_semana'],
-            "hora_inicio": nuevo_horario['hora_inicio'],
-            "hora_fin": nuevo_horario['hora_fin'],
-            "activo": nuevo_horario['activo'],
-            "created_at": nuevo_horario['created_at']
-        }
+        return nuevo_horario
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error al crear horario: {str(e)}")
+        logger.error(f"❌ [POST /horario-trabajo/] Error crítico: {str(e)}")
+        logger.error(f"❌ [POST /horario-trabajo/] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [POST /horario-trabajo/] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor al crear horario"
+            detail=f"Error interno del servidor al crear horario: {str(e)}"
         )
 
 @router.get(
@@ -132,51 +177,50 @@ async def obtener_horarios_trabajo(
     """
     Obtiene todos los horarios de trabajo del proveedor usando direct_db_service.
     """
+    logger.info(f"🔍 [GET /horario-trabajo/] Iniciando obtener_horarios_trabajo para user_id: {current_user.id}")
+    
     try:
-        # Obtener el perfil del proveedor usando direct_db_service
-        perfil_query = """
-            SELECT id_perfil FROM perfil_empresa 
-            WHERE user_id = $1
+        # Obtener el perfil del proveedor usando helper
+        logger.info("🔍 [GET /horario-trabajo/] Consultando perfil de empresa...")
+        perfil_id = await get_provider_profile_direct(current_user.id)
+        logger.info(f"✅ [GET /horario-trabajo/] Perfil encontrado: id_perfil = {perfil_id}")
+        
+        # Verificar si existe la tabla horario_trabajo
+        logger.info("🔍 [GET /horario-trabajo/] Verificando existencia de tabla horario_trabajo...")
+        check_table_query = """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'horario_trabajo'
+            );
         """
-        perfil_result = await direct_db_service.fetch_one(perfil_query, current_user.id)
+        table_exists = await fetch_one_query(check_table_query)
+        logger.info(f"🔍 [GET /horario-trabajo/] Tabla horario_trabajo existe: {table_exists}")
         
-        if not perfil_result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
-            )
-        
-        perfil_id = perfil_result['id_perfil']
-        
-        # Obtener horarios usando direct_db_service
+        # Obtener horarios usando helper
+        logger.info(f"🔍 [GET /horario-trabajo/] Consultando horarios para proveedor {perfil_id}...")
         horarios_query = """
             SELECT id_horario, id_proveedor, dia_semana, hora_inicio, hora_fin, activo, created_at
             FROM horario_trabajo 
             WHERE id_proveedor = $1
             ORDER BY dia_semana
         """
-        horarios_result = await direct_db_service.fetch_all(horarios_query, perfil_id)
+        horarios_result = await fetch_all_query(horarios_query, perfil_id)
+        logger.info(f"🔍 [GET /horario-trabajo/] Horarios encontrados: {len(horarios_result) if horarios_result else 0}")
         
-        # Convertir a formato de respuesta
-        horarios = []
-        for row in horarios_result:
-            horarios.append({
-                "id_horario": row['id_horario'],
-                "id_proveedor": row['id_proveedor'],
-                "dia_semana": row['dia_semana'],
-                "hora_inicio": row['hora_inicio'],
-                "hora_fin": row['hora_fin'],
-                "activo": row['activo'],
-                "created_at": row['created_at']
-            })
+        logger.info(f"✅ [GET /horario-trabajo/] Devolviendo {len(horarios_result)} horarios")
+        return horarios_result
         
-        return horarios
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error al obtener horarios: {str(e)}")
+        logger.error(f"❌ [GET /horario-trabajo/] Error crítico: {str(e)}")
+        logger.error(f"❌ [GET /horario-trabajo/] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [GET /horario-trabajo/] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor al obtener horarios"
+            detail=f"Error interno del servidor al obtener horarios: {str(e)}"
         )
 
 @router.put(
@@ -284,69 +328,119 @@ async def eliminar_horario_trabajo(
 )
 async def configurar_horario_completo(
     configuracion: ConfiguracionHorarioCompletaIn,
-    current_user: SupabaseUser = Depends(get_current_user),
-    db = Depends(direct_db_service.get_connection)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Configura el horario completo de la semana.
+    Configura el horario completo de la semana usando direct_db_service.
     Elimina horarios existentes y crea los nuevos.
     """
-    # Obtener el perfil del proveedor
-    perfil = await get_provider_profile(current_user, db)
+    logger.info(f"🔍 [POST /configuracion-completa] Iniciando configurar_horario_completo para user_id: {current_user.id}")
+    logger.info(f"🔍 [POST /configuracion-completa] Configuración recibida: {len(configuracion.horarios)} horarios")
     
     try:
-        # Eliminar horarios existentes
-        delete_horarios_query = delete(HorarioTrabajoModel).where(
-            HorarioTrabajoModel.id_proveedor == perfil.id_perfil
-        )
-        await db.execute(delete_horarios_query)
+        # Obtener el perfil del proveedor usando direct_db_service
+        logger.info("🔍 [POST /configuracion-completa] Consultando perfil de empresa...")
+        perfil_query = """
+            SELECT id_perfil FROM perfil_empresa 
+            WHERE user_id = $1
+        """
+        perfil_result = await direct_db_service.fetch_one(perfil_query, current_user.id)
+        logger.info(f"🔍 [POST /configuracion-completa] Resultado perfil: {perfil_result}")
         
-        # Crear nuevos horarios
-        horarios_creados = []
-        for horario_data in configuracion.horarios:
-            nuevo_horario = HorarioTrabajoModel(
-                id_proveedor=perfil.id_perfil,
-                dia_semana=horario_data.dia_semana,
-                hora_inicio=horario_data.hora_inicio,
-                hora_fin=horario_data.hora_fin,
-                activo=horario_data.activo
+        if not perfil_result:
+            logger.warning(f"❌ [POST /configuracion-completa] Perfil no encontrado para user_id: {current_user.id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
             )
-            db.add(nuevo_horario)
-            horarios_creados.append(nuevo_horario)
+        
+        perfil_id = perfil_result['id_perfil']
+        logger.info(f"✅ [POST /configuracion-completa] Perfil encontrado: id_perfil = {perfil_id}")
+    
+        # Eliminar horarios existentes usando direct_db_service
+        logger.info("🔍 [POST /configuracion-completa] Eliminando horarios existentes...")
+        delete_horarios_query = """
+            DELETE FROM horario_trabajo 
+            WHERE id_proveedor = $1
+        """
+        await direct_db_service.execute(delete_horarios_query, perfil_id)
+        logger.info("✅ [POST /configuracion-completa] Horarios existentes eliminados")
+        
+        # Crear nuevos horarios usando direct_db_service
+        logger.info(f"🔍 [POST /configuracion-completa] Creando {len(configuracion.horarios)} nuevos horarios...")
+        horarios_creados = []
+        for i, horario_data in enumerate(configuracion.horarios):
+            logger.info(f"🔍 [POST /configuracion-completa] Creando horario {i+1}: día {horario_data.dia_semana}")
+            insert_horario_query = """
+                INSERT INTO horario_trabajo (id_proveedor, dia_semana, hora_inicio, hora_fin, activo)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id_horario, id_proveedor, dia_semana, hora_inicio, hora_fin, activo, created_at
+            """
+            nuevo_horario = await direct_db_service.fetch_one(
+                insert_horario_query,
+                perfil_id,
+                horario_data.dia_semana,
+                horario_data.hora_inicio,
+                horario_data.hora_fin,
+                horario_data.activo
+            )
+            horarios_creados.append({
+                "id_horario": nuevo_horario['id_horario'],
+                "id_proveedor": nuevo_horario['id_proveedor'],
+                "dia_semana": nuevo_horario['dia_semana'],
+                "hora_inicio": nuevo_horario['hora_inicio'],
+                "hora_fin": nuevo_horario['hora_fin'],
+                "activo": nuevo_horario['activo'],
+                "created_at": nuevo_horario['created_at']
+            })
+        logger.info(f"✅ [POST /configuracion-completa] {len(horarios_creados)} horarios creados")
         
         # Crear excepciones si se proporcionan
         excepciones_creadas = []
         if configuracion.excepciones:
-            for excepcion_data in configuracion.excepciones:
-                nueva_excepcion = ExcepcionHorarioModel(
-                    id_proveedor=perfil.id_perfil,
-                    fecha=excepcion_data.fecha,
-                    tipo=excepcion_data.tipo,
-                    hora_inicio=excepcion_data.hora_inicio,
-                    hora_fin=excepcion_data.hora_fin,
-                    motivo=excepcion_data.motivo
+            logger.info(f"🔍 [POST /configuracion-completa] Creando {len(configuracion.excepciones)} excepciones...")
+            for i, excepcion_data in enumerate(configuracion.excepciones):
+                logger.info(f"🔍 [POST /configuracion-completa] Creando excepción {i+1}: {excepcion_data.fecha}")
+                insert_excepcion_query = """
+                    INSERT INTO excepciones_horario (id_proveedor, fecha, tipo, hora_inicio, hora_fin, motivo)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING id_excepcion, id_proveedor, fecha, tipo, hora_inicio, hora_fin, motivo, created_at
+                """
+                nueva_excepcion = await direct_db_service.fetch_one(
+                    insert_excepcion_query,
+                    perfil_id,
+                    excepcion_data.fecha,
+                    excepcion_data.tipo,
+                    excepcion_data.hora_inicio,
+                    excepcion_data.hora_fin,
+                    excepcion_data.motivo
                 )
-                db.add(nueva_excepcion)
-                excepciones_creadas.append(nueva_excepcion)
+                excepciones_creadas.append({
+                    "id_excepcion": nueva_excepcion['id_excepcion'],
+                    "id_proveedor": nueva_excepcion['id_proveedor'],
+                    "fecha": nueva_excepcion['fecha'],
+                    "tipo": nueva_excepcion['tipo'],
+                    "hora_inicio": nueva_excepcion['hora_inicio'],
+                    "hora_fin": nueva_excepcion['hora_fin'],
+                    "motivo": nueva_excepcion['motivo'],
+                    "created_at": nueva_excepcion['created_at']
+                })
+            logger.info(f"✅ [POST /configuracion-completa] {len(excepciones_creadas)} excepciones creadas")
         
-        await db.commit()
+        logger.info(f"✅ [POST /configuracion-completa] Configuración completa creada para proveedor {perfil_id}")
         
-        # Refrescar objetos para obtener IDs
-        for horario in horarios_creados:
-            await db.refresh(horario)
-        for excepcion in excepciones_creadas:
-            await db.refresh(excepcion)
+        return {
+            "horarios": horarios_creados,
+            "excepciones": excepciones_creadas
+        }
         
-        logger.info(f"Configuración completa creada para proveedor {current_user.id}")
-        
-        return ConfiguracionHorarioCompletaOut(
-            horarios=horarios_creados,
-            excepciones=excepciones_creadas
-        )
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        await db.rollback()
-        logger.error(f"Error al configurar horario completo: {e}")
+        logger.error(f"❌ [POST /configuracion-completa] Error crítico: {str(e)}")
+        logger.error(f"❌ [POST /configuracion-completa] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [POST /configuracion-completa] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al configurar el horario completo."
@@ -422,23 +516,42 @@ async def obtener_excepciones_horario(
     """
     Obtiene todas las excepciones de horario del proveedor usando direct_db_service.
     """
+    logger.info(f"🔍 [GET /horario-trabajo/excepciones] Iniciando obtener_excepciones_horario para user_id: {current_user.id}")
+    
     try:
         # Obtener el perfil del proveedor usando direct_db_service
+        logger.info("🔍 [GET /excepciones] Consultando perfil de empresa...")
         perfil_query = """
             SELECT id_perfil FROM perfil_empresa 
             WHERE user_id = $1
         """
         perfil_result = await direct_db_service.fetch_one(perfil_query, current_user.id)
+        logger.info(f"🔍 [GET /excepciones] Resultado perfil: {perfil_result}")
         
         if not perfil_result:
+            logger.warning(f"❌ [GET /excepciones] Perfil no encontrado para user_id: {current_user.id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
             )
         
         perfil_id = perfil_result['id_perfil']
+        logger.info(f"✅ [GET /excepciones] Perfil encontrado: id_perfil = {perfil_id}")
+        
+        # Verificar si existe la tabla excepciones_horario
+        logger.info("🔍 [GET /excepciones] Verificando existencia de tabla excepciones_horario...")
+        check_table_query = """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'excepciones_horario'
+            );
+        """
+        table_exists = await direct_db_service.fetch_one(check_table_query)
+        logger.info(f"🔍 [GET /excepciones] Tabla excepciones_horario existe: {table_exists}")
         
         # Obtener excepciones usando direct_db_service
+        logger.info(f"🔍 [GET /excepciones] Consultando excepciones para proveedor {perfil_id}...")
         excepciones_query = """
             SELECT id_excepcion, id_proveedor, fecha, tipo, hora_inicio, hora_fin, motivo, created_at
             FROM excepciones_horario 
@@ -446,6 +559,7 @@ async def obtener_excepciones_horario(
             ORDER BY fecha
         """
         excepciones_result = await direct_db_service.fetch_all(excepciones_query, perfil_id)
+        logger.info(f"🔍 [GET /excepciones] Excepciones encontradas: {len(excepciones_result) if excepciones_result else 0}")
         
         # Convertir a formato de respuesta
         excepciones = []
@@ -461,13 +575,17 @@ async def obtener_excepciones_horario(
                 "created_at": row['created_at']
             })
         
+        logger.info(f"✅ [GET /excepciones] Devolviendo {len(excepciones)} excepciones")
         return excepciones
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error al obtener excepciones: {str(e)}")
+        logger.error(f"❌ [GET /excepciones] Error crítico: {str(e)}")
+        logger.error(f"❌ [GET /excepciones] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [GET /excepciones] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor al obtener excepciones"
+            detail=f"Error interno del servidor al obtener excepciones: {str(e)}"
         )

@@ -95,7 +95,7 @@ class DirectDBService:
             await self._ensure_pool()
             conn = await self.pool.acquire()
             return conn
-        except asyncpg.PoolAcquireTimeoutError as e:
+        except asyncio.TimeoutError as e:
             logger.error(f"❌ Timeout obteniendo conexión del pool (Railway): {e}")
             # Intentar reconectar si hay timeout
             await self._reconnect_pool()
