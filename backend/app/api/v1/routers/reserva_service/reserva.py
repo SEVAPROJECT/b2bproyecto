@@ -27,53 +27,107 @@ router = APIRouter(prefix="/reservas", tags=["reservas"])
 )
 async def crear_reserva(
     reserva: ReservaIn,
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Crea una nueva reserva de servicio.
+    Crea una nueva reserva de servicio usando direct_db_service.
     Requiere autenticación de usuario.
     """
-    logger.info(f"Creando reserva para servicio {reserva.id_servicio} por usuario {current_user.id}")
-    
-    # Verificar que el servicio existe y está activo
-    servicio_query = select(ServicioModel).where(
-        and_(
-            ServicioModel.id_servicio == reserva.id_servicio,
-            ServicioModel.estado == True
-        )
-    )
-    servicio_result = await db.execute(servicio_query)
-    servicio = servicio_result.scalar_one_or_none()
-    
-    if not servicio:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Servicio no encontrado o no disponible."
-        )
-    
-    # Crea una nueva instancia del modelo de reserva
-    nueva_reserva = ReservaModel(
-        id_servicio=reserva.id_servicio,
-        id_usuario=UUID(current_user.id),
-        descripcion=reserva.descripcion,
-        observacion=reserva.observacion,
-        fecha=reserva.fecha,
-        estado="pendiente"
-    )
+    logger.info(f"🔍 [POST /reservas] Iniciando crear_reserva para user_id: {current_user.id}")
+    logger.info(f"🔍 [POST /reservas] Datos de reserva: {reserva.dict()}")
     
     try:
-        db.add(nueva_reserva)
-        await db.commit()
-        await db.refresh(nueva_reserva)
-        logger.info(f"Reserva {nueva_reserva.id} creada exitosamente.")
-        return nueva_reserva
+        from app.services.direct_db_service import direct_db_service
+        
+        # Helper para obtener conexión
+        conn = await direct_db_service.get_connection()
+        try:
+            # 1. Verificar que el servicio existe y está activo
+            logger.info(f"🔍 [POST /reservas] Verificando servicio {reserva.id_servicio}...")
+            servicio_query = """
+                SELECT s.id_servicio, s.id_perfil, s.estado, s.nombre
+                FROM servicio s
+                WHERE s.id_servicio = $1 AND s.estado = true
+            """
+            servicio_result = await conn.fetchrow(servicio_query, reserva.id_servicio)
+            logger.info(f"🔍 [POST /reservas] Servicio encontrado: {servicio_result}")
+            
+            if not servicio_result:
+                logger.warning(f"❌ [POST /reservas] Servicio {reserva.id_servicio} no encontrado")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Servicio no encontrado o no disponible."
+                )
+            # 2. Crear nueva reserva usando direct_db_service
+            logger.info("🔍 [POST /reservas] Creando nueva reserva en base de datos...")
+            
+            # Generar nuevo UUID para la reserva
+            import uuid
+            reserva_id = uuid.uuid4()
+            
+            # Convertir id_servicio si viene como string
+            try:
+                servicio_id = int(reserva.id_servicio)
+            except (ValueError, TypeError):
+                logger.error(f"❌ [POST /reservas] ID de servicio inválido: {reserva.id_servicio}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="ID de servicio inválido"
+                )
+            
+            # Para la nueva arquitectura, necesitamos hora_inicio y hora_fin
+            # Como el frontend no las envía aún, usaremos valores por defecto
+            from datetime import time
+            hora_inicio_default = time(9, 0)  # 9:00 AM
+            hora_fin_default = time(10, 0)    # 10:00 AM (1 hora de duración)
+            
+            insert_query = """
+                INSERT INTO reserva (id, id_servicio, id_usuario, descripcion, observacion, fecha, hora_inicio, hora_fin, estado)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING id, id_servicio, id_usuario, descripcion, observacion, fecha, hora_inicio, hora_fin, estado
+            """
+            
+            nueva_reserva = await conn.fetchrow(
+                insert_query,
+                reserva_id,
+                servicio_id,
+                UUID(current_user.id),
+                reserva.descripcion,
+                reserva.observacion,
+                reserva.fecha,
+                hora_inicio_default,
+                hora_fin_default,
+                "pendiente"
+            )
+            logger.info(f"🔍 [POST /reservas] Reserva creada: {nueva_reserva}")
+            
+            logger.info(f"✅ [POST /reservas] Reserva {nueva_reserva['id']} creada exitosamente")
+            
+            # Convertir a formato de respuesta
+            return {
+                "id": nueva_reserva['id'],
+                "id_servicio": nueva_reserva['id_servicio'],
+                "id_usuario": nueva_reserva['id_usuario'],
+                "descripcion": nueva_reserva['descripcion'],
+                "observacion": nueva_reserva['observacion'],
+                "fecha": nueva_reserva['fecha'],
+                "estado": nueva_reserva['estado'],
+                "id_disponibilidad": None  # Compatibilidad con schema anterior
+            }
+            
+        finally:
+            await direct_db_service.pool.release(conn)
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        await db.rollback()
-        logger.error(f"Error al crear la reserva: {e}")
+        logger.error(f"❌ [POST /reservas] Error crítico: {str(e)}")
+        logger.error(f"❌ [POST /reservas] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [POST /reservas] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ocurrió un error al procesar tu reserva."
+            detail=f"Error interno del servidor al crear reserva: {str(e)}"
         )
 
 @router.get(
