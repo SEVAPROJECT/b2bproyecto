@@ -162,28 +162,6 @@ export const authAPI = {
         }
     },
 
-    // Cerrar sesión
-    async logout() {
-        try {
-            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.LOGOUT), {
-                method: 'POST',
-                credentials: 'include', // Importante: incluir cookies para limpiarlas
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
-        } catch (error) {
-            if (error instanceof Error) {
-                throw { detail: error.message };
-            }
-            throw error;
-        }
-    },
-
     // Restablecer contraseña
     async resetPassword(email: string): Promise<{ message: string }> {
         try {

@@ -14,6 +14,16 @@ async def startup_events():
         # Inicializar pool de conexiones del direct_db_service
         await direct_db_service._ensure_pool()
         
+        # Pre-calentar conexiones para Railway (evitar cold starts)
+        logger.info("🔥 Pre-calentando conexiones de base de datos...")
+        try:
+            # Test de conexión para pre-calentar
+            await direct_db_service.test_connection()
+            logger.info("✅ Conexiones pre-calentadas exitosamente")
+        except Exception as warmup_error:
+            logger.warning(f"⚠️ Error pre-calentando conexiones: {warmup_error}")
+            # No fallar el startup por esto
+        
         logger.info("✅ Servicios inicializados exitosamente")
     except Exception as e:
         logger.error(f"❌ Error inicializando servicios: {e}")

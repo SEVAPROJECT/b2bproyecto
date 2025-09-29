@@ -27,7 +27,7 @@ export interface AuthContextType {
     providerStatus: 'none' | 'pending' | 'approved' | 'rejected';
     providerApplication: ProviderApplicationStatus;
     login: (email: string, password: string) => Promise<void>;
-    register: (data: { companyName: string; name: string; email: string; password: string }) => Promise<void>;
+    register: (data: { companyName: string; name: string; email: string; password: string; ruc?: string }) => Promise<void>;
     logout: () => Promise<void>;
     refreshToken: () => Promise<string>;
     reloadUserProfile: () => Promise<void>;
