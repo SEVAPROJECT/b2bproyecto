@@ -140,12 +140,25 @@ const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
 };
 
 const AppRoutes: React.FC = () => {
+    const { user, isLoading } = useAuth();
+
     return (
         <Routes>
             {/* Public Routes */}
             <Route path="/" element={
                 <MainLayout>
-                    <HomePage />
+                    {isLoading ? (
+                        <div className="flex items-center justify-center min-h-screen">
+                            <div className="text-center">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                                <p className="text-gray-600">Verificando sesión...</p>
+                            </div>
+                        </div>
+                    ) : user ? (
+                        <Navigate to="/dashboard" replace />
+                    ) : (
+                        <HomePage />
+                    )}
                 </MainLayout>
             } />
 

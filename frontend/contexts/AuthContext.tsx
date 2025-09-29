@@ -1,3 +1,4 @@
+// @refresh reset
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { AuthContextType, User, ProviderApplicationStatus, UserRole } from '../types/auth';
 import { ProviderOnboardingData } from '../types/provider';
@@ -9,41 +10,51 @@ interface AuthProviderProps {
     children: ReactNode;
 }
 
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+const AuthProvider = ({ children }: AuthProviderProps) => {
     const [user, setUser] = useState<User | null>(null);
     const [providerStatus, setProviderStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
     const [providerApplication, setProviderApplication] = useState<ProviderApplicationStatus>({
         status: 'none',
         documents: {}
     });
-    const [isLoading, setIsLoading] = useState(false); // Cambiar a false para permitir login
+    const [isLoading, setIsLoading] = useState(true); // Iniciar en true para verificar autenticación
     const [error, setError] = useState<string | null>(null);
     const loadingUserRef = useRef(false); // Para evitar cargas duplicadas
 
     // Verificar si hay un usuario logueado al cargar la app
     useEffect(() => {
     const loadUser = async () => {
+        console.log('🔍 loadUser ejecutándose...');
+        console.log('🔍 user:', user);
+        console.log('🔍 loadingUserRef.current:', loadingUserRef.current);
+        
         // Protección: si ya hay un usuario cargado, no volver a cargar
         if (user) {
+            console.log('🔍 Usuario ya cargado, saliendo');
             return;
         }
         
         // Protección adicional: si ya se está cargando, no volver a cargar
         if (loadingUserRef.current) {
+            console.log('🔍 Ya se está cargando, saliendo');
             return;
         }
         
+        // Verificar si hay token ANTES de establecer loading
+        const accessToken = localStorage.getItem('access_token');
+        console.log('🔍 accessToken:', accessToken ? 'Presente' : 'No presente');
+        if (!accessToken) {
+            // No hay token, resetear loading y salir
+            console.log('🔍 No hay token, reseteando loading=false y saliendo');
+            setIsLoading(false);
+            return;
+        }
+        
+        console.log('🔍 Estableciendo loading=true y cargando usuario...');
         loadingUserRef.current = true;
-        setIsLoading(true); // Establecer loading al inicio
+        setIsLoading(true); // Solo establecer loading si hay token
             
             try {
-                // Obtener access_token de localStorage
-                const accessToken = localStorage.getItem('access_token');
-                
-                if (!accessToken) {
-                    setIsLoading(false);
-                    return;
-                }
 
                 console.log('🔑 Token encontrado, obteniendo perfil...');
                 const profile = await authAPI.getProfile(accessToken);
@@ -142,20 +153,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     console.log('⚠️ Error de conexión, manteniendo sesión para reintento');
                 }
             } finally {
-                setIsLoading(false);
+                console.log('🔍 Finally: reseteando loading=false');
+                setIsLoading(false); // Resetear loading
                 loadingUserRef.current = false; // Resetear el flag de carga
             }
         };
 
         loadUser();
-        
-        // Timeout de seguridad para resetear loading
-        const timeout = setTimeout(() => {
-            setIsLoading(false);
-            loadingUserRef.current = false;
-        }, 5000); // 5 segundos timeout
-        
-        return () => clearTimeout(timeout);
     }, []); // Sin dependencias para ejecutar solo una vez
 
     // Debug: monitorear cambios en el estado del usuario
@@ -167,16 +171,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         });
     }, [user, isLoading]);
 
+    // Debug: monitorear cambios en isLoading específicamente
+    useEffect(() => {
+        console.log('🔍 isLoading cambió a:', isLoading);
+    }, [isLoading]);
+
     const login = async (email: string, password: string) => {
+        console.log('🔐 LOGIN INICIADO');
         try {
+            console.log('🔐 Estableciendo isLoading=true');
             setIsLoading(true);
             setError(null);
 
             // Llamada real a la API (solo refresh_token se establece en cookie)
+            console.log('🔐 Iniciando signIn...');
             const response = await authAPI.signIn({ email, password });
+            console.log('✅ SignIn exitoso:', response);
 
             // Obtener datos reales del usuario desde el backend
+            console.log('👤 Obteniendo perfil...');
             const profile = await authAPI.getProfile(response.access_token);
+            console.log('✅ Perfil obtenido:', profile);
 
             // Validación robusta de roles como en Apporiginal.tsx
             let userRole: UserRole = 'client';
@@ -219,20 +234,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 localStorage.setItem('refresh_token', response.refresh_token);
                 console.log('✅ Refresh token guardado en localStorage');
             } else {
-                console.warn('⚠️ No se recibió refresh_token del servidor');
+                // console.warn('⚠️ No se recibió refresh_token del servidor');
+                // Nota: refresh_token se envía como HttpOnly cookie, no en la respuesta JSON
             }
             
             setUser(userData);
             setProviderStatus(userData.providerStatus);
             setProviderApplication(userData.providerApplication);
 
-            // Login exitoso - recargar la página para sincronizar el estado
+            // Login exitoso - React Router manejará la redirección automáticamente
             console.log('✅ Login exitoso, usuario autenticado correctamente');
-            window.location.reload();
 
         } catch (err: any) {
+            console.error('❌ CATCH: Error en login:', err);
             // Manejar específicamente el error de cuenta inactiva
             const errorMessage = err.detail || err.message || 'Error al iniciar sesión';
+            console.error('❌ Error message:', errorMessage);
             
             if (errorMessage.includes('inactiva') || errorMessage.includes('inactive') || 
                 errorMessage.includes('desactivada') || errorMessage.includes('desactivado')) {
@@ -242,6 +259,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
             throw err;
         } finally {
+            console.log('🔐 FINALLY: Reseteando isLoading=false');
             setIsLoading(false);
         }
     };
@@ -742,4 +760,4 @@ export const useAuth = (): AuthContextType => {
     return context;
 };
 
-export { AuthContext };
+export { AuthContext, AuthProvider };

@@ -7,11 +7,14 @@ import asyncio
 import logging
 from typing import Optional, Dict, Any
 from app.core.config import DATABASE_URL
-from railway_config import (
-    POOL_MIN_SIZE, POOL_MAX_SIZE, POOL_TIMEOUT, 
-    POOL_COMMAND_TIMEOUT, POOL_KEEPALIVE_IDLE,
-    POOL_KEEPALIVE_INTERVAL, POOL_KEEPALIVE_COUNT
-)
+# Configuración del pool de conexiones (valores por defecto)
+POOL_MIN_SIZE = 1
+POOL_MAX_SIZE = 5
+POOL_TIMEOUT = 30
+POOL_COMMAND_TIMEOUT = 30
+POOL_KEEPALIVE_IDLE = 300
+POOL_KEEPALIVE_INTERVAL = 30
+POOL_KEEPALIVE_COUNT = 3
 
 logger = logging.getLogger(__name__)
 

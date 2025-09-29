@@ -11,6 +11,7 @@ const LoginPage: React.FC = () => {
     const [formData, setFormData] = useState({ email: '', password: '' });
     const [passwordVisible, setPasswordVisible] = useState(false);
 
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };

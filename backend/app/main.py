@@ -1,8 +1,32 @@
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.startup import startup_events, shutdown_events
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import logging
+import os
+
+# Imports de routers
+from app.api.v1.routers.users.auth_user import auth
+from app.api.v1.routers.users.auth_user_admin.admin_router import router as auth_admin_router
+from app.api.v1.routers.users.auth_user_admin.admin_stats_router import router as admin_stats_router
+from app.api.v1.routers.locations import locations
+from app.api.v1.routers.providers import providers
+from app.api.v1.routers.services.categorie_service import router as categories_router
+from app.api.v1.routers.services.services import router as services_router
+from app.api.v1.routers.services.service_requests import router as service_requests_router
+from app.api.v1.routers.services.category_requests import router as category_requests_router
+from app.api.v1.routers.services.additional_endpoints import router as additional_router
+from app.api.v1.routers.services.provider_services import router as provider_services_router
+from app.api.v1.routers.auth.password_reset import router as password_reset_router
+from app.api.v1.routers.auth.supabase_password_reset import router as supabase_password_reset_router
+from app.api.v1.routers.auth.direct_password_reset import router as direct_password_reset_router
+from app.api.v1.routers.reserva_service.reserva import router as reserva_router
+from app.api.v1.routers.disponibilidad import router as disponibilidad_router
+from app.api.v1.routers.test import router as test_router
+from app.api.v1.routers.disponibilidad_optimizada import router as disponibilidad_optimizada_router
+from app.api.v1.routers.horario_trabajo import router as horario_trabajo_router
+from app.api.v1.routers.horarios_disponibles import router as horarios_disponibles_router
 
 # Instancia de la aplicación de FastAPI
 app = FastAPI(
@@ -28,8 +52,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # Vite dev server
+        "http://localhost:5174",  # Vite dev server (puerto alternativo)
         "http://localhost:3000",  # React dev server
         "http://127.0.0.1:5173",  # Vite dev server (alternativo)
+        "http://127.0.0.1:5174",  # Vite dev server (puerto alternativo)
         "http://127.0.0.1:3000",  # React dev server (alternativo)
         "https://frontend-production-ee3b.up.railway.app",  # Railway deployment
         "https://seva-frontend.vercel.app",  # Vercel deployment
@@ -57,6 +83,25 @@ async def cors_error_handler(request: Request, call_next):
     """
     Middleware para asegurar que los headers CORS se devuelvan incluso en errores.
     """
+    # Obtener el origen de la request para configurar CORS dinámicamente
+    origin = request.headers.get("origin", "")
+    
+    # Lista de orígenes permitidos
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://localhost:5174", 
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:3000",
+        "https://frontend-production-ee3b.up.railway.app",
+        "https://seva-frontend.vercel.app",
+        "https://seva-frontend.netlify.app",
+    ]
+    
+    # Determinar el origen permitido
+    cors_origin = origin if origin in allowed_origins else "http://localhost:5174"
+    
     try:
         response = await call_next(request)
     except Exception as e:
@@ -66,7 +111,7 @@ async def cors_error_handler(request: Request, call_next):
             status_code=500,
             content={"detail": "Error interno del servidor"},
             headers={
-                "Access-Control-Allow-Origin": "https://frontend-production-ee3b.up.railway.app",
+                "Access-Control-Allow-Origin": cors_origin,
                 "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
                 "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
                 "Access-Control-Allow-Credentials": "true",
@@ -75,7 +120,7 @@ async def cors_error_handler(request: Request, call_next):
     
     # Asegurar que los headers CORS estén presentes en todas las respuestas
     if "Access-Control-Allow-Origin" not in response.headers:
-        response.headers["Access-Control-Allow-Origin"] = "https://frontend-production-ee3b.up.railway.app"
+        response.headers["Access-Control-Allow-Origin"] = cors_origin
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
         response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
         response.headers["Access-Control-Allow-Credentials"] = "true"
@@ -83,49 +128,7 @@ async def cors_error_handler(request: Request, call_next):
     return response
 
 
-from fastapi.staticfiles import StaticFiles
-import os
 
-# Lazy imports para optimizar startup en Railway
-def _lazy_import_routers():
-    """Import routers solo cuando se necesiten"""
-    from app.api.v1.routers.users.auth_user import auth
-    from app.api.v1.routers.users.auth_user_admin.admin_router import router as auth_admin_router
-    from app.api.v1.routers.users.auth_user_admin.admin_stats_router import router as admin_stats_router
-    from app.api.v1.routers.locations import locations
-    from app.api.v1.routers.providers import providers
-    from app.api.v1.routers.services.categorie_service import router as categories_router
-    from app.api.v1.routers.services.services import router as services_router
-    from app.api.v1.routers.services.service_requests import router as service_requests_router
-    from app.api.v1.routers.services.category_requests import router as category_requests_router
-    from app.api.v1.routers.services.additional_endpoints import router as additional_router
-    from app.api.v1.routers.services.provider_services import router as provider_services_router
-    from app.api.v1.routers.auth.password_reset import router as password_reset_router
-    from app.api.v1.routers.auth.supabase_password_reset import router as supabase_password_reset_router
-    from app.api.v1.routers.auth.direct_password_reset import router as direct_password_reset_router
-    from app.api.v1.routers.reserva_service.reserva import router as reserva_router
-    from app.api.v1.routers.disponibilidad import router as disponibilidad_router
-    from app.api.v1.routers.test import router as test_router
-    
-    return {
-        'auth': auth,
-        'auth_admin_router': auth_admin_router,
-        'admin_stats_router': admin_stats_router,
-        'locations': locations,
-        'providers': providers,
-        'categories_router': categories_router,
-        'services_router': services_router,
-        'service_requests_router': service_requests_router,
-        'category_requests_router': category_requests_router,
-        'additional_router': additional_router,
-        'provider_services_router': provider_services_router,
-        'password_reset_router': password_reset_router,
-        'supabase_password_reset_router': supabase_password_reset_router,
-        'direct_password_reset_router': direct_password_reset_router,
-        'reserva_router': reserva_router,
-        'disponibilidad_router': disponibilidad_router,
-        'test_router': test_router
-    }
 
 
 # Crear directorio uploads si no existe
@@ -136,26 +139,6 @@ os.makedirs("uploads/profile_photos", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Incluir routers directamente
-from app.api.v1.routers.users.auth_user import auth
-from app.api.v1.routers.users.auth_user_admin.admin_router import router as auth_admin_router
-from app.api.v1.routers.users.auth_user_admin.admin_stats_router import router as admin_stats_router
-from app.api.v1.routers.locations import locations
-from app.api.v1.routers.providers import providers
-from app.api.v1.routers.services.categorie_service import router as categories_router
-from app.api.v1.routers.services.services import router as services_router
-from app.api.v1.routers.services.service_requests import router as service_requests_router
-from app.api.v1.routers.services.category_requests import router as category_requests_router
-from app.api.v1.routers.services.additional_endpoints import router as additional_router
-from app.api.v1.routers.services.provider_services import router as provider_services_router
-from app.api.v1.routers.auth.password_reset import router as password_reset_router
-from app.api.v1.routers.auth.supabase_password_reset import router as supabase_password_reset_router
-from app.api.v1.routers.auth.direct_password_reset import router as direct_password_reset_router
-from app.api.v1.routers.reserva_service.reserva import router as reserva_router
-from app.api.v1.routers.disponibilidad import router as disponibilidad_router
-from app.api.v1.routers.disponibilidad_optimizada import router as disponibilidad_optimizada_router
-from app.api.v1.routers.horario_trabajo import router as horario_trabajo_router
-from app.api.v1.routers.horarios_disponibles import router as horarios_disponibles_router
-from app.api.v1.routers.test import router as test_router
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(auth_admin_router, prefix="/api/v1")
@@ -221,16 +204,36 @@ async def health_check():
 
 # Endpoint específico para manejar peticiones OPTIONS (preflight)
 @app.options("/{path:path}")
-async def options_handler(path: str):
+async def options_handler(path: str, request: Request):
     """
     Maneja peticiones OPTIONS (preflight) para CORS.
     """
-    from fastapi.responses import Response
+    from fastapi import Response
+    
+    # Obtener el origen de la request
+    origin = request.headers.get("origin", "")
+    
+    # Lista de orígenes permitidos
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://localhost:5174", 
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:3000",
+        "https://frontend-production-ee3b.up.railway.app",
+        "https://seva-frontend.vercel.app",
+        "https://seva-frontend.netlify.app",
+    ]
+    
+    # Determinar el origen permitido
+    cors_origin = origin if origin in allowed_origins else "http://localhost:5174"
+    
     return Response(
         content="OK",
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": "https://frontend-production-ee3b.up.railway.app",
+            "Access-Control-Allow-Origin": cors_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
             "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
             "Access-Control-Allow-Credentials": "true",

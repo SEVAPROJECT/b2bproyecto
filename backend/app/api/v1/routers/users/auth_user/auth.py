@@ -198,32 +198,32 @@ async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> U
         )
 
 
-#para probar el endpoint desde postman http://localhost:8000/auth/signin
 @router.post("/signin", response_model=TokenOut,
             status_code=status.HTTP_200_OK,
             description="Autentica un usuario con email y contraseña y devuelve sus tokens de acceso y refresh.")
-async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> JSONResponse: #TokenOut:
+async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> JSONResponse:
     """
     Autentica un usuario con email y contraseña y devuelve sus tokens.
     """
-    #Dict[str, Any] es solo una anotación de tipo, no es necesario para la implementación
-    #pero ayuda a entender que supabase_auth.sign_in devuelve un diccionario con los datos de la sesión
-    #Supabase Auth utiliza el método sign_in para autenticar usuarios
-
     try:
-        # PASO 1: Verificar estado del usuario en la base de datos ANTES de autenticar
-        user_id = None
-        user_estado = None
-
-        # Buscar el usuario por email en la tabla public.users primero
-        try:
+        print(f"🔍 LOGIN ENDPOINT INICIADO - Email: {data.email}")
         
+        # PASO 1: Verificar estado del usuario en la base de datos
+        try:
+            print(f"🔍 Obteniendo conexión de la base de datos...")
+            
             # Usar direct_db_service para evitar problemas con PgBouncer
             conn = await direct_db_service.get_connection()
+            print(f"🔍 Conexión obtenida, ejecutando consulta...")
             try:
+                # Consulta simplificada para evitar problemas de rendimiento
                 user_result = await conn.fetchrow("""
-                    SELECT id, estado FROM users WHERE id IN (SELECT id FROM auth.users WHERE email = $1)
+                    SELECT u.id, u.estado 
+                    FROM users u 
+                    JOIN auth.users au ON u.id = au.id 
+                    WHERE au.email = $1
                 """, data.email)
+                print(f"🔍 Consulta ejecutada, resultado: {user_result}")
 
                 if user_result:
                     user_id = str(user_result['id'])
@@ -248,14 +248,14 @@ async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> J
             print(f"⚠️ Error consultando base de datos: {str(db_error)}")
             # Si hay error en la consulta, permitir continuar (fallback)
 
-        # PASO 2: Si el estado es ACTIVO (o no se pudo verificar), proceder con autenticación
+        # PASO 2: Autenticación en Supabase Auth
         print("✅ Estado verificado, procediendo con autenticación en Supabase")
-
+        print(f"🔍 Llamando a Supabase Auth con email: {data.email}")
         signin_response = supabase_auth.auth.sign_in_with_password({
             "email": data.email,
             "password": data.password
         })
-
+        print(f"🔍 Respuesta de Supabase recibida: {signin_response}")
         if signin_response.user is None or not signin_response.session:
            handle_supabase_auth_error("Supabase response incomplete")
 
@@ -292,7 +292,7 @@ async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> J
             key="refresh_token", 
             value=signin_response.session.refresh_token,
             httponly=True,
-            secure=is_production,  # True en producción (Railway), False en desarrollo
+            secure=False,  # True en producción (Railway), False en desarrollo
             samesite="lax",
             max_age=7 * 24 * 60 * 60,  # 7 días
             path="/",
@@ -319,6 +319,56 @@ async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> J
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ha ocurrido un error inesperado al iniciar sesión: {str(e)}"
         )
+
+
+@router.get("/me",
+            status_code=status.HTTP_200_OK,
+            description="Devuelve la información del usuario autenticado.")
+async def read_profile(current_user: SupabaseUser = Depends(get_current_user),
+                       db: AsyncSession = Depends(get_async_db)) -> UserProfileAndRolesOut:
+    """
+    Devuelve la información del usuario autenticado.
+    """
+
+    # 1. Convertir el id de string a UUID de Python
+    user_uuid = uuid.UUID(current_user.id)
+
+    # Usar servicio directo para evitar problemas con PgBouncer
+    logger.info(f"🔍 Endpoint /me - Buscando perfil para usuario: {str(user_uuid)}")
+    user_profile_data = await direct_db_service.get_user_profile_with_roles(str(user_uuid))
+    logger.info(f"📊 Endpoint /me - Resultado del servicio: {user_profile_data is not None}")
+    
+    if not user_profile_data:
+        logger.error(f"❌ Endpoint /me - Perfil no encontrado para usuario: {str(user_uuid)}")
+        raise HTTPException(
+            status_code=404,
+            detail="Perfil de usuario no encontrado"
+        )
+    
+    logger.info(f"✅ Endpoint /me - Perfil encontrado para usuario: {str(user_uuid)}")
+    
+    # Extraer los nombres de los roles
+    # Los roles vienen como JSON string desde la consulta optimizada
+    import json
+    if isinstance(user_profile_data['roles'], str):
+        roles_data = json.loads(user_profile_data['roles'])
+    else:
+        roles_data = user_profile_data['roles']
+    
+    roles_nombres = [role['nombre'] for role in roles_data]
+
+    # Construir y devolver la respuesta final
+    return UserProfileAndRolesOut(
+        id=user_profile_data['id'],
+        email=current_user.email, # El email se obtiene de la autenticacion
+        nombre_persona=user_profile_data['nombre_persona'],
+        nombre_empresa=user_profile_data['nombre_empresa'],
+        ruc=user_profile_data['ruc'],
+        roles=roles_nombres,
+        foto_perfil=user_profile_data['foto_perfil']
+    )
+
+
 
 
 @router.post(
@@ -510,60 +560,6 @@ async def forgot_password(data: EmailOnlyIn):
         )
 
 
-@router.get("/me",
-            status_code=status.HTTP_200_OK,
-            description="Devuelve la información del usuario autenticado.")
-async def read_profile(current_user: SupabaseUser = Depends(get_current_user),
-                       db: AsyncSession = Depends(get_async_db)) -> UserProfileAndRolesOut:
-    """
-    Devuelve la información del usuario autenticado.
-    """
-
-    # 1. Recuperar el perfil del usuario de la base de datos
-    # Se utiliza joinedload para cargar los roles de forma eficiente en una sola consulta.
-    '''result_profile = await db.execute(
-        select(UserModel)
-        .options(joinedload(UserModel.roles))
-        .where(UserModel.id == UUID(current_user.id))
-    )'''
-
-     # 1. Convertir el id de string a UUID de Python
-    user_uuid = uuid.UUID(current_user.id)
-
-    # Usar servicio directo para evitar problemas con PgBouncer
-    logger.info(f"🔍 Endpoint /me - Buscando perfil para usuario: {str(user_uuid)}")
-    user_profile_data = await direct_db_service.get_user_profile_with_roles(str(user_uuid))
-    logger.info(f"📊 Endpoint /me - Resultado del servicio: {user_profile_data is not None}")
-    
-    if not user_profile_data:
-        logger.error(f"❌ Endpoint /me - Perfil no encontrado para usuario: {str(user_uuid)}")
-        raise HTTPException(
-            status_code=404,
-            detail="Perfil de usuario no encontrado"
-        )
-    
-    logger.info(f"✅ Endpoint /me - Perfil encontrado para usuario: {str(user_uuid)}")
-    
-    # Extraer los nombres de los roles
-    # Los roles vienen como JSON string desde la consulta optimizada
-    import json
-    if isinstance(user_profile_data['roles'], str):
-        roles_data = json.loads(user_profile_data['roles'])
-    else:
-        roles_data = user_profile_data['roles']
-    
-    roles_nombres = [role['nombre'] for role in roles_data]
-
-    # Construir y devolver la respuesta final
-    return UserProfileAndRolesOut(
-        id=user_profile_data['id'],
-        email=current_user.email, # El email se obtiene de la autenticacion
-        nombre_persona=user_profile_data['nombre_persona'],
-        nombre_empresa=user_profile_data['nombre_empresa'],
-        ruc=user_profile_data['ruc'],
-        roles=roles_nombres,
-        foto_perfil=user_profile_data['foto_perfil']
-    )
 
 
 @router.get("/verificacion-estado",
