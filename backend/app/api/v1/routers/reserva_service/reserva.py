@@ -33,24 +33,38 @@ async def crear_reserva(
     Crea una nueva reserva de servicio usando direct_db_service.
     Requiere autenticación de usuario.
     """
-    logger.info(f"🔍 [POST /reservas] Iniciando crear_reserva para user_id: {current_user.id}")
-    logger.info(f"🔍 [POST /reservas] Datos de reserva: {reserva.dict()}")
+    logger.info(f"🔍 [POST /reservas] ========== INICIO CREAR RESERVA ==========")
+    logger.info(f"🔍 [POST /reservas] User ID: {current_user.id}")
+    logger.info(f"🔍 [POST /reservas] User email: {getattr(current_user, 'email', 'N/A')}")
+    logger.info(f"🔍 [POST /reservas] Datos completos de reserva: {reserva.dict()}")
+    logger.info(f"🔍 [POST /reservas] Tipo de id_servicio: {type(reserva.id_servicio)}")
+    logger.info(f"🔍 [POST /reservas] Valor de id_servicio: {reserva.id_servicio}")
+    logger.info(f"🔍 [POST /reservas] Fecha de reserva: {reserva.fecha}")
+    logger.info(f"🔍 [POST /reservas] Descripción: {reserva.descripcion}")
+    logger.info(f"🔍 [POST /reservas] Observación: {reserva.observacion}")
     
     try:
         from app.services.direct_db_service import direct_db_service
         
         # Helper para obtener conexión
+        logger.info("🔍 [POST /reservas] Obteniendo conexión de direct_db_service...")
         conn = await direct_db_service.get_connection()
+        logger.info("✅ [POST /reservas] Conexión obtenida exitosamente")
+        
         try:
             # 1. Verificar que el servicio existe y está activo
             logger.info(f"🔍 [POST /reservas] Verificando servicio {reserva.id_servicio}...")
+            logger.info(f"🔍 [POST /reservas] Query de verificación preparado")
             servicio_query = """
                 SELECT s.id_servicio, s.id_perfil, s.estado, s.nombre
                 FROM servicio s
                 WHERE s.id_servicio = $1 AND s.estado = true
             """
+            logger.info(f"🔍 [POST /reservas] Ejecutando query con parámetro: {reserva.id_servicio}")
             servicio_result = await conn.fetchrow(servicio_query, reserva.id_servicio)
+            logger.info(f"🔍 [POST /reservas] Query ejecutado exitosamente")
             logger.info(f"🔍 [POST /reservas] Servicio encontrado: {servicio_result}")
+            logger.info(f"🔍 [POST /reservas] Tipo de resultado: {type(servicio_result)}")
             
             if not servicio_result:
                 logger.warning(f"❌ [POST /reservas] Servicio {reserva.id_servicio} no encontrado")
@@ -66,9 +80,12 @@ async def crear_reserva(
             reserva_id = uuid.uuid4()
             
             # Convertir id_servicio si viene como string
+            logger.info(f"🔍 [POST /reservas] Convirtiendo id_servicio: {reserva.id_servicio} (tipo: {type(reserva.id_servicio)})")
             try:
                 servicio_id = int(reserva.id_servicio)
-            except (ValueError, TypeError):
+                logger.info(f"✅ [POST /reservas] ID convertido exitosamente: {servicio_id}")
+            except (ValueError, TypeError) as e:
+                logger.error(f"❌ [POST /reservas] Error al convertir ID de servicio: {e}")
                 logger.error(f"❌ [POST /reservas] ID de servicio inválido: {reserva.id_servicio}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -80,18 +97,36 @@ async def crear_reserva(
             from datetime import time
             hora_inicio_default = time(9, 0)  # 9:00 AM
             hora_fin_default = time(10, 0)    # 10:00 AM (1 hora de duración)
+            logger.info(f"🔍 [POST /reservas] Horarios por defecto: {hora_inicio_default} - {hora_fin_default}")
+            
+            # Preparar parámetros para la inserción
+            user_uuid = UUID(current_user.id)
+            logger.info(f"🔍 [POST /reservas] UUID del usuario: {user_uuid}")
+            logger.info(f"🔍 [POST /reservas] UUID de reserva generado: {reserva_id}")
             
             insert_query = """
                 INSERT INTO reserva (id, id_servicio, id_usuario, descripcion, observacion, fecha, hora_inicio, hora_fin, estado)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id, id_servicio, id_usuario, descripcion, observacion, fecha, hora_inicio, hora_fin, estado
             """
+            logger.info(f"🔍 [POST /reservas] Query de inserción preparado")
+            logger.info(f"🔍 [POST /reservas] Parámetros de inserción:")
+            logger.info(f"  - id: {reserva_id}")
+            logger.info(f"  - id_servicio: {servicio_id}")
+            logger.info(f"  - id_usuario: {user_uuid}")
+            logger.info(f"  - descripcion: {reserva.descripcion}")
+            logger.info(f"  - observacion: {reserva.observacion}")
+            logger.info(f"  - fecha: {reserva.fecha}")
+            logger.info(f"  - hora_inicio: {hora_inicio_default}")
+            logger.info(f"  - hora_fin: {hora_fin_default}")
+            logger.info(f"  - estado: pendiente")
             
+            logger.info(f"🔍 [POST /reservas] Ejecutando inserción...")
             nueva_reserva = await conn.fetchrow(
                 insert_query,
                 reserva_id,
                 servicio_id,
-                UUID(current_user.id),
+                user_uuid,
                 reserva.descripcion,
                 reserva.observacion,
                 reserva.fecha,
@@ -99,12 +134,14 @@ async def crear_reserva(
                 hora_fin_default,
                 "pendiente"
             )
+            logger.info(f"🔍 [POST /reservas] Inserción ejecutada")
             logger.info(f"🔍 [POST /reservas] Reserva creada: {nueva_reserva}")
             
             logger.info(f"✅ [POST /reservas] Reserva {nueva_reserva['id']} creada exitosamente")
             
             # Convertir a formato de respuesta
-            return {
+            logger.info(f"🔍 [POST /reservas] Preparando respuesta...")
+            respuesta = {
                 "id": nueva_reserva['id'],
                 "id_servicio": nueva_reserva['id_servicio'],
                 "id_usuario": nueva_reserva['id_usuario'],
@@ -114,17 +151,27 @@ async def crear_reserva(
                 "estado": nueva_reserva['estado'],
                 "id_disponibilidad": None  # Compatibilidad con schema anterior
             }
+            logger.info(f"🔍 [POST /reservas] Respuesta preparada: {respuesta}")
+            logger.info(f"🔍 [POST /reservas] ========== FIN CREAR RESERVA EXITOSO ==========")
+            return respuesta
             
         finally:
+            logger.info(f"🔍 [POST /reservas] Liberando conexión...")
             await direct_db_service.pool.release(conn)
+            logger.info(f"🔍 [POST /reservas] Conexión liberada")
         
-    except HTTPException:
+    except HTTPException as he:
+        logger.error(f"❌ [POST /reservas] HTTPException capturada: {he.status_code} - {he.detail}")
+        logger.error(f"❌ [POST /reservas] ========== FIN CREAR RESERVA CON ERROR HTTP ==========")
         raise
     except Exception as e:
+        logger.error(f"❌ [POST /reservas] ========== ERROR CRÍTICO EN CREAR RESERVA ==========")
         logger.error(f"❌ [POST /reservas] Error crítico: {str(e)}")
         logger.error(f"❌ [POST /reservas] Tipo de error: {type(e).__name__}")
+        logger.error(f"❌ [POST /reservas] Módulo del error: {getattr(e, '__module__', 'N/A')}")
         import traceback
-        logger.error(f"❌ [POST /reservas] Traceback: {traceback.format_exc()}")
+        logger.error(f"❌ [POST /reservas] Traceback completo: {traceback.format_exc()}")
+        logger.error(f"❌ [POST /reservas] ========== FIN CREAR RESERVA CON ERROR ==========")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error interno del servidor al crear reserva: {str(e)}"

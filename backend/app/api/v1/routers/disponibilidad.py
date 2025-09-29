@@ -324,7 +324,10 @@ async def obtener_disponibilidades_disponibles_servicio(
     Obtiene horarios disponibles para un servicio específico usando la nueva arquitectura.
     Redirige a la nueva lógica de horario_trabajo + excepciones_horario.
     """
-    logger.info(f"🔍 [GET /disponibilidades/servicio/{servicio_id}/disponibles] Iniciando para user_id: {current_user.id}")
+    logger.info(f"🔍 [GET /disponibilidades/servicio/{servicio_id}/disponibles] ========== INICIO OBTENER DISPONIBILIDADES ==========")
+    logger.info(f"🔍 [GET /disponibilidades] User ID: {current_user.id}")
+    logger.info(f"🔍 [GET /disponibilidades] Servicio ID: {servicio_id}")
+    logger.info(f"🔍 [GET /disponibilidades] Tipo de servicio_id: {type(servicio_id)}")
     
     try:
         from app.services.direct_db_service import direct_db_service
