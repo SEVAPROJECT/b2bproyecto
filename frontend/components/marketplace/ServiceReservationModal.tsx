@@ -138,23 +138,32 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
+        console.log('🔍 [FRONTEND] ========== INICIO CREAR RESERVA ==========');
+        console.log('🔍 [FRONTEND] Service:', service);
+        console.log('🔍 [FRONTEND] ReservationData:', reservationData);
+        
         if (!service || !reservationData.date || !reservationData.time) {
             alert('Por favor selecciona una fecha y hora disponible');
             return;
         }
 
         try {
-               const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
+            const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
+            console.log('🔍 [FRONTEND] API_URL:', API_URL);
             
-            // Crear la reserva
+            // Crear la reserva con datos compatibles con el backend
             const reservaData = {
-                id_servicio: service.id_servicio,
+                id_servicio: parseInt(service.id_servicio.toString()), // Asegurar que sea número
                 descripcion: reservationData.observations || `Reserva para ${service.nombre}`,
                 observacion: reservationData.observations || null,
                 fecha: reservationData.date
             };
+            
+            console.log('🔍 [FRONTEND] Datos a enviar:', reservaData);
+            console.log('🔍 [FRONTEND] Tipo de id_servicio:', typeof reservaData.id_servicio);
 
-            const response = await fetch(`${API_URL}/api/v1/reservas`, {
+            console.log('🔍 [FRONTEND] Enviando petición POST...');
+            const response = await fetch(`${API_URL}/api/v1/reservas/crear`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
@@ -163,18 +172,44 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                 body: JSON.stringify(reservaData),
             });
 
+            console.log('🔍 [FRONTEND] Respuesta recibida:', response.status, response.statusText);
+            console.log('🔍 [FRONTEND] Headers de respuesta:', response.headers);
+
             if (!response.ok) {
-                throw new Error('Error al crear la reserva');
+                // Intentar obtener el mensaje de error específico del backend
+                let errorMessage = 'Error al crear la reserva';
+                try {
+                    const errorData = await response.json();
+                    console.log('🔍 [FRONTEND] Error del backend:', errorData);
+                    errorMessage = errorData.detail || errorData.message || errorMessage;
+                } catch (e) {
+                    console.log('🔍 [FRONTEND] No se pudo parsear error JSON');
+                    // Si no se puede parsear el JSON, usar el texto de la respuesta
+                    try {
+                        const errorText = await response.text();
+                        console.log('🔍 [FRONTEND] Error texto:', errorText);
+                        if (errorText) errorMessage = errorText;
+                    } catch (e2) {
+                        console.log('🔍 [FRONTEND] No se pudo obtener texto de error');
+                    }
+                }
+                throw new Error(`Error ${response.status}: ${errorMessage}`);
             }
 
             const result = await response.json();
-            console.log('Reserva creada:', result);
+            console.log('✅ [FRONTEND] Reserva creada exitosamente:', result);
             
             alert('Reserva creada exitosamente. El proveedor se pondrá en contacto contigo.');
             onClose();
         } catch (error) {
-            console.error('Error al crear reserva:', error);
-            alert('Error al crear la reserva. Por favor intenta nuevamente.');
+            console.error('❌ [FRONTEND] Error al crear reserva:', error);
+            console.error('❌ [FRONTEND] Tipo de error:', typeof error);
+            console.error('❌ [FRONTEND] Error completo:', error);
+            console.log('❌ [FRONTEND] ========== FIN CREAR RESERVA CON ERROR ==========');
+            
+            // Mostrar el error específico al usuario
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido al crear la reserva';
+            alert(`Error al crear la reserva: ${errorMessage}\n\nPor favor intenta nuevamente.`);
         }
     };
 
