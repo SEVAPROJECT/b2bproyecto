@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, delete
-from app.api.v1.dependencies.database_supabase import get_async_db
+from app.services.direct_db_service import direct_db_service
 from app.api.v1.dependencies.auth_user import get_current_user
 from app.models.horario_trabajo import HorarioTrabajoModel, ExcepcionHorarioModel
 from app.models.empresa.perfil_empresa import PerfilEmpresa
@@ -49,54 +49,76 @@ async def get_provider_profile(current_user: SupabaseUser, db: AsyncSession) -> 
 )
 async def crear_horario_trabajo(
     horario: HorarioTrabajoIn,
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Crea un nuevo horario de trabajo.
+    Crea un nuevo horario de trabajo usando direct_db_service.
     Solo los proveedores pueden crear horarios.
     """
-    # Obtener el perfil del proveedor
-    perfil = await get_provider_profile(current_user, db)
-    logger.info(f"Creando horario de trabajo para proveedor {perfil.id_perfil}")
-    
-    # Verificar que no existe ya un horario para este día
-    horario_existente_query = select(HorarioTrabajoModel).where(
-        and_(
-            HorarioTrabajoModel.id_proveedor == perfil.id_perfil,
-            HorarioTrabajoModel.dia_semana == horario.dia_semana
-        )
-    )
-    horario_existente_result = await db.execute(horario_existente_query)
-    horario_existente = horario_existente_result.scalar_one_or_none()
-    
-    if horario_existente:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ya existe un horario para el día {horario.dia_semana}. Actualiza el existente o elimínalo primero."
-        )
-    
-    # Crear nuevo horario
-    nuevo_horario = HorarioTrabajoModel(
-        id_proveedor=perfil.id_perfil,
-        dia_semana=horario.dia_semana,
-        hora_inicio=horario.hora_inicio,
-        hora_fin=horario.hora_fin,
-        activo=horario.activo
-    )
-    
     try:
-        db.add(nuevo_horario)
-        await db.commit()
-        await db.refresh(nuevo_horario)
-        logger.info(f"Horario {nuevo_horario.id_horario} creado exitosamente.")
-        return nuevo_horario
+        # Obtener el perfil del proveedor usando direct_db_service
+        perfil_query = """
+            SELECT id_perfil FROM perfil_empresa 
+            WHERE user_id = $1
+        """
+        perfil_result = await direct_db_service.fetch_one(perfil_query, current_user.id)
+        
+        if not perfil_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
+            )
+        
+        perfil_id = perfil_result['id_perfil']
+        logger.info(f"Creando horario de trabajo para proveedor {perfil_id}")
+        
+        # Verificar que no existe ya un horario para este día
+        verificar_query = """
+            SELECT id_horario FROM horario_trabajo 
+            WHERE id_proveedor = $1 AND dia_semana = $2
+        """
+        horario_existente = await direct_db_service.fetch_one(verificar_query, perfil_id, horario.dia_semana)
+        
+        if horario_existente:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ya existe un horario para el día {horario.dia_semana}. Actualiza el existente o elimínalo primero."
+            )
+        
+        # Crear nuevo horario usando direct_db_service
+        insert_query = """
+            INSERT INTO horario_trabajo (id_proveedor, dia_semana, hora_inicio, hora_fin, activo)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id_horario, id_proveedor, dia_semana, hora_inicio, hora_fin, activo, created_at
+        """
+        nuevo_horario = await direct_db_service.fetch_one(
+            insert_query, 
+            perfil_id, 
+            horario.dia_semana, 
+            horario.hora_inicio, 
+            horario.hora_fin, 
+            horario.activo
+        )
+        
+        logger.info(f"Horario creado exitosamente: {nuevo_horario['id_horario']}")
+        
+        return {
+            "id_horario": nuevo_horario['id_horario'],
+            "id_proveedor": nuevo_horario['id_proveedor'],
+            "dia_semana": nuevo_horario['dia_semana'],
+            "hora_inicio": nuevo_horario['hora_inicio'],
+            "hora_fin": nuevo_horario['hora_fin'],
+            "activo": nuevo_horario['activo'],
+            "created_at": nuevo_horario['created_at']
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        await db.rollback()
-        logger.error(f"Error al crear horario: {e}")
+        logger.error(f"Error al crear horario: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al crear el horario de trabajo."
+            detail="Error interno del servidor al crear horario"
         )
 
 @router.get(
@@ -105,23 +127,57 @@ async def crear_horario_trabajo(
     description="Obtiene todos los horarios de trabajo del proveedor autenticado."
 )
 async def obtener_horarios_trabajo(
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Obtiene todos los horarios de trabajo del proveedor.
+    Obtiene todos los horarios de trabajo del proveedor usando direct_db_service.
     """
-    # Obtener el perfil del proveedor
-    perfil = await get_provider_profile(current_user, db)
-    
-    horarios_query = select(HorarioTrabajoModel).where(
-        HorarioTrabajoModel.id_proveedor == perfil.id_perfil
-    ).order_by(HorarioTrabajoModel.dia_semana)
-    
-    horarios_result = await db.execute(horarios_query)
-    horarios = horarios_result.scalars().all()
-    
-    return horarios
+    try:
+        # Obtener el perfil del proveedor usando direct_db_service
+        perfil_query = """
+            SELECT id_perfil FROM perfil_empresa 
+            WHERE user_id = $1
+        """
+        perfil_result = await direct_db_service.fetch_one(perfil_query, current_user.id)
+        
+        if not perfil_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
+            )
+        
+        perfil_id = perfil_result['id_perfil']
+        
+        # Obtener horarios usando direct_db_service
+        horarios_query = """
+            SELECT id_horario, id_proveedor, dia_semana, hora_inicio, hora_fin, activo, created_at
+            FROM horario_trabajo 
+            WHERE id_proveedor = $1
+            ORDER BY dia_semana
+        """
+        horarios_result = await direct_db_service.fetch_all(horarios_query, perfil_id)
+        
+        # Convertir a formato de respuesta
+        horarios = []
+        for row in horarios_result:
+            horarios.append({
+                "id_horario": row['id_horario'],
+                "id_proveedor": row['id_proveedor'],
+                "dia_semana": row['dia_semana'],
+                "hora_inicio": row['hora_inicio'],
+                "hora_fin": row['hora_fin'],
+                "activo": row['activo'],
+                "created_at": row['created_at']
+            })
+        
+        return horarios
+        
+    except Exception as e:
+        logger.error(f"Error al obtener horarios: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al obtener horarios"
+        )
 
 @router.put(
     "/{horario_id}",
@@ -132,7 +188,7 @@ async def actualizar_horario_trabajo(
     horario_id: int,
     horario_update: HorarioTrabajoUpdate,
     current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db = Depends(direct_db_service.get_connection)
 ):
     """
     Actualiza un horario de trabajo existente.
@@ -182,7 +238,7 @@ async def actualizar_horario_trabajo(
 async def eliminar_horario_trabajo(
     horario_id: int,
     current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db = Depends(direct_db_service.get_connection)
 ):
     """
     Elimina un horario de trabajo.
@@ -229,7 +285,7 @@ async def eliminar_horario_trabajo(
 async def configurar_horario_completo(
     configuracion: ConfiguracionHorarioCompletaIn,
     current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db = Depends(direct_db_service.get_connection)
 ):
     """
     Configura el horario completo de la semana.
@@ -307,7 +363,7 @@ async def configurar_horario_completo(
 async def crear_excepcion_horario(
     excepcion: ExcepcionHorarioIn,
     current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db = Depends(direct_db_service.get_connection)
 ):
     """
     Crea una excepción de horario.
@@ -361,20 +417,57 @@ async def crear_excepcion_horario(
     description="Obtiene todas las excepciones de horario del proveedor."
 )
 async def obtener_excepciones_horario(
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Obtiene todas las excepciones de horario del proveedor.
+    Obtiene todas las excepciones de horario del proveedor usando direct_db_service.
     """
-    # Obtener el perfil del proveedor
-    perfil = await get_provider_profile(current_user, db)
-    
-    excepciones_query = select(ExcepcionHorarioModel).where(
-        ExcepcionHorarioModel.id_proveedor == perfil.id_perfil
-    ).order_by(ExcepcionHorarioModel.fecha)
-    
-    excepciones_result = await db.execute(excepciones_query)
-    excepciones = excepciones_result.scalars().all()
-    
-    return excepciones
+    try:
+        # Obtener el perfil del proveedor usando direct_db_service
+        perfil_query = """
+            SELECT id_perfil FROM perfil_empresa 
+            WHERE user_id = $1
+        """
+        perfil_result = await direct_db_service.fetch_one(perfil_query, current_user.id)
+        
+        if not perfil_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
+            )
+        
+        perfil_id = perfil_result['id_perfil']
+        
+        # Obtener excepciones usando direct_db_service
+        excepciones_query = """
+            SELECT id_excepcion, id_proveedor, fecha, tipo, hora_inicio, hora_fin, motivo, created_at
+            FROM excepciones_horario 
+            WHERE id_proveedor = $1
+            ORDER BY fecha
+        """
+        excepciones_result = await direct_db_service.fetch_all(excepciones_query, perfil_id)
+        
+        # Convertir a formato de respuesta
+        excepciones = []
+        for row in excepciones_result:
+            excepciones.append({
+                "id_excepcion": row['id_excepcion'],
+                "id_proveedor": row['id_proveedor'],
+                "fecha": row['fecha'],
+                "tipo": row['tipo'],
+                "hora_inicio": row['hora_inicio'],
+                "hora_fin": row['hora_fin'],
+                "motivo": row['motivo'],
+                "created_at": row['created_at']
+            })
+        
+        return excepciones
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al obtener excepciones: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al obtener excepciones"
+        )
