@@ -104,7 +104,7 @@ async def get_solicitudes_pendientes(
                 user_nombre = user.nombre_persona or "Usuario sin nombre"
                 # Obtener email desde Supabase Auth (igual que en /admin/users)
                 try:
-                    from app.supabase.auth_service import supabase_admin
+                    from app.supabase_client.auth_service import supabase_admin
                     auth_user = supabase_admin.auth.admin.get_user_by_id(str(empresa.user_id))
                     if auth_user and auth_user.user:
                         user_email = auth_user.user.email or "No disponible"
@@ -681,7 +681,7 @@ async def servir_documento(
     
     try:
         # Verificar que el token es válido usando Supabase directamente
-        from app.supabase.auth_service import supabase_auth
+        from app.supabase_client.auth_service import supabase_auth
         
         # Verificar el token con Supabase
         user_response = supabase_auth.auth.get_user(token)
@@ -955,7 +955,7 @@ async def get_users_emails_only(
         if user_id:
             
             # Obtener email específico de Supabase
-            from app.supabase.auth_service import supabase_admin
+            from app.supabase_client.auth_service import supabase_admin
             try:
                 auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
                 if auth_user and auth_user.user and auth_user.user.email:
@@ -985,7 +985,7 @@ async def get_users_emails_only(
         user_ids = [str(row.id) for row in result.all()]
         
         # Obtener emails de Supabase
-        from app.supabase.auth_service import supabase_admin
+        from app.supabase_client.auth_service import supabase_admin
         auth_users = supabase_admin.auth.admin.list_users()
         
         if not auth_users or len(auth_users) == 0:
@@ -1018,7 +1018,7 @@ async def get_users_emails(
 ):
     """Obtiene los emails de todos los usuarios desde Supabase Auth"""
     try:
-        from app.supabase.auth_service import supabase_admin
+        from app.supabase_client.auth_service import supabase_admin
         
         # Obtener todos los usuarios de Supabase en una sola llamada
         auth_users = supabase_admin.auth.admin.list_users()
@@ -1131,7 +1131,7 @@ async def get_all_users(
         # OPTIMIZACIÓN 4: Obtener todos los emails de Supabase de una vez
         print("🔍 DEBUG: Obteniendo usuarios de Supabase...")
         try:
-            from app.supabase.auth_service import supabase_admin
+            from app.supabase_client.auth_service import supabase_admin
             auth_users = supabase_admin.auth.admin.list_users()
             print(f"🔍 DEBUG: Supabase devolvió {len(auth_users) if auth_users else 0} usuarios")
             
@@ -1385,7 +1385,7 @@ async def update_user_profile(
             if is_admin:
                 # Administrador puede editar email
                 try:
-                    from app.supabase.auth_service import supabase_admin
+                    from app.supabase_client.auth_service import supabase_admin
                     supabase_admin.auth.admin.update_user_by_id(
                         user_id,
                         {"email": user_data["email"]}
@@ -1603,19 +1603,20 @@ async def deactivate_user(
         print(f"🔄 Cambiando estado del usuario {user_id} a INACTIVO")
         
         # Actualizar fecha_fin en perfil_empresa si existe
-        from app.services.perfil_empresa_service import PerfilEmpresaService
-        perfil_updated = await PerfilEmpresaService.deactivate_user_profile(db, user_id)
-        if perfil_updated:
-            print(f"✅ Fecha_fin actualizada en perfil_empresa para usuario {user_id}")
-        else:
-            print(f"ℹ️ No se encontró perfil_empresa para usuario {user_id} o ya estaba desactivado")
+        # from app.services.perfil_empresa_service import PerfilEmpresaService  # Comentado temporalmente
+        # perfil_updated = await PerfilEmpresaService.deactivate_user_profile(db, user_id)
+        # if perfil_updated:
+        #     print(f"✅ Fecha_fin actualizada en perfil_empresa para usuario {user_id}")
+        # else:
+        #     print(f"ℹ️ No se encontró perfil_empresa para usuario {user_id} o ya estaba desactivado")
+        print(f"ℹ️ Funcionalidad de perfil_empresa temporalmente deshabilitada para evitar importación circular")
 
         # Desactivar en Supabase Auth usando el cliente admin
         supabase_success = False
         supabase_error = None
 
         try:
-            from app.supabase.auth_service import supabase_admin
+            from app.supabase_client.auth_service import supabase_admin
 
             if not supabase_admin:
                 print("⚠️ Cliente Supabase admin no disponible")
@@ -1729,7 +1730,7 @@ async def reset_user_password(
         print(f"✅ Usuario encontrado: {user.nombre_persona}")
         
         # Obtener el email del usuario desde Supabase Auth
-        from app.supabase.auth_service import supabase_admin
+        from app.supabase_client.auth_service import supabase_admin
         
         try:
             # Obtener información del usuario desde Supabase Auth
@@ -1871,7 +1872,7 @@ async def verify_user_edit(
         # Obtener email de Supabase si es posible
         email = "No disponible"
         try:
-            from app.supabase.auth_service import supabase_admin
+            from app.supabase_client.auth_service import supabase_admin
             auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
             if auth_user and auth_user.user:
                 email = auth_user.user.email or "No disponible"
@@ -2031,20 +2032,25 @@ async def toggle_user_status(
         user.estado = new_status
         
         # Actualizar fecha_fin en perfil_empresa según la acción
-        from app.services.perfil_empresa_service import PerfilEmpresaService
+        # from app.services.perfil_empresa_service import PerfilEmpresaService  # Comentado temporalmente
+        # if action == "desactivado":
+        #     perfil_updated = await PerfilEmpresaService.deactivate_user_profile(db, user_id)
+        #     if perfil_updated:
+        print(f"ℹ️ Funcionalidad de perfil_empresa temporalmente deshabilitada para evitar importación circular")
         if action == "desactivado":
-            perfil_updated = await PerfilEmpresaService.deactivate_user_profile(db, user_id)
+            perfil_updated = False  # Temporalmente deshabilitado
             if perfil_updated:
                 print(f"✅ Fecha_fin actualizada en perfil_empresa para usuario {user_id} (desactivado)")
         elif action == "reactivado":
-            perfil_updated = await PerfilEmpresaService.reactivate_user_profile(db, user_id)
+            # perfil_updated = await PerfilEmpresaService.reactivate_user_profile(db, user_id)  # Comentado temporalmente
+            perfil_updated = False  # Temporalmente deshabilitado
             if perfil_updated:
                 print(f"✅ Fecha_fin limpiada en perfil_empresa para usuario {user_id} (reactivado)")
 
         # Intentar actualizar en Supabase Auth también
         supabase_success = False
         try:
-            from app.supabase.auth_service import supabase_admin
+            from app.supabase_client.auth_service import supabase_admin
             if supabase_admin:
                 result = supabase_admin.auth.admin.update_user_by_id(
                     str(user.id),
@@ -2123,8 +2129,9 @@ async def activate_user(
         print(f"🔄 Cambiando estado del usuario {user_id} a ACTIVO")
         
         # Actualizar fecha_fin en perfil_empresa si existe (limpiar fecha_fin)
-        from app.services.perfil_empresa_service import PerfilEmpresaService
-        perfil_updated = await PerfilEmpresaService.reactivate_user_profile(db, user_id)
+        # from app.services.perfil_empresa_service import PerfilEmpresaService  # Comentado temporalmente
+        # perfil_updated = await PerfilEmpresaService.reactivate_user_profile(db, user_id)
+        perfil_updated = False  # Temporalmente deshabilitado
         if perfil_updated:
             print(f"✅ Fecha_fin limpiada en perfil_empresa para usuario {user_id}")
         else:
@@ -2133,7 +2140,7 @@ async def activate_user(
         # Intentar actualizar en Supabase Auth también
         supabase_success = False
         try:
-            from app.supabase.auth_service import supabase_admin
+            from app.supabase_client.auth_service import supabase_admin
             if supabase_admin:
                 result = supabase_admin.auth.admin.update_user_by_id(
                     str(user.id),
@@ -2268,7 +2275,7 @@ async def get_reporte_usuarios_activos(
 
             # Obtener email y fecha de creación desde Supabase Auth
             try:
-                from app.supabase.auth_service import supabase_admin
+                from app.supabase_client.auth_service import supabase_admin
                 auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
 
                 if auth_user and auth_user.user:
@@ -2369,7 +2376,7 @@ async def get_reporte_proveedores_verificados(
             # Obtener email desde Supabase
             user_email = "No disponible"
             try:
-                from app.supabase.auth_service import supabase_admin
+                from app.supabase_client.auth_service import supabase_admin
                 auth_user = supabase_admin.auth.admin.get_user_by_id(str(empresa.user_id))
                 if auth_user and auth_user.user:
                     user_email = auth_user.user.email or "No disponible"
@@ -2444,7 +2451,7 @@ async def get_reporte_solicitudes_proveedores(
                     user_nombre = user.nombre_persona
                     # Obtener email desde Supabase
                     try:
-                        from app.supabase.auth_service import supabase_admin
+                        from app.supabase_client.auth_service import supabase_admin
                         auth_user = supabase_admin.auth.admin.get_user_by_id(str(empresa.user_id))
                         if auth_user and auth_user.user:
                             user_email = auth_user.user.email or "No disponible"
@@ -2601,7 +2608,7 @@ async def get_users_batch_emails(
 ):
     """Obtiene emails de usuarios por lotes"""
     try:
-        from app.supabase.auth_service import supabase_admin
+        from app.supabase_client.auth_service import supabase_admin
 
         # Obtener usuarios de Supabase en lotes
         auth_users = supabase_admin.auth.admin.list_users()
@@ -2661,7 +2668,7 @@ async def debug_user_status(
         # Obtener estado de Supabase
         supabase_status = "Desconocido"
         try:
-            from app.supabase.auth_service import supabase_admin
+            from app.supabase_client.auth_service import supabase_admin
             auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
             if auth_user and auth_user.user:
                 supabase_status = "Activo" if not auth_user.user.banned_until else "Suspendido"
@@ -2725,8 +2732,9 @@ async def self_deactivate_user(
         user.estado = "INACTIVO"
         
         # Actualizar fecha_fin en perfil_empresa si existe
-        from app.services.perfil_empresa_service import PerfilEmpresaService
-        perfil_updated = await PerfilEmpresaService.deactivate_user_profile(db, str(user.id))
+        # from app.services.perfil_empresa_service import PerfilEmpresaService  # Comentado temporalmente
+        # perfil_updated = await PerfilEmpresaService.deactivate_user_profile(db, str(user.id))
+        perfil_updated = False  # Temporalmente deshabilitado
         if perfil_updated:
             print(f"✅ Fecha_fin actualizada en perfil_empresa para usuario {user.id} (auto-desactivación)")
         else:
@@ -2735,7 +2743,7 @@ async def self_deactivate_user(
         # Intentar actualizar en Supabase Auth también
         supabase_success = False
         try:
-            from app.supabase.auth_service import supabase_admin
+            from app.supabase_client.auth_service import supabase_admin
             if supabase_admin:
                 result = supabase_admin.auth.admin.update_user_by_id(
                     str(user.id),
@@ -2813,7 +2821,7 @@ async def get_user_details(
         
         # Obtener información de Supabase Auth
         try:
-            from app.supabase.auth_service import supabase_auth
+            from app.supabase_client.auth_service import supabase_auth
             auth_user = supabase_auth.auth.admin.get_user_by_id(str(user.id))
             
             user_data = {
@@ -2856,3 +2864,4 @@ async def get_user_details(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error obteniendo detalles del usuario: {str(e)}"
         )
+
