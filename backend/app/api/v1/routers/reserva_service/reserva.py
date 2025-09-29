@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reservas", tags=["reservas"])
 
 @router.post(
-    "/",
+    "/crear",
     response_model=ReservaOut,
     status_code=status.HTTP_201_CREATED,
     description="Permite a un usuario cliente crear una nueva reserva de servicio."

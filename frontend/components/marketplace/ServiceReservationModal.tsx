@@ -163,7 +163,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
             console.log('🔍 [FRONTEND] Tipo de id_servicio:', typeof reservaData.id_servicio);
 
             console.log('🔍 [FRONTEND] Enviando petición POST...');
-            const response = await fetch(`${API_URL}/api/v1/reservas`, {
+            const response = await fetch(`${API_URL}/api/v1/reservas/crear`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
