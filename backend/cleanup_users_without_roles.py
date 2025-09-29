@@ -169,3 +169,4 @@ if __name__ == "__main__":
             print("\n❌ Error durante la limpieza.")
     else:
         print("\n❌ Operación cancelada por el usuario.")
+

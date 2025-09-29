@@ -69,6 +69,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                     correo: profile.correo
                 });
                 console.log('📸 Foto de perfil en perfil:', profile.foto_perfil);
+                console.log('🏢 RUC en perfil del backend:', profile.ruc);
 
                 // Validación robusta de roles como en Apporiginal.tsx
                 let userRole: UserRole = 'client';
@@ -129,6 +130,9 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                     providerApplication: providerApplication,
                     foto_perfil: profile.foto_perfil || null
                 };
+                
+                console.log('🏢 RUC mapeado en newUser:', newUser.ruc);
+                console.log('👤 Usuario completo creado:', newUser);
                 
                 setUser(newUser);
                 setProviderStatus(newUser.providerStatus);
@@ -215,18 +219,22 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
             }
 
             // Mapear el perfil a la estructura User
+            console.log('🏢 RUC en perfil del login:', profile.ruc);
             const userData: User = {
                 id: profile.id || 1,
                 name: profile.nombre_persona || profile.nombre || profile.first_name || profile.name || profile.email?.split('@')[0] || 'Usuario',
                 email: profile.email || profile.correo,
                 role: userRole,
                 companyName: profile.nombre_empresa || profile.razon_social || profile.company_name || '',
+                ruc: profile.ruc || null,
+                accessToken: response.access_token,
                 createdAt: profile.created_at || new Date().toISOString(),
                 updatedAt: profile.updated_at || new Date().toISOString(),
                 providerStatus: profile.provider_status || 'none',
                 providerApplication: profile.provider_application || { status: 'none', documents: {} },
                 foto_perfil: profile.foto_perfil || null
             };
+            console.log('🏢 RUC mapeado en userData del login:', userData.ruc);
 
             // Guardar ambos tokens en localStorage
             localStorage.setItem('access_token', response.access_token);

@@ -24,6 +24,18 @@ const ManageProfilePage: React.FC = () => {
     const [isDeactivating, setIsDeactivating] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Sincronizar formData cuando el usuario se carga
+    useEffect(() => {
+        if (user) {
+            console.log('🔍 ManageProfilePage: Usuario cargado, RUC:', user.ruc);
+            setFormData({
+                name: user.name || '',
+                email: user.email || '',
+                companyName: user.companyName || ''
+            });
+        }
+    }, [user]);
+
     // Función para obtener el rol en español
     const getRoleInSpanish = (role: string) => {
         switch (role?.toLowerCase()) {
@@ -360,7 +372,11 @@ const ManageProfilePage: React.FC = () => {
                                 <label className="block text-sm font-medium text-gray-700">RUC</label>
                                 <input
                                     type="text"
-                                    value={user?.ruc || 'No especificado'}
+                                    value={(() => {
+                                        const rucValue = user?.ruc || 'No especificado';
+                                        console.log('🔍 Renderizando RUC:', rucValue, 'Usuario:', user?.name);
+                                        return rucValue;
+                                    })()}
                                     disabled
                                     className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm sm:text-base bg-gray-50 text-gray-500"
                                 />

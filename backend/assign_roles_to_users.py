@@ -157,3 +157,4 @@ if __name__ == "__main__":
         print("\n🎉 ¡Asignación completada exitosamente!")
     else:
         print("\n❌ Error durante la asignación.")
+

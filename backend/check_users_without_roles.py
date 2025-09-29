@@ -124,3 +124,4 @@ async def check_users_without_roles():
 if __name__ == "__main__":
     success = asyncio.run(check_users_without_roles())
     sys.exit(0 if success else 1)
+

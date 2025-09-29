@@ -123,3 +123,4 @@ POOL_TIMEOUT=60
 4. ✅ Tienes timeouts apropiados
 
 **El sistema está optimizado para Railway.** 🚀
+

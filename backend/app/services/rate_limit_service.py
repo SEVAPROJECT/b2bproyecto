@@ -65,3 +65,4 @@ class EmailRateLimitService:
 
 # Instancia global del servicio
 email_rate_limit_service = EmailRateLimitService()
+
