@@ -73,25 +73,6 @@ async def fetch_all_query(query: str, *params):
 
 router = APIRouter(prefix="/horario-trabajo", tags=["horario-trabajo"])
 
-# ===== FUNCIONES AUXILIARES =====
-
-async def get_provider_profile(current_user: SupabaseUser, db: AsyncSession) -> PerfilEmpresa:
-    """
-    Obtiene el perfil de empresa del usuario autenticado.
-    """
-    perfil_result = await db.execute(
-        select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
-    )
-    perfil = perfil_result.scalar_one_or_none()
-    
-    if not perfil:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Perfil de empresa no encontrado. Solo los proveedores pueden gestionar horarios."
-        )
-    
-    return perfil
-
 # ===== HORARIOS DE TRABAJO =====
 
 @router.post(
@@ -231,47 +212,79 @@ async def obtener_horarios_trabajo(
 async def actualizar_horario_trabajo(
     horario_id: int,
     horario_update: HorarioTrabajoUpdate,
-    current_user: SupabaseUser = Depends(get_current_user),
-    db = Depends(direct_db_service.get_connection)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Actualiza un horario de trabajo existente.
+    Actualiza un horario de trabajo existente usando direct_db_service.
     """
-    # Obtener el perfil del proveedor
-    perfil = await get_provider_profile(current_user, db)
-    
-    # Obtener el horario
-    horario_query = select(HorarioTrabajoModel).where(
-        and_(
-            HorarioTrabajoModel.id_horario == horario_id,
-            HorarioTrabajoModel.id_proveedor == perfil.id_perfil
-        )
-    )
-    horario_result = await db.execute(horario_query)
-    horario = horario_result.scalar_one_or_none()
-    
-    if not horario:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Horario no encontrado."
-        )
-    
-    # Actualizar campos
-    update_data = horario_update.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(horario, field, value)
+    logger.info(f"🔍 [PUT /horario-trabajo/{horario_id}] Iniciando actualizar_horario_trabajo para user_id: {current_user.id}")
+    logger.info(f"🔍 [PUT /horario-trabajo/{horario_id}] Datos de actualización: {horario_update.dict(exclude_unset=True)}")
     
     try:
-        await db.commit()
-        await db.refresh(horario)
-        logger.info(f"Horario {horario_id} actualizado exitosamente.")
-        return horario
+        # Obtener el perfil del proveedor usando helper
+        logger.info("🔍 [PUT /horario-trabajo] Consultando perfil de empresa...")
+        perfil_id = await get_provider_profile_direct(current_user.id)
+        logger.info(f"✅ [PUT /horario-trabajo] Perfil encontrado: id_perfil = {perfil_id}")
+    
+        # Verificar que el horario existe y pertenece al usuario
+        logger.info(f"🔍 [PUT /horario-trabajo] Verificando horario {horario_id} para proveedor {perfil_id}...")
+        verificar_query = """
+            SELECT id_horario, id_proveedor, dia_semana, hora_inicio, hora_fin, activo, created_at
+            FROM horario_trabajo 
+            WHERE id_horario = $1 AND id_proveedor = $2
+        """
+        horario_existente = await fetch_one_query(verificar_query, horario_id, perfil_id)
+        logger.info(f"🔍 [PUT /horario-trabajo] Horario encontrado: {horario_existente}")
+        
+        if not horario_existente:
+            logger.warning(f"❌ [PUT /horario-trabajo] Horario {horario_id} no encontrado para proveedor {perfil_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Horario no encontrado."
+            )
+        
+        # Preparar datos de actualización
+        update_data = horario_update.dict(exclude_unset=True)
+        logger.info(f"🔍 [PUT /horario-trabajo] Campos a actualizar: {list(update_data.keys())}")
+        
+        if not update_data:
+            logger.info(f"✅ [PUT /horario-trabajo] No hay cambios que aplicar, devolviendo horario actual")
+            return horario_existente
+        
+        # Construir query de actualización dinámicamente
+        set_clauses = []
+        params = [horario_id, perfil_id]
+        param_index = 3
+        
+        for field, value in update_data.items():
+            set_clauses.append(f"{field} = ${param_index}")
+            params.append(value)
+            param_index += 1
+        
+        update_query = f"""
+            UPDATE horario_trabajo 
+            SET {', '.join(set_clauses)}
+            WHERE id_horario = $1 AND id_proveedor = $2
+            RETURNING id_horario, id_proveedor, dia_semana, hora_inicio, hora_fin, activo, created_at
+        """
+        
+        logger.info(f"🔍 [PUT /horario-trabajo] Ejecutando actualización...")
+        horario_actualizado = await fetch_one_query(update_query, *params)
+        logger.info(f"🔍 [PUT /horario-trabajo] Horario actualizado: {horario_actualizado}")
+        
+        logger.info(f"✅ [PUT /horario-trabajo] Horario {horario_id} actualizado exitosamente")
+        return horario_actualizado
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        await db.rollback()
-        logger.error(f"Error al actualizar horario: {e}")
+        logger.error(f"❌ [PUT /horario-trabajo] Error crítico: {str(e)}")
+        logger.error(f"❌ [PUT /horario-trabajo] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [PUT /horario-trabajo] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al actualizar el horario."
+            detail=f"Error interno del servidor al actualizar horario: {str(e)}"
         )
 
 @router.delete(
@@ -281,41 +294,55 @@ async def actualizar_horario_trabajo(
 )
 async def eliminar_horario_trabajo(
     horario_id: int,
-    current_user: SupabaseUser = Depends(get_current_user),
-    db = Depends(direct_db_service.get_connection)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Elimina un horario de trabajo.
+    Elimina un horario de trabajo usando direct_db_service.
     """
-    # Obtener el perfil del proveedor
-    perfil = await get_provider_profile(current_user, db)
-    
-    # Verificar que el horario existe y pertenece al usuario
-    horario_query = select(HorarioTrabajoModel).where(
-        and_(
-            HorarioTrabajoModel.id_horario == horario_id,
-            HorarioTrabajoModel.id_proveedor == perfil.id_perfil
-        )
-    )
-    horario_result = await db.execute(horario_query)
-    horario = horario_result.scalar_one_or_none()
-    
-    if not horario:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Horario no encontrado."
-        )
+    logger.info(f"🔍 [DELETE /horario-trabajo/{horario_id}] Iniciando eliminar_horario_trabajo para user_id: {current_user.id}")
     
     try:
-        await db.delete(horario)
-        await db.commit()
-        logger.info(f"Horario {horario_id} eliminado exitosamente.")
+        # Obtener el perfil del proveedor usando helper
+        logger.info("🔍 [DELETE /horario-trabajo] Consultando perfil de empresa...")
+        perfil_id = await get_provider_profile_direct(current_user.id)
+        logger.info(f"✅ [DELETE /horario-trabajo] Perfil encontrado: id_perfil = {perfil_id}")
+        
+        # Verificar que el horario existe y pertenece al usuario
+        logger.info(f"🔍 [DELETE /horario-trabajo] Verificando horario {horario_id} para proveedor {perfil_id}...")
+        verificar_query = """
+            SELECT id_horario FROM horario_trabajo 
+            WHERE id_horario = $1 AND id_proveedor = $2
+        """
+        horario_existente = await fetch_one_query(verificar_query, horario_id, perfil_id)
+        logger.info(f"🔍 [DELETE /horario-trabajo] Horario encontrado: {horario_existente}")
+        
+        if not horario_existente:
+            logger.warning(f"❌ [DELETE /horario-trabajo] Horario {horario_id} no encontrado para proveedor {perfil_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Horario no encontrado."
+            )
+        
+        # Eliminar horario usando helper
+        logger.info(f"🔍 [DELETE /horario-trabajo] Eliminando horario {horario_id}...")
+        delete_query = """
+            DELETE FROM horario_trabajo 
+            WHERE id_horario = $1 AND id_proveedor = $2
+        """
+        await execute_query(delete_query, horario_id, perfil_id)
+        
+        logger.info(f"✅ [DELETE /horario-trabajo] Horario {horario_id} eliminado exitosamente")
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        await db.rollback()
-        logger.error(f"Error al eliminar horario: {e}")
+        logger.error(f"❌ [DELETE /horario-trabajo] Error crítico: {str(e)}")
+        logger.error(f"❌ [DELETE /horario-trabajo] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [DELETE /horario-trabajo] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al eliminar el horario."
+            detail=f"Error interno del servidor al eliminar horario: {str(e)}"
         )
 
 # ===== CONFIGURACIÓN COMPLETA =====
@@ -456,53 +483,68 @@ async def configurar_horario_completo(
 )
 async def crear_excepcion_horario(
     excepcion: ExcepcionHorarioIn,
-    current_user: SupabaseUser = Depends(get_current_user),
-    db = Depends(direct_db_service.get_connection)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Crea una excepción de horario.
+    Crea una excepción de horario usando direct_db_service.
     """
-    # Obtener el perfil del proveedor
-    perfil = await get_provider_profile(current_user, db)
-    
-    # Verificar que no existe ya una excepción para esta fecha
-    excepcion_existente_query = select(ExcepcionHorarioModel).where(
-        and_(
-            ExcepcionHorarioModel.id_proveedor == perfil.id_perfil,
-            ExcepcionHorarioModel.fecha == excepcion.fecha
-        )
-    )
-    excepcion_existente_result = await db.execute(excepcion_existente_query)
-    excepcion_existente = excepcion_existente_result.scalar_one_or_none()
-    
-    if excepcion_existente:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ya existe una excepción para la fecha {excepcion.fecha}. Actualiza la existente o elimínala primero."
-        )
-    
-    # Crear nueva excepción
-    nueva_excepcion = ExcepcionHorarioModel(
-        id_proveedor=perfil.id_perfil,
-        fecha=excepcion.fecha,
-        tipo=excepcion.tipo,
-        hora_inicio=excepcion.hora_inicio,
-        hora_fin=excepcion.hora_fin,
-        motivo=excepcion.motivo
-    )
+    logger.info(f"🔍 [POST /excepciones] Iniciando crear_excepcion_horario para user_id: {current_user.id}")
+    logger.info(f"🔍 [POST /excepciones] Datos de excepción: {excepcion.dict()}")
     
     try:
-        db.add(nueva_excepcion)
-        await db.commit()
-        await db.refresh(nueva_excepcion)
-        logger.info(f"Excepción {nueva_excepcion.id_excepcion} creada exitosamente.")
+        # Obtener el perfil del proveedor usando helper
+        logger.info("🔍 [POST /excepciones] Consultando perfil de empresa...")
+        perfil_id = await get_provider_profile_direct(current_user.id)
+        logger.info(f"✅ [POST /excepciones] Perfil encontrado: id_perfil = {perfil_id}")
+        
+        # Verificar que no existe ya una excepción para esta fecha
+        logger.info(f"🔍 [POST /excepciones] Verificando excepción existente para fecha {excepcion.fecha}...")
+        verificar_query = """
+            SELECT id_excepcion FROM excepciones_horario 
+            WHERE id_proveedor = $1 AND fecha = $2
+        """
+        excepcion_existente = await fetch_one_query(verificar_query, perfil_id, excepcion.fecha)
+        logger.info(f"🔍 [POST /excepciones] Excepción existente: {excepcion_existente}")
+        
+        if excepcion_existente:
+            logger.warning(f"❌ [POST /excepciones] Ya existe excepción para fecha {excepcion.fecha}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ya existe una excepción para la fecha {excepcion.fecha}. Actualiza la existente o elimínala primero."
+            )
+        
+        # Crear nueva excepción usando helper
+        logger.info("🔍 [POST /excepciones] Creando nueva excepción en base de datos...")
+        insert_query = """
+            INSERT INTO excepciones_horario (id_proveedor, fecha, tipo, hora_inicio, hora_fin, motivo)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id_excepcion, id_proveedor, fecha, tipo, hora_inicio, hora_fin, motivo, created_at
+        """
+        nueva_excepcion = await fetch_one_query(
+            insert_query,
+            perfil_id,
+            excepcion.fecha,
+            excepcion.tipo,
+            excepcion.hora_inicio,
+            excepcion.hora_fin,
+            excepcion.motivo
+        )
+        logger.info(f"🔍 [POST /excepciones] Excepción insertada: {nueva_excepcion}")
+        
+        logger.info(f"✅ [POST /excepciones] Excepción creada exitosamente: {nueva_excepcion['id_excepcion']}")
+        
         return nueva_excepcion
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        await db.rollback()
-        logger.error(f"Error al crear excepción: {e}")
+        logger.error(f"❌ [POST /excepciones] Error crítico: {str(e)}")
+        logger.error(f"❌ [POST /excepciones] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [POST /excepciones] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al crear la excepción de horario."
+            detail=f"Error interno del servidor al crear excepción: {str(e)}"
         )
 
 @router.get(
