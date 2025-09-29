@@ -185,6 +185,7 @@ export interface SignUpData {
     password: string;
     nombre_persona: string;
     nombre_empresa: string;
+    ruc?: string;
 }
 
 export interface SignUpResponse {

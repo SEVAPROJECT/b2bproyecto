@@ -262,6 +262,24 @@ class DirectDBService:
                 except Exception as close_error:
                     logger.error(f"❌ Error devolviendo conexión al pool para usuario {user_id}: {close_error}")
     
+    async def test_connection(self) -> bool:
+        """
+        Test rápido de conexión para health checks.
+        Retorna True si la conexión es exitosa.
+        """
+        conn = None
+        try:
+            conn = await self.get_connection()
+            # Query simple para verificar conexión
+            await conn.fetchval("SELECT 1")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Test de conexión falló: {str(e)}")
+            return False
+        finally:
+            if conn:
+                await self.pool.release(conn)
+    
     async def close_pool(self):
         """Cerrar el pool de conexiones"""
         if self.pool and self._pool_initialized:

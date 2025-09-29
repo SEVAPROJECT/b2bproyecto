@@ -1212,6 +1212,7 @@ const MarketplacePage: React.FC = () => {
                                                 service={service} 
                                                 category={categories.find(c => c.id_categoria === service.id_categoria)}
                                                 onViewProviders={handleContactProvider}
+                                                onReservar={handleReservar}
                                                 isAuthenticated={isAuthenticated}
                                             />
                                         </div>

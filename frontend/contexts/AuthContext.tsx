@@ -16,7 +16,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         status: 'none',
         documents: {}
     });
-    const [isLoading, setIsLoading] = useState(true); // Iniciar como true para evitar race condition
+    const [isLoading, setIsLoading] = useState(false); // Cambiar a false para permitir login
     const [error, setError] = useState<string | null>(null);
     const loadingUserRef = useRef(false); // Para evitar cargas duplicadas
 
@@ -34,6 +34,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         
         loadingUserRef.current = true;
+        setIsLoading(true); // Establecer loading al inicio
             
             try {
                 // Obtener access_token de localStorage
@@ -147,6 +148,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
 
         loadUser();
+        
+        // Timeout de seguridad para resetear loading
+        const timeout = setTimeout(() => {
+            setIsLoading(false);
+            loadingUserRef.current = false;
+        }, 5000); // 5 segundos timeout
+        
+        return () => clearTimeout(timeout);
     }, []); // Sin dependencias para ejecutar solo una vez
 
     // Debug: monitorear cambios en el estado del usuario
@@ -217,11 +226,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setProviderStatus(userData.providerStatus);
             setProviderApplication(userData.providerApplication);
 
-            // Refrescar la pantalla para asegurar datos actualizados
-            console.log('🔄 Login exitoso, refrescando pantalla para datos actualizados...');
-            setTimeout(() => {
-                window.location.reload();
-            }, 100); // Pequeño delay para asegurar que el estado se actualice
+            // Login exitoso - recargar la página para sincronizar el estado
+            console.log('✅ Login exitoso, usuario autenticado correctamente');
+            window.location.reload();
 
         } catch (err: any) {
             // Manejar específicamente el error de cuenta inactiva
