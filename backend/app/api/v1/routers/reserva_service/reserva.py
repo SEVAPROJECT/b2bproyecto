@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import selectinload
 from app.schemas.reserva_servicio.reserva import ReservaIn, ReservaOut
+from app.schemas.reserva_servicio.reserva_detallada import ReservaDetalladaOut, ReservasPaginadasOut
 from app.models.reserva_servicio.reserva import ReservaModel
 from app.models.servicio.service import ServicioModel
 from app.models.perfil import UserModel
@@ -386,3 +387,209 @@ async def obtener_reserva(
             )
     
     return reserva
+
+@router.get(
+    "/mis-reservas",
+    response_model=ReservasPaginadasOut,
+    description="Obtiene las reservas del cliente autenticado con filtros avanzados y paginación optimizada."
+)
+async def obtener_mis_reservas_detalladas(
+    current_user: SupabaseUser = Depends(get_current_user),
+    search: Optional[str] = Query(None, description="Búsqueda por nombre de servicio o empresa"),
+    nombre_servicio: Optional[str] = Query(None, description="Filtrar por nombre del servicio"),
+    nombre_empresa: Optional[str] = Query(None, description="Filtrar por nombre de empresa"),
+    fecha_desde: Optional[date] = Query(None, description="Filtrar desde fecha"),
+    fecha_hasta: Optional[date] = Query(None, description="Filtrar hasta fecha"),
+    estado: Optional[str] = Query(None, description="Filtrar por estado: pendiente, confirmada, cancelada, completada"),
+    nombre_contacto: Optional[str] = Query(None, description="Filtrar por nombre de contacto"),
+    limit: int = Query(20, ge=1, le=100, description="Límite de resultados por página"),
+    offset: int = Query(0, ge=0, description="Desplazamiento para paginación")
+):
+    """
+    Endpoint optimizado para obtener las reservas del cliente autenticado con información detallada.
+    """
+    logger.info(f"🔍 [GET /mis-reservas] ========== INICIO OBTENER MIS RESERVAS ==========")
+    logger.info(f"🔍 [GET /mis-reservas] User ID: {current_user.id}")
+    logger.info(f"🔍 [GET /mis-reservas] Filtros: search={search}, servicio={nombre_servicio}, empresa={nombre_empresa}, estado={estado}")
+    logger.info(f"🔍 [GET /mis-reservas] Paginación: limit={limit}, offset={offset}")
+    
+    try:
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            base_query = """
+                SELECT 
+                    r.id_reserva,
+                    r.id_servicio,
+                    r.user_id as id_usuario,
+                    r.descripcion,
+                    r.observacion,
+                    r.fecha,
+                    r.hora_inicio,
+                    r.hora_fin,
+                    r.estado,
+                    r.created_at,
+                    r.updated_at,
+                    s.nombre as nombre_servicio,
+                    s.descripcion as descripcion_servicio,
+                    s.precio as precio_servicio,
+                    s.imagen as imagen_servicio,
+                    s.id_perfil,
+                    pe.nombre_fantasia as nombre_empresa,
+                    pe.razon_social,
+                    u.nombre_persona as nombre_contacto,
+                    u.nombre_empresa as email_contacto,
+                    se.telefono as telefono_contacto,
+                    c.nombre as nombre_categoria
+                FROM reserva r
+                INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+                INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                INNER JOIN users u ON pe.user_id = u.id
+                LEFT JOIN sucursal_empresa se ON pe.id_perfil = se.id_perfil
+                LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+                WHERE r.user_id = $1
+            """
+            
+            where_conditions = []
+            params = [current_user.id]
+            param_count = 1
+            
+            if search and search.strip():
+                param_count += 1
+                where_conditions.append(f"""
+                    (LOWER(s.nombre) LIKE LOWER(${param_count}) 
+                    OR LOWER(pe.nombre_fantasia) LIKE LOWER(${param_count})
+                    OR LOWER(pe.razon_social) LIKE LOWER(${param_count}))
+                """)
+                params.append(f"%{search.strip()}%")
+            
+            if nombre_servicio and nombre_servicio.strip():
+                param_count += 1
+                where_conditions.append(f"LOWER(s.nombre) LIKE LOWER(${param_count})")
+                params.append(f"%{nombre_servicio.strip()}%")
+            
+            if nombre_empresa and nombre_empresa.strip():
+                param_count += 1
+                where_conditions.append(f"""
+                    (LOWER(pe.nombre_fantasia) LIKE LOWER(${param_count}) 
+                    OR LOWER(pe.razon_social) LIKE LOWER(${param_count}))
+                """)
+                params.append(f"%{nombre_empresa.strip()}%")
+            
+            if fecha_desde:
+                param_count += 1
+                where_conditions.append(f"r.fecha >= ${param_count}")
+                params.append(fecha_desde)
+            
+            if fecha_hasta:
+                param_count += 1
+                where_conditions.append(f"r.fecha <= ${param_count}")
+                params.append(fecha_hasta)
+            
+            if estado and estado.strip():
+                param_count += 1
+                where_conditions.append(f"r.estado = ${param_count}")
+                params.append(estado.strip().lower())
+            
+            if nombre_contacto and nombre_contacto.strip():
+                param_count += 1
+                where_conditions.append(f"LOWER(u.nombre_persona) LIKE LOWER(${param_count})")
+                params.append(f"%{nombre_contacto.strip()}%")
+            
+            if where_conditions:
+                base_query += " AND " + " AND ".join(where_conditions)
+            
+            count_query = f"""
+                SELECT COUNT(*) as total
+                FROM reserva r
+                INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+                INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                INNER JOIN users u ON pe.user_id = u.id
+                WHERE r.user_id = $1
+            """
+            
+            if where_conditions:
+                count_query += " AND " + " AND ".join(where_conditions)
+            
+            logger.info(f"🔍 [GET /mis-reservas] Ejecutando conteo...")
+            total_result = await conn.fetchrow(count_query, *params)
+            total_count = total_result['total'] if total_result else 0
+            logger.info(f"📊 [GET /mis-reservas] Total de reservas encontradas: {total_count}")
+            
+            base_query += f"""
+                ORDER BY r.fecha DESC, r.created_at DESC
+                LIMIT ${param_count + 1} OFFSET ${param_count + 2}
+            """
+            params.extend([limit, offset])
+            
+            logger.info(f"🔍 [GET /mis-reservas] Ejecutando query principal...")
+            
+            reservas_result = await conn.fetch(base_query, *params)
+            logger.info(f"📊 [GET /mis-reservas] Reservas obtenidas: {len(reservas_result)}")
+            
+            reservas_list = []
+            for row in reservas_result:
+                reserva_dict = {
+                    "id_reserva": row['id_reserva'],
+                    "id_servicio": row['id_servicio'],
+                    "id_usuario": row['id_usuario'],
+                    "descripcion": row['descripcion'],
+                    "observacion": row['observacion'],
+                    "fecha": row['fecha'],
+                    "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
+                    "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
+                    "estado": row['estado'],
+                    "created_at": row['created_at'],
+                    "updated_at": row['updated_at'],
+                    "nombre_servicio": row['nombre_servicio'],
+                    "descripcion_servicio": row['descripcion_servicio'],
+                    "precio_servicio": float(row['precio_servicio']),
+                    "imagen_servicio": row['imagen_servicio'],
+                    "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
+                    "razon_social": row['razon_social'],
+                    "id_perfil": row['id_perfil'],
+                    "nombre_contacto": row['nombre_contacto'],
+                    "email_contacto": row['email_contacto'],
+                    "telefono_contacto": row['telefono_contacto'],
+                    "nombre_categoria": row['nombre_categoria']
+                }
+                reservas_list.append(reserva_dict)
+            
+            total_pages = (total_count + limit - 1) // limit
+            current_page = (offset // limit) + 1
+            
+            pagination_info = {
+                "total": total_count,
+                "page": current_page,
+                "limit": limit,
+                "offset": offset,
+                "total_pages": total_pages,
+                "has_next": offset + limit < total_count,
+                "has_prev": offset > 0
+            }
+            
+            logger.info(f"✅ [GET /mis-reservas] Respuesta preparada exitosamente")
+            logger.info(f"📊 [GET /mis-reservas] Paginación: {pagination_info}")
+            logger.info(f"🔍 [GET /mis-reservas] ========== FIN OBTENER MIS RESERVAS ==========")
+            
+            return {
+                "reservas": reservas_list,
+                "pagination": pagination_info
+            }
+            
+        finally:
+            await direct_db_service.pool.release(conn)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [GET /mis-reservas] Error crítico: {str(e)}")
+        logger.error(f"❌ [GET /mis-reservas] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [GET /mis-reservas] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor al obtener reservas: {str(e)}"
+        )
