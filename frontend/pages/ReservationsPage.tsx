@@ -106,7 +106,7 @@ const ReservationsPage: React.FC = () => {
         if (!user?.accessToken) return;
 
         try {
-            setLoading(true);
+        setLoading(true);
             setError(null);
 
             // Construir query params
@@ -124,7 +124,7 @@ const ReservationsPage: React.FC = () => {
 
             console.log('🔍 Cargando reservas con params:', params.toString());
 
-            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-real`, {
+            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas`, {
                 headers: {
                     'Authorization': `Bearer ${user.accessToken}`,
                     'Content-Type': 'application/json',
@@ -136,7 +136,7 @@ const ReservationsPage: React.FC = () => {
             }
 
             const data = await response.json();
-            console.log('📊 Reservas reales cargadas:', data);
+            console.log('📊 Reservas cargadas:', data);
 
             // Usar datos reales del endpoint
             if (data.reservas) {
@@ -383,7 +383,7 @@ const ReservationsPage: React.FC = () => {
 
                 {/* Estadísticas */}
                 <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center justify-between">
                         <div className="text-sm text-gray-600">
                             <span className="font-semibold text-gray-900">{pagination.total}</span> reserva(s) encontrada(s)
                             {activeFiltersCount > 0 && (
@@ -402,12 +402,12 @@ const ReservationsPage: React.FC = () => {
                         <div className="flex flex-col items-center justify-center">
                             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mb-4"></div>
                             <p className="text-gray-600">Cargando reservas...</p>
-                        </div>
-                    </div>
+                                                </div>
+                                                    </div>
                 ) : error ? (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                         <p className="text-red-800">{error}</p>
-                    </div>
+                                                    </div>
                 ) : reservas.length === 0 ? (
                     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
                         <div className="text-center">
@@ -418,8 +418,8 @@ const ReservationsPage: React.FC = () => {
                                     ? 'No se encontraron reservas con los filtros aplicados.'
                                     : 'Aún no has realizado ninguna reserva.'}
                             </p>
-                        </div>
-                    </div>
+                                                    </div>
+                                                </div>
                 ) : (
                     <div className="space-y-4">
                         {reservas.map((reserva) => (
@@ -566,7 +566,7 @@ const ReservationsPage: React.FC = () => {
                         >
                             Siguiente →
                         </button>
-                    </div>
+                </div>
                 )}
             </div>
         </div>

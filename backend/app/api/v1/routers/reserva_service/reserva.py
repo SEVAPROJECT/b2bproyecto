@@ -593,20 +593,19 @@ async def obtener_mis_reservas_test(
 
 @router.get(
     "/mis-reservas",
-    response_model=ReservasPaginadasOut,
     description="Obtiene las reservas del cliente autenticado con filtros avanzados y paginación optimizada."
 )
 async def obtener_mis_reservas_detalladas(
     current_user: SupabaseUser = Depends(get_current_user),
-    search: Optional[str] = Query(None, description="Búsqueda por nombre de servicio o empresa"),
-    nombre_servicio: Optional[str] = Query(None, description="Filtrar por nombre del servicio"),
-    nombre_empresa: Optional[str] = Query(None, description="Filtrar por nombre de empresa"),
-    fecha_desde: Optional[str] = Query(None, description="Filtrar desde fecha"),
-    fecha_hasta: Optional[str] = Query(None, description="Filtrar hasta fecha"),
-    estado: Optional[str] = Query(None, description="Filtrar por estado: pendiente, confirmada, cancelada, completada"),
-    nombre_contacto: Optional[str] = Query(None, description="Filtrar por nombre de contacto"),
-    limit: int = Query(20, ge=1, le=100, description="Límite de resultados por página"),
-    offset: int = Query(0, ge=0, description="Desplazamiento para paginación")
+    search: Optional[str] = Query(None),
+    nombre_servicio: Optional[str] = Query(None),
+    nombre_empresa: Optional[str] = Query(None),
+    fecha_desde: Optional[str] = Query(None),
+    fecha_hasta: Optional[str] = Query(None),
+    estado: Optional[str] = Query(None),
+    nombre_contacto: Optional[str] = Query(None),
+    limit: int = Query(20),
+    offset: int = Query(0)
 ):
     """
     Endpoint optimizado para obtener las reservas del cliente autenticado con información detallada.
