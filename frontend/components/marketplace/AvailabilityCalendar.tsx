@@ -104,7 +104,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
         if (serviceId && user) {
             loadDisponibilidades();
         }
-    }, [serviceId, user, API_URL]);
+    }, [serviceId, API_URL, user]);
 
     // Generar opciones de fecha (próximos 30 días)
     const generateDateOptions = () => {

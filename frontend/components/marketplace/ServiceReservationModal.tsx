@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ClockIcon, UserCircleIcon, StarIcon } from '../icons';
-import { BackendService, BackendCategory, TarifaServicio } from '../../types';
+import { BackendService, BackendCategory } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
 import AvailabilityCalendar from './AvailabilityCalendar';
 
 interface ServiceReservationModalProps {
@@ -11,6 +12,7 @@ interface ServiceReservationModalProps {
 }
 
 const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpen, onClose, service, category }) => {
+    const { user, isAuthenticated } = useAuth();
     const [reservationData, setReservationData] = useState({
         date: '',
         time: '',
@@ -141,14 +143,21 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
         console.log('🔍 [FRONTEND] ========== INICIO CREAR RESERVA ==========');
         console.log('🔍 [FRONTEND] Service:', service);
         console.log('🔍 [FRONTEND] ReservationData:', reservationData);
+        console.log('🔍 [FRONTEND] User:', user);
+        console.log('🔍 [FRONTEND] IsAuthenticated:', isAuthenticated);
         
         if (!service || !reservationData.date || !reservationData.time) {
             alert('Por favor selecciona una fecha y hora disponible');
             return;
         }
 
+        if (!isAuthenticated || !user) {
+            alert('Debes estar autenticado para crear una reserva');
+            return;
+        }
+
         try {
-            const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
+            const API_URL = (import.meta as any).env?.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
             console.log('🔍 [FRONTEND] API_URL:', API_URL);
             
             // Crear la reserva con datos compatibles con el backend
@@ -161,12 +170,13 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
             
             console.log('🔍 [FRONTEND] Datos a enviar:', reservaData);
             console.log('🔍 [FRONTEND] Tipo de id_servicio:', typeof reservaData.id_servicio);
+            console.log('🔍 [FRONTEND] AccessToken:', user.accessToken ? 'Presente' : 'No presente');
 
             console.log('🔍 [FRONTEND] Enviando petición POST...');
             const response = await fetch(`${API_URL}/api/v1/reservas/crear`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                    'Authorization': `Bearer ${user.accessToken}`,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(reservaData),
