@@ -435,7 +435,7 @@ async def obtener_disponibilidades_disponibles_servicio(
                 while hora_actual + timedelta(minutes=duracion_minutos) <= hora_final:
                     hora_fin_slot = hora_actual + timedelta(minutes=duracion_minutos)
                     slots.append({
-                        "id_disponibilidad": slot_id_global,
+                        #"id_disponibilidad": slot_id_global,
                         "id_servicio": servicio_id,
                         "fecha_inicio": hora_actual,
                         "fecha_fin": hora_fin_slot,

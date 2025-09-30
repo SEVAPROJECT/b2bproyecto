@@ -157,7 +157,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
         }
 
         try {
-            const API_URL = (import.meta as any).env?.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
+            const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
             console.log('🔍 [FRONTEND] API_URL:', API_URL);
             
             // Crear la reserva con datos compatibles con el backend
@@ -165,7 +165,8 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                 id_servicio: parseInt(service.id_servicio.toString()), // Asegurar que sea número
                 descripcion: reservationData.observations || `Reserva para ${service.nombre}`,
                 observacion: reservationData.observations || null,
-                fecha: reservationData.date
+                fecha: reservationData.date,
+                hora_inicio: reservationData.time || null  // Agregar hora de inicio
             };
             
             console.log('🔍 [FRONTEND] Datos a enviar:', reservaData);
@@ -191,7 +192,26 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                 try {
                     const errorData = await response.json();
                     console.log('🔍 [FRONTEND] Error del backend:', errorData);
-                    errorMessage = errorData.detail || errorData.message || errorMessage;
+                    console.log('🔍 [FRONTEND] Tipo de errorData:', typeof errorData);
+                    console.log('🔍 [FRONTEND] Keys de errorData:', Object.keys(errorData));
+                    
+                    // Manejar diferentes formatos de error
+                    if (typeof errorData === 'string') {
+                        errorMessage = errorData;
+                    } else if (errorData.detail) {
+                        if (Array.isArray(errorData.detail)) {
+                            // Error de validación con múltiples errores
+                            errorMessage = errorData.detail.map(err => err.msg || err.message || err).join(', ');
+                        } else {
+                            errorMessage = errorData.detail;
+                        }
+                    } else if (errorData.message) {
+                        errorMessage = errorData.message;
+                    } else if (errorData.error) {
+                        errorMessage = errorData.error;
+                    } else {
+                        errorMessage = JSON.stringify(errorData);
+                    }
                 } catch (e) {
                     console.log('🔍 [FRONTEND] No se pudo parsear error JSON');
                     // Si no se puede parsear el JSON, usar el texto de la respuesta

@@ -75,9 +75,10 @@ async def crear_reserva(
             # 2. Crear nueva reserva usando direct_db_service
             logger.info("🔍 [POST /reservas] Creando nueva reserva en base de datos...")
             
-            # Generar nuevo UUID para la reserva
-            import uuid
-            reserva_id = uuid.uuid4()
+            # Generar nuevo ID entero para la reserva
+            # Nota: Si id_reserva es auto-increment, no necesitamos generar un ID
+            # Pero si no es auto-increment, necesitamos obtener el siguiente ID
+            reserva_id = None  # Dejar que la base de datos genere el ID
             
             # Convertir id_servicio si viene como string
             logger.info(f"🔍 [POST /reservas] Convirtiendo id_servicio: {reserva.id_servicio} (tipo: {type(reserva.id_servicio)})")
@@ -92,68 +93,110 @@ async def crear_reserva(
                     detail="ID de servicio inválido"
                 )
             
-            # Para la nueva arquitectura, necesitamos hora_inicio y hora_fin
-            # Como el frontend no las envía aún, usaremos valores por defecto
-            from datetime import time
-            hora_inicio_default = time(9, 0)  # 9:00 AM
-            hora_fin_default = time(10, 0)    # 10:00 AM (1 hora de duración)
-            logger.info(f"🔍 [POST /reservas] Horarios por defecto: {hora_inicio_default} - {hora_fin_default}")
+            # Obtener horarios del frontend
+            from datetime import time, datetime, timedelta, date
+            
+            # Usar la hora enviada por el frontend o valores por defecto
+            if reserva.hora_inicio:
+                hora_inicio_str = reserva.hora_inicio
+                logger.info(f"🔍 [POST /reservas] Hora recibida del frontend: {hora_inicio_str}")
+            else:
+                hora_inicio_str = "09:00"  # 9:00 AM por defecto
+                logger.info(f"🔍 [POST /reservas] Usando hora por defecto: {hora_inicio_str}")
+            
+            # Convertir string a time object
+            try:
+                hora_inicio = datetime.strptime(hora_inicio_str, "%H:%M").time()
+            except ValueError:
+                hora_inicio = time(9, 0)  # Fallback a 9:00 AM
+                logger.warning(f"⚠️ [POST /reservas] Error al parsear hora {hora_inicio_str}, usando 9:00 AM")
+            
+            # Calcular hora fin (1 hora después)
+            hora_fin = (datetime.combine(date.today(), hora_inicio) + timedelta(hours=1)).time()
+            
+            logger.info(f"🔍 [POST /reservas] Horarios calculados: {hora_inicio} - {hora_fin}")
             
             # Preparar parámetros para la inserción
-            user_uuid = UUID(current_user.id)
+            user_uuid = current_user.id  # Ya es UUID, no necesita conversión
             logger.info(f"🔍 [POST /reservas] UUID del usuario: {user_uuid}")
             logger.info(f"🔍 [POST /reservas] UUID de reserva generado: {reserva_id}")
             
             insert_query = """
-                INSERT INTO reserva (id, id_servicio, id_usuario, descripcion, observacion, fecha, hora_inicio, hora_fin, estado)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                RETURNING id, id_servicio, id_usuario, descripcion, observacion, fecha, hora_inicio, hora_fin, estado
+                INSERT INTO reserva (id_servicio, user_id, descripcion, observacion, fecha, hora_inicio, hora_fin, estado)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id_reserva, id_servicio, user_id, descripcion, observacion, fecha, hora_inicio, hora_fin, estado
             """
             logger.info(f"🔍 [POST /reservas] Query de inserción preparado")
             logger.info(f"🔍 [POST /reservas] Parámetros de inserción:")
-            logger.info(f"  - id: {reserva_id}")
             logger.info(f"  - id_servicio: {servicio_id}")
-            logger.info(f"  - id_usuario: {user_uuid}")
+            logger.info(f"  - user_id: {user_uuid}")
             logger.info(f"  - descripcion: {reserva.descripcion}")
             logger.info(f"  - observacion: {reserva.observacion}")
             logger.info(f"  - fecha: {reserva.fecha}")
-            logger.info(f"  - hora_inicio: {hora_inicio_default}")
-            logger.info(f"  - hora_fin: {hora_fin_default}")
+            logger.info(f"  - hora_inicio: {hora_inicio}")
+            logger.info(f"  - hora_fin: {hora_fin}")
             logger.info(f"  - estado: pendiente")
             
             logger.info(f"🔍 [POST /reservas] Ejecutando inserción...")
             nueva_reserva = await conn.fetchrow(
                 insert_query,
-                reserva_id,
-                servicio_id,
-                user_uuid,
-                reserva.descripcion,
-                reserva.observacion,
-                reserva.fecha,
-                hora_inicio_default,
-                hora_fin_default,
-                "pendiente"
+                servicio_id,       # $1 = id_servicio (int)
+                user_uuid,         # $2 = user_id (UUID)
+                reserva.descripcion,  # $3 = descripcion (string)
+                reserva.observacion,  # $4 = observacion (string)
+                reserva.fecha,        # $5 = fecha (date)
+                hora_inicio,         # $6 = hora_inicio (time)
+                hora_fin,            # $7 = hora_fin (time)
+                "pendiente"          # $8 = estado (string)
             )
             logger.info(f"🔍 [POST /reservas] Inserción ejecutada")
             logger.info(f"🔍 [POST /reservas] Reserva creada: {nueva_reserva}")
             
-            logger.info(f"✅ [POST /reservas] Reserva {nueva_reserva['id']} creada exitosamente")
+            logger.info(f"✅ [POST /reservas] Reserva {nueva_reserva['id_reserva']} creada exitosamente")
             
             # Convertir a formato de respuesta
             logger.info(f"🔍 [POST /reservas] Preparando respuesta...")
-            respuesta = {
-                "id": nueva_reserva['id'],
-                "id_servicio": nueva_reserva['id_servicio'],
-                "id_usuario": nueva_reserva['id_usuario'],
-                "descripcion": nueva_reserva['descripcion'],
-                "observacion": nueva_reserva['observacion'],
-                "fecha": nueva_reserva['fecha'],
-                "estado": nueva_reserva['estado'],
-                "id_disponibilidad": None  # Compatibilidad con schema anterior
-            }
-            logger.info(f"🔍 [POST /reservas] Respuesta preparada: {respuesta}")
-            logger.info(f"🔍 [POST /reservas] ========== FIN CREAR RESERVA EXITOSO ==========")
-            return respuesta
+            try:
+                # Convertir id_reserva a UUID si es necesario
+                import uuid
+                if isinstance(nueva_reserva['id_reserva'], int):
+                    # Si id_reserva es un entero, generar un UUID basado en él
+                    reserva_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(nueva_reserva['id_reserva']))
+                else:
+                    reserva_uuid = nueva_reserva['id_reserva']
+                
+                # Convertir fecha a date puro (sin tiempo)
+                from datetime import date
+                if hasattr(nueva_reserva['fecha'], 'date'):
+                    fecha_pura = nueva_reserva['fecha'].date()
+                else:
+                    fecha_pura = nueva_reserva['fecha']
+                
+                respuesta = {
+                    "id": reserva_uuid,  # UUID correcto
+                    "id_servicio": nueva_reserva['id_servicio'],
+                    "id_usuario": nueva_reserva['user_id'],  # Mapear user_id a id_usuario en la respuesta
+                    "descripcion": nueva_reserva['descripcion'],
+                    "observacion": nueva_reserva['observacion'],
+                    "fecha": fecha_pura,  # Fecha sin tiempo
+                    "hora_inicio": str(nueva_reserva['hora_inicio']) if nueva_reserva['hora_inicio'] else None,
+                    "hora_fin": str(nueva_reserva['hora_fin']) if nueva_reserva['hora_fin'] else None,
+                    "estado": nueva_reserva['estado'],
+                    "id_disponibilidad": None  # Compatibilidad con schema anterior
+                }
+                logger.info(f"🔍 [POST /reservas] Respuesta preparada: {respuesta}")
+                logger.info(f"🔍 [POST /reservas] ========== FIN CREAR RESERVA EXITOSO ==========")
+                return respuesta
+            except Exception as response_error:
+                logger.error(f"❌ [POST /reservas] Error al construir respuesta: {response_error}")
+                logger.error(f"❌ [POST /reservas] Datos de nueva_reserva: {nueva_reserva}")
+                logger.error(f"❌ [POST /reservas] Tipo de nueva_reserva: {type(nueva_reserva)}")
+                if hasattr(nueva_reserva, 'keys'):
+                    logger.error(f"❌ [POST /reservas] Keys disponibles: {list(nueva_reserva.keys())}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error al construir respuesta: {str(response_error)}"
+                )
             
         finally:
             logger.info(f"🔍 [POST /reservas] Liberando conexión...")
