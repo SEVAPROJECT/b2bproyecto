@@ -18,7 +18,7 @@ class DisponibilidadOut(BaseModel):
     """
     Schema para la salida de datos de una disponibilidad.
     """
-    id_disponibilidad: int
+    #id_disponibilidad: int
     id_servicio: int
     fecha_inicio: datetime
     fecha_fin: datetime
