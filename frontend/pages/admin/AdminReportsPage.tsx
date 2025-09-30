@@ -186,6 +186,13 @@ const AdminReportsPage: React.FC = () => {
             description: 'Solicitudes de nuevas categorías',
             icon: '📂',
             color: 'teal'
+        },
+        {
+            id: 'reservas',
+            title: 'Reservas',
+            description: 'Reporte de todas las reservas realizadas en la plataforma',
+            icon: '📅',
+            color: 'pink'
         }
     ];
 
@@ -447,6 +454,8 @@ const AdminReportsPage: React.FC = () => {
                 timeoutDuration = 8000; // Categorías: 8 segundos (más simple)
             } else if (reportType === 'proveedores-verificados') {
                 timeoutDuration = 15000; // Proveedores: 15 segundos
+            } else if (reportType === 'reservas') {
+                timeoutDuration = 15000; // Reservas: 15 segundos
             }
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout de carga')), timeoutDuration)
@@ -791,6 +800,37 @@ const AdminReportsPage: React.FC = () => {
                         };
                     });
                     break;
+                case 'reservas':
+                    dataPromise = (async () => {
+                        console.log('📅 Cargando reporte de reservas...');
+                        try {
+                            const response = await fetch(buildApiUrl('/admin/reports/reservas'), {
+                                headers: { 'Authorization': `Bearer ${user.accessToken}` }
+                            });
+                            
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            }
+                            
+                            const data = await response.json();
+                            console.log('✅ Reporte de reservas cargado exitosamente:', data);
+                            
+                            return {
+                                ...data,
+                                fecha_generacion: getArgentinaDateISO()
+                            };
+                        } catch (error) {
+                            console.error('❌ Error cargando reporte de reservas:', error);
+                            return {
+                                fecha_generacion: getArgentinaDateISO(),
+                                total_reservas: 0,
+                                reservas: [],
+                                generado_desde: 'sin_datos_backend',
+                                mensaje: 'No se pudieron cargar las reservas'
+                            };
+                        }
+                    })();
+                    break;
                 default:
                     throw new Error('Tipo de reporte no válido');
             }
@@ -1090,6 +1130,18 @@ const AdminReportsPage: React.FC = () => {
                     if (key === 'created_at') headerName = 'FECHA CREACION';
                     if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
                     if (key === 'active' || key === 'activo') headerName = 'ESTADO';
+                    
+                    // Personalizar nombres para reporte de reservas
+                    if (key === 'id_reserva') headerName = 'ID RESERVA';
+                    if (key === 'fecha_reserva') headerName = 'FECHA DE RESERVA';
+                    if (key === 'estado') headerName = 'ESTADO';
+                    if (key === 'cliente_nombre') headerName = 'CLIENTE';
+                    if (key === 'servicio_nombre') headerName = 'SERVICIO';
+                    if (key === 'empresa_razon_social') headerName = 'PROVEEDOR';
+                    if (key === 'fecha_servicio') headerName = 'FECHA DEL SERVICIO';
+                    if (key === 'hora_servicio') headerName = 'HORA DEL SERVICIO';
+                    if (key === 'precio') headerName = 'PRECIO';
+                    
                     htmlContent += `<th>${headerName}</th>`;
                 });
                 
@@ -1151,6 +1203,17 @@ const AdminReportsPage: React.FC = () => {
                                 if (key === 'created_at') headerName = 'FECHA CREACION';
                                 if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
                                 if (key === 'active' || key === 'activo') headerName = 'ESTADO';
+                                
+                                // Personalizar nombres para reporte de reservas
+                                if (key === 'id_reserva') headerName = 'ID RESERVA';
+                                if (key === 'fecha_reserva') headerName = 'FECHA DE RESERVA';
+                                if (key === 'estado') headerName = 'ESTADO';
+                                if (key === 'cliente_nombre') headerName = 'CLIENTE';
+                                if (key === 'servicio_nombre') headerName = 'SERVICIO';
+                                if (key === 'empresa_razon_social') headerName = 'PROVEEDOR';
+                                if (key === 'fecha_servicio') headerName = 'FECHA DEL SERVICIO';
+                                if (key === 'hora_servicio') headerName = 'HORA DEL SERVICIO';
+                                if (key === 'precio') headerName = 'PRECIO';
                                 
                                 return (
                                 <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">

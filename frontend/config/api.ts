@@ -37,6 +37,7 @@ export const API_CONFIG = {
         DASHBOARD_STATS: '/admin/stats/dashboard/stats',
         REPORTS: {
             PROVIDERS_VERIFIED: '/admin/reports/proveedores-verificados',
+            RESERVAS: '/admin/reports/reservas',
         },
     },
     

@@ -2598,6 +2598,96 @@ async def get_reporte_servicios(
         raise HTTPException(status_code=500, detail="Error generando reporte")
 
 @router.get(
+    "/reports/reservas",
+    description="Genera reporte de reservas en la plataforma"
+)
+async def get_reporte_reservas(
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Genera reporte de reservas en la plataforma"""
+    try:
+        # Obtener todas las reservas con información detallada
+        reservas_query = select(
+            ReservaModel,
+            ServicioModel.nombre.label('servicio_nombre'),
+            ServicioModel.precio.label('servicio_precio'),
+            PerfilEmpresa.razon_social.label('empresa_razon_social'),
+            PerfilEmpresa.nombre_fantasia.label('empresa_nombre_fantasia'),
+            UserModel.nombre_persona.label('cliente_nombre'),
+            UserModel.email.label('cliente_email')
+        ).join(
+            ServicioModel, ReservaModel.id_servicio == ServicioModel.id_servicio
+        ).join(
+            PerfilEmpresa, ServicioModel.id_perfil == PerfilEmpresa.id_perfil
+        ).join(
+            UserModel, ReservaModel.user_id == UserModel.id
+        ).order_by(ReservaModel.created_at.desc())
+        
+        reservas_result = await db.execute(reservas_query)
+        reservas_data = reservas_result.all()
+
+        reservas_detalladas = []
+        for row in reservas_data:
+            reserva = row.Reserva
+            
+            # Formatear fecha de reserva a DD/MM/AAAA
+            fecha_reserva_formateada = None
+            if reserva.created_at:
+                fecha_reserva_formateada = reserva.created_at.strftime("%d/%m/%Y")
+            
+            # Formatear fecha y hora del servicio
+            fecha_servicio_formateada = None
+            hora_servicio_formateada = None
+            if reserva.fecha:
+                fecha_servicio_formateada = reserva.fecha.strftime("%d/%m/%Y")
+            
+            if reserva.hora_inicio and reserva.hora_fin:
+                hora_servicio_formateada = f"{reserva.hora_inicio} - {reserva.hora_fin}"
+            elif reserva.hora_inicio:
+                hora_servicio_formateada = str(reserva.hora_inicio)
+            
+            # Formatear estado
+            estado_formateado = reserva.estado.title() if reserva.estado else "Sin estado"
+            
+            # Formatear precio
+            precio_formateado = 0
+            if row.servicio_precio:
+                precio_formateado = float(row.servicio_precio)
+            
+            reservas_detalladas.append({
+                "id_reserva": reserva.id_reserva,
+                "fecha_reserva": fecha_reserva_formateada,
+                "estado": estado_formateado,
+                "cliente_nombre": row.cliente_nombre or "No disponible",
+                "cliente_email": row.cliente_email or "No disponible",
+                "servicio_nombre": row.servicio_nombre or "No disponible",
+                "empresa_razon_social": row.empresa_razon_social or "No disponible",
+                "empresa_nombre_fantasia": row.empresa_nombre_fantasia or "No disponible",
+                "fecha_servicio": fecha_servicio_formateada,
+                "hora_servicio": hora_servicio_formateada,
+                "precio": precio_formateado,
+                "descripcion": reserva.descripcion or "",
+                "observacion": reserva.observacion or ""
+            })
+
+        return {
+            "total_reservas": len(reservas_detalladas),
+            "reservas": reservas_detalladas,
+            "fecha_generacion": datetime.now().isoformat()
+        }
+    except Exception as e:
+        print(f"Error generando reporte de reservas: {e}")
+        # Si es un error de PgBouncer, intentar rollback
+        if "prepared statement" in str(e).lower() or "pgbouncer" in str(e).lower():
+            try:
+                await db.rollback()
+            except:
+                pass
+
+        raise HTTPException(status_code=500, detail="Error generando reporte")
+
+@router.get(
     "/users/batch-emails",
     description="Obtiene emails de usuarios por lotes para evitar sobrecarga"
 )
