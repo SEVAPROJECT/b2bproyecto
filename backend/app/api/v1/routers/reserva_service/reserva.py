@@ -15,6 +15,7 @@ import logging
 from uuid import UUID
 from typing import List, Optional
 from datetime import datetime, date
+from app.services.direct_db_service import direct_db_service
 
 logger = logging.getLogger(__name__)
 
@@ -222,20 +223,27 @@ async def crear_reserva(
         )
 
 @router.get(
-    "/",
+    "/reservas/list",
     response_model=List[ReservaOut],
     description="Obtiene las reservas del usuario autenticado."
 )
 async def obtener_mis_reservas(
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db),
+    #current_user: SupabaseUser = Depends(get_current_user),
+    #db: AsyncSession = Depends(get_async_db),
     estado: Optional[str] = Query(None, description="Filtrar por estado: pendiente, confirmada, cancelada"),
-    limit: int = Query(50, ge=1, le=100, description="Límite de resultados"),
-    offset: int = Query(0, ge=0, description="Desplazamiento para paginación")
+    limit: int = Query(10, ge=1, le=100, description="Numero de Reservas oor pagina"),
+    offset: int = Query(0, ge=0, description="Desplazamiento para paginación"),
+    #Filtros
+    search: Optional[str] = Query(None, description="Búsqueda por descripción"),
+    hora_inicio: Optional[str] = Query(None, description="Hora de inicio (HH:MM)"),
+    hora_fin: Optional[str] = Query(None, description="Hora de fin (HH:MM)"),
+    empresa: Optional[str] = Query(None, description="Razon social de la empresa")
+
 ):
     """
     Obtiene las reservas del usuario autenticado.
     """
+    '''
     query = select(ReservaModel).where(
         ReservaModel.id_usuario == UUID(current_user.id)
     )
@@ -247,6 +255,106 @@ async def obtener_mis_reservas(
     
     result = await db.execute(query)
     reservas = result.scalars().all()
+    '''
+
+    try:
+        # Usar direct_db_service para evitar problemas con PgBouncer
+        conn = await direct_db_service.get_connection()
+
+        try:
+            
+            #consulta base
+            query_base = """
+                SELECT r.id_reserva, r.id_servicio, r.user_id, r.descripcion AS descripcion_reserva, r.observacion,
+                r.fecha, r.hora_inicio, r.hora_fin, r.estado, s.descripcion AS servicio_descripcion, s.nombre AS servicio_nombre,
+                p.razon_social AS empresa_razon_social, u.email AS usuario_email,
+                u.nombre_persona AS nombre_contacto
+                FROM reserva r 
+                JOIN servicio s ON r.id_servicio = s.id_servicio
+                JOIN perfil_empresa p ON r.id_perfil = p.id_perfil
+                JOIN users u ON r.user_id = u.id
+                WHERE s.estado = true
+            """
+
+            # Construir filtros dinámicamente
+            filters = []
+            params = []
+            param_count = 0
+
+            #filtro por estado
+            if estado:
+                filters.append(f"r.estado = ${param_count + 1}")
+                params.append(estado)
+                param_count += 1
+
+            #filtro por busqueda, nombre o descripcion del servicio
+            if search:
+                filters.append(f"(LOWER(s.nombre) LIKE LOWER(${param_count}) OR LOWER(s.descripcion) LIKE LOWER(${param_count}))")
+                params.append(f"%{search}%")
+
+            #filtro por hora de inicio
+            if hora_inicio:
+                filters.append(f"r.hora_inicio >= ${param_count + 1}")
+                params.append(hora_inicio)
+                param_count += 1
+
+            #filtro por hora de fin
+            if hora_fin:
+                filters.append(f"r.hora_fin <= ${param_count + 1}")
+                params.append(hora_fin)
+                param_count += 1
+
+            
+            #filtro por empresa
+            if empresa:
+                filters.append(f"LOWER(p.razon_social) ILIKE LOWER(${param_count + 1})")
+                params.append(f"%{empresa}%")
+                param_count += 1
+
+            if filters:
+                query_base += " AND " + " AND ".join(filters)
+
+            query_base += f" ORDER BY r.hora_inicio DESC LIMIT ${param_count + 1} OFFSET ${param_count + 2}"
+            params.extend([limit, offset])
+
+            #ejecutar consulta principal
+            result = await conn.fetch(query_base, *params)
+
+            reservas = [dict(row) for row in result]
+
+            #consulta  para obtener el totol de reservas (sin paginacion)
+            count_query = """
+                SELECT COUNT(*) as total
+                FROM reserva r
+                JOIN servicio s ON r.id_servicio = s.id_servicio
+                JOIN perfil_empresa p ON r.id_perfil = p.id_perfil
+                JOIN users u ON r.user_id = u.id
+                WHERE s.estado = true
+            """
+            # Agregar mismos filtros a la consulta de conteo
+            if filters:
+                count_query += " AND " + " AND ".join(filters)
+
+            #Parametros para la consulta de conteo
+            count_params = params[:-2]  # Remover limit y offset
+            # Ejecutar consulta para obtener el total de reservas
+            count_result = await conn.fetchrow(count_query, *count_params)
+            total_reservas = count_result["total"] if count_result else 0
+            logger.info(f"✅ Total de reservas encontradas: {total_reservas}")
+
+            #calcular la paginacion
+            current_page = (offset // limit) + 1
+            total_pages = (total_reservas + limit - 1) // limit
+
+        finally:
+            await direct_db_service.pool.release(conn)
+
+    except Exception as e:
+        print(f"❌ Error en obtener mis resrvas: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
     
     return reservas
 
