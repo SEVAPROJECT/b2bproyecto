@@ -20,6 +20,7 @@ from app.models.rol import RolModel
 from app.models.usuario_rol import UsuarioRolModel
 from app.models.publicar_servicio.category import CategoriaModel
 from app.models.servicio.service import ServicioModel
+# from app.models.reserva_servicio.reserva import ReservaModel  # Modelo no existe
 from app.schemas.empresa.verificacion_solicitud import VerificacionSolicitudOut
 from app.schemas.user import UserProfileAndRolesOut
 from app.api.v1.dependencies.auth_user import get_admin_user, get_current_user
@@ -2607,69 +2608,81 @@ async def get_reporte_reservas(
 ):
     """Genera reporte de reservas en la plataforma"""
     try:
-        # Obtener todas las reservas con información detallada
-        reservas_query = select(
-            ReservaModel,
-            ServicioModel.nombre.label('servicio_nombre'),
-            ServicioModel.precio.label('servicio_precio'),
-            PerfilEmpresa.razon_social.label('empresa_razon_social'),
-            PerfilEmpresa.nombre_fantasia.label('empresa_nombre_fantasia'),
-            UserModel.nombre_persona.label('cliente_nombre'),
-            UserModel.email.label('cliente_email')
-        ).join(
-            ServicioModel, ReservaModel.id_servicio == ServicioModel.id_servicio
-        ).join(
-            PerfilEmpresa, ServicioModel.id_perfil == PerfilEmpresa.id_perfil
-        ).join(
-            UserModel, ReservaModel.user_id == UserModel.id
-        ).order_by(ReservaModel.created_at.desc())
+        # Usar consulta SQL directa ya que el modelo ReservaModel no existe
+        from app.services.direct_db_service import direct_db_service
         
-        reservas_result = await db.execute(reservas_query)
-        reservas_data = reservas_result.all()
-
-        reservas_detalladas = []
-        for row in reservas_data:
-            reserva = row.Reserva
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Consulta SQL directa para obtener reservas con información detallada
+            reservas_query = """
+                SELECT 
+                    r.id_reserva,
+                    r.created_at,
+                    r.fecha,
+                    r.hora_inicio,
+                    r.hora_fin,
+                    r.estado,
+                    r.descripcion,
+                    r.observacion,
+                    s.nombre as servicio_nombre,
+                    s.precio as servicio_precio,
+                    pe.razon_social as empresa_razon_social,
+                    pe.nombre_fantasia as empresa_nombre_fantasia,
+                    u.nombre_persona as cliente_nombre,
+                    u.email as cliente_email
+                FROM reserva r
+                JOIN servicio s ON r.id_servicio = s.id_servicio
+                JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                JOIN users u ON r.user_id = u.id
+                ORDER BY r.created_at DESC
+            """
             
-            # Formatear fecha de reserva a DD/MM/AAAA
-            fecha_reserva_formateada = None
-            if reserva.created_at:
-                fecha_reserva_formateada = reserva.created_at.strftime("%d/%m/%Y")
+            reservas_data = await conn.fetch(reservas_query)
             
-            # Formatear fecha y hora del servicio
-            fecha_servicio_formateada = None
-            hora_servicio_formateada = None
-            if reserva.fecha:
-                fecha_servicio_formateada = reserva.fecha.strftime("%d/%m/%Y")
-            
-            if reserva.hora_inicio and reserva.hora_fin:
-                hora_servicio_formateada = f"{reserva.hora_inicio} - {reserva.hora_fin}"
-            elif reserva.hora_inicio:
-                hora_servicio_formateada = str(reserva.hora_inicio)
-            
-            # Formatear estado
-            estado_formateado = reserva.estado.title() if reserva.estado else "Sin estado"
-            
-            # Formatear precio
-            precio_formateado = 0
-            if row.servicio_precio:
-                precio_formateado = float(row.servicio_precio)
-            
-            reservas_detalladas.append({
-                "id_reserva": reserva.id_reserva,
-                "fecha_reserva": fecha_reserva_formateada,
-                "estado": estado_formateado,
-                "cliente_nombre": row.cliente_nombre or "No disponible",
-                "cliente_email": row.cliente_email or "No disponible",
-                "servicio_nombre": row.servicio_nombre or "No disponible",
-                "empresa_razon_social": row.empresa_razon_social or "No disponible",
-                "empresa_nombre_fantasia": row.empresa_nombre_fantasia or "No disponible",
-                "fecha_servicio": fecha_servicio_formateada,
-                "hora_servicio": hora_servicio_formateada,
-                "precio": precio_formateado,
-                "descripcion": reserva.descripcion or "",
-                "observacion": reserva.observacion or ""
-            })
+            reservas_detalladas = []
+            for row in reservas_data:
+                # Formatear fecha de reserva a DD/MM/AAAA
+                fecha_reserva_formateada = None
+                if row['created_at']:
+                    fecha_reserva_formateada = row['created_at'].strftime("%d/%m/%Y")
+                
+                # Formatear fecha y hora del servicio
+                fecha_servicio_formateada = None
+                hora_servicio_formateada = None
+                if row['fecha']:
+                    fecha_servicio_formateada = row['fecha'].strftime("%d/%m/%Y")
+                
+                if row['hora_inicio'] and row['hora_fin']:
+                    hora_servicio_formateada = f"{row['hora_inicio']} - {row['hora_fin']}"
+                elif row['hora_inicio']:
+                    hora_servicio_formateada = str(row['hora_inicio'])
+                
+                # Formatear estado
+                estado_formateado = row['estado'].title() if row['estado'] else "Sin estado"
+                
+                # Formatear precio
+                precio_formateado = 0
+                if row['servicio_precio']:
+                    precio_formateado = float(row['servicio_precio'])
+                
+                reservas_detalladas.append({
+                    "id_reserva": row['id_reserva'],
+                    "fecha_reserva": fecha_reserva_formateada,
+                    "estado": estado_formateado,
+                    "cliente_nombre": row['cliente_nombre'] or "No disponible",
+                    "cliente_email": row['cliente_email'] or "No disponible",
+                    "servicio_nombre": row['servicio_nombre'] or "No disponible",
+                    "empresa_razon_social": row['empresa_razon_social'] or "No disponible",
+                    "empresa_nombre_fantasia": row['empresa_nombre_fantasia'] or "No disponible",
+                    "fecha_servicio": fecha_servicio_formateada,
+                    "hora_servicio": hora_servicio_formateada,
+                    "precio": precio_formateado,
+                    "descripcion": row['descripcion'] or "",
+                    "observacion": row['observacion'] or ""
+                })
+        finally:
+            await direct_db_service.pool.release(conn)
 
         return {
             "total_reservas": len(reservas_detalladas),
