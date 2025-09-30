@@ -884,6 +884,85 @@ async def obtener_mis_reservas_simuladas():
         return {"error": str(e), "message": "Error en reservas simuladas"}
 
 @router.get(
+    "/test-sin-parametros",
+    description="Endpoint sin parámetros para probar"
+)
+async def test_sin_parametros():
+    """
+    Endpoint sin parámetros para probar si el problema son los Query parameters
+    """
+    logger.info(f"🔍 [GET /test-sin-parametros] ========== INICIO SIN PARAMETROS ==========")
+    
+    try:
+        logger.info(f"✅ [GET /test-sin-parametros] Endpoint funcionando sin parámetros")
+        return {
+            "message": "Test sin parámetros exitoso",
+            "status": "ok",
+            "timestamp": "2024-01-01T00:00:00Z"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [GET /test-sin-parametros] Error: {str(e)}")
+        return {"error": str(e), "message": "Error en test sin parámetros"}
+
+@router.get(
+    "/mis-reservas-funcional",
+    description="Endpoint funcional basado en reservaanterior.py"
+)
+async def obtener_mis_reservas_funcional():
+    """
+    Endpoint funcional basado en el archivo reservaanterior.py
+    Sin parámetros de query para evitar validaciones de FastAPI
+    """
+    logger.info(f"🔍 [GET /mis-reservas-funcional] ========== INICIO FUNCIONAL ==========")
+    
+    try:
+        # Simular reservas como en el archivo anterior
+        reservas_simuladas = [
+            {
+                "id_reserva": 1,
+                "id_servicio": 26,
+                "user_id": "35060839-e7e6-44dc-b8d2-21332bc4688f",
+                "descripcion_reserva": "Reserva de prueba 1",
+                "observacion": "Observación de prueba",
+                "fecha": "2024-01-15",
+                "hora_inicio": "09:00:00",
+                "hora_fin": "10:00:00",
+                "estado": "pendiente",
+                "servicio_descripcion": "Servicio de marketing digital",
+                "servicio_nombre": "Campañas publicitarias",
+                "empresa_razon_social": "ISMA EAS",
+                "usuario_email": "cp8vjhq3j6@xkxkud.com",
+                "nombre_contacto": "Ismael Alvarez"
+            },
+            {
+                "id_reserva": 2,
+                "id_servicio": 27,
+                "user_id": "35060839-e7e6-44dc-b8d2-21332bc4688f",
+                "descripcion_reserva": "Reserva de prueba 2",
+                "observacion": "Segunda reserva de prueba",
+                "fecha": "2024-01-20",
+                "hora_inicio": "14:00:00",
+                "hora_fin": "15:00:00",
+                "estado": "confirmada",
+                "servicio_descripcion": "Desarrollo de sitios web",
+                "servicio_nombre": "Desarrollo web",
+                "empresa_razon_social": "Tech Solutions",
+                "usuario_email": "cp8vjhq3j6@xkxkud.com",
+                "nombre_contacto": "Ismael Alvarez"
+            }
+        ]
+        
+        logger.info(f"✅ [GET /mis-reservas-funcional] Respuesta preparada: {len(reservas_simuladas)} reservas simuladas")
+        return reservas_simuladas
+        
+    except Exception as e:
+        logger.error(f"❌ [GET /mis-reservas-funcional] Error: {str(e)}")
+        import traceback
+        logger.error(f"❌ [GET /mis-reservas-funcional] Traceback: {traceback.format_exc()}")
+        return {"error": str(e), "message": "Error en reservas funcionales"}
+
+@router.get(
     "/mis-reservas-real",
     description="Endpoint real sin validaciones complejas"
 )

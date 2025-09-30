@@ -124,7 +124,7 @@ const ReservationsPage: React.FC = () => {
 
             console.log('🔍 Cargando reservas con params:', params.toString());
 
-            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-simuladas`, {
+            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-funcional`, {
                 headers: {
                     'Authorization': `Bearer ${user.accessToken}`,
                     'Content-Type': 'application/json',
@@ -136,24 +136,33 @@ const ReservationsPage: React.FC = () => {
             }
 
             const data = await response.json();
-            console.log('📊 Reservas simuladas cargadas:', data);
+            console.log('📊 Reservas funcionales cargadas:', data);
 
-            // Usar datos reales del endpoint
-            if (data.reservas) {
-                setReservas(data.reservas);
-                setPagination(data.pagination);
-            } else {
-                setReservas([]);
-                setPagination({
-                    total: 0,
-                    page: 1,
-                    limit: 20,
-                    offset: 0,
-                    total_pages: 0,
-                    has_next: false,
-                    has_prev: false
-                });
-            }
+            // Mapear datos del formato del archivo anterior
+            const reservasMapeadas = data.map((reserva: any) => ({
+                id_reserva: reserva.id_reserva,
+                nombre_servicio: reserva.servicio_nombre,
+                nombre_empresa: reserva.empresa_razon_social,
+                fecha: reserva.fecha,
+                estado: reserva.estado,
+                descripcion: reserva.descripcion_reserva,
+                observacion: reserva.observacion,
+                hora_inicio: reserva.hora_inicio,
+                hora_fin: reserva.hora_fin,
+                nombre_contacto: reserva.nombre_contacto,
+                email_contacto: reserva.usuario_email
+            }));
+
+            setReservas(reservasMapeadas);
+            setPagination({
+                total: reservasMapeadas.length,
+                page: 1,
+                limit: 20,
+                offset: 0,
+                total_pages: 1,
+                has_next: false,
+                has_prev: false
+            });
         } catch (error) {
             console.error('Error al cargar reservas:', error);
             setError('Error al cargar las reservas. Por favor, inténtalo de nuevo.');
