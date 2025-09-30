@@ -124,7 +124,7 @@ const ReservationsPage: React.FC = () => {
 
             console.log('🔍 Cargando reservas con params:', params.toString());
 
-            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-test?${params}`, {
+            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-real`, {
                 headers: {
                     'Authorization': `Bearer ${user.accessToken}`,
                     'Content-Type': 'application/json',
@@ -136,20 +136,12 @@ const ReservationsPage: React.FC = () => {
             }
 
             const data = await response.json();
-            console.log('📊 Reservas cargadas:', data);
+            console.log('📊 Reservas reales cargadas:', data);
 
-            // Adaptar respuesta del endpoint de prueba
+            // Usar datos reales del endpoint
             if (data.reservas) {
                 setReservas(data.reservas);
-                setPagination({
-                    total: data.total || data.reservas.length,
-                    page: 1,
-                    limit: 20,
-                    offset: 0,
-                    total_pages: 1,
-                    has_next: false,
-                    has_prev: false
-                });
+                setPagination(data.pagination);
             } else {
                 setReservas([]);
                 setPagination({
