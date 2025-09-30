@@ -124,7 +124,7 @@ const ReservationsPage: React.FC = () => {
 
             console.log('🔍 Cargando reservas con params:', params.toString());
 
-            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas?${params}`, {
+            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-test?${params}`, {
                 headers: {
                     'Authorization': `Bearer ${user.accessToken}`,
                     'Content-Type': 'application/json',
@@ -135,11 +135,33 @@ const ReservationsPage: React.FC = () => {
                 throw new Error('Error al cargar reservas');
             }
 
-            const data: ReservasResponse = await response.json();
+            const data = await response.json();
             console.log('📊 Reservas cargadas:', data);
 
-            setReservas(data.reservas);
-            setPagination(data.pagination);
+            // Adaptar respuesta del endpoint de prueba
+            if (data.reservas) {
+                setReservas(data.reservas);
+                setPagination({
+                    total: data.total || data.reservas.length,
+                    page: 1,
+                    limit: 20,
+                    offset: 0,
+                    total_pages: 1,
+                    has_next: false,
+                    has_prev: false
+                });
+            } else {
+                setReservas([]);
+                setPagination({
+                    total: 0,
+                    page: 1,
+                    limit: 20,
+                    offset: 0,
+                    total_pages: 0,
+                    has_next: false,
+                    has_prev: false
+                });
+            }
         } catch (error) {
             console.error('Error al cargar reservas:', error);
             setError('Error al cargar las reservas. Por favor, inténtalo de nuevo.');

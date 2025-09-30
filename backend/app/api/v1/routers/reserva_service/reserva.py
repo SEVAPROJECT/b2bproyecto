@@ -389,6 +389,68 @@ async def obtener_reserva(
     return reserva
 
 @router.get(
+    "/mis-reservas-test",
+    description="Endpoint de prueba para debug"
+)
+async def obtener_mis_reservas_test(
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Endpoint de prueba para debug
+    """
+    logger.info(f"🔍 [GET /mis-reservas-test] ========== INICIO TEST ==========")
+    logger.info(f"🔍 [GET /mis-reservas-test] User ID: {current_user.id}")
+    logger.info(f"🔍 [GET /mis-reservas-test] User Type: {type(current_user.id)}")
+    
+    try:
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        logger.info(f"🔍 [GET /mis-reservas-test] Conexión a BD obtenida exitosamente")
+        
+        # Query simple para probar
+        simple_query = """
+            SELECT 
+                r.id_reserva,
+                r.estado,
+                s.nombre as nombre_servicio,
+                pe.nombre_fantasia as nombre_empresa
+            FROM reserva r
+            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+            WHERE r.user_id = $1
+            LIMIT 5
+        """
+        
+        logger.info(f"🔍 [GET /mis-reservas-test] Ejecutando query simple...")
+        result = await conn.fetch(simple_query, current_user.id)
+        logger.info(f"📊 [GET /mis-reservas-test] Resultados: {len(result)}")
+        
+        reservas_list = []
+        for row in result:
+            reserva_dict = {
+                "id_reserva": row['id_reserva'],
+                "estado": row['estado'],
+                "nombre_servicio": row['nombre_servicio'],
+                "nombre_empresa": row['nombre_empresa']
+            }
+            reservas_list.append(reserva_dict)
+        
+        await direct_db_service.pool.release(conn)
+        
+        logger.info(f"✅ [GET /mis-reservas-test] Respuesta preparada: {len(reservas_list)} reservas")
+        return {"reservas": reservas_list, "total": len(reservas_list)}
+        
+    except Exception as e:
+        logger.error(f"❌ [GET /mis-reservas-test] Error: {str(e)}")
+        import traceback
+        logger.error(f"❌ [GET /mis-reservas-test] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error en test: {str(e)}"
+        )
+
+@router.get(
     "/mis-reservas",
     response_model=ReservasPaginadasOut,
     description="Obtiene las reservas del cliente autenticado con filtros avanzados y paginación optimizada."
@@ -398,8 +460,8 @@ async def obtener_mis_reservas_detalladas(
     search: Optional[str] = Query(None, description="Búsqueda por nombre de servicio o empresa"),
     nombre_servicio: Optional[str] = Query(None, description="Filtrar por nombre del servicio"),
     nombre_empresa: Optional[str] = Query(None, description="Filtrar por nombre de empresa"),
-    fecha_desde: Optional[date] = Query(None, description="Filtrar desde fecha"),
-    fecha_hasta: Optional[date] = Query(None, description="Filtrar hasta fecha"),
+    fecha_desde: Optional[str] = Query(None, description="Filtrar desde fecha"),
+    fecha_hasta: Optional[str] = Query(None, description="Filtrar hasta fecha"),
     estado: Optional[str] = Query(None, description="Filtrar por estado: pendiente, confirmada, cancelada, completada"),
     nombre_contacto: Optional[str] = Query(None, description="Filtrar por nombre de contacto"),
     limit: int = Query(20, ge=1, le=100, description="Límite de resultados por página"),
@@ -410,13 +472,16 @@ async def obtener_mis_reservas_detalladas(
     """
     logger.info(f"🔍 [GET /mis-reservas] ========== INICIO OBTENER MIS RESERVAS ==========")
     logger.info(f"🔍 [GET /mis-reservas] User ID: {current_user.id}")
+    logger.info(f"🔍 [GET /mis-reservas] User Type: {type(current_user.id)}")
     logger.info(f"🔍 [GET /mis-reservas] Filtros: search={search}, servicio={nombre_servicio}, empresa={nombre_empresa}, estado={estado}")
     logger.info(f"🔍 [GET /mis-reservas] Paginación: limit={limit}, offset={offset}")
+    logger.info(f"🔍 [GET /mis-reservas] Parámetros recibidos: search={search}, nombre_servicio={nombre_servicio}, nombre_empresa={nombre_empresa}, fecha_desde={fecha_desde}, fecha_hasta={fecha_hasta}, estado={estado}, nombre_contacto={nombre_contacto}")
     
     try:
         from app.services.direct_db_service import direct_db_service
         
         conn = await direct_db_service.get_connection()
+        logger.info(f"🔍 [GET /mis-reservas] Conexión a BD obtenida exitosamente")
         
         try:
             base_query = """
@@ -454,6 +519,8 @@ async def obtener_mis_reservas_detalladas(
             where_conditions = []
             params = [current_user.id]
             param_count = 1
+            logger.info(f"🔍 [GET /mis-reservas] Parámetros iniciales: {params}")
+            logger.info(f"🔍 [GET /mis-reservas] Construyendo condiciones WHERE...")
             
             if search and search.strip():
                 param_count += 1
@@ -481,11 +548,13 @@ async def obtener_mis_reservas_detalladas(
                 param_count += 1
                 where_conditions.append(f"r.fecha >= ${param_count}")
                 params.append(fecha_desde)
+                logger.info(f"🔍 [GET /mis-reservas] Filtro fecha_desde: {fecha_desde}")
             
             if fecha_hasta:
                 param_count += 1
                 where_conditions.append(f"r.fecha <= ${param_count}")
                 params.append(fecha_hasta)
+                logger.info(f"🔍 [GET /mis-reservas] Filtro fecha_hasta: {fecha_hasta}")
             
             if estado and estado.strip():
                 param_count += 1
@@ -499,6 +568,7 @@ async def obtener_mis_reservas_detalladas(
             
             if where_conditions:
                 base_query += " AND " + " AND ".join(where_conditions)
+                logger.info(f"🔍 [GET /mis-reservas] Condiciones WHERE agregadas: {where_conditions}")
             
             count_query = f"""
                 SELECT COUNT(*) as total
@@ -511,8 +581,10 @@ async def obtener_mis_reservas_detalladas(
             
             if where_conditions:
                 count_query += " AND " + " AND ".join(where_conditions)
+                logger.info(f"🔍 [GET /mis-reservas] Count query con condiciones: {count_query}")
             
-            logger.info(f"🔍 [GET /mis-reservas] Ejecutando conteo...")
+            logger.info(f"🔍 [GET /mis-reservas] Ejecutando conteo con query: {count_query}")
+            logger.info(f"🔍 [GET /mis-reservas] Parámetros para count: {params}")
             total_result = await conn.fetchrow(count_query, *params)
             total_count = total_result['total'] if total_result else 0
             logger.info(f"📊 [GET /mis-reservas] Total de reservas encontradas: {total_count}")
@@ -523,6 +595,8 @@ async def obtener_mis_reservas_detalladas(
             """
             params.extend([limit, offset])
             
+            logger.info(f"🔍 [GET /mis-reservas] Query principal final: {base_query}")
+            logger.info(f"🔍 [GET /mis-reservas] Parámetros finales: {params}")
             logger.info(f"🔍 [GET /mis-reservas] Ejecutando query principal...")
             
             reservas_result = await conn.fetch(base_query, *params)
