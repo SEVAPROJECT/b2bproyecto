@@ -1,5 +1,5 @@
 # backend/app/api/v1/routers/reserva_service/reserva.py
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import selectinload
@@ -740,6 +740,148 @@ async def obtener_mis_reservas_directo():
         import traceback
         logger.error(f"❌ [GET /mis-reservas-directo] Traceback: {traceback.format_exc()}")
         return {"error": str(e), "message": "Error en reservas directas"}
+
+@router.get(
+    "/test-basico",
+    description="Endpoint de prueba ultra básico"
+)
+async def test_basico():
+    """
+    Endpoint de prueba ultra básico
+    """
+    logger.info(f"🔍 [GET /test-basico] ========== INICIO TEST BASICO ==========")
+    
+    try:
+        logger.info(f"✅ [GET /test-basico] Endpoint funcionando correctamente")
+        return {
+            "message": "Test básico exitoso",
+            "status": "ok",
+            "timestamp": "2024-01-01T00:00:00Z"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [GET /test-basico] Error: {str(e)}")
+        return {"error": str(e), "message": "Error en test básico"}
+
+@router.get(
+    "/test-ultra-basico",
+    description="Endpoint ultra básico sin nada"
+)
+def test_ultra_basico():
+    """
+    Endpoint ultra básico sin async, sin nada
+    """
+    print("🔍 [GET /test-ultra-basico] ========== INICIO ULTRA BASICO ==========")
+    return {"message": "Ultra básico OK", "status": "success"}
+
+@router.get(
+    "/debug-request",
+    description="Endpoint para debuggear la petición"
+)
+async def debug_request(request):
+    """
+    Endpoint para debuggear exactamente qué está pasando
+    """
+    logger.info(f"🔍 [GET /debug-request] ========== INICIO DEBUG REQUEST ==========")
+    logger.info(f"🔍 [GET /debug-request] Request method: {request.method}")
+    logger.info(f"🔍 [GET /debug-request] Request URL: {request.url}")
+    logger.info(f"🔍 [GET /debug-request] Request headers: {dict(request.headers)}")
+    logger.info(f"🔍 [GET /debug-request] Request query params: {dict(request.query_params)}")
+    
+    try:
+        logger.info(f"✅ [GET /debug-request] Endpoint debug funcionando")
+        return {
+            "message": "Debug request exitoso",
+            "method": request.method,
+            "url": str(request.url),
+            "headers": dict(request.headers),
+            "query_params": dict(request.query_params)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [GET /debug-request] Error: {str(e)}")
+        return {"error": str(e), "message": "Error en debug request"}
+
+@router.get(
+    "/mis-reservas-simuladas",
+    description="Endpoint con reservas simuladas sin BD"
+)
+async def obtener_mis_reservas_simuladas():
+    """
+    Endpoint con reservas simuladas sin tocar la base de datos
+    """
+    logger.info(f"🔍 [GET /mis-reservas-simuladas] ========== INICIO SIMULADAS ==========")
+    
+    try:
+        # Simular reservas sin tocar la base de datos
+        reservas_simuladas = [
+            {
+                "id_reserva": 1,
+                "id_servicio": 26,
+                "id_usuario": "35060839-e7e6-44dc-b8d2-21332bc4688f",
+                "descripcion": "Reserva de prueba 1",
+                "observacion": "Observación de prueba",
+                "fecha": "2024-01-15",
+                "hora_inicio": "09:00:00",
+                "hora_fin": "10:00:00",
+                "estado": "pendiente",
+                "created_at": "2024-01-01T00:00:00Z",
+                "nombre_servicio": "Campañas publicitarias",
+                "descripcion_servicio": "Servicio de marketing digital",
+                "precio_servicio": 750000.0,
+                "imagen_servicio": "/uploads/servicios/campanas.jpg",
+                "id_perfil": 1,
+                "nombre_empresa": "ISMA EAS",
+                "razon_social": "ISMA EAS S.A.",
+                "nombre_contacto": "Ismael Alvarez",
+                "email_contacto": "contacto@ismaeas.com",
+                "telefono_contacto": "+595981234567",
+                "nombre_categoria": "Marketing"
+            },
+            {
+                "id_reserva": 2,
+                "id_servicio": 27,
+                "id_usuario": "35060839-e7e6-44dc-b8d2-21332bc4688f",
+                "descripcion": "Reserva de prueba 2",
+                "observacion": "Segunda reserva de prueba",
+                "fecha": "2024-01-20",
+                "hora_inicio": "14:00:00",
+                "hora_fin": "15:00:00",
+                "estado": "confirmada",
+                "created_at": "2024-01-02T00:00:00Z",
+                "nombre_servicio": "Desarrollo web",
+                "descripcion_servicio": "Desarrollo de sitios web",
+                "precio_servicio": 1500000.0,
+                "imagen_servicio": "/uploads/servicios/desarrollo.jpg",
+                "id_perfil": 2,
+                "nombre_empresa": "Tech Solutions",
+                "razon_social": "Tech Solutions S.A.",
+                "nombre_contacto": "Juan Pérez",
+                "email_contacto": "juan@techsolutions.com",
+                "telefono_contacto": "+595981234568",
+                "nombre_categoria": "Tecnología"
+            }
+        ]
+        
+        logger.info(f"✅ [GET /mis-reservas-simuladas] Respuesta preparada: {len(reservas_simuladas)} reservas simuladas")
+        return {
+            "reservas": reservas_simuladas,
+            "pagination": {
+                "total": len(reservas_simuladas),
+                "page": 1,
+                "limit": 20,
+                "offset": 0,
+                "total_pages": 1,
+                "has_next": False,
+                "has_prev": False
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [GET /mis-reservas-simuladas] Error: {str(e)}")
+        import traceback
+        logger.error(f"❌ [GET /mis-reservas-simuladas] Traceback: {traceback.format_exc()}")
+        return {"error": str(e), "message": "Error en reservas simuladas"}
 
 @router.get(
     "/mis-reservas-real",
