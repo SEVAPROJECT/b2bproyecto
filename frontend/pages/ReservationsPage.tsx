@@ -124,7 +124,7 @@ const ReservationsPage: React.FC = () => {
 
             console.log('🔍 Cargando reservas con params:', params.toString());
 
-            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-ultra-simple`, {
+            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-directo`, {
                 headers: {
                     'Authorization': `Bearer ${user.accessToken}`,
                     'Content-Type': 'application/json',
