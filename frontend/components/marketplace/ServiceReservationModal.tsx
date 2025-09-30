@@ -3,6 +3,7 @@ import { ClockIcon, UserCircleIcon, StarIcon } from '../icons';
 import { BackendService, BackendCategory } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import AvailabilityCalendar from './AvailabilityCalendar';
+import { buildApiUrl } from '../../config/api';
 
 interface ServiceReservationModalProps {
     isOpen: boolean;
@@ -23,7 +24,8 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
 
     const getImageUrl = (imagePath: string | null) => {
         if (!imagePath) return null;
-        const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+        // Usar la configuración centralizada para obtener la URL base
+        const baseUrl = buildApiUrl('').replace('/api/v1', '');
         return `${baseUrl}${imagePath}`;
     };
 
@@ -157,7 +159,8 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
         }
 
         try {
-            const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+            // Usar la configuración centralizada de API
+            const API_URL = buildApiUrl('/reservas/crear');
             console.log('🔍 [FRONTEND] API_URL:', API_URL);
             
             // Crear la reserva con datos compatibles con el backend
@@ -174,7 +177,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
             console.log('🔍 [FRONTEND] AccessToken:', user.accessToken ? 'Presente' : 'No presente');
 
             console.log('🔍 [FRONTEND] Enviando petición POST...');
-            const response = await fetch(`${API_URL}/api/v1/reservas/crear`, {
+            const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${user.accessToken}`,

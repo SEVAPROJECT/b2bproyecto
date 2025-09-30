@@ -124,3 +124,4 @@ POOL_TIMEOUT=60
 
 **El sistema está optimizado para Railway.** 🚀
 
+
