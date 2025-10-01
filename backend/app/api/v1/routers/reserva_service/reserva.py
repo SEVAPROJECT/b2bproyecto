@@ -1144,8 +1144,8 @@ async def obtener_mis_reservas_detalladas(
     fecha_hasta: Optional[str] = Query(None),
     estado: Optional[str] = Query(None),
     nombre_contacto: Optional[str] = Query(None),
-    limit: int = Query(20),
-    offset: int = Query(0)
+    limit: Optional[int] = Query(20),
+    offset: Optional[int] = Query(0)
 ):
     """
     Endpoint optimizado para obtener las reservas del cliente autenticado con información detallada.
@@ -1184,14 +1184,11 @@ async def obtener_mis_reservas_detalladas(
                     pe.nombre_fantasia as nombre_empresa,
                     pe.razon_social,
                     u.nombre_persona as nombre_contacto,
-                    se.email as email_contacto,
-                    se.telefono as telefono_contacto,
                     c.nombre as nombre_categoria
                 FROM reserva r
                 INNER JOIN servicio s ON r.id_servicio = s.id_servicio
                 INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
                 INNER JOIN users u ON pe.user_id = u.id
-                LEFT JOIN sucursal_empresa se ON pe.id_perfil = se.id_perfil
                 LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
                 WHERE r.user_id = $1
             """
@@ -1303,8 +1300,8 @@ async def obtener_mis_reservas_detalladas(
                     "razon_social": row['razon_social'],
                     "id_perfil": row['id_perfil'],
                     "nombre_contacto": row['nombre_contacto'],
-                    "email_contacto": row['email_contacto'],
-                    "telefono_contacto": row['telefono_contacto'],
+                    "email_contacto": row[''],
+                    "telefono_contacto": row[''],
                     "nombre_categoria": row['nombre_categoria']
                 }
                 reservas_list.append(reserva_dict)
