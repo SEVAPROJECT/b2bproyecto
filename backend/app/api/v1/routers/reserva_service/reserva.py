@@ -12,13 +12,115 @@ from app.api.v1.dependencies.database_supabase import get_async_db
 from app.api.v1.dependencies.auth_user import get_current_user
 from app.schemas.auth_user import SupabaseUser
 import logging
+import re
 from uuid import UUID
 from typing import List, Optional
 from datetime import datetime, date
+from app.services.direct_db_service import direct_db_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reservas", tags=["reservas"])
+
+@router.get(
+    "/mis-reservas-test",
+    description="Endpoint de prueba simplificado para diagnosticar el error 422."
+)
+async def obtener_mis_reservas_test(
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Endpoint de prueba simplificado para diagnosticar problemas.
+    """
+    logger.info(f"🔍 [GET /mis-reservas-test] ========== INICIO TEST ==========")
+    logger.info(f"🔍 [GET /mis-reservas-test] User ID: {current_user.id}")
+    logger.info(f"🔍 [GET /mis-reservas-test] User Email: {current_user.email}")
+    
+    try:
+        conn = await direct_db_service.get_connection()
+        logger.info(f"🔍 [GET /mis-reservas-test] Conexión a BD obtenida exitosamente")
+        
+        # Query mejorado para obtener datos reales
+        simple_query = """
+            SELECT 
+                r.id_reserva,
+                r.id_servicio,
+                r.user_id,
+                r.descripcion,
+                r.observacion,
+                r.fecha,
+                r.hora_inicio,
+                r.hora_fin,
+                r.estado,
+                r.created_at,
+                s.nombre as nombre_servicio,
+                s.descripcion as descripcion_servicio,
+                s.precio as precio_servicio,
+                s.imagen as imagen_servicio,
+                s.id_perfil,
+                pe.nombre_fantasia as nombre_empresa,
+                pe.razon_social,
+                u.nombre_persona as nombre_contacto,
+                c.nombre as nombre_categoria
+            FROM reserva r
+            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+            INNER JOIN users u ON pe.user_id = u.id
+            LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+            WHERE r.user_id = $1
+            ORDER BY r.fecha DESC
+            LIMIT 5
+        """
+        
+        logger.info(f"🔍 [GET /mis-reservas-test] Ejecutando query simple...")
+        result = await conn.fetch(simple_query, current_user.id)
+        logger.info(f"📊 [GET /mis-reservas-test] Resultados obtenidos: {len(result)}")
+        
+        reservas_list = []
+        for row in result:
+            reserva_dict = {
+                "id_reserva": row['id_reserva'],
+                "id_servicio": row['id_servicio'],
+                "user_id": row['user_id'],
+                "descripcion": row['descripcion'],
+                "observacion": row['observacion'],
+                "fecha": row['fecha'],
+                "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
+                "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
+                "estado": row['estado'],
+                "created_at": row['created_at'],
+                "nombre_servicio": row['nombre_servicio'],
+                "descripcion_servicio": row['descripcion_servicio'],
+                "precio_servicio": float(row['precio_servicio']) if row['precio_servicio'] else 0,
+                "imagen_servicio": row['imagen_servicio'],
+                "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
+                "razon_social": row['razon_social'],
+                "id_perfil": row['id_perfil'],
+                "nombre_contacto": row['nombre_contacto'],
+                "nombre_categoria": row['nombre_categoria']
+            }
+            reservas_list.append(reserva_dict)
+        
+        logger.info(f"✅ [GET /mis-reservas-test] Respuesta preparada exitosamente")
+        logger.info(f"🔍 [GET /mis-reservas-test] ========== FIN TEST ==========")
+        
+        return {
+            "reservas": reservas_list,
+            "total": len(reservas_list),
+            "message": "Test exitoso"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [GET /mis-reservas-test] Error: {str(e)}")
+        import traceback
+        logger.error(f"❌ [GET /mis-reservas-test] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error en test: {str(e)}"
+        )
+    finally:
+        if 'conn' in locals():
+            await direct_db_service.pool.release(conn)
 
 @router.post(
     "/crear",
@@ -45,7 +147,7 @@ async def crear_reserva(
     logger.info(f"🔍 [POST /reservas] Observación: {reserva.observacion}")
     
     try:
-        from app.services.direct_db_service import direct_db_service
+        #from app.services.direct_db_service import direct_db_service
         
         # Helper para obtener conexión
         logger.info("🔍 [POST /reservas] Obteniendo conexión de direct_db_service...")
@@ -221,915 +323,6 @@ async def crear_reserva(
             detail=f"Error interno del servidor al crear reserva: {str(e)}"
         )
 
-@router.get(
-    "/",
-    response_model=List[ReservaOut],
-    description="Obtiene las reservas del usuario autenticado."
-)
-async def obtener_mis_reservas(
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db),
-    estado: Optional[str] = Query(None, description="Filtrar por estado: pendiente, confirmada, cancelada"),
-    limit: int = Query(50, ge=1, le=100, description="Límite de resultados"),
-    offset: int = Query(0, ge=0, description="Desplazamiento para paginación")
-):
-    """
-    Obtiene las reservas del usuario autenticado.
-    """
-    query = select(ReservaModel).where(
-        ReservaModel.id_usuario == UUID(current_user.id)
-    )
-    
-    if estado:
-        query = query.where(ReservaModel.estado == estado)
-    
-    query = query.order_by(ReservaModel.created_at.desc()).limit(limit).offset(offset)
-    
-    result = await db.execute(query)
-    reservas = result.scalars().all()
-    
-    return reservas
-
-@router.get(
-    "/proveedor",
-    response_model=List[ReservaOut],
-    description="Obtiene las reservas de los servicios del proveedor autenticado."
-)
-async def obtener_reservas_proveedor(
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db),
-    estado: Optional[str] = Query(None, description="Filtrar por estado"),
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0)
-):
-    """
-    Obtiene las reservas de los servicios del proveedor autenticado.
-    """
-    # Obtener servicios del proveedor
-    servicios_query = select(ServicioModel.id_servicio).where(
-        ServicioModel.id_perfil == current_user.id
-    )
-    servicios_result = await db.execute(servicios_query)
-    servicio_ids = [row[0] for row in servicios_result.fetchall()]
-    
-    if not servicio_ids:
-        return []
-    
-    # Obtener reservas de esos servicios
-    query = select(ReservaModel).where(
-        ReservaModel.id_servicio.in_(servicio_ids)
-    )
-    
-    if estado:
-        query = query.where(ReservaModel.estado == estado)
-    
-    query = query.order_by(ReservaModel.created_at.desc()).limit(limit).offset(offset)
-    
-    result = await db.execute(query)
-    reservas = result.scalars().all()
-    
-    return reservas
-
-@router.put(
-    "/{reserva_id}/estado",
-    response_model=ReservaOut,
-    description="Actualiza el estado de una reserva (solo para proveedores)."
-)
-async def actualizar_estado_reserva(
-    reserva_id: int,
-    nuevo_estado: str = Query(..., description="Nuevo estado: confirmada, cancelada"),
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """
-    Actualiza el estado de una reserva (solo para proveedores del servicio).
-    """
-    if nuevo_estado not in ["confirmada", "cancelada"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Estado inválido. Use: confirmada o cancelada"
-        )
-    
-    # Obtener la reserva con el servicio
-    query = select(ReservaModel).options(
-        selectinload(ReservaModel.servicio)
-    ).where(ReservaModel.id_reserva == reserva_id)
-    
-    result = await db.execute(query)
-    reserva = result.scalar_one_or_none()
-    
-    if not reserva:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reserva no encontrada."
-        )
-    
-    # Verificar que el usuario es el proveedor del servicio
-    if reserva.servicio.id_perfil != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permisos para modificar esta reserva."
-        )
-    
-    # Actualizar estado
-    reserva.estado = nuevo_estado
-    reserva.updated_at = datetime.utcnow()
-    
-    try:
-        await db.commit()
-        await db.refresh(reserva)
-        logger.info(f"Estado de reserva {reserva_id} actualizado a {nuevo_estado}")
-        return reserva
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Error al actualizar reserva: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al actualizar la reserva."
-        )
-
-@router.get(
-    "/{reserva_id}",
-    response_model=ReservaOut,
-    description="Obtiene los detalles de una reserva específica."
-)
-async def obtener_reserva(
-    reserva_id: int,
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """
-    Obtiene los detalles de una reserva específica.
-    """
-    query = select(ReservaModel).where(ReservaModel.id_reserva == reserva_id)
-    result = await db.execute(query)
-    reserva = result.scalar_one_or_none()
-    
-    if not reserva:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reserva no encontrada."
-        )
-    
-    # Verificar permisos: usuario de la reserva o proveedor del servicio
-    if reserva.id_usuario != UUID(current_user.id):
-        # Verificar si es el proveedor
-        servicio_query = select(ServicioModel).where(
-            ServicioModel.id_servicio == reserva.id_servicio
-        )
-        servicio_result = await db.execute(servicio_query)
-        servicio = servicio_result.scalar_one_or_none()
-        
-        if not servicio or servicio.id_perfil != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permisos para ver esta reserva."
-            )
-    
-    return reserva
-
-@router.get(
-    "/test-simple",
-    description="Endpoint de prueba ultra simple"
-)
-async def test_simple():
-    """
-    Endpoint de prueba ultra simple sin validaciones
-    """
-    logger.info(f"🔍 [GET /test-simple] ========== INICIO TEST SIMPLE ==========")
-    
-    try:
-        from app.services.direct_db_service import direct_db_service
-        
-        conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /test-simple] Conexión a BD obtenida exitosamente")
-        
-        # Query ultra simple
-        simple_query = "SELECT COUNT(*) as total FROM reserva"
-        
-        logger.info(f"🔍 [GET /test-simple] Ejecutando query simple...")
-        result = await conn.fetchrow(simple_query)
-        total = result['total'] if result else 0
-        
-        await direct_db_service.pool.release(conn)
-        
-        logger.info(f"✅ [GET /test-simple] Respuesta: {total} reservas totales")
-        return {"message": "Test exitoso", "total_reservas": total}
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /test-simple] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /test-simple] Traceback: {traceback.format_exc()}")
-        return {"error": str(e), "message": "Error en test"}
-
-@router.get(
-    "/mis-reservas-simple",
-    description="Endpoint simple sin validaciones FastAPI"
-)
-async def obtener_mis_reservas_simple(
-    current_user: SupabaseUser = Depends(get_current_user)
-):
-    """
-    Endpoint simple para obtener reservas sin validaciones complejas de FastAPI
-    """
-    logger.info(f"🔍 [GET /mis-reservas-simple] ========== INICIO SIMPLE ==========")
-    logger.info(f"🔍 [GET /mis-reservas-simple] User ID: {current_user.id}")
-    
-    try:
-        from app.services.direct_db_service import direct_db_service
-        
-        conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /mis-reservas-simple] Conexión a BD obtenida exitosamente")
-        
-        # Query simple con user_id del usuario autenticado
-        simple_query = """
-            SELECT 
-                r.id_reserva,
-                r.id_servicio,
-                r.user_id as id_usuario,
-                r.descripcion,
-                r.observacion,
-                r.fecha,
-                r.hora_inicio,
-                r.hora_fin,
-                r.estado,
-                r.created_at,
-                s.nombre as nombre_servicio,
-                s.descripcion as descripcion_servicio,
-                s.precio as precio_servicio,
-                s.imagen as imagen_servicio,
-                s.id_perfil,
-                pe.nombre_fantasia as nombre_empresa,
-                pe.razon_social,
-                u.nombre_persona as nombre_contacto,
-                se.email as email_contacto,
-                se.telefono as telefono_contacto,
-                c.nombre as nombre_categoria
-            FROM reserva r
-            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-            INNER JOIN users u ON pe.user_id = u.id
-            LEFT JOIN sucursal_empresa se ON pe.id_perfil = se.id_perfil
-            LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
-            WHERE r.user_id = $1
-            ORDER BY r.fecha DESC, r.created_at DESC
-            LIMIT 20
-        """
-        
-        logger.info(f"🔍 [GET /mis-reservas-simple] Ejecutando query simple...")
-        result = await conn.fetch(simple_query, current_user.id)
-        logger.info(f"📊 [GET /mis-reservas-simple] Resultados: {len(result)}")
-        
-        reservas_list = []
-        for row in result:
-            reserva_dict = {
-                "id_reserva": row['id_reserva'],
-                "id_servicio": row['id_servicio'],
-                "id_usuario": str(row['id_usuario']),
-                "descripcion": row['descripcion'],
-                "observacion": row['observacion'],
-                "fecha": row['fecha'].isoformat() if row['fecha'] else None,
-                "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
-                "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
-                "estado": row['estado'],
-                "created_at": row['created_at'].isoformat() if row['created_at'] else None,
-                "nombre_servicio": row['nombre_servicio'],
-                "descripcion_servicio": row['descripcion_servicio'],
-                "precio_servicio": float(row['precio_servicio']),
-                "imagen_servicio": row['imagen_servicio'],
-                "id_perfil": row['id_perfil'],
-                "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
-                "razon_social": row['razon_social'],
-                "nombre_contacto": row['nombre_contacto'],
-                "email_contacto": row['email_contacto'],
-                "telefono_contacto": row['telefono_contacto'],
-                "nombre_categoria": row['nombre_categoria']
-            }
-            reservas_list.append(reserva_dict)
-        
-        await direct_db_service.pool.release(conn)
-        
-        logger.info(f"✅ [GET /mis-reservas-simple] Respuesta preparada: {len(reservas_list)} reservas")
-        return {
-            "reservas": reservas_list,
-            "pagination": {
-                "total": len(reservas_list),
-                "page": 1,
-                "limit": 20,
-                "offset": 0,
-                "total_pages": 1,
-                "has_next": False,
-                "has_prev": False
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /mis-reservas-simple] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /mis-reservas-simple] Traceback: {traceback.format_exc()}")
-        return {"error": str(e), "message": "Error en reservas simples"}
-
-@router.get(
-    "/mis-reservas-ultra-simple",
-    description="Endpoint ultra simple sin dependencias FastAPI"
-)
-async def obtener_mis_reservas_ultra_simple():
-    """
-    Endpoint ultra simple sin dependencias FastAPI
-    """
-    logger.info(f"🔍 [GET /mis-reservas-ultra-simple] ========== INICIO ULTRA SIMPLE ==========")
-    
-    try:
-        from app.services.direct_db_service import direct_db_service
-        
-        conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /mis-reservas-ultra-simple] Conexión a BD obtenida exitosamente")
-        
-        # Query ultra simple con user_id hardcodeado
-        user_id = "35060839-e7e6-44dc-b8d2-21332bc4688f"  # ID del usuario de los logs
-        
-        ultra_simple_query = """
-            SELECT 
-                r.id_reserva,
-                r.id_servicio,
-                r.user_id as id_usuario,
-                r.descripcion,
-                r.observacion,
-                r.fecha,
-                r.hora_inicio,
-                r.hora_fin,
-                r.estado,
-                r.created_at,
-                s.nombre as nombre_servicio,
-                s.descripcion as descripcion_servicio,
-                s.precio as precio_servicio,
-                s.imagen as imagen_servicio,
-                s.id_perfil,
-                pe.nombre_fantasia as nombre_empresa,
-                pe.razon_social,
-                u.nombre_persona as nombre_contacto,
-                se.email as email_contacto,
-                se.telefono as telefono_contacto,
-                c.nombre as nombre_categoria
-            FROM reserva r
-            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-            INNER JOIN users u ON pe.user_id = u.id
-            LEFT JOIN sucursal_empresa se ON pe.id_perfil = se.id_perfil
-            LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
-            WHERE r.user_id = $1
-            ORDER BY r.fecha DESC, r.created_at DESC
-            LIMIT 20
-        """
-        
-        logger.info(f"🔍 [GET /mis-reservas-ultra-simple] Ejecutando query ultra simple con user_id: {user_id}")
-        result = await conn.fetch(ultra_simple_query, user_id)
-        logger.info(f"📊 [GET /mis-reservas-ultra-simple] Resultados: {len(result)}")
-        
-        reservas_list = []
-        for row in result:
-            reserva_dict = {
-                "id_reserva": row['id_reserva'],
-                "id_servicio": row['id_servicio'],
-                "id_usuario": str(row['id_usuario']),
-                "descripcion": row['descripcion'],
-                "observacion": row['observacion'],
-                "fecha": row['fecha'].isoformat() if row['fecha'] else None,
-                "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
-                "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
-                "estado": row['estado'],
-                "created_at": row['created_at'].isoformat() if row['created_at'] else None,
-                "nombre_servicio": row['nombre_servicio'],
-                "descripcion_servicio": row['descripcion_servicio'],
-                "precio_servicio": float(row['precio_servicio']),
-                "imagen_servicio": row['imagen_servicio'],
-                "id_perfil": row['id_perfil'],
-                "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
-                "razon_social": row['razon_social'],
-                "nombre_contacto": row['nombre_contacto'],
-                "email_contacto": row['email_contacto'],
-                "telefono_contacto": row['telefono_contacto'],
-                "nombre_categoria": row['nombre_categoria']
-            }
-            reservas_list.append(reserva_dict)
-        
-        await direct_db_service.pool.release(conn)
-        
-        logger.info(f"✅ [GET /mis-reservas-ultra-simple] Respuesta preparada: {len(reservas_list)} reservas")
-        return {
-            "reservas": reservas_list,
-            "pagination": {
-                "total": len(reservas_list),
-                "page": 1,
-                "limit": 20,
-                "offset": 0,
-                "total_pages": 1,
-                "has_next": False,
-                "has_prev": False
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /mis-reservas-ultra-simple] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /mis-reservas-ultra-simple] Traceback: {traceback.format_exc()}")
-        return {"error": str(e), "message": "Error en reservas ultra simples"}
-
-@router.get(
-    "/mis-reservas-directo",
-    description="Endpoint directo sin FastAPI"
-)
-async def obtener_mis_reservas_directo():
-    """
-    Endpoint directo sin FastAPI
-    """
-    logger.info(f"🔍 [GET /mis-reservas-directo] ========== INICIO DIRECTO ==========")
-    
-    try:
-        from app.services.direct_db_service import direct_db_service
-        
-        conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /mis-reservas-directo] Conexión a BD obtenida exitosamente")
-        
-        # Query directo con user_id hardcodeado
-        user_id = "35060839-e7e6-44dc-b8d2-21332bc4688f"  # ID del usuario de los logs
-        
-        directo_query = """
-            SELECT 
-                r.id_reserva,
-                r.id_servicio,
-                r.user_id as id_usuario,
-                r.descripcion,
-                r.observacion,
-                r.fecha,
-                r.hora_inicio,
-                r.hora_fin,
-                r.estado,
-                r.created_at,
-                s.nombre as nombre_servicio,
-                s.descripcion as descripcion_servicio,
-                s.precio as precio_servicio,
-                s.imagen as imagen_servicio,
-                s.id_perfil,
-                pe.nombre_fantasia as nombre_empresa,
-                pe.razon_social,
-                u.nombre_persona as nombre_contacto,
-                se.email as email_contacto,
-                se.telefono as telefono_contacto,
-                c.nombre as nombre_categoria
-            FROM reserva r
-            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-            INNER JOIN users u ON pe.user_id = u.id
-            LEFT JOIN sucursal_empresa se ON pe.id_perfil = se.id_perfil
-            LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
-            WHERE r.user_id = $1
-            ORDER BY r.fecha DESC, r.created_at DESC
-            LIMIT 20
-        """
-        
-        logger.info(f"🔍 [GET /mis-reservas-directo] Ejecutando query directo con user_id: {user_id}")
-        result = await conn.fetch(directo_query, user_id)
-        logger.info(f"📊 [GET /mis-reservas-directo] Resultados: {len(result)}")
-        
-        reservas_list = []
-        for row in result:
-            reserva_dict = {
-                "id_reserva": row['id_reserva'],
-                "id_servicio": row['id_servicio'],
-                "id_usuario": str(row['id_usuario']),
-                "descripcion": row['descripcion'],
-                "observacion": row['observacion'],
-                "fecha": row['fecha'].isoformat() if row['fecha'] else None,
-                "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
-                "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
-                "estado": row['estado'],
-                "created_at": row['created_at'].isoformat() if row['created_at'] else None,
-                "nombre_servicio": row['nombre_servicio'],
-                "descripcion_servicio": row['descripcion_servicio'],
-                "precio_servicio": float(row['precio_servicio']),
-                "imagen_servicio": row['imagen_servicio'],
-                "id_perfil": row['id_perfil'],
-                "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
-                "razon_social": row['razon_social'],
-                "nombre_contacto": row['nombre_contacto'],
-                "email_contacto": row['email_contacto'],
-                "telefono_contacto": row['telefono_contacto'],
-                "nombre_categoria": row['nombre_categoria']
-            }
-            reservas_list.append(reserva_dict)
-        
-        await direct_db_service.pool.release(conn)
-        
-        logger.info(f"✅ [GET /mis-reservas-directo] Respuesta preparada: {len(reservas_list)} reservas")
-        return {
-            "reservas": reservas_list,
-            "pagination": {
-                "total": len(reservas_list),
-                "page": 1,
-                "limit": 20,
-                "offset": 0,
-                "total_pages": 1,
-                "has_next": False,
-                "has_prev": False
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /mis-reservas-directo] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /mis-reservas-directo] Traceback: {traceback.format_exc()}")
-        return {"error": str(e), "message": "Error en reservas directas"}
-
-@router.get(
-    "/test-basico",
-    description="Endpoint de prueba ultra básico"
-)
-async def test_basico():
-    """
-    Endpoint de prueba ultra básico
-    """
-    logger.info(f"🔍 [GET /test-basico] ========== INICIO TEST BASICO ==========")
-    
-    try:
-        logger.info(f"✅ [GET /test-basico] Endpoint funcionando correctamente")
-        return {
-            "message": "Test básico exitoso",
-            "status": "ok",
-            "timestamp": "2024-01-01T00:00:00Z"
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /test-basico] Error: {str(e)}")
-        return {"error": str(e), "message": "Error en test básico"}
-
-@router.get(
-    "/test-ultra-basico",
-    description="Endpoint ultra básico sin nada"
-)
-def test_ultra_basico():
-    """
-    Endpoint ultra básico sin async, sin nada
-    """
-    print("🔍 [GET /test-ultra-basico] ========== INICIO ULTRA BASICO ==========")
-    return {"message": "Ultra básico OK", "status": "success"}
-
-@router.get(
-    "/debug-request",
-    description="Endpoint para debuggear la petición"
-)
-async def debug_request(request):
-    """
-    Endpoint para debuggear exactamente qué está pasando
-    """
-    logger.info(f"🔍 [GET /debug-request] ========== INICIO DEBUG REQUEST ==========")
-    logger.info(f"🔍 [GET /debug-request] Request method: {request.method}")
-    logger.info(f"🔍 [GET /debug-request] Request URL: {request.url}")
-    logger.info(f"🔍 [GET /debug-request] Request headers: {dict(request.headers)}")
-    logger.info(f"🔍 [GET /debug-request] Request query params: {dict(request.query_params)}")
-    
-    try:
-        logger.info(f"✅ [GET /debug-request] Endpoint debug funcionando")
-        return {
-            "message": "Debug request exitoso",
-            "method": request.method,
-            "url": str(request.url),
-            "headers": dict(request.headers),
-            "query_params": dict(request.query_params)
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /debug-request] Error: {str(e)}")
-        return {"error": str(e), "message": "Error en debug request"}
-
-@router.get(
-    "/mis-reservas-simuladas",
-    description="Endpoint con reservas simuladas sin BD"
-)
-async def obtener_mis_reservas_simuladas():
-    """
-    Endpoint con reservas simuladas sin tocar la base de datos
-    """
-    logger.info(f"🔍 [GET /mis-reservas-simuladas] ========== INICIO SIMULADAS ==========")
-    
-    try:
-        # Simular reservas sin tocar la base de datos
-        reservas_simuladas = [
-            {
-                "id_reserva": 1,
-                "id_servicio": 26,
-                "id_usuario": "35060839-e7e6-44dc-b8d2-21332bc4688f",
-                "descripcion": "Reserva de prueba 1",
-                "observacion": "Observación de prueba",
-                "fecha": "2024-01-15",
-                "hora_inicio": "09:00:00",
-                "hora_fin": "10:00:00",
-                "estado": "pendiente",
-                "created_at": "2024-01-01T00:00:00Z",
-                "nombre_servicio": "Campañas publicitarias",
-                "descripcion_servicio": "Servicio de marketing digital",
-                "precio_servicio": 750000.0,
-                "imagen_servicio": "/uploads/servicios/campanas.jpg",
-                "id_perfil": 1,
-                "nombre_empresa": "ISMA EAS",
-                "razon_social": "ISMA EAS S.A.",
-                "nombre_contacto": "Ismael Alvarez",
-                "email_contacto": "contacto@ismaeas.com",
-                "telefono_contacto": "+595981234567",
-                "nombre_categoria": "Marketing"
-            },
-            {
-                "id_reserva": 2,
-                "id_servicio": 27,
-                "id_usuario": "35060839-e7e6-44dc-b8d2-21332bc4688f",
-                "descripcion": "Reserva de prueba 2",
-                "observacion": "Segunda reserva de prueba",
-                "fecha": "2024-01-20",
-                "hora_inicio": "14:00:00",
-                "hora_fin": "15:00:00",
-                "estado": "confirmada",
-                "created_at": "2024-01-02T00:00:00Z",
-                "nombre_servicio": "Desarrollo web",
-                "descripcion_servicio": "Desarrollo de sitios web",
-                "precio_servicio": 1500000.0,
-                "imagen_servicio": "/uploads/servicios/desarrollo.jpg",
-                "id_perfil": 2,
-                "nombre_empresa": "Tech Solutions",
-                "razon_social": "Tech Solutions S.A.",
-                "nombre_contacto": "Juan Pérez",
-                "email_contacto": "juan@techsolutions.com",
-                "telefono_contacto": "+595981234568",
-                "nombre_categoria": "Tecnología"
-            }
-        ]
-        
-        logger.info(f"✅ [GET /mis-reservas-simuladas] Respuesta preparada: {len(reservas_simuladas)} reservas simuladas")
-        return {
-            "reservas": reservas_simuladas,
-            "pagination": {
-                "total": len(reservas_simuladas),
-                "page": 1,
-                "limit": 20,
-                "offset": 0,
-                "total_pages": 1,
-                "has_next": False,
-                "has_prev": False
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /mis-reservas-simuladas] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /mis-reservas-simuladas] Traceback: {traceback.format_exc()}")
-        return {"error": str(e), "message": "Error en reservas simuladas"}
-
-@router.get(
-    "/test-sin-parametros",
-    description="Endpoint sin parámetros para probar"
-)
-async def test_sin_parametros():
-    """
-    Endpoint sin parámetros para probar si el problema son los Query parameters
-    """
-    logger.info(f"🔍 [GET /test-sin-parametros] ========== INICIO SIN PARAMETROS ==========")
-    
-    try:
-        logger.info(f"✅ [GET /test-sin-parametros] Endpoint funcionando sin parámetros")
-        return {
-            "message": "Test sin parámetros exitoso",
-            "status": "ok",
-            "timestamp": "2024-01-01T00:00:00Z"
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /test-sin-parametros] Error: {str(e)}")
-        return {"error": str(e), "message": "Error en test sin parámetros"}
-
-@router.get(
-    "/mis-reservas-funcional",
-    description="Endpoint funcional basado en reservaanterior.py"
-)
-async def obtener_mis_reservas_funcional():
-    """
-    Endpoint funcional basado en el archivo reservaanterior.py
-    Sin parámetros de query para evitar validaciones de FastAPI
-    """
-    logger.info(f"🔍 [GET /mis-reservas-funcional] ========== INICIO FUNCIONAL ==========")
-    
-    try:
-        # Simular reservas como en el archivo anterior
-        reservas_simuladas = [
-            {
-                "id_reserva": 1,
-                "id_servicio": 26,
-                "user_id": "35060839-e7e6-44dc-b8d2-21332bc4688f",
-                "descripcion_reserva": "Reserva de prueba 1",
-                "observacion": "Observación de prueba",
-                "fecha": "2024-01-15",
-                "hora_inicio": "09:00:00",
-                "hora_fin": "10:00:00",
-                "estado": "pendiente",
-                "servicio_descripcion": "Servicio de marketing digital",
-                "servicio_nombre": "Campañas publicitarias",
-                "empresa_razon_social": "ISMA EAS",
-                "usuario_email": "cp8vjhq3j6@xkxkud.com",
-                "nombre_contacto": "Ismael Alvarez"
-            },
-            {
-                "id_reserva": 2,
-                "id_servicio": 27,
-                "user_id": "35060839-e7e6-44dc-b8d2-21332bc4688f",
-                "descripcion_reserva": "Reserva de prueba 2",
-                "observacion": "Segunda reserva de prueba",
-                "fecha": "2024-01-20",
-                "hora_inicio": "14:00:00",
-                "hora_fin": "15:00:00",
-                "estado": "confirmada",
-                "servicio_descripcion": "Desarrollo de sitios web",
-                "servicio_nombre": "Desarrollo web",
-                "empresa_razon_social": "Tech Solutions",
-                "usuario_email": "cp8vjhq3j6@xkxkud.com",
-                "nombre_contacto": "Ismael Alvarez"
-            }
-        ]
-        
-        logger.info(f"✅ [GET /mis-reservas-funcional] Respuesta preparada: {len(reservas_simuladas)} reservas simuladas")
-        return reservas_simuladas
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /mis-reservas-funcional] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /mis-reservas-funcional] Traceback: {traceback.format_exc()}")
-        return {"error": str(e), "message": "Error en reservas funcionales"}
-
-@router.get(
-    "/mis-reservas-real",
-    description="Endpoint real sin validaciones complejas"
-)
-async def obtener_mis_reservas_real(
-    current_user: SupabaseUser = Depends(get_current_user)
-):
-    """
-    Endpoint real para obtener reservas sin validaciones complejas
-    """
-    logger.info(f"🔍 [GET /mis-reservas-real] ========== INICIO REAL ==========")
-    logger.info(f"🔍 [GET /mis-reservas-real] User ID: {current_user.id}")
-    
-    try:
-        from app.services.direct_db_service import direct_db_service
-        
-        conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /mis-reservas-real] Conexión a BD obtenida exitosamente")
-        
-        # Query real pero simple
-        real_query = """
-            SELECT 
-                r.id_reserva,
-                r.id_servicio,
-                r.user_id as id_usuario,
-                r.descripcion,
-                r.observacion,
-                r.fecha,
-                r.hora_inicio,
-                r.hora_fin,
-                r.estado,
-                r.created_at,
-                s.nombre as nombre_servicio,
-                s.descripcion as descripcion_servicio,
-                s.precio as precio_servicio,
-                s.imagen as imagen_servicio,
-                s.id_perfil,
-                pe.nombre_fantasia as nombre_empresa,
-                pe.razon_social,
-                u.nombre_persona as nombre_contacto,
-                se.email as email_contacto,
-                se.telefono as telefono_contacto,
-                c.nombre as nombre_categoria
-            FROM reserva r
-            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-            INNER JOIN users u ON pe.user_id = u.id
-            LEFT JOIN sucursal_empresa se ON pe.id_perfil = se.id_perfil
-            LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
-            WHERE r.user_id = $1
-            ORDER BY r.fecha DESC, r.created_at DESC
-            LIMIT 20
-        """
-        
-        logger.info(f"🔍 [GET /mis-reservas-real] Ejecutando query real...")
-        result = await conn.fetch(real_query, current_user.id)
-        logger.info(f"📊 [GET /mis-reservas-real] Resultados: {len(result)}")
-        
-        reservas_list = []
-        for row in result:
-            reserva_dict = {
-                "id_reserva": row['id_reserva'],
-                "id_servicio": row['id_servicio'],
-                "id_usuario": str(row['id_usuario']),
-                "descripcion": row['descripcion'],
-                "observacion": row['observacion'],
-                "fecha": row['fecha'].isoformat() if row['fecha'] else None,
-                "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
-                "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
-                "estado": row['estado'],
-                "created_at": row['created_at'].isoformat() if row['created_at'] else None,
-                "nombre_servicio": row['nombre_servicio'],
-                "descripcion_servicio": row['descripcion_servicio'],
-                "precio_servicio": float(row['precio_servicio']),
-                "imagen_servicio": row['imagen_servicio'],
-                "id_perfil": row['id_perfil'],
-                "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
-                "razon_social": row['razon_social'],
-                "nombre_contacto": row['nombre_contacto'],
-                "email_contacto": row['email_contacto'],
-                "telefono_contacto": row['telefono_contacto'],
-                "nombre_categoria": row['nombre_categoria']
-            }
-            reservas_list.append(reserva_dict)
-        
-        await direct_db_service.pool.release(conn)
-        
-        logger.info(f"✅ [GET /mis-reservas-real] Respuesta preparada: {len(reservas_list)} reservas")
-        return {
-            "reservas": reservas_list,
-            "pagination": {
-                "total": len(reservas_list),
-                "page": 1,
-                "limit": 20,
-                "offset": 0,
-                "total_pages": 1,
-                "has_next": False,
-                "has_prev": False
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /mis-reservas-real] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /mis-reservas-real] Traceback: {traceback.format_exc()}")
-        return {"error": str(e), "message": "Error en reservas reales"}
-
-@router.get(
-    "/mis-reservas-test",
-    description="Endpoint de prueba para debug"
-)
-async def obtener_mis_reservas_test(
-    current_user: SupabaseUser = Depends(get_current_user)
-):
-    """
-    Endpoint de prueba para debug
-    """
-    logger.info(f"🔍 [GET /mis-reservas-test] ========== INICIO TEST ==========")
-    logger.info(f"🔍 [GET /mis-reservas-test] User ID: {current_user.id}")
-    logger.info(f"🔍 [GET /mis-reservas-test] User Type: {type(current_user.id)}")
-    
-    try:
-        from app.services.direct_db_service import direct_db_service
-        
-        conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /mis-reservas-test] Conexión a BD obtenida exitosamente")
-        
-        # Query simple para probar
-        simple_query = """
-            SELECT 
-                r.id_reserva,
-                r.estado,
-                s.nombre as nombre_servicio,
-                pe.nombre_fantasia as nombre_empresa
-            FROM reserva r
-            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-            WHERE r.user_id = $1
-            LIMIT 5
-        """
-        
-        logger.info(f"🔍 [GET /mis-reservas-test] Ejecutando query simple...")
-        result = await conn.fetch(simple_query, current_user.id)
-        logger.info(f"📊 [GET /mis-reservas-test] Resultados: {len(result)}")
-        
-        reservas_list = []
-        for row in result:
-            reserva_dict = {
-                "id_reserva": row['id_reserva'],
-                "estado": row['estado'],
-                "nombre_servicio": row['nombre_servicio'],
-                "nombre_empresa": row['nombre_empresa']
-            }
-            reservas_list.append(reserva_dict)
-        
-        await direct_db_service.pool.release(conn)
-        
-        logger.info(f"✅ [GET /mis-reservas-test] Respuesta preparada: {len(reservas_list)} reservas")
-        return {"reservas": reservas_list, "total": len(reservas_list)}
-        
-    except Exception as e:
-        logger.error(f"❌ [GET /mis-reservas-test] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /mis-reservas-test] Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error en test: {str(e)}"
-        )
 
 @router.get(
     "/mis-reservas",
@@ -1158,7 +351,16 @@ async def obtener_mis_reservas_detalladas(
     logger.info(f"🔍 [GET /mis-reservas] Parámetros recibidos: search={search}, nombre_servicio={nombre_servicio}, nombre_empresa={nombre_empresa}, fecha_desde={fecha_desde}, fecha_hasta={fecha_hasta}, estado={estado}, nombre_contacto={nombre_contacto}")
     
     try:
-        from app.services.direct_db_service import direct_db_service
+        # Validaciones básicas de parámetros
+        if limit is None or limit < 1:
+            limit = 20
+        if limit > 100:
+            limit = 100
+            
+        if offset is None or offset < 0:
+            offset = 0
+            
+        logger.info(f"🔍 [GET /mis-reservas] Parámetros validados: limit={limit}, offset={offset}")
         
         conn = await direct_db_service.get_connection()
         logger.info(f"🔍 [GET /mis-reservas] Conexión a BD obtenida exitosamente")
@@ -1284,7 +486,7 @@ async def obtener_mis_reservas_detalladas(
                 reserva_dict = {
                     "id_reserva": row['id_reserva'],
                     "id_servicio": row['id_servicio'],
-                    "id_usuario": row['id_usuario'],
+                    "user_id": row['id_usuario'],
                     "descripcion": row['descripcion'],
                     "observacion": row['observacion'],
                     "fecha": row['fecha'],
@@ -1300,8 +502,8 @@ async def obtener_mis_reservas_detalladas(
                     "razon_social": row['razon_social'],
                     "id_perfil": row['id_perfil'],
                     "nombre_contacto": row['nombre_contacto'],
-                    "email_contacto": row[''],
-                    "telefono_contacto": row[''],
+                    "email_contacto": None,
+                    "telefono_contacto": None,
                     "nombre_categoria": row['nombre_categoria']
                 }
                 reservas_list.append(reserva_dict)
@@ -1342,3 +544,5 @@ async def obtener_mis_reservas_detalladas(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error interno del servidor al obtener reservas: {str(e)}"
         )
+
+

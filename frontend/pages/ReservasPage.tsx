@@ -35,7 +35,10 @@ const ReservasPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'mis-reservas' | 'reservas-proveedor' | 'agenda'>('mis-reservas');
 
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
+  // Usar la configuración centralizada de API
+  const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? 'http://localhost:8000' 
+    : 'https://backend-production-249d.up.railway.app';
 
   useEffect(() => {
     if (user) {

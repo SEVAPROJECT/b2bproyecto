@@ -21,7 +21,7 @@ class ReservaOut(BaseModel):
     """
     id: UUID  # Mapeado desde id_reserva
     id_servicio: int  # Cambiado de UUID a int
-    id_usuario: UUID  # Mapeado desde user_id
+    user_id: UUID  # Mapeado desde user_id
     descripcion: str
     observacion: Optional[str]
     fecha: date  # Solo fecha, sin tiempo

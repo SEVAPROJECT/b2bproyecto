@@ -99,7 +99,13 @@ const ReservationsPage: React.FC = () => {
     const [nombreContacto, setNombreContacto] = useState('');
     const [showFilters, setShowFilters] = useState(false);
 
-    const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
+    // Usar la configuración centralizada de API
+    const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+        ? 'http://localhost:8000' 
+        : 'https://backend-production-249d.up.railway.app';
+    
+    console.log('🌍 Entorno detectado:', window.location.hostname);
+    console.log('🔗 API_URL configurada:', API_URL);
 
     // Cargar reservas
     const loadReservas = useCallback(async (page: number = 1) => {
@@ -124,7 +130,7 @@ const ReservationsPage: React.FC = () => {
 
             console.log('🔍 Cargando reservas con params:', params.toString());
 
-            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-funcional`, {
+            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-test`, {
                 headers: {
                     'Authorization': `Bearer ${user.accessToken}`,
                     'Content-Type': 'application/json',
@@ -136,26 +142,31 @@ const ReservationsPage: React.FC = () => {
             }
 
             const data = await response.json();
-            console.log('📊 Reservas funcionales cargadas:', data);
+            console.log('📊 Reservas cargadas:', data);
 
-            // Mapear datos del formato del archivo anterior
-            const reservasMapeadas = data.map((reserva: any) => ({
+            // Mapeo simplificado para el endpoint de prueba
+            const reservasData = data.reservas || [];
+            
+            const reservasMapeadas = reservasData.map((reserva: any) => ({
                 id_reserva: reserva.id_reserva,
-                nombre_servicio: reserva.servicio_nombre,
-                nombre_empresa: reserva.empresa_razon_social,
+                nombre_servicio: reserva.nombre_servicio || 'Servicio sin nombre',
+                nombre_empresa: reserva.nombre_empresa || 'Empresa sin nombre',
                 fecha: reserva.fecha,
                 estado: reserva.estado,
-                descripcion: reserva.descripcion_reserva,
-                observacion: reserva.observacion,
+                descripcion: reserva.descripcion,
+                observacion: reserva.observacion || '',
                 hora_inicio: reserva.hora_inicio,
                 hora_fin: reserva.hora_fin,
-                nombre_contacto: reserva.nombre_contacto,
-                email_contacto: reserva.usuario_email
+                nombre_contacto: reserva.nombre_contacto || 'No especificado',
+                email_contacto: null, // No disponible en el endpoint de prueba
+                precio_servicio: reserva.precio_servicio || 0,
+                imagen_servicio: reserva.imagen_servicio,
+                nombre_categoria: reserva.nombre_categoria || 'Sin categoría'
             }));
 
             setReservas(reservasMapeadas);
             setPagination({
-                total: reservasMapeadas.length,
+                total: data.total || 0,
                 page: 1,
                 limit: 20,
                 offset: 0,
@@ -482,7 +493,7 @@ const ReservationsPage: React.FC = () => {
                                                     ⏰ Horario
                                                 </p>
                                                 <p className="text-sm text-gray-900">
-                                                    {formatTime(reserva.hora_inicio)} - {formatTime(reserva.hora_fin)}
+                                                    {reserva.hora_inicio ? formatTime(reserva.hora_inicio) : '--'} - {reserva.hora_fin ? formatTime(reserva.hora_fin) : '--'}
                                                 </p>
                                             </div>
 
@@ -491,7 +502,7 @@ const ReservationsPage: React.FC = () => {
                                                     👤 Contacto
                                                 </p>
                                                 <p className="text-sm text-gray-900">
-                                                    {reserva.nombre_contacto}
+                                                    {reserva.nombre_contacto || 'No especificado'}
                                                 </p>
                                             </div>
 
@@ -500,7 +511,7 @@ const ReservationsPage: React.FC = () => {
                                                     💰 Precio
                                                 </p>
                                                 <p className="text-sm font-bold text-gray-900">
-                                                    ${reserva.precio_servicio.toLocaleString('es-ES')}
+                                                    ${(reserva.precio_servicio || 0).toLocaleString('es-ES')}
                                                 </p>
                                             </div>
                                         </div>

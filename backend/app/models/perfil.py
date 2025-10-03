@@ -78,6 +78,6 @@ class UserModel(Base):
     reserva: Mapped[List["ReservaModel"]] = relationship(
         "ReservaModel", 
         back_populates="usuario",
-        primaryjoin="ReservaModel.id_usuario == UserModel.id"
+        primaryjoin="ReservaModel.user_id == UserModel.id"
     )
 

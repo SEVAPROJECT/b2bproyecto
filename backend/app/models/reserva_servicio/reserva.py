@@ -18,7 +18,7 @@ class ReservaModel(Base):
 
     id: Mapped[UUID] = Column(PG_UUID(as_uuid=True), primary_key=True)
     id_servicio: Mapped[int] = Column(BigInteger, ForeignKey("servicio.id_servicio"), nullable=False)
-    id_usuario: Mapped[UUID] = Column(PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[UUID] = Column(PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     descripcion: Mapped[str] = Column(String(500), nullable=False)
     observacion: Mapped[Optional[str]] = Column(String(1000), nullable=True)
     fecha: Mapped[date] = Column(Date, nullable=False)
