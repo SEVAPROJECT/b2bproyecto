@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.startup import startup_events, shutdown_events
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 import logging
 import os
 
@@ -30,21 +31,22 @@ from app.api.v1.routers.horarios_disponibles import router as horarios_disponibl
 from app.api.v1.routers.weaviate.weaviate import router as weaviate_router
 from app.api.v1.routers.weaviate_test import router as weaviate_test_router
 
+# Lifespan handler para reemplazar @app.on_event (deprecado)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await startup_events()
+    yield
+    # Shutdown
+    await shutdown_events()
+
 # Instancia de la aplicación de FastAPI
 app = FastAPI(
     title="SEVA B2B API",
     description="API para la plataforma B2B SEVA Empresas",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
-
-# Eventos de inicialización y limpieza
-@app.on_event("startup")
-async def startup():
-    await startup_events()
-
-@app.on_event("shutdown")
-async def shutdown():
-    await shutdown_events()
 
 
 # Configurar CORS para permitir comunicación con el frontend

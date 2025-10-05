@@ -74,6 +74,12 @@ class WeaviateService:
             weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8082")
             weaviate_api_key = os.getenv("WEAVIATE_API_KEY")
             
+            # Validar que la URL no esté vacía
+            if not weaviate_url or weaviate_url.strip() == "":
+                logger.error("❌ WEAVIATE_URL no está configurada o está vacía")
+                self.client = None
+                return
+            
             logger.info(f"🔗 Conectando a Weaviate en: {weaviate_url}")
             logger.info("🤖 Configurado para usar Ollama local como proveedor de embeddings")
             
@@ -92,6 +98,12 @@ class WeaviateService:
                 parsed_url = urlparse(weaviate_url)
                 host = parsed_url.hostname
                 port = parsed_url.port or 8080 # Usa el puerto si está, si no, 8080 por defecto
+                
+                # Validar que el host no sea None
+                if not host:
+                    logger.error(f"❌ No se pudo extraer el host de la URL: {weaviate_url}")
+                    self.client = None
+                    return
                 
                 # 2. Conectarse usando host y puerto separados
                 self.client = weaviate.connect_to_local(
