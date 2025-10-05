@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.publicar_servicio.solicitud_servicio import SolicitudServicio
     from app.models.publicar_servicio.solicitud_categoria import SolicitudCategoria
     from app.models.servicio.service import ServicioModel
+    from app.models.horario_trabajo import HorarioTrabajoModel, ExcepcionHorarioModel
 
 class PerfilEmpresa(Base):
     __tablename__ = "perfil_empresa"
@@ -53,3 +54,5 @@ class PerfilEmpresa(Base):
     solicitudes_servicio: Mapped[List["SolicitudServicio"]] = relationship(back_populates="perfil_empresa")
     solicitudes_categoria: Mapped[List["SolicitudCategoria"]] = relationship(back_populates="perfil_empresa")
     servicio: Mapped[List["ServicioModel"]] = relationship(back_populates="perfil_empresa")
+    horarios_trabajo: Mapped[List["HorarioTrabajoModel"]] = relationship("HorarioTrabajoModel", back_populates="proveedor")
+    excepciones_horario: Mapped[List["ExcepcionHorarioModel"]] = relationship("ExcepcionHorarioModel", back_populates="proveedor")

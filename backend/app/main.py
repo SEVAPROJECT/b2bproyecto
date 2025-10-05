@@ -27,6 +27,8 @@ from app.api.v1.routers.test import router as test_router
 from app.api.v1.routers.disponibilidad_optimizada import router as disponibilidad_optimizada_router
 from app.api.v1.routers.horario_trabajo import router as horario_trabajo_router
 from app.api.v1.routers.horarios_disponibles import router as horarios_disponibles_router
+from app.api.v1.routers.weaviate.weaviate import router as weaviate_router
+from app.api.v1.routers.weaviate_test import router as weaviate_test_router
 
 # Instancia de la aplicación de FastAPI
 app = FastAPI(
@@ -159,6 +161,8 @@ app.include_router(disponibilidad_router, prefix="/api/v1")
 app.include_router(disponibilidad_optimizada_router, prefix="/api/v1")
 app.include_router(horario_trabajo_router, prefix="/api/v1")
 app.include_router(horarios_disponibles_router, prefix="/api/v1")
+app.include_router(weaviate_router, prefix="/api/v1")
+app.include_router(weaviate_test_router, prefix="/api/v1")
 app.include_router(test_router, prefix="/api/v1")
 
 # endpoint (una ruta) para la URL raíz ("/")

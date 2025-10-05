@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from app.models.empresa.perfil_empresa import PerfilEmpresa
     from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
     from app.models.reserva_servicio.reserva import ReservaModel
-    from app.models.disponibilidad import DisponibilidadModel
+    #from app.models.disponibilidad import DisponibilidadModel
 
 class ServicioModel(Base):
     """
@@ -43,4 +43,4 @@ class ServicioModel(Base):
     perfil_empresa: Mapped["PerfilEmpresa"] = relationship('PerfilEmpresa', back_populates='servicio')
     tarifa_servicio: Mapped[List["TarifaServicio"]] = relationship('TarifaServicio', back_populates='servicio')
     reserva: Mapped[List["ReservaModel"]] = relationship('ReservaModel', back_populates='servicio')
-    disponibilidades: Mapped[List["DisponibilidadModel"]] = relationship('DisponibilidadModel', back_populates='servicio')
+    #disponibilidades: Mapped[List["DisponibilidadModel"]] = relationship('DisponibilidadModel', back_populates='servicio')

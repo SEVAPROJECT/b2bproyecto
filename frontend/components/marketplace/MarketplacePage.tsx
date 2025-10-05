@@ -59,6 +59,9 @@ const MarketplacePage: React.FC = () => {
     const [showServiceDetail, setShowServiceDetail] = useState(false);
     const [selectedService, setSelectedService] = useState<BackendService | null>(null);
 
+    // Estados separados para búsquedas
+    const [isAISearching, setIsAISearching] = useState(false);
+
 
     // Función para construir filtros del backend
     const buildBackendFilters = useCallback(() => {
@@ -357,23 +360,89 @@ const MarketplacePage: React.FC = () => {
     // }, [searchQuery, categoryFilter, departmentFilter, cityFilter, currencyFilter, priceRange, dateFilter, applyFilters]);
 
 
-    // Función para manejar búsqueda
+    // Función para manejar búsqueda normal (filtros del backend)
     const handleSearch = useCallback(() => {
         setIsSearching(true);
-        // Simular búsqueda
-        setTimeout(() => {
+        // Recargar datos con filtros aplicados
+        reloadFilteredData().finally(() => {
             setIsSearching(false);
-        }, 1000);
-    }, []);
+        });
+    }, [reloadFilteredData]);
 
-    // Función para búsqueda con IA
-    const handleAISearch = useCallback(() => {
-        setIsSearching(true);
-        // Simular búsqueda con IA
-        setTimeout(() => {
-            setIsSearching(false);
-        }, 1500);
-    }, []);
+    // Función para búsqueda con IA usando Weaviate
+    const handleAISearch = useCallback(async () => {
+        if (!searchQuery.trim()) {
+            alert('Por favor, ingresa un término de búsqueda para usar la IA');
+            return;
+        }
+
+        setIsAISearching(true);
+        setError(null);
+
+        try {
+            // Detectar entorno para la URL de la API
+            const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+                ? 'http://localhost:8000' 
+                : 'https://backend-production-249d.up.railway.app';
+
+            console.log('🤖 Iniciando búsqueda con IA:', searchQuery);
+            console.log('🔗 API_URL:', API_URL);
+
+            // Llamar al endpoint correcto de búsqueda de Weaviate
+            const response = await fetch(`${API_URL}/api/v1/weaviate/search-public?query=${encodeURIComponent(searchQuery)}&limit=10`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error(`Error ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log('🤖 Resultados de IA:', data);
+
+            if (data.results && data.results.length > 0) {
+                // Convertir resultados de Weaviate al formato esperado
+                const aiServices = data.results.map((result: any) => ({
+                    id_servicio: result.id_servicio,
+                    nombre: result.nombre,
+                    descripcion: result.descripcion,
+                    precio: result.precio,
+                    categoria: result.categoria,
+                    empresa: result.empresa,
+                    // Agregar campos requeridos con valores por defecto
+                    id_categoria: 1, // Valor por defecto
+                    razon_social: result.empresa,
+                    departamento: '',
+                    ciudad: '',
+                    codigo_iso_moneda: 'GS',
+                    simbolo_moneda: '₲',
+                    id_moneda: 1,
+                    created_at: new Date().toISOString(),
+                    estado: 'activo'
+                }));
+
+                // Actualizar servicios con resultados de IA
+                setServices(aiServices);
+                setTotalServices(aiServices.length);
+                setCurrentPage(1);
+                
+                console.log('✅ Búsqueda con IA completada:', aiServices.length, 'servicios encontrados');
+            } else {
+                console.log('⚠️ No se encontraron resultados con IA');
+                setServices([]);
+                setTotalServices(0);
+            }
+
+        } catch (error) {
+            console.error('❌ Error en búsqueda con IA:', error);
+            setError('Error en la búsqueda con IA. Inténtalo de nuevo.');
+        } finally {
+            setIsAISearching(false);
+        }
+    }, [searchQuery]);
 
     // Función para manejar contacto con proveedor
     const handleContactProvider = useCallback((serviceId: number) => {
@@ -836,7 +905,7 @@ const MarketplacePage: React.FC = () => {
                         <div className="flex flex-col sm:flex-row gap-3">
                             <button
                                 onClick={handleSearch}
-                                disabled={isSearching}
+                                disabled={isSearching || isAISearching}
                                 className="flex-1 sm:flex-initial btn-blue disabled:opacity-50 touch-manipulation"
                             >
                                 {isSearching ? (
@@ -854,13 +923,13 @@ const MarketplacePage: React.FC = () => {
 
                             <button
                                 onClick={handleAISearch}
-                                disabled={isSearching}
+                                disabled={isSearching || isAISearching}
                                 className="flex-1 sm:flex-initial btn-purple disabled:opacity-50 touch-manipulation"
                             >
-                                {isSearching ? (
+                                {isAISearching ? (
                                     <div className="flex items-center justify-center gap-2">
                                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                        <span>Procesando...</span>
+                                        <span>Procesando IA...</span>
                                     </div>
                                 ) : (
                                     <div className="flex items-center justify-center gap-2">
