@@ -34,3 +34,13 @@ class ReservaOut(BaseModel):
         #orm_mode = True
     class Config:
         from_attributes = True
+
+class ReservaEstadoUpdate(BaseModel):
+    """
+    Schema para actualizar el estado de una reserva.
+    """
+    nuevo_estado: str = Field(..., description="Nuevo estado de la reserva")
+    observacion: Optional[str] = Field(None, max_length=500, description="Observación opcional para el cambio de estado")
+    
+    class Config:
+        from_attributes = True

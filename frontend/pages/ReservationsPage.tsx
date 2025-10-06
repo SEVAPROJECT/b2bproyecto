@@ -10,6 +10,7 @@ import {
     XCircleIcon
 } from '../components/icons';
 import { useAuth } from '../contexts/AuthContext';
+import { buildApiUrl, getJsonHeaders } from '../config/api';
 
 // Tipos
 interface Reserva {
@@ -99,20 +100,33 @@ const ReservationsPage: React.FC = () => {
     const [nombreContacto, setNombreContacto] = useState('');
     const [showFilters, setShowFilters] = useState(false);
 
-    // Usar la configuración centralizada de API
-    const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-        ? 'http://localhost:8000' 
-        : 'https://backend-production-249d.up.railway.app';
+    // Estados para las pestañas y funcionalidad de proveedor
+    const [activeTab, setActiveTab] = useState<'mis-reservas' | 'reservas-proveedor' | 'agenda'>('mis-reservas');
     
-    console.log('🌍 Entorno detectado:', window.location.hostname);
-    console.log('🔗 API_URL configurada:', API_URL);
+    // Configurar pestaña inicial según el rol del usuario
+    useEffect(() => {
+        if (user?.role === 'provider' && activeTab === 'mis-reservas') {
+            setActiveTab('reservas-proveedor');
+        } else if (user?.role !== 'provider' && activeTab !== 'mis-reservas') {
+            setActiveTab('mis-reservas');
+        }
+    }, [user?.role, activeTab]);
+    const [showModal, setShowModal] = useState(false);
+    const [modalData, setModalData] = useState<{reservaId: number, accion: string, observacion: string} | null>(null);
+    const [accionLoading, setAccionLoading] = useState<number | null>(null);
+    const [mensajeExito, setMensajeExito] = useState<string | null>(null);
+
+    // Debug: Verificar que el componente se está cargando
+    console.log('🔍 ReservationsPage cargado - activeTab:', activeTab);
+
+    // Usar la configuración centralizada de API
 
     // Cargar reservas
     const loadReservas = useCallback(async (page: number = 1) => {
         if (!user?.accessToken) return;
 
         try {
-        setLoading(true);
+            setLoading(true);
             setError(null);
 
             // Construir query params
@@ -130,11 +144,21 @@ const ReservationsPage: React.FC = () => {
 
             console.log('🔍 Cargando reservas con params:', params.toString());
 
-            const response = await fetch(`${API_URL}/api/v1/reservas/mis-reservas-test`, {
-                headers: {
-                    'Authorization': `Bearer ${user.accessToken}`,
-                    'Content-Type': 'application/json',
-                },
+            // Determinar qué endpoint usar según la pestaña activa
+            let endpoint = '';
+            if (activeTab === 'mis-reservas') {
+                endpoint = '/reservas/mis-reservas';
+            } else if (activeTab === 'reservas-proveedor') {
+                endpoint = '/reservas/reservas-proveedor';
+            } else {
+                // Para agenda, no cargar reservas
+                setReservas([]);
+                setLoading(false);
+                return;
+            }
+
+            const response = await fetch(buildApiUrl(endpoint), {
+                headers: getJsonHeaders(),
             });
 
             if (!response.ok) {
@@ -145,12 +169,12 @@ const ReservationsPage: React.FC = () => {
             console.log('📊 Reservas cargadas:', data);
 
             // Mapeo simplificado para el endpoint de prueba
-            const reservasData = data.reservas || [];
+            const reservasData = data.reservas || data || [];
             
             const reservasMapeadas = reservasData.map((reserva: any) => ({
                 id_reserva: reserva.id_reserva,
-                nombre_servicio: reserva.nombre_servicio || 'Servicio sin nombre',
-                nombre_empresa: reserva.nombre_empresa || 'Empresa sin nombre',
+                nombre_servicio: reserva.nombre_servicio || reserva.servicio?.nombre || 'Servicio sin nombre',
+                nombre_empresa: reserva.nombre_empresa || reserva.servicio?.empresa || 'Empresa sin nombre',
                 fecha: reserva.fecha,
                 estado: reserva.estado,
                 descripcion: reserva.descripcion,
@@ -158,15 +182,15 @@ const ReservationsPage: React.FC = () => {
                 hora_inicio: reserva.hora_inicio,
                 hora_fin: reserva.hora_fin,
                 nombre_contacto: reserva.nombre_contacto || 'No especificado',
-                email_contacto: null, // No disponible en el endpoint de prueba
-                precio_servicio: reserva.precio_servicio || 0,
-                imagen_servicio: reserva.imagen_servicio,
-                nombre_categoria: reserva.nombre_categoria || 'Sin categoría'
+                email_contacto: reserva.email_contacto || null,
+                precio_servicio: reserva.precio_servicio || reserva.servicio?.precio || 0,
+                imagen_servicio: reserva.imagen_servicio || reserva.servicio?.imagen,
+                nombre_categoria: reserva.nombre_categoria || reserva.servicio?.categoria || 'Sin categoría'
             }));
 
             setReservas(reservasMapeadas);
             setPagination({
-                total: data.total || 0,
+                total: data.total || reservasData.length,
                 page: 1,
                 limit: 20,
                 offset: 0,
@@ -180,12 +204,12 @@ const ReservationsPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [user, searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, pagination.limit, API_URL]);
+    }, [user, searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, pagination.limit, activeTab]);
 
-    // Cargar al montar y cuando cambien filtros
+    // Cargar al montar y cuando cambien filtros o pestaña
     useEffect(() => {
         loadReservas(1);
-    }, [searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto]);
+    }, [searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, activeTab]);
 
     // Limpiar filtros
     const handleClearFilters = () => {
@@ -196,6 +220,74 @@ const ReservationsPage: React.FC = () => {
         setFechaHasta('');
         setEstadoFilter('all');
         setNombreContacto('');
+    };
+
+    // Funciones para cambio de estado de reservas
+    const actualizarEstadoReserva = async (reservaId: number, nuevoEstado: string, observacion?: string) => {
+        try {
+            if (!user) return;
+
+            setAccionLoading(reservaId);
+            setError(null);
+
+            const response = await fetch(buildApiUrl(`/reservas/${reservaId}/estado`), {
+                method: 'PUT',
+                headers: getJsonHeaders(),
+                body: JSON.stringify({
+                    nuevo_estado: nuevoEstado,
+                    observacion: observacion || ''
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Error al actualizar estado');
+            }
+
+            const result = await response.json();
+            console.log('Estado actualizado:', result);
+
+            setMensajeExito(`Reserva ${nuevoEstado} exitosamente`);
+            setTimeout(() => setMensajeExito(null), 3000);
+
+            await loadReservas(1);
+            setShowModal(false);
+            setModalData(null);
+        } catch (err) {
+            setError('Error al actualizar el estado de la reserva');
+            console.error('Error:', err);
+        } finally {
+            setAccionLoading(null);
+        }
+    };
+
+    const handleAccionReserva = (reservaId: number, accion: string) => {
+        if (accionLoading === reservaId) {
+            return;
+        }
+        
+        setModalData({
+            reservaId,
+            accion,
+            observacion: ''
+        });
+        setShowModal(true);
+    };
+
+    const confirmarAccion = () => {
+        if (!modalData) return;
+        
+        if (modalData.accion === 'rechazado' && !modalData.observacion.trim()) {
+            setError('Es recomendable agregar una observación al cancelar una reserva');
+            return;
+        }
+        
+        if (modalData.accion === 'concluido' && !modalData.observacion.trim()) {
+            setError('Es recomendable agregar una observación al marcar como concluido');
+            return;
+        }
+        
+        actualizarEstadoReserva(modalData.reservaId, modalData.accion, modalData.observacion);
     };
 
     // Badges de estado
@@ -259,10 +351,10 @@ const ReservationsPage: React.FC = () => {
                         <div>
                             <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
                                 <ClipboardDocumentListIcon className="h-8 w-8 text-primary-600" />
-                                Mis Reservas
+                                Gestión de Reservas
                             </h1>
                             <p className="mt-2 text-gray-600">
-                                Gestiona y consulta todas tus reservas de servicios
+                                Administra tus reservas y disponibilidades
                             </p>
                         </div>
 
@@ -283,6 +375,64 @@ const ReservationsPage: React.FC = () => {
                         </button>
                     </div>
                 </div>
+
+                {/* Tabs - Mostrar pestañas según el rol del usuario */}
+                <div className="mb-6">
+                    <nav className="flex space-x-8">
+                        {/* Solo clientes ven "Mis Reservas" */}
+                        {user?.role !== 'provider' && (
+                            <button
+                                onClick={() => setActiveTab('mis-reservas')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                    activeTab === 'mis-reservas'
+                                        ? 'border-blue-500 text-blue-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                            >
+                                Mis Reservas
+                            </button>
+                        )}
+                        
+                        {/* Solo proveedores ven estas pestañas */}
+                        {user?.role === 'provider' && (
+                            <>
+                                <button
+                                    onClick={() => setActiveTab('reservas-proveedor')}
+                                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                        activeTab === 'reservas-proveedor'
+                                            ? 'border-blue-500 text-blue-600'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                                >
+                                    Reservas de Mis Servicios
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('agenda')}
+                                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                        activeTab === 'agenda'
+                                            ? 'border-blue-500 text-blue-600'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                                >
+                                    Mi Agenda
+                                </button>
+                            </>
+                        )}
+                    </nav>
+                </div>
+                
+
+                {/* Mensaje de éxito */}
+                {mensajeExito && (
+                    <div className="mb-4 bg-green-50 border border-green-200 rounded-md p-4 animate-fade-in">
+                        <div className="flex">
+                            <div className="ml-3">
+                                <h3 className="text-sm font-medium text-green-800">Éxito</h3>
+                                <div className="mt-2 text-sm text-green-700">{mensajeExito}</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Panel de filtros */}
                 {showFilters && (
@@ -549,6 +699,83 @@ const ReservationsPage: React.FC = () => {
                                                 )}
                                             </div>
                                         )}
+
+                                        {/* Botones de acción para proveedores */}
+                                        {activeTab === 'reservas-proveedor' && (
+                                            <div className="mt-4 pt-4 border-t border-gray-200">
+                                                {reserva.estado === 'pendiente' && (
+                                                    <div className="flex space-x-2">
+                                                        <button
+                                                            onClick={() => handleAccionReserva(reserva.id_reserva, 'aprobado')}
+                                                            disabled={accionLoading === reserva.id_reserva}
+                                                            className={`bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-all duration-200 ${
+                                                                accionLoading === reserva.id_reserva 
+                                                                    ? 'opacity-50 cursor-not-allowed' 
+                                                                    : 'hover:scale-105'
+                                                            }`}
+                                                        >
+                                                            {accionLoading === reserva.id_reserva ? (
+                                                                <span className="flex items-center">
+                                                                    <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                    </svg>
+                                                                    Procesando...
+                                                                </span>
+                                                            ) : (
+                                                                'Aceptar'
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleAccionReserva(reserva.id_reserva, 'rechazado')}
+                                                            disabled={accionLoading === reserva.id_reserva}
+                                                            className={`bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-all duration-200 ${
+                                                                accionLoading === reserva.id_reserva 
+                                                                    ? 'opacity-50 cursor-not-allowed' 
+                                                                    : 'hover:scale-105'
+                                                            }`}
+                                                        >
+                                                            {accionLoading === reserva.id_reserva ? (
+                                                                <span className="flex items-center">
+                                                                    <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                    </svg>
+                                                                    Procesando...
+                                                                </span>
+                                                            ) : (
+                                                                'Cancelar'
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {reserva.estado === 'aprobado' && (
+                                                    <div className="flex space-x-2">
+                                                        <button
+                                                            onClick={() => handleAccionReserva(reserva.id_reserva, 'concluido')}
+                                                            disabled={accionLoading === reserva.id_reserva}
+                                                            className={`bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition-all duration-200 ${
+                                                                accionLoading === reserva.id_reserva 
+                                                                    ? 'opacity-50 cursor-not-allowed' 
+                                                                    : 'hover:scale-105'
+                                                            }`}
+                                                        >
+                                                            {accionLoading === reserva.id_reserva ? (
+                                                                <span className="flex items-center">
+                                                                    <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                    </svg>
+                                                                    Procesando...
+                                                                </span>
+                                                            ) : (
+                                                                'Marcar como Concluido'
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -587,6 +814,71 @@ const ReservationsPage: React.FC = () => {
                             Siguiente →
                         </button>
                 </div>
+                )}
+
+                {/* Modal de confirmación */}
+                {showModal && modalData && (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                        <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                            <div className="mt-3">
+                                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                                    {modalData.accion === 'aprobado' ? 'Aprobar Reserva' : 
+                                     modalData.accion === 'rechazado' ? 'Cancelar Reserva' : 
+                                     modalData.accion === 'concluido' ? 'Marcar como Concluido' : 'Confirmar Acción'}
+                                </h3>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Observación {modalData.accion === 'rechazado' || modalData.accion === 'concluido' ? '(recomendado)' : '(opcional)'}:
+                                    </label>
+                                    <textarea
+                                        value={modalData.observacion}
+                                        onChange={(e) => setModalData({...modalData, observacion: e.target.value})}
+                                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                                            (modalData.accion === 'rechazado' || modalData.accion === 'concluido') && !modalData.observacion.trim()
+                                                ? 'border-yellow-300 focus:ring-yellow-500'
+                                                : 'border-gray-300 focus:ring-blue-500'
+                                        }`}
+                                        rows={3}
+                                        placeholder={
+                                            modalData.accion === 'rechazado'
+                                                ? 'Explica por qué cancelas esta reserva...'
+                                                : modalData.accion === 'concluido'
+                                                ? 'Describe cómo se completó el servicio...'
+                                                : 'Agrega una observación sobre esta acción...'
+                                        }
+                                    />
+                                    {(modalData.accion === 'rechazado' || modalData.accion === 'concluido') && !modalData.observacion.trim() && (
+                                        <p className="mt-1 text-sm text-yellow-600">
+                                            ⚠️ Es recomendable agregar una observación para esta acción
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowModal(false);
+                                            setModalData(null);
+                                        }}
+                                        className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={confirmarAccion}
+                                        className={`px-4 py-2 text-white rounded-md ${
+                                            modalData.accion === 'rechazado' ? 'bg-red-600 hover:bg-red-700' :
+                                            modalData.accion === 'aprobado' ? 'bg-green-600 hover:bg-green-700' :
+                                            'bg-blue-600 hover:bg-blue-700'
+                                        }`}
+                                    >
+                                        {modalData.accion === 'aprobado' ? 'Aprobar' : 
+                                         modalData.accion === 'rechazado' ? 'Cancelar' : 
+                                         modalData.accion === 'concluido' ? 'Marcar como Concluido' : 'Confirmar'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>
