@@ -267,7 +267,7 @@ async def crear_reserva(
                 respuesta = {
                     "id": reserva_uuid,  # UUID correcto
                     "id_servicio": nueva_reserva['id_servicio'],
-                    "id_usuario": nueva_reserva['user_id'],  # Mapear user_id a id_usuario en la respuesta
+                    "user_id": nueva_reserva['user_id'],  # Campo requerido por ReservaOut schema
                     "descripcion": nueva_reserva['descripcion'],
                     "observacion": nueva_reserva['observacion'],
                     "fecha": fecha_pura,  # Fecha sin tiempo
@@ -428,6 +428,10 @@ async def obtener_mis_reservas_detalladas(
                 param_count += 1
                 where_conditions.append(f"r.estado = ${param_count}")
                 params.append(estado.strip().lower())
+                logger.info(f"🔍 [GET /mis-reservas] Filtro estado aplicado: {estado.strip().lower()}")
+                logger.info(f"🔍 [GET /mis-reservas] Condición WHERE agregada: r.estado = ${param_count}")
+            else:
+                logger.info(f"🔍 [GET /mis-reservas] No se aplica filtro de estado (estado={estado})")
             
             if nombre_contacto and nombre_contacto.strip():
                 param_count += 1
@@ -1125,7 +1129,7 @@ async def actualizar_estado_reserva(
         nuevo_estado = estado_update.nuevo_estado.lower()
         
         # Validar que el nuevo estado sea válido
-        estados_validos = ['pendiente', 'aprobado', 'rechazado', 'concluido']
+        estados_validos = ['pendiente', 'confirmada', 'cancelada', 'completada']
         if nuevo_estado not in estados_validos:
             logger.error(f"❌ [PUT /reservas/{reserva_id}/estado] Estado inválido: {nuevo_estado}")
             raise HTTPException(
@@ -1143,10 +1147,10 @@ async def actualizar_estado_reserva(
         
         # Validar transiciones permitidas
         transiciones_validas = {
-            'pendiente': ['rechazado', 'aprobado'],
-            'aprobado': ['concluido'],
-            'rechazado': [],  # No se puede cambiar
-            'concluido': []   # No se puede cambiar
+            'pendiente': ['cancelada', 'confirmada'],
+            'confirmada': ['completada'],
+            'cancelada': [],  # No se puede cambiar
+            'completada': []   # No se puede cambiar
         }
         
         if nuevo_estado not in transiciones_validas.get(estado_actual, []):

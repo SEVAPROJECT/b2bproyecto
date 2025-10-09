@@ -189,8 +189,8 @@ const AdminReportsPage: React.FC = () => {
         },
         {
             id: 'reservas',
-            title: 'Reservas',
-            description: 'Reporte de todas las reservas realizadas en la plataforma',
+            title: 'Reservas de Proveedores',
+            description: 'Reporte detallado de reservas de proveedores con información completa de clientes, servicios y estados',
             icon: '📅',
             color: 'pink'
         }
@@ -802,9 +802,9 @@ const AdminReportsPage: React.FC = () => {
                     break;
                 case 'reservas':
                     dataPromise = (async () => {
-                        console.log('📅 Cargando reporte de reservas...');
+                        console.log('📅 Cargando reporte de reservas de proveedores...');
                         try {
-                            const response = await fetch(buildApiUrl('/admin/reports/reservas'), {
+                            const response = await fetch(buildApiUrl('/admin/reports/reservas-proveedores'), {
                                 headers: { 'Authorization': `Bearer ${user.accessToken}` }
                             });
                             
@@ -813,20 +813,41 @@ const AdminReportsPage: React.FC = () => {
                             }
                             
                             const data = await response.json();
-                            console.log('✅ Reporte de reservas cargado exitosamente:', data);
+                            console.log('✅ Reporte de reservas de proveedores cargado exitosamente:', data);
+                            
+                            // Procesar los datos para el formato esperado
+                            const reservasProcesadas = data.reservas?.map((reserva: any) => ({
+                                id_reserva: reserva.id_reserva,
+                                cliente_nombre: reserva.cliente?.nombre || 'N/A',
+                                cliente_email: reserva.cliente?.email || 'N/A',
+                                proveedor_empresa: reserva.proveedor?.empresa || 'N/A',
+                                proveedor_nombre_fantasia: reserva.proveedor?.nombre_fantasia || 'N/A',
+                                servicio_nombre: reserva.servicio?.nombre || 'N/A',
+                                servicio_precio: reserva.servicio?.precio || 0,
+                                servicio_categoria: reserva.servicio?.categoria || 'N/A',
+                                fecha_servicio: reserva.reserva?.fecha_servicio || 'N/A',
+                                horario: reserva.reserva?.horario || 'N/A',
+                                fecha_reserva: reserva.reserva?.fecha_reserva || 'N/A',
+                                estado: reserva.estado?.label || reserva.estado?.valor || 'N/A',
+                                descripcion: reserva.reserva?.descripcion || 'N/A',
+                                observacion: reserva.reserva?.observacion || 'N/A'
+                            })) || [];
                             
                             return {
-                                ...data,
-                                fecha_generacion: getArgentinaDateISO()
+                                total_reservas: data.total_reservas || 0,
+                                reservas: reservasProcesadas,
+                                estadisticas: data.estadisticas || {},
+                                fecha_generacion: getArgentinaDateISO(),
+                                generado_desde: 'reservas_proveedores_endpoint'
                             };
                         } catch (error) {
-                            console.error('❌ Error cargando reporte de reservas:', error);
+                            console.error('❌ Error cargando reporte de reservas de proveedores:', error);
                             return {
                                 fecha_generacion: getArgentinaDateISO(),
                                 total_reservas: 0,
                                 reservas: [],
                                 generado_desde: 'sin_datos_backend',
-                                mensaje: 'No se pudieron cargar las reservas'
+                                mensaje: 'No se pudieron cargar las reservas de proveedores'
                             };
                         }
                     })();

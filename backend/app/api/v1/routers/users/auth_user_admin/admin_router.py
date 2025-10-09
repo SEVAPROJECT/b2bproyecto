@@ -2599,6 +2599,169 @@ async def get_reporte_servicios(
         raise HTTPException(status_code=500, detail="Error generando reporte")
 
 @router.get(
+    "/reports/reservas-proveedores",
+    description="Genera reporte detallado de reservas de proveedores con información completa"
+)
+async def get_reporte_reservas_proveedores(
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Genera reporte detallado de reservas de proveedores"""
+    try:
+        # Usar consulta SQL directa para obtener información completa
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Consulta SQL optimizada para reporte de proveedores
+            # Nota: El email se obtiene de auth.users, no de la tabla users pública
+            reservas_query = """
+                SELECT 
+                    r.id_reserva,
+                    r.estado,
+                    r.fecha,
+                    r.hora_inicio,
+                    r.hora_fin,
+                    r.descripcion,
+                    r.observacion,
+                    r.created_at as fecha_reserva,
+                    -- Información del cliente
+                    u.nombre_persona as cliente_nombre,
+                    u.id as cliente_user_id,
+                    -- Información del servicio
+                    s.nombre as servicio_nombre,
+                    s.precio as servicio_precio,
+                    s.descripcion as servicio_descripcion,
+                    -- Información del proveedor/empresa
+                    pe.razon_social as empresa_razon_social,
+                    pe.nombre_fantasia as empresa_nombre_fantasia,
+                    pe.user_id as proveedor_user_id,
+                    -- Información de la categoría
+                    c.nombre as categoria_nombre
+                FROM reserva r
+                INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+                INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                INNER JOIN users u ON r.user_id = u.id
+                LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+                ORDER BY r.created_at DESC
+            """
+            
+            reservas_data = await conn.fetch(reservas_query)
+            
+            reservas_detalladas = []
+            for row in reservas_data:
+                # Obtener email del cliente desde Supabase auth.users
+                cliente_email = None
+                try:
+                    # Consulta para obtener email desde auth.users
+                    email_query = """
+                        SELECT email FROM auth.users WHERE id = $1
+                    """
+                    email_result = await conn.fetchrow(email_query, row['cliente_user_id'])
+                    if email_result:
+                        cliente_email = email_result['email']
+                except Exception as e:
+                    print(f"Error obteniendo email del cliente {row['cliente_user_id']}: {e}")
+                    cliente_email = "No disponible"
+                
+                # Formatear fechas
+                fecha_reserva_formateada = None
+                if row['fecha_reserva']:
+                    fecha_reserva_formateada = row['fecha_reserva'].strftime("%d/%m/%Y %H:%M")
+                
+                fecha_servicio_formateada = None
+                if row['fecha']:
+                    fecha_servicio_formateada = row['fecha'].strftime("%d/%m/%Y")
+                
+                # Formatear horario
+                horario_completo = None
+                if row['hora_inicio'] and row['hora_fin']:
+                    horario_completo = f"{row['hora_inicio']} - {row['hora_fin']}"
+                elif row['hora_inicio']:
+                    horario_completo = str(row['hora_inicio'])
+                
+                # Formatear estado con colores/iconos
+                estado_info = {
+                    'pendiente': {'label': 'Pendiente', 'color': 'yellow'},
+                    'aprobado': {'label': 'Aprobado', 'color': 'green'},
+                    'rechazado': {'label': 'Rechazado', 'color': 'red'},
+                    'concluido': {'label': 'Concluido', 'color': 'blue'},
+                    'confirmada': {'label': 'Confirmada', 'color': 'green'},
+                    'cancelada': {'label': 'Cancelada', 'color': 'red'}
+                }
+                
+                estado_actual = row['estado'].lower()
+                estado_formateado = estado_info.get(estado_actual, {
+                    'label': estado_actual.title(), 
+                    'color': 'gray'
+                })
+                
+                reservas_detalladas.append({
+                    "id_reserva": row['id_reserva'],
+                    "cliente": {
+                        "nombre": row['cliente_nombre'],
+                        "email": cliente_email,
+                        "user_id": str(row['cliente_user_id'])
+                    },
+                    "proveedor": {
+                        "empresa": row['empresa_razon_social'],
+                        "nombre_fantasia": row['empresa_nombre_fantasia'],
+                        "user_id": str(row['proveedor_user_id'])
+                    },
+                    "servicio": {
+                        "nombre": row['servicio_nombre'],
+                        "precio": float(row['servicio_precio']) if row['servicio_precio'] else 0,
+                        "descripcion": row['servicio_descripcion'],
+                        "categoria": row['categoria_nombre']
+                    },
+                    "reserva": {
+                        "fecha_servicio": fecha_servicio_formateada,
+                        "horario": horario_completo,
+                        "fecha_reserva": fecha_reserva_formateada,
+                        "descripcion": row['descripcion'],
+                        "observacion": row['observacion']
+                    },
+                    "estado": {
+                        "valor": row['estado'],
+                        "label": estado_formateado['label'],
+                        "color": estado_formateado['color']
+                    }
+                })
+            
+            # Estadísticas del reporte
+            total_reservas = len(reservas_detalladas)
+            estados_count = {}
+            for reserva in reservas_detalladas:
+                estado = reserva['estado']['valor']
+                estados_count[estado] = estados_count.get(estado, 0) + 1
+            
+            return {
+                "total_reservas": total_reservas,
+                "reservas": reservas_detalladas,
+                "estadisticas": {
+                    "por_estado": estados_count,
+                    "total_proveedores": len(set(r['proveedor']['user_id'] for r in reservas_detalladas)),
+                    "total_clientes": len(set(r['cliente']['email'] for r in reservas_detalladas))
+                },
+                "fecha_generacion": datetime.now().isoformat(),
+                "filtros_aplicados": "Todas las reservas de proveedores"
+            }
+            
+        finally:
+            await direct_db_service.release_connection(conn)
+            
+    except Exception as e:
+        print(f"Error generando reporte de reservas de proveedores: {e}")
+        # Si es un error de PgBouncer, intentar rollback
+        if "prepared statement" in str(e).lower() or "pgbouncer" in str(e).lower():
+            try:
+                await db.rollback()
+            except:
+                pass
+        raise HTTPException(status_code=500, detail="Error generando reporte de reservas de proveedores")
+
+@router.get(
     "/reports/reservas",
     description="Genera reporte de reservas en la plataforma"
 )
@@ -2630,7 +2793,7 @@ async def get_reporte_reservas(
                     pe.razon_social as empresa_razon_social,
                     pe.nombre_fantasia as empresa_nombre_fantasia,
                     u.nombre_persona as cliente_nombre,
-                    u.email as cliente_email
+                    u.id as cliente_user_id
                 FROM reserva r
                 JOIN servicio s ON r.id_servicio = s.id_servicio
                 JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
@@ -2642,6 +2805,20 @@ async def get_reporte_reservas(
             
             reservas_detalladas = []
             for row in reservas_data:
+                # Obtener email del cliente desde Supabase auth.users
+                cliente_email = None
+                try:
+                    # Consulta para obtener email desde auth.users
+                    email_query = """
+                        SELECT email FROM auth.users WHERE id = $1
+                    """
+                    email_result = await conn.fetchrow(email_query, row['cliente_user_id'])
+                    if email_result:
+                        cliente_email = email_result['email']
+                except Exception as e:
+                    print(f"Error obteniendo email del cliente {row['cliente_user_id']}: {e}")
+                    cliente_email = "No disponible"
+                
                 # Formatear fecha de reserva a DD/MM/AAAA
                 fecha_reserva_formateada = None
                 if row['created_at']:
@@ -2671,7 +2848,7 @@ async def get_reporte_reservas(
                     "fecha_reserva": fecha_reserva_formateada,
                     "estado": estado_formateado,
                     "cliente_nombre": row['cliente_nombre'] or "No disponible",
-                    "cliente_email": row['cliente_email'] or "No disponible",
+                    "cliente_email": cliente_email or "No disponible",
                     "servicio_nombre": row['servicio_nombre'] or "No disponible",
                     "empresa_razon_social": row['empresa_razon_social'] or "No disponible",
                     "empresa_nombre_fantasia": row['empresa_nombre_fantasia'] or "No disponible",

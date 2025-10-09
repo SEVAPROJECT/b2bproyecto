@@ -97,17 +97,27 @@ const ReservationsPage: React.FC = () => {
     const [fechaDesde, setFechaDesde] = useState('');
     const [fechaHasta, setFechaHasta] = useState('');
     const [estadoFilter, setEstadoFilter] = useState('all');
+    
     const [nombreContacto, setNombreContacto] = useState('');
     const [showFilters, setShowFilters] = useState(false);
 
     // Estados para las pestañas y funcionalidad de proveedor
     const [activeTab, setActiveTab] = useState<'mis-reservas' | 'reservas-proveedor' | 'agenda'>('mis-reservas');
     
+    // Debug: Log cuando cambia el estado del filtro
+    useEffect(() => {
+        console.log('🔍 Estado del filtro cambió a:', estadoFilter);
+        console.log('🔍 ActiveTab actual:', activeTab);
+    }, [estadoFilter, activeTab]);
+    
     // Configurar pestaña inicial según el rol del usuario
     useEffect(() => {
+        console.log('🔄 Configurando pestaña - user?.role:', user?.role, 'activeTab:', activeTab);
         if (user?.role === 'provider' && activeTab === 'mis-reservas') {
+            console.log('🔄 Cambiando a pestaña proveedor');
             setActiveTab('reservas-proveedor');
         } else if (user?.role !== 'provider' && activeTab !== 'mis-reservas') {
+            console.log('🔄 Cambiando a pestaña mis-reservas');
             setActiveTab('mis-reservas');
         }
     }, [user?.role, activeTab]);
@@ -139,10 +149,13 @@ const ReservationsPage: React.FC = () => {
             if (nombreEmpresa.trim()) params.append('nombre_empresa', nombreEmpresa.trim());
             if (fechaDesde) params.append('fecha_desde', fechaDesde);
             if (fechaHasta) params.append('fecha_hasta', fechaHasta);
-            if (estadoFilter !== 'all') params.append('estado', estadoFilter);
+            if (estadoFilter !== 'all') {
+                console.log('🔍 Agregando filtro de estado:', estadoFilter);
+                params.append('estado', estadoFilter);
+            } else {
+                console.log('🔍 No se agrega filtro de estado (es "all")');
+            }
             if (nombreContacto.trim()) params.append('nombre_contacto', nombreContacto.trim());
-
-            console.log('🔍 Cargando reservas con params:', params.toString());
 
             // Determinar qué endpoint usar según la pestaña activa
             let endpoint = '';
@@ -157,7 +170,13 @@ const ReservationsPage: React.FC = () => {
                 return;
             }
 
-            const response = await fetch(buildApiUrl(endpoint), {
+            console.log('🔍 Cargando reservas con params:', params.toString());
+            console.log('🔍 Estado filter actual:', estadoFilter);
+            
+            const urlConParams = `${buildApiUrl(endpoint)}?${params.toString()}`;
+            console.log('🔍 URL completa:', urlConParams);
+
+            const response = await fetch(urlConParams, {
                 headers: getJsonHeaders(),
             });
 
@@ -170,6 +189,7 @@ const ReservationsPage: React.FC = () => {
 
             // Mapeo simplificado para el endpoint de prueba
             const reservasData = data.reservas || data || [];
+            console.log('📊 Estados de reservas encontradas:', reservasData.map((r: any) => r.estado));
             
             const reservasMapeadas = reservasData.map((reserva: any) => ({
                 id_reserva: reserva.id_reserva,
@@ -198,6 +218,9 @@ const ReservationsPage: React.FC = () => {
                 has_next: false,
                 has_prev: false
             });
+            
+            console.log('📊 Reservas mapeadas después del filtro:', reservasMapeadas.length);
+            console.log('📊 Filtro aplicado:', estadoFilter);
         } catch (error) {
             console.error('Error al cargar reservas:', error);
             setError('Error al cargar las reservas. Por favor, inténtalo de nuevo.');
@@ -208,11 +231,15 @@ const ReservationsPage: React.FC = () => {
 
     // Cargar al montar y cuando cambien filtros o pestaña
     useEffect(() => {
+        console.log('🔄 useEffect ejecutado - estadoFilter:', estadoFilter);
+        console.log('🔄 useEffect ejecutado - activeTab:', activeTab);
+        console.log('🔄 useEffect ejecutado - searchFilter:', searchFilter);
         loadReservas(1);
     }, [searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, activeTab]);
 
     // Limpiar filtros
     const handleClearFilters = () => {
+        console.log('🧹 Limpiando filtros - estadoFilter será resetado a "all"');
         setSearchFilter('');
         setNombreServicio('');
         setNombreEmpresa('');
@@ -277,13 +304,13 @@ const ReservationsPage: React.FC = () => {
     const confirmarAccion = () => {
         if (!modalData) return;
         
-        if (modalData.accion === 'rechazado' && !modalData.observacion.trim()) {
+        if (modalData.accion === 'cancelada' && !modalData.observacion.trim()) {
             setError('Es recomendable agregar una observación al cancelar una reserva');
             return;
         }
         
-        if (modalData.accion === 'concluido' && !modalData.observacion.trim()) {
-            setError('Es recomendable agregar una observación al marcar como concluido');
+        if (modalData.accion === 'completada' && !modalData.observacion.trim()) {
+            setError('Es recomendable agregar una observación al marcar como completada');
             return;
         }
         
@@ -523,7 +550,10 @@ const ReservationsPage: React.FC = () => {
                                 </label>
                                 <select
                                     value={estadoFilter}
-                                    onChange={(e) => setEstadoFilter(e.target.value)}
+                                    onChange={(e) => {
+                                        console.log('🔍 Cambiando filtro de estado a:', e.target.value);
+                                        setEstadoFilter(e.target.value);
+                                    }}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
                                     <option value="all">Todos los estados</option>
@@ -706,7 +736,7 @@ const ReservationsPage: React.FC = () => {
                                                 {reserva.estado === 'pendiente' && (
                                                     <div className="flex space-x-2">
                                                         <button
-                                                            onClick={() => handleAccionReserva(reserva.id_reserva, 'aprobado')}
+                                                            onClick={() => handleAccionReserva(reserva.id_reserva, 'confirmada')}
                                                             disabled={accionLoading === reserva.id_reserva}
                                                             className={`bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-all duration-200 ${
                                                                 accionLoading === reserva.id_reserva 
@@ -727,7 +757,7 @@ const ReservationsPage: React.FC = () => {
                                                             )}
                                                         </button>
                                                         <button
-                                                            onClick={() => handleAccionReserva(reserva.id_reserva, 'rechazado')}
+                                                            onClick={() => handleAccionReserva(reserva.id_reserva, 'cancelada')}
                                                             disabled={accionLoading === reserva.id_reserva}
                                                             className={`bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-all duration-200 ${
                                                                 accionLoading === reserva.id_reserva 
@@ -749,10 +779,10 @@ const ReservationsPage: React.FC = () => {
                                                         </button>
                                                     </div>
                                                 )}
-                                                {reserva.estado === 'aprobado' && (
+                                                {reserva.estado === 'confirmada' && (
                                                     <div className="flex space-x-2">
                                                         <button
-                                                            onClick={() => handleAccionReserva(reserva.id_reserva, 'concluido')}
+                                                            onClick={() => handleAccionReserva(reserva.id_reserva, 'completada')}
                                                             disabled={accionLoading === reserva.id_reserva}
                                                             className={`bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition-all duration-200 ${
                                                                 accionLoading === reserva.id_reserva 
@@ -769,7 +799,7 @@ const ReservationsPage: React.FC = () => {
                                                                     Procesando...
                                                                 </span>
                                                             ) : (
-                                                                'Marcar como Concluido'
+                                                                'Marcar como Completada'
                                                             )}
                                                         </button>
                                                     </div>
@@ -822,32 +852,32 @@ const ReservationsPage: React.FC = () => {
                         <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
                             <div className="mt-3">
                                 <h3 className="text-lg font-medium text-gray-900 mb-4">
-                                    {modalData.accion === 'aprobado' ? 'Aprobar Reserva' : 
-                                     modalData.accion === 'rechazado' ? 'Cancelar Reserva' : 
-                                     modalData.accion === 'concluido' ? 'Marcar como Concluido' : 'Confirmar Acción'}
+                                    {modalData.accion === 'confirmada' ? 'Confirmar Reserva' : 
+                                     modalData.accion === 'cancelada' ? 'Cancelar Reserva' : 
+                                     modalData.accion === 'completada' ? 'Marcar como Completada' : 'Confirmar Acción'}
                                 </h3>
                                 <div className="mb-4">
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Observación {modalData.accion === 'rechazado' || modalData.accion === 'concluido' ? '(recomendado)' : '(opcional)'}:
+                                        Observación {modalData.accion === 'cancelada' || modalData.accion === 'completada' ? '(recomendado)' : '(opcional)'}:
                                     </label>
                                     <textarea
                                         value={modalData.observacion}
                                         onChange={(e) => setModalData({...modalData, observacion: e.target.value})}
                                         className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-                                            (modalData.accion === 'rechazado' || modalData.accion === 'concluido') && !modalData.observacion.trim()
+                                            (modalData.accion === 'cancelada' || modalData.accion === 'completada') && !modalData.observacion.trim()
                                                 ? 'border-yellow-300 focus:ring-yellow-500'
                                                 : 'border-gray-300 focus:ring-blue-500'
                                         }`}
                                         rows={3}
                                         placeholder={
-                                            modalData.accion === 'rechazado'
+                                            modalData.accion === 'cancelada'
                                                 ? 'Explica por qué cancelas esta reserva...'
-                                                : modalData.accion === 'concluido'
+                                                : modalData.accion === 'completada'
                                                 ? 'Describe cómo se completó el servicio...'
                                                 : 'Agrega una observación sobre esta acción...'
                                         }
                                     />
-                                    {(modalData.accion === 'rechazado' || modalData.accion === 'concluido') && !modalData.observacion.trim() && (
+                                    {(modalData.accion === 'cancelada' || modalData.accion === 'completada') && !modalData.observacion.trim() && (
                                         <p className="mt-1 text-sm text-yellow-600">
                                             ⚠️ Es recomendable agregar una observación para esta acción
                                         </p>
@@ -866,14 +896,14 @@ const ReservationsPage: React.FC = () => {
                                     <button
                                         onClick={confirmarAccion}
                                         className={`px-4 py-2 text-white rounded-md ${
-                                            modalData.accion === 'rechazado' ? 'bg-red-600 hover:bg-red-700' :
-                                            modalData.accion === 'aprobado' ? 'bg-green-600 hover:bg-green-700' :
+                                            modalData.accion === 'cancelada' ? 'bg-red-600 hover:bg-red-700' :
+                                            modalData.accion === 'confirmada' ? 'bg-green-600 hover:bg-green-700' :
                                             'bg-blue-600 hover:bg-blue-700'
                                         }`}
                                     >
-                                        {modalData.accion === 'aprobado' ? 'Aprobar' : 
-                                         modalData.accion === 'rechazado' ? 'Cancelar' : 
-                                         modalData.accion === 'concluido' ? 'Marcar como Concluido' : 'Confirmar'}
+                                        {modalData.accion === 'confirmada' ? 'Confirmar' : 
+                                         modalData.accion === 'cancelada' ? 'Cancelar' : 
+                                         modalData.accion === 'completada' ? 'Marcar como Completada' : 'Confirmar'}
                                     </button>
                                 </div>
                             </div>
