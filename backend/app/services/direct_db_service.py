@@ -246,8 +246,15 @@ class DirectDBService:
             
             # Construir respuesta
             user_data = dict(result)
-            # Los roles ya vienen como JSON en la consulta
-            user_data['roles'] = user_data['roles'] if user_data['roles'] != '[]' else []
+            # Los roles ya vienen como JSON en la consulta, necesitamos parsearlos
+            import json
+            if user_data['roles'] and user_data['roles'] != '[]':
+                try:
+                    user_data['roles'] = json.loads(user_data['roles']) if isinstance(user_data['roles'], str) else user_data['roles']
+                except (json.JSONDecodeError, TypeError):
+                    user_data['roles'] = []
+            else:
+                user_data['roles'] = []
             
             logger.info(f"✅ Perfil con roles obtenido exitosamente para usuario: {user_id}")
             return user_data

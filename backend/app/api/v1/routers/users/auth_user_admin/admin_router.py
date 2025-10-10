@@ -105,7 +105,7 @@ async def get_solicitudes_pendientes(
                 user_nombre = user.nombre_persona or "Usuario sin nombre"
                 # Obtener email desde Supabase Auth (igual que en /admin/users)
                 try:
-                    from app.supabase_client.auth_service import supabase_admin
+                    from app.supabase.auth_service import supabase_admin
                     auth_user = supabase_admin.auth.admin.get_user_by_id(str(empresa.user_id))
                     if auth_user and auth_user.user:
                         user_email = auth_user.user.email or "No disponible"
@@ -682,7 +682,7 @@ async def servir_documento(
     
     try:
         # Verificar que el token es válido usando Supabase directamente
-        from app.supabase_client.auth_service import supabase_auth
+        from app.supabase.auth_service import supabase_auth
         
         # Verificar el token con Supabase
         user_response = supabase_auth.auth.get_user(token)
@@ -956,7 +956,7 @@ async def get_users_emails_only(
         if user_id:
             
             # Obtener email específico de Supabase
-            from app.supabase_client.auth_service import supabase_admin
+            from app.supabase.auth_service import supabase_admin
             try:
                 auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
                 if auth_user and auth_user.user and auth_user.user.email:
@@ -986,7 +986,7 @@ async def get_users_emails_only(
         user_ids = [str(row.id) for row in result.all()]
         
         # Obtener emails de Supabase
-        from app.supabase_client.auth_service import supabase_admin
+        from app.supabase.auth_service import supabase_admin
         auth_users = supabase_admin.auth.admin.list_users()
         
         if not auth_users or len(auth_users) == 0:
@@ -1019,7 +1019,7 @@ async def get_users_emails(
 ):
     """Obtiene los emails de todos los usuarios desde Supabase Auth"""
     try:
-        from app.supabase_client.auth_service import supabase_admin
+        from app.supabase.auth_service import supabase_admin
         
         # Obtener todos los usuarios de Supabase en una sola llamada
         auth_users = supabase_admin.auth.admin.list_users()
@@ -1050,165 +1050,123 @@ async def get_users_emails(
 )
 async def get_all_users(
     admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_db),
     search_empresa: str = None,
     search_nombre: str = None,
     page: int = 1,
     limit: int = 100
 ):
-    """Obtiene usuarios con paginación y búsqueda optimizada"""
+    """Obtiene usuarios con paginación y búsqueda optimizada usando DirectDBService"""
     try:
-        '''print(f"🔍 DEBUG: Endpoint optimizado - Página: {page}, Límite: {limit}")
-        print(f"🔍 DEBUG: Búsqueda empresa: {search_empresa}, nombre: {search_nombre}")
-        print(f"🔍 DEBUG: Iniciando consulta de base de datos...")'''
-
-        # OPTIMIZACIÓN 1: Consulta completa para funcionalidad completa
-        base_query = select(
-            UserModel.id,
-            UserModel.nombre_persona,
-            UserModel.nombre_empresa,
-            UserModel.estado,
-            UserModel.foto_perfil
-        ).select_from(
-            UserModel
-        )
-
-        # Aplicar filtros de búsqueda
-        if search_empresa and search_empresa.strip():
-            search_term = f"%{search_empresa.strip()}%"
-            base_query = base_query.where(UserModel.nombre_empresa.ilike(search_term))
-            print(f"🔍 DEBUG: Filtro empresa aplicado: {search_term}")
-
-        if search_nombre and search_nombre.strip():
-            search_term = f"%{search_nombre.strip()}%"
-            base_query = base_query.where(UserModel.nombre_persona.ilike(search_term))
-            print(f"🔍 DEBUG: Filtro nombre aplicado: {search_term}")
-
-        # OPTIMIZACIÓN 2: Obtener total de registros para paginación
-        count_query = select(func.count(func.distinct(UserModel.id)))
-        if search_empresa and search_empresa.strip():
-            count_query = count_query.where(UserModel.nombre_empresa.ilike(f"%{search_empresa.strip()}%"))
-        if search_nombre and search_nombre.strip():
-            count_query = count_query.where(UserModel.nombre_persona.ilike(f"%{search_nombre.strip()}%"))
-
+        # Usar DirectDBService para evitar problemas con prepared statements
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        
         try:
-            total_result = await db.execute(count_query)
-            total_users = total_result.scalar()
-        except Exception as db_error:
-            # Manejar errores de PgBouncer en conteo
-            if "DuplicatePreparedStatementError" in str(db_error):
-                print(f"🔄 Error de PgBouncer detectado en count_query, reintentando...")
-                await db.rollback()
-                # Reintentar la consulta de conteo
-                total_result = await db.execute(count_query)
-                total_users = total_result.scalar()
-            else:
-                raise db_error
-
-        # OPTIMIZACIÓN 3: Aplicar paginación
-        offset = (page - 1) * limit
-        base_query = base_query.offset(offset).limit(limit)
-
-        # Ejecutar consulta optimizada
-        print("🔍 DEBUG: Ejecutando consulta de base de datos...")
-        try:
-            result = await db.execute(base_query)
-            users_with_roles = result.all()
-            print("🔍 DEBUG: Consulta de base de datos completada")
-        except Exception as db_error:
-            # Manejar errores de PgBouncer
-            if "DuplicatePreparedStatementError" in str(db_error):
-                print(f"🔄 Error de PgBouncer detectado en get_all_users, reintentando...")
-                await db.rollback()
-                # Reintentar la consulta
-                result = await db.execute(base_query)
-                users_with_roles = result.all()
-                print("🔍 DEBUG: Consulta de base de datos completada después del reintento")
-            else:
-                raise db_error
-
-        print(f"🔍 DEBUG: {len(users_with_roles)} registros obtenidos de {total_users} totales")
-
-        # OPTIMIZACIÓN 4: Obtener todos los emails de Supabase de una vez
-        print("🔍 DEBUG: Obteniendo usuarios de Supabase...")
-        try:
-            from app.supabase_client.auth_service import supabase_admin
-            auth_users = supabase_admin.auth.admin.list_users()
-            print(f"🔍 DEBUG: Supabase devolvió {len(auth_users) if auth_users else 0} usuarios")
+            # Construir consulta SQL con filtros
+            where_conditions = []
+            params = []
+            param_count = 1
             
-            emails_dict = {}
-            if auth_users and len(auth_users) > 0:
-                for auth_user in auth_users:
-                    if auth_user.id and auth_user.email:
-                        emails_dict[auth_user.id] = {
-                            "email": auth_user.email,
-                            "ultimo_acceso": auth_user.last_sign_in_at
-                        }
-                print(f"🔍 DEBUG: {len(emails_dict)} emails obtenidos de Supabase")
-            else:
-                print("⚠️ DEBUG: No se obtuvieron usuarios de Supabase")
-        except Exception as supabase_error:
-            print(f"❌ DEBUG: Error en Supabase: {str(supabase_error)}")
-            emails_dict = {}
-
-        # OPTIMIZACIÓN 5: Procesar resultados agrupados por usuario
-        users_dict = {}
-        for row in users_with_roles:
-            user_id = str(row.id)
+            if search_empresa and search_empresa.strip():
+                where_conditions.append(f"u.nombre_empresa ILIKE ${param_count}")
+                params.append(f"%{search_empresa.strip()}%")
+                param_count += 1
+                
+            if search_nombre and search_nombre.strip():
+                where_conditions.append(f"u.nombre_persona ILIKE ${param_count}")
+                params.append(f"%{search_nombre.strip()}%")
+                param_count += 1
             
-            if user_id not in users_dict:
-                # Crear usuario base
-                users_dict[user_id] = {
-                    "id": user_id,
-                    "nombre_persona": row.nombre_persona,
-                    "nombre_empresa": row.nombre_empresa,
-                    "foto_perfil": row.foto_perfil,
-                    "estado": row.estado or "ACTIVO",
-                    "roles": [],
-                    "rol_principal": "client",
-                    "email": "No disponible",
-                    "ultimo_acceso": None
-                }
-
-                # Agregar email si existe
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+            
+            # Consulta para obtener total de usuarios
+            count_query = f"""
+                SELECT COUNT(DISTINCT u.id) as total
+                FROM users u
+                {where_clause}
+            """
+            
+            total_result = await conn.fetchrow(count_query, *params)
+            total_users = total_result['total'] if total_result else 0
+            
+            # Aplicar paginación
+            offset = (page - 1) * limit
+            
+            # Consulta principal para obtener usuarios
+            users_query = f"""
+                SELECT 
+                    u.id,
+                    u.nombre_persona,
+                    u.nombre_empresa,
+                    u.estado,
+                    u.foto_perfil,
+                    u.created_at
+                FROM users u
+                {where_clause}
+                ORDER BY u.created_at DESC
+                LIMIT ${param_count} OFFSET ${param_count + 1}
+            """
+            
+            params.extend([limit, offset])
+            users_data = await conn.fetch(users_query, *params)
+            
+            # Obtener emails de Supabase
+            emails_dict = {}
+            try:
+                from app.supabase.auth_service import supabase_admin
+                auth_users = supabase_admin.auth.admin.list_users()
+                
+                if auth_users and len(auth_users) > 0:
+                    for auth_user in auth_users:
+                        if auth_user.id and auth_user.email:
+                            emails_dict[auth_user.id] = {
+                                "email": auth_user.email,
+                                "ultimo_acceso": auth_user.last_sign_in_at
+                            }
+            except Exception as supabase_error:
+                print(f"❌ Error obteniendo emails de Supabase: {supabase_error}")
+            
+            # Procesar usuarios
+            users_list = []
+            for row in users_data:
+                user_id = str(row['id'])
+                
+                # Obtener email si existe
+                email = "No disponible"
+                ultimo_acceso = None
                 if user_id in emails_dict:
-                    users_dict[user_id]["email"] = emails_dict[user_id]["email"]
-                    users_dict[user_id]["ultimo_acceso"] = emails_dict[user_id]["ultimo_acceso"]
-
-            # Agregar rol por defecto (consulta simplificada)
-            if not users_dict[user_id]["roles"]:
-                users_dict[user_id]["roles"] = ["Usuario"]
-
-        # OPTIMIZACIÓN 6: Determinar rol principal para cada usuario
-        users_data = []
-        for user_id, user_data in users_dict.items():
-            roles = user_data["roles"]
-            user_data["todos_roles"] = roles.copy()
-
-            # Determinar rol principal
-            normalized_roles = [rol.lower().strip() for rol in roles]
-            if any(admin_role in normalized_roles for admin_role in ["admin", "administrador", "administrator"]):
-                user_data["rol_principal"] = "admin"
-            elif any(provider_role in normalized_roles for provider_role in ["provider", "proveedor", "proveedores"]):
-                user_data["rol_principal"] = "provider"
-            elif any(client_role in normalized_roles for client_role in ["client", "cliente"]):
-                user_data["rol_principal"] = "client"
-            else:
-                user_data["rol_principal"] = "client"
-
-            users_data.append(user_data)
-
-        print(f"🔍 DEBUG: Procesamiento completado, {len(users_data)} usuarios listos")
-
-        return {
-            "usuarios": users_data,
-            "total": total_users,
-            "page": page,
-            "limit": limit,
-            "total_pages": (total_users + limit - 1) // limit,
-            "message": "Usuarios obtenidos exitosamente"
-        }
-
+                    email = emails_dict[user_id]["email"]
+                    ultimo_acceso = emails_dict[user_id]["ultimo_acceso"]
+                
+                users_list.append({
+                    "id": user_id,
+                    "nombre_persona": row['nombre_persona'] or "Sin nombre",
+                    "nombre_empresa": row['nombre_empresa'] or "Sin empresa",
+                    "foto_perfil": row['foto_perfil'],
+                    "estado": row['estado'] or "ACTIVO",
+                    "email": email,
+                    "ultimo_acceso": ultimo_acceso,
+                    "roles": ["Usuario"],  # Rol por defecto
+                    "rol_principal": "client",
+                    "todos_roles": ["Usuario"],
+                    "fecha_registro": row['created_at'].strftime("%d/%m/%Y") if row['created_at'] else "Sin fecha"
+                })
+            
+            return {
+                "usuarios": users_list,
+                "total": total_users,
+                "page": page,
+                "limit": limit,
+                "total_pages": (total_users + limit - 1) // limit,
+                "message": "Usuarios obtenidos exitosamente"
+            }
+            
+        finally:
+            await direct_db_service.pool.release(conn)
+            
     except Exception as e:
         print(f"❌ Error obteniendo usuarios: {str(e)}")
         import traceback
@@ -1386,7 +1344,7 @@ async def update_user_profile(
             if is_admin:
                 # Administrador puede editar email
                 try:
-                    from app.supabase_client.auth_service import supabase_admin
+                    from app.supabase.auth_service import supabase_admin
                     supabase_admin.auth.admin.update_user_by_id(
                         user_id,
                         {"email": user_data["email"]}
@@ -1617,7 +1575,7 @@ async def deactivate_user(
         supabase_error = None
 
         try:
-            from app.supabase_client.auth_service import supabase_admin
+            from app.supabase.auth_service import supabase_admin
 
             if not supabase_admin:
                 print("⚠️ Cliente Supabase admin no disponible")
@@ -1731,7 +1689,7 @@ async def reset_user_password(
         print(f"✅ Usuario encontrado: {user.nombre_persona}")
         
         # Obtener el email del usuario desde Supabase Auth
-        from app.supabase_client.auth_service import supabase_admin
+        from app.supabase.auth_service import supabase_admin
         
         try:
             # Obtener información del usuario desde Supabase Auth
@@ -1873,7 +1831,7 @@ async def verify_user_edit(
         # Obtener email de Supabase si es posible
         email = "No disponible"
         try:
-            from app.supabase_client.auth_service import supabase_admin
+            from app.supabase.auth_service import supabase_admin
             auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
             if auth_user and auth_user.user:
                 email = auth_user.user.email or "No disponible"
@@ -2051,7 +2009,7 @@ async def toggle_user_status(
         # Intentar actualizar en Supabase Auth también
         supabase_success = False
         try:
-            from app.supabase_client.auth_service import supabase_admin
+            from app.supabase.auth_service import supabase_admin
             if supabase_admin:
                 result = supabase_admin.auth.admin.update_user_by_id(
                     str(user.id),
@@ -2141,7 +2099,7 @@ async def activate_user(
         # Intentar actualizar en Supabase Auth también
         supabase_success = False
         try:
-            from app.supabase_client.auth_service import supabase_admin
+            from app.supabase.auth_service import supabase_admin
             if supabase_admin:
                 result = supabase_admin.auth.admin.update_user_by_id(
                     str(user.id),
@@ -2242,181 +2200,219 @@ async def deactivate_user_simple(
     description="Genera reporte de todos los usuarios (activos e inactivos)"
 )
 async def get_reporte_usuarios_activos(
-    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_db)
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user)
 ):
-    """Genera reporte de todos los usuarios (activos e inactivos) con rol principal"""
+    """Genera reporte de todos los usuarios usando DirectDBService"""
     try:
         print("🔍 DEBUG: Generando reporte de todos los usuarios...")
         
-        # Obtener TODOS los usuarios (activos e inactivos) - mismo enfoque que /users
-        from sqlalchemy.future import select
-        user_query = select(UserModel.id, UserModel.nombre_persona, UserModel.nombre_empresa, UserModel.estado)
-        user_result = await db.execute(user_query)
-        users = user_result.all()
-
-        print(f"🔍 DEBUG: {len(users)} usuarios encontrados para reporte")
-
-        # Procesar usuarios uno por uno
-        usuarios_con_roles = []
-        for user_row in users:
-            user_id = str(user_row.id)
-            print(f"🔍 DEBUG: Procesando usuario {user_id} para reporte")
-
-            # Crear objeto usuario básico
-            user_data = {
-                "id": user_id,
-                "nombre_persona": user_row.nombre_persona,
-                "nombre_empresa": user_row.nombre_empresa,
-                "email": "No disponible",
-                "estado": user_row.estado or "ACTIVO",
-                "rol_principal": "Cliente",  # Valor por defecto
-                "fecha_creacion": None
-            }
-
-            # Obtener email y fecha de creación desde Supabase Auth
+        # Usar DirectDBService para evitar problemas con prepared statements
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Consulta SQL directa para obtener todos los usuarios
+            users_query = """
+                SELECT 
+                    u.id,
+                    u.nombre_persona,
+                    u.nombre_empresa,
+                    u.estado,
+                    u.created_at
+                FROM users u
+                ORDER BY u.created_at DESC
+            """
+            
+            users_data = await conn.fetch(users_query)
+            print(f"🔍 DEBUG: {len(users_data)} usuarios encontrados para reporte")
+            
+            # Obtener emails de Supabase
+            emails_dict = {}
             try:
-                from app.supabase_client.auth_service import supabase_admin
-                auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
-
-                if auth_user and auth_user.user:
-                    user_data["email"] = auth_user.user.email or "No disponible"
-                    
-                    # Formatear fecha de creación a DD/MM/AAAA
-                    if auth_user.user.created_at:
-                        from datetime import datetime
+                from app.supabase.auth_service import supabase_admin
+                auth_users = supabase_admin.auth.admin.list_users()
+                
+                if auth_users and len(auth_users) > 0:
+                    for auth_user in auth_users:
+                        if auth_user.id and auth_user.email:
+                            emails_dict[auth_user.id] = {
+                                "email": auth_user.email,
+                                "created_at": auth_user.created_at
+                            }
+            except Exception as supabase_error:
+                print(f"❌ Error obteniendo emails de Supabase: {supabase_error}")
+            
+            # Procesar usuarios
+            usuarios_con_roles = []
+            for row in users_data:
+                user_id = str(row['id'])
+                
+                # Obtener email y fecha de creación
+                email = "No disponible"
+                fecha_creacion = "No disponible"
+                if user_id in emails_dict:
+                    email = emails_dict[user_id]["email"]
+                    if emails_dict[user_id]["created_at"]:
                         try:
-                            created_at_str = str(auth_user.user.created_at)
-                            print(f"DEBUG: Fecha original para {user_row.nombre_persona}: {created_at_str}")
-                            
-                            # Limpiar y formatear la fecha
-                            if created_at_str.endswith('Z'):
-                                created_at_str = created_at_str.replace('Z', '+00:00')
-                            elif '+' not in created_at_str and 'T' in created_at_str:
-                                created_at_str = created_at_str + '+00:00'
-                            
-                            fecha_creacion = datetime.fromisoformat(created_at_str)
-                            user_data["fecha_creacion"] = fecha_creacion.strftime("%d/%m/%Y")
-                            print(f"DEBUG: Usuario {user_row.nombre_persona} - Fecha formateada: {user_data['fecha_creacion']}")
+                            from datetime import datetime
+                            created_at = emails_dict[user_id]["created_at"]
+                            if isinstance(created_at, str):
+                                if created_at.endswith('Z'):
+                                    created_at = created_at.replace('Z', '+00:00')
+                                elif '+' not in created_at and 'T' in created_at:
+                                    created_at = created_at + '+00:00'
+                                fecha_creacion = datetime.fromisoformat(created_at).strftime("%d/%m/%Y")
+                            else:
+                                fecha_creacion = created_at.strftime("%d/%m/%Y")
                         except Exception as date_error:
-                            print(f"DEBUG: Error formateando fecha para {user_row.nombre_persona}: {date_error}")
-                            user_data["fecha_creacion"] = "Error formato"
-                    else:
-                        print(f"DEBUG: Usuario {user_row.nombre_persona} - No tiene created_at")
-                        user_data["fecha_creacion"] = "No disponible"
-
-            except Exception as e:
-                print(f"DEBUG: Error obteniendo datos de Supabase para usuario {user_row.nombre_persona}: {e}")
-                user_data["fecha_creacion"] = "No disponible"
-
-            # Obtener rol principal (misma lógica que /users)
-            try:
-                roles_query = select(RolModel.nombre).select_from(
-                    UsuarioRolModel
-                ).join(
-                    RolModel, UsuarioRolModel.id_rol == RolModel.id
-                ).where(
-                    UsuarioRolModel.id_usuario == user_row.id
-                )
-
-                roles_result = await db.execute(roles_query)
-                roles = roles_result.scalars().all()
-
-                # Determinar rol principal (usar lógica de mapeo consistente)
+                            print(f"DEBUG: Error formateando fecha para usuario {user_id}: {date_error}")
+                            fecha_creacion = "Error formato"
+                
+                # Obtener roles del usuario
+                roles_query = """
+                    SELECT r.nombre
+                    FROM usuario_rol ur
+                    JOIN rol r ON ur.id_rol = r.id
+                    WHERE ur.id_usuario = $1
+                """
+                
+                roles_data = await conn.fetch(roles_query, user_id)
+                roles = [row['nombre'] for row in roles_data]
+                
+                # Determinar rol principal
                 normalized_roles = [rol.lower().strip() for rol in roles]
                 if any(admin_role in normalized_roles for admin_role in ["admin", "administrador", "administrator"]):
-                    user_data["rol_principal"] = "Administrador"
+                    rol_principal = "Administrador"
                 elif any(provider_role in normalized_roles for provider_role in ["provider", "proveedor", "proveedores"]):
-                    user_data["rol_principal"] = "Proveedor"
+                    rol_principal = "Proveedor"
                 elif any(client_role in normalized_roles for client_role in ["client", "cliente"]):
-                    user_data["rol_principal"] = "Cliente"
+                    rol_principal = "Cliente"
                 else:
-                    user_data["rol_principal"] = "Cliente"
-
-                print(f"🔍 DEBUG: Usuario {user_id} - Rol principal: {user_data['rol_principal']}")
-
-            except Exception as role_error:
-                print(f"⚠️ Error obteniendo roles para usuario {user_id}: {str(role_error)}")
-                user_data["rol_principal"] = "Cliente"
-
-            usuarios_con_roles.append(user_data)
-
-        print(f"🔍 DEBUG: Reporte generado con {len(usuarios_con_roles)} usuarios")
-
-        return {
-            "total_usuarios": len(usuarios_con_roles),
-            "usuarios": usuarios_con_roles,
-            "fecha_generacion": datetime.now().isoformat()
-        }
+                    rol_principal = "Cliente"
+                
+                usuarios_con_roles.append({
+                    "id": user_id,
+                    "nombre_persona": row['nombre_persona'] or "Sin nombre",
+                    "nombre_empresa": row['nombre_empresa'] or "Sin empresa",
+                    "email": email,
+                    "estado": row['estado'] or "ACTIVO",
+                    "rol_principal": rol_principal,
+                    "fecha_creacion": fecha_creacion
+                })
+            
+            # Calcular estadísticas
+            total_usuarios = len(usuarios_con_roles)
+            usuarios_activos = len([u for u in usuarios_con_roles if u['estado'] == 'ACTIVO'])
+            usuarios_inactivos = total_usuarios - usuarios_activos
+            
+            return {
+                "total_usuarios": total_usuarios,
+                "usuarios_activos": usuarios_activos,
+                "usuarios_inactivos": usuarios_inactivos,
+                "usuarios": usuarios_con_roles,
+                "fecha_generacion": datetime.now().isoformat(),
+                "filtros_aplicados": "Todos los usuarios (activos e inactivos)"
+            }
+            
+        finally:
+            await direct_db_service.pool.release(conn)
+            
     except Exception as e:
-        print(f"Error generando reporte de usuarios: {e}")
-        raise HTTPException(status_code=500, detail="Error generando reporte")
+        print(f"❌ Error generando reporte de usuarios: {str(e)}")
+        import traceback
+        print("Traceback completo:")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generando reporte de usuarios: {str(e)}"
+        )
 
 @router.get(
     "/reports/proveedores-verificados",
     description="Genera reporte de proveedores verificados"
 )
 async def get_reporte_proveedores_verificados(
-    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_db)
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user)
 ):
-    """Genera reporte de proveedores verificados"""
+    """Genera reporte de proveedores verificados usando DirectDBService"""
     try:
-        # Obtener empresas verificadas
-        empresas_query = select(PerfilEmpresa).where(PerfilEmpresa.verificado == True)
-        empresas_result = await db.execute(empresas_query)
-        empresas = empresas_result.scalars().all()
-
-        proveedores_verificados = []
-        for empresa in empresas:
-            # Obtener datos del usuario
-            user_query = select(UserModel).where(UserModel.id == empresa.user_id)
-            user_result = await db.execute(user_query)
-            user = user_result.scalars().first()
-
-            # Obtener email desde Supabase
-            user_email = "No disponible"
-            try:
-                from app.supabase_client.auth_service import supabase_admin
-                auth_user = supabase_admin.auth.admin.get_user_by_id(str(empresa.user_id))
-                if auth_user and auth_user.user:
-                    user_email = auth_user.user.email or "No disponible"
-            except:
-                pass
-
-            # Formatear fecha de verificación a DD/MM/AAAA
-            fecha_verificacion_formateada = None
-            if empresa.fecha_verificacion:
-                fecha_verificacion_formateada = empresa.fecha_verificacion.strftime("%d/%m/%Y")
+        # Usar DirectDBService para evitar problemas con prepared statements
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Consulta SQL directa para obtener proveedores verificados con información completa
+            proveedores_query = """
+                SELECT 
+                    pe.id_perfil,
+                    pe.razon_social,
+                    pe.nombre_fantasia,
+                    pe.estado,
+                    pe.fecha_inicio,
+                    pe.fecha_verificacion,
+                    pe.verificado,
+                    u.nombre_persona,
+                    u.id as user_id
+                FROM perfil_empresa pe
+                INNER JOIN users u ON pe.user_id = u.id
+                WHERE pe.verificado = true
+                ORDER BY pe.fecha_verificacion DESC
+            """
             
-            # Formatear fecha de inicio a DD/MM/AAAA
-            fecha_inicio_formateada = None
-            if empresa.fecha_inicio:
-                fecha_inicio_formateada = empresa.fecha_inicio.strftime("%d/%m/%Y")
-
-            proveedores_verificados.append({
-                "razon_social": empresa.razon_social,
-                "nombre_fantasia": empresa.nombre_fantasia,
-                "nombre_contacto": user.nombre_persona if user else "No disponible",
-                "email_contacto": user_email,
-                "estado": empresa.estado,
-                "fecha_inicio": fecha_inicio_formateada
-            })
-
-        return {
-            "total_proveedores": len(proveedores_verificados),
-            "proveedores": proveedores_verificados,
-            "fecha_generacion": datetime.now().isoformat()
-        }
+            proveedores_data = await conn.fetch(proveedores_query)
+            
+            proveedores_verificados = []
+            for row in proveedores_data:
+                # Obtener email del proveedor desde Supabase auth.users
+                proveedor_email = "No disponible"
+                try:
+                    # Consulta para obtener email desde auth.users
+                    email_query = """
+                        SELECT email FROM auth.users WHERE id = $1
+                    """
+                    email_result = await conn.fetchrow(email_query, row['user_id'])
+                    if email_result:
+                        proveedor_email = email_result['email']
+                except Exception as e:
+                    print(f"Error obteniendo email del proveedor {row['user_id']}: {e}")
+                    proveedor_email = "No disponible"
+                
+                # Formatear fechas
+                fecha_verificacion_formateada = None
+                if row['fecha_verificacion']:
+                    fecha_verificacion_formateada = row['fecha_verificacion'].strftime("%d/%m/%Y")
+                
+                fecha_inicio_formateada = None
+                if row['fecha_inicio']:
+                    fecha_inicio_formateada = row['fecha_inicio'].strftime("%d/%m/%Y")
+                
+                proveedores_verificados.append({
+                    "id_perfil": str(row['id_perfil']),
+                    "razon_social": row['razon_social'],
+                    "nombre_fantasia": row['nombre_fantasia'],
+                    "nombre_contacto": row['nombre_persona'],
+                    "email_contacto": proveedor_email,
+                    "estado": row['estado'],
+                    "fecha_inicio": fecha_inicio_formateada,
+                    "fecha_verificacion": fecha_verificacion_formateada,
+                    "verificado": row['verificado']
+                })
+            
+            return {
+                "total_proveedores": len(proveedores_verificados),
+                "proveedores": proveedores_verificados,
+                "fecha_generacion": datetime.now().isoformat(),
+                "filtros_aplicados": "Proveedores verificados"
+            }
+            
+        finally:
+            await direct_db_service.pool.release(conn)
+            
     except Exception as e:
         print(f"Error generando reporte de proveedores verificados: {e}")
-        # Si es un error de PgBouncer, intentar rollback
-        if "prepared statement" in str(e).lower() or "pgbouncer" in str(e).lower():
-            try:
-                await db.rollback()
-            except:
-                pass
-        raise HTTPException(status_code=500, detail="Error generando reporte")
+        raise HTTPException(status_code=500, detail="Error generando reporte de proveedores verificados")
 
 @router.get(
     "/reports/solicitudes-proveedores",
@@ -2452,7 +2448,7 @@ async def get_reporte_solicitudes_proveedores(
                     user_nombre = user.nombre_persona
                     # Obtener email desde Supabase
                     try:
-                        from app.supabase_client.auth_service import supabase_admin
+                        from app.supabase.auth_service import supabase_admin
                         auth_user = supabase_admin.auth.admin.get_user_by_id(str(empresa.user_id))
                         if auth_user and auth_user.user:
                             user_email = auth_user.user.email or "No disponible"
@@ -2546,57 +2542,71 @@ async def get_reporte_categorias(
     description="Genera reporte de servicios en la plataforma"
 )
 async def get_reporte_servicios(
-    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_db)
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user)
 ):
-    """Genera reporte de servicios en la plataforma"""
+    """Genera reporte de servicios en la plataforma usando DirectDBService"""
     try:
-        # Obtener todos los servicios con información de empresa y categoría
-        servicios_query = select(
-            ServicioModel,
-            PerfilEmpresa.razon_social,
-            PerfilEmpresa.nombre_fantasia,
-            CategoriaModel.nombre.label('categoria_nombre')
-        ).join(
-            PerfilEmpresa, ServicioModel.id_perfil == PerfilEmpresa.id_perfil
-        ).join(
-            CategoriaModel, ServicioModel.id_categoria == CategoriaModel.id_categoria
-        ).order_by(ServicioModel.created_at.desc())
+        # Usar DirectDBService para evitar problemas con prepared statements
+        from app.services.direct_db_service import direct_db_service
         
-        servicios_result = await db.execute(servicios_query)
-        servicios_data = servicios_result.all()
-
-        servicios_detallados = []
-        for row in servicios_data:
-            servicio = row.Servicio
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Consulta SQL directa para obtener servicios con información completa
+            servicios_query = """
+                SELECT 
+                    s.id_servicio,
+                    s.nombre,
+                    s.descripcion,
+                    s.precio,
+                    s.estado,
+                    s.created_at,
+                    pe.razon_social,
+                    pe.nombre_fantasia,
+                    c.nombre as categoria_nombre
+                FROM servicio s
+                INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+                ORDER BY s.created_at DESC
+            """
             
-            # Formatear fecha a DD/MM/AAAA
-            fecha_formateada = None
-            if hasattr(servicio, 'created_at') and servicio.created_at:
-                fecha_formateada = servicio.created_at.strftime("%d/%m/%Y")
+            servicios_data = await conn.fetch(servicios_query)
             
-            # Formatear estado: true -> "Activa", false -> "Inactiva"
-            estado_formateado = "Activa" if servicio.estado else "Inactiva"
+            servicios_detallados = []
+            for row in servicios_data:
+                # Formatear fecha a DD/MM/AAAA
+                fecha_formateada = None
+                if row['created_at']:
+                    fecha_formateada = row['created_at'].strftime("%d/%m/%Y")
+                
+                # Formatear estado: true -> "ACTIVO", false -> "INACTIVO"
+                estado_formateado = "ACTIVO" if row['estado'] else "INACTIVO"
+                
+                servicios_detallados.append({
+                    "id_servicio": str(row['id_servicio']),
+                    "nombre": row['nombre'] or "Sin nombre",
+                    "descripcion": row['descripcion'] or "Sin descripción",
+                    "precio": float(row['precio']) if row['precio'] else 0,
+                    "estado": estado_formateado,
+                    "empresa": row['razon_social'] or "Sin empresa",
+                    "nombre_fantasia": row['nombre_fantasia'] or "Sin nombre fantasia",
+                    "categoria": row['categoria_nombre'] or "Sin categoría",
+                    "fecha_creacion": fecha_formateada or "Sin fecha"
+                })
             
-            servicios_detallados.append({
-                "nombre": servicio.nombre,
-                "descripcion": servicio.descripcion,
-                "precio": float(servicio.precio) if servicio.precio else 0,
-                "estado": estado_formateado,
-                "empresa": row.razon_social,
-                "nombre_fantasia": row.nombre_fantasia,
-                "categoria": row.categoria_nombre,
-                "fecha_creacion": fecha_formateada
-            })
-
-        return {
-            "total_servicios": len(servicios_detallados),
-            "servicios": servicios_detallados,
-            "fecha_generacion": datetime.now().isoformat()
-        }
+            return {
+                "total_servicios": len(servicios_detallados),
+                "servicios": servicios_detallados,
+                "fecha_generacion": datetime.now().isoformat(),
+                "filtros_aplicados": "Todos los servicios publicados"
+            }
+            
+        finally:
+            await direct_db_service.pool.release(conn)
+            
     except Exception as e:
         print(f"Error generando reporte de servicios: {e}")
-        raise HTTPException(status_code=500, detail="Error generando reporte")
+        raise HTTPException(status_code=500, detail="Error generando reporte de servicios")
 
 @router.get(
     "/reports/reservas-proveedores",
@@ -2749,7 +2759,7 @@ async def get_reporte_reservas_proveedores(
             }
             
         finally:
-            await direct_db_service.release_connection(conn)
+            await direct_db_service.pool.release(conn)
             
     except Exception as e:
         print(f"Error generando reporte de reservas de proveedores: {e}")
@@ -2888,7 +2898,7 @@ async def get_users_batch_emails(
 ):
     """Obtiene emails de usuarios por lotes"""
     try:
-        from app.supabase_client.auth_service import supabase_admin
+        from app.supabase.auth_service import supabase_admin
 
         # Obtener usuarios de Supabase en lotes
         auth_users = supabase_admin.auth.admin.list_users()
@@ -2948,7 +2958,7 @@ async def debug_user_status(
         # Obtener estado de Supabase
         supabase_status = "Desconocido"
         try:
-            from app.supabase_client.auth_service import supabase_admin
+            from app.supabase.auth_service import supabase_admin
             auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
             if auth_user and auth_user.user:
                 supabase_status = "Activo" if not auth_user.user.banned_until else "Suspendido"
@@ -3023,7 +3033,7 @@ async def self_deactivate_user(
         # Intentar actualizar en Supabase Auth también
         supabase_success = False
         try:
-            from app.supabase_client.auth_service import supabase_admin
+            from app.supabase.auth_service import supabase_admin
             if supabase_admin:
                 result = supabase_admin.auth.admin.update_user_by_id(
                     str(user.id),
@@ -3101,7 +3111,7 @@ async def get_user_details(
         
         # Obtener información de Supabase Auth
         try:
-            from app.supabase_client.auth_service import supabase_auth
+            from app.supabase.auth_service import supabase_auth
             auth_user = supabase_auth.auth.admin.get_user_by_id(str(user.id))
             
             user_data = {

@@ -714,36 +714,26 @@ const AdminReportsPage: React.FC = () => {
                     })();
                     break;
                 case 'servicios':
-                    // Endpoint con CORS - usar estrategia alternativa
+                    // Usar el endpoint de reportes de servicios
                     dataPromise = (async () => {
-                        console.log('🔧 Buscando servicios disponibles...');
+                        console.log('🔧 Cargando reporte de servicios...');
                         try {
-                            // Obtener servicios desde el endpoint público que funciona
-                            const servicesResponse = await fetch(buildApiUrl('/services/list'), {
+                            // Usar el endpoint de reportes de servicios
+                            const response = await fetch(buildApiUrl('/admin/reports/servicios'), {
                                 headers: { 'Authorization': `Bearer ${user.accessToken}` }
                             });
-                            if (servicesResponse.ok) {
-                                const servicesData = await servicesResponse.json();
-                                const servicios = Array.isArray(servicesData) ? servicesData : (servicesData.services || []);
-
-                                console.log('✅ Encontrados', servicios.length, 'servicios para reporte');
-                                return {
-                                    fecha_generacion: getArgentinaDateISO(),
-                                    total_servicios: servicios.length,
-                                    servicios: servicios.map((s: any) => ({
-                                        id_servicio: s.id,
-                                        nombre_servicio: s.nombre_servicio || s.name || 'Sin nombre',
-                                        descripcion: s.descripcion || s.description || 'Sin descripción',
-                                        categoria: s.categoria || s.category_name || 'Sin categoría',
-                                        precio_desde: s.precio_minimo || s.price_min || 0,
-                                        precio_hasta: s.precio_maximo || s.price_max || 0,
-                                        proveedor: s.proveedor_nombre || s.provider_name || 'Sin proveedor',
-                                        estado: s.estado || s.status || 'activo',
-                                        fecha_creacion: s.fecha_creacion || s.created_at || getArgentinaDateISO()
-                                    })),
-                                    generado_desde: 'services_from_public_api'
-                                };
+                            
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                             }
+                            
+                            const data = await response.json();
+                            console.log('✅ Servicios cargados desde reporte:', data);
+                            
+                            return {
+                                ...data,
+                                fecha_generacion: getArgentinaDateISO()
+                            };
                         } catch (err) {
                             console.log('⚠️ No se pudieron obtener servicios del endpoint público');
                         }

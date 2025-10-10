@@ -109,39 +109,29 @@ async def get_current_user(
     
 
 async def get_admin_user(
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user: SupabaseUser = Depends(get_current_user)
 ) -> UserProfileAndRolesOut:
     """
     Dependencia que asegura que el usuario autenticado es un administrador.
+    Usa DirectDBService para evitar problemas con prepared statements.
     """
     try:
         print(f"🔍 DEBUG: get_admin_user iniciado para usuario: {current_user.id}")
         print(f"🔍 DEBUG: Email del usuario: {current_user.email}")
         
-        from app.models.perfil import UserModel
-        from app.models.usuario_rol import UsuarioRolModel
-        from app.models.rol import RolModel
-        from sqlalchemy.orm import joinedload
-        import uuid
+        # Usar DirectDBService para evitar problemas con prepared statements
+        from app.services.direct_db_service import direct_db_service
         
-        # Obtener el perfil del usuario con sus roles
         print(f"🔍 DEBUG: Convirtiendo ID a UUID: {current_user.id}")
-        user_uuid = uuid.UUID(current_user.id)
+        user_uuid = str(current_user.id)
         print(f"🔍 DEBUG: UUID convertido: {user_uuid}")
         print(f"🔍 DEBUG: Ejecutando consulta de base de datos...")
-        result_profile = await db.execute(
-            select(UserModel)
-            .options(
-                joinedload(UserModel.roles).joinedload(UsuarioRolModel.rol)
-            )
-            .where(UserModel.id == user_uuid)
-        )
         
-        user_profile = result_profile.scalars().first()
-        print(f"🔍 DEBUG: Perfil encontrado: {user_profile is not None}")
+        # Obtener perfil con roles usando DirectDBService
+        user_data = await direct_db_service.get_user_profile_with_roles(user_uuid)
+        print(f"🔍 DEBUG: Perfil encontrado: {user_data is not None}")
         
-        if not user_profile:
+        if not user_data:
             print(f"❌ DEBUG: Perfil de usuario no encontrado para UUID: {user_uuid}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, 
@@ -149,7 +139,8 @@ async def get_admin_user(
             )
         
         # Extraer los nombres de los roles
-        roles_nombres = [rol_asociado.rol.nombre for rol_asociado in user_profile.roles]
+        roles_data = user_data.get('roles', [])
+        roles_nombres = [rol.get('nombre') for rol in roles_data if rol.get('nombre')]
         print(f"🔍 DEBUG: Roles encontrados: {roles_nombres}")
         
         # Verificar si tiene rol de admin (solución para mayúsculas/minúsculas)
@@ -165,10 +156,10 @@ async def get_admin_user(
         
         print(f"✅ DEBUG: Usuario administrador validado exitosamente")
         return UserProfileAndRolesOut(
-            id=user_profile.id,
+            id=user_data['id'],
             email=current_user.email,
-            nombre_persona=user_profile.nombre_persona,
-            nombre_empresa=user_profile.nombre_empresa,
+            nombre_persona=user_data.get('nombre_persona', ''),
+            nombre_empresa=user_data.get('nombre_empresa', ''),
             roles=roles_nombres
         )
         
