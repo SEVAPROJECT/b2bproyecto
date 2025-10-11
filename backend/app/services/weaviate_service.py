@@ -305,25 +305,34 @@ class WeaviateService:
                 if query and query.strip():
                     query_lower = query.lower().strip()
                     servicios_filtrados = []
+                    ids_vistos = set()  # Para evitar duplicados
+                    
                     for servicio in servicios:
                         # Buscar en nombre, descripción, categoría y empresa
                         nombre = servicio.get('nombre', '').lower()
                         descripcion = servicio.get('descripcion', '').lower()
                         categoria = servicio.get('categoria', '').lower()
                         empresa = servicio.get('empresa', '').lower()
+                        id_servicio = servicio.get('id_servicio')
                         
                         # Debug: mostrar qué está buscando
-                        logger.info(f"🔍 Buscando '{query_lower}' en: nombre='{nombre}', desc='{descripcion}', cat='{categoria}', emp='{empresa}'")
+                        logger.info(f"🔍 Buscando '{query_lower}' en: nombre='{nombre}', desc='{descripcion}', cat='{categoria}', emp='{empresa}', id={id_servicio}")
                         
                         if (query_lower in nombre or
                             query_lower in descripcion or
                             query_lower in categoria or
                             query_lower in empresa):
-                            servicios_filtrados.append(servicio)
-                            logger.info(f"✅ Match encontrado: {servicio.get('nombre')}")
+                            
+                            # Evitar duplicados por ID
+                            if id_servicio not in ids_vistos:
+                                servicios_filtrados.append(servicio)
+                                ids_vistos.add(id_servicio)
+                                logger.info(f"✅ Match encontrado: {servicio.get('nombre')} (ID: {id_servicio})")
+                            else:
+                                logger.info(f"⚠️ Duplicado omitido: {servicio.get('nombre')} (ID: {id_servicio})")
                     
                     servicios = servicios_filtrados
-                    logger.info(f"🔍 Filtro local aplicado: {len(servicios)} resultados de {len(objects)} objetos")
+                    logger.info(f"🔍 Filtro local aplicado: {len(servicios)} resultados únicos de {len(objects)} objetos")
                 
                 logger.info(f"📊 Resultados encontrados: {len(servicios)}")
                 return servicios
