@@ -252,41 +252,32 @@ class WeaviateService:
             logger.error(f"❌ Error al indexar servicio {servicio.get('id_servicio', 'unknown')}: {str(e)}")
     
     def search_servicios(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Buscar servicios usando HTTP directo con Weaviate"""
+        """Buscar servicios usando búsqueda híbrida (texto + semántica)"""
         if not self.connected:
             logger.error("❌ Conexión a Weaviate no disponible")
             return []
         
         try:
-            logger.info(f"🔍 Buscando servicios con query: '{query}' (usando HTTP directo)")
+            logger.info(f"🔍 Búsqueda híbrida con query: '{query}' (texto + semántica)")
             
-            # Usar búsqueda HTTP directa
+            # Obtener todos los servicios
             search_url = f"{self.base_url}/v1/objects"
             params = {
                 'class': self.class_name,
-                'limit': 100  # Obtener más objetos para el filtro local
+                'limit': 100
             }
             
-            # Obtener todos los objetos (sin filtro HTTP para evitar 404)
-            logger.info("🔍 Obteniendo todos los objetos de Weaviate (filtro local se aplicará después)")
-            
-            # Headers para la petición
             headers = {}
             if self.api_key:
                 headers['Authorization'] = f'Bearer {self.api_key}'
             
-            # Debug: mostrar URL completa
-            full_url = f"{search_url}?{requests.compat.urlencode(params)}"
-            logger.info(f"🔍 URL completa: {full_url}")
-            
-            # Realizar búsqueda
             response = requests.get(search_url, params=params, headers=headers, timeout=30)
             
             if response.status_code == 200:
                 data = response.json()
                 objects = data.get('objects', [])
                 
-                # Procesar resultados
+                # Procesar todos los servicios
                 servicios = []
                 for obj in objects:
                     properties = obj.get('properties', {})
@@ -301,48 +292,67 @@ class WeaviateService:
                         "estado": properties.get("estado")
                     })
                 
-                # Aplicar filtro local si hay query
+                # Aplicar búsqueda híbrida
                 if query and query.strip():
                     query_lower = query.lower().strip()
                     servicios_filtrados = []
-                    ids_vistos = set()  # Para evitar duplicados
+                    ids_vistos = set()
+                    
+                    # Definir palabras clave relacionadas semánticamente
+                    palabras_relacionadas = self._get_palabras_relacionadas(query_lower)
+                    logger.info(f"🔍 Palabras relacionadas para '{query_lower}': {palabras_relacionadas}")
                     
                     for servicio in servicios:
-                        # Buscar en nombre, descripción, categoría y empresa
                         nombre = servicio.get('nombre', '').lower()
                         descripcion = servicio.get('descripcion', '').lower()
                         categoria = servicio.get('categoria', '').lower()
                         empresa = servicio.get('empresa', '').lower()
                         id_servicio = servicio.get('id_servicio')
                         
-                        # Debug: mostrar qué está buscando
-                        logger.info(f"🔍 Buscando '{query_lower}' en: nombre='{nombre}', desc='{descripcion}', cat='{categoria}', emp='{empresa}', id={id_servicio}")
+                        # Búsqueda híbrida: exacta + semántica
+                        match_exacto = query_lower in nombre or query_lower in descripcion
+                        match_semantico = any(palabra in nombre or palabra in descripcion for palabra in palabras_relacionadas)
                         
-                        if (query_lower in nombre or
-                            query_lower in descripcion or
-                            query_lower in categoria or
-                            query_lower in empresa):
-                            
-                            # Evitar duplicados por ID
+                        if match_exacto or match_semantico:
                             if id_servicio not in ids_vistos:
                                 servicios_filtrados.append(servicio)
                                 ids_vistos.add(id_servicio)
-                                logger.info(f"✅ Match encontrado: {servicio.get('nombre')} (ID: {id_servicio})")
-                            else:
-                                logger.info(f"⚠️ Duplicado omitido: {servicio.get('nombre')} (ID: {id_servicio})")
+                                tipo_match = "exacto" if match_exacto else "semántico"
+                                logger.info(f"✅ Match {tipo_match}: {servicio.get('nombre')} (ID: {id_servicio})")
                     
-                    servicios = servicios_filtrados
-                    logger.info(f"🔍 Filtro local aplicado: {len(servicios)} resultados únicos de {len(objects)} objetos")
+                    servicios = servicios_filtrados[:limit]  # Limitar resultados
+                    logger.info(f"🔍 Búsqueda híbrida: {len(servicios)} resultados de {len(objects)} objetos")
                 
                 logger.info(f"📊 Resultados encontrados: {len(servicios)}")
                 return servicios
             else:
-                logger.error(f"❌ Error en búsqueda HTTP: {response.status_code}")
+                logger.error(f"❌ Error en búsqueda: {response.status_code}")
                 return []
             
         except Exception as e:
-            logger.error(f"❌ Error en búsqueda HTTP: {str(e)}")
+            logger.error(f"❌ Error en búsqueda híbrida: {str(e)}")
             return []
+    
+    def _get_palabras_relacionadas(self, query: str) -> List[str]:
+        """Obtener palabras relacionadas semánticamente"""
+        # Diccionario de palabras relacionadas
+        relaciones = {
+            'desarrollo': ['programacion', 'codigo', 'software', 'aplicacion', 'web', 'sitio', 'pagina', 'tienda', 'ecommerce', 'e-commerce', 'online', 'digital', 'tecnologia', 'sistema', 'plataforma'],
+            'marketing': ['publicidad', 'promocion', 'ventas', 'comercial', 'campaña', 'redes', 'social', 'digital', 'online', 'seo', 'posicionamiento'],
+            'diseño': ['grafico', 'visual', 'creativo', 'logo', 'imagen', 'flyer', 'banner', 'publicitario'],
+            'seo': ['posicionamiento', 'google', 'buscadores', 'optimizacion', 'ranking', 'visibilidad'],
+            'email': ['correo', 'mailing', 'newsletter', 'campaña', 'marketing', 'promocional']
+        }
+        
+        # Buscar relaciones directas
+        palabras = relaciones.get(query, [])
+        
+        # Buscar relaciones inversas
+        for palabra_clave, palabras_relacionadas in relaciones.items():
+            if query in palabras_relacionadas:
+                palabras.append(palabra_clave)
+        
+        return list(set(palabras))  # Eliminar duplicados
     
     def get_servicio_by_id(self, id_servicio: int) -> Optional[Dict[str, Any]]:
         """Obtener un servicio específico por ID"""
