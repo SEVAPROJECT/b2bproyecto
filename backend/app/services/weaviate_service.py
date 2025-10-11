@@ -264,7 +264,7 @@ class WeaviateService:
             search_url = f"{self.base_url}/v1/objects"
             params = {
                 'class': self.class_name,
-                'limit': limit
+                'limit': 100  # Obtener más objetos para el filtro local
             }
             
             # Obtener todos los objetos (sin filtro HTTP para evitar 404)
