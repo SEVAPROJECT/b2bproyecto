@@ -1,13 +1,12 @@
 """
 Servicio para conexión y operaciones con Weaviate
-Configurado para usar Ollama local como proveedor de embeddings
+Configurado para usar HTTP directo con Railway
 """
-import weaviate
+import requests
 import logging
 import os
+import json
 from typing import List, Dict, Any, Optional
-from weaviate.classes.config import Configure
-from urllib.parse import urlparse
 from app.services.direct_db_service import direct_db_service
 
 logger = logging.getLogger(__name__)
@@ -62,68 +61,39 @@ class WeaviateService:
  
 class WeaviateService:
     def __init__(self):
-        """Inicializar el cliente de Weaviate con configuración para Ollama"""
-        self.client = None
+        """Inicializar el servicio de Weaviate usando HTTP directo"""
+        self.base_url = os.getenv("WEAVIATE_URL", "http://localhost:8080")
+        self.api_key = os.getenv("WEAVIATE_API_KEY", "")
         self.class_name = "Servicios"
-        self._initialize_client()
+        self.connected = False
+        self._initialize_connection()
 
-    def _initialize_client(self):
-        """Inicializar la conexión con Weaviate v4 usando la nueva API"""
+    def _initialize_connection(self):
+        """Inicializar la conexión HTTP con Weaviate"""
         try:
-            # Configuración para Weaviate con Ollama local
-            weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8082")
-            weaviate_api_key = os.getenv("WEAVIATE_API_KEY")
+            # Limpiar URL
+            if not self.base_url.startswith(('http://', 'https://')):
+                self.base_url = f"https://{self.base_url}"
             
-            # Validar que la URL no esté vacía
-            if not weaviate_url or weaviate_url.strip() == "":
-                logger.error("❌ WEAVIATE_URL no está configurada o está vacía")
-                self.client = None
-                return
+            # Remover puerto duplicado si existe
+            if ":8080:8080" in self.base_url:
+                self.base_url = self.base_url.replace(":8080:8080", ":8080")
             
-            logger.info(f"🔗 Conectando a Weaviate en: {weaviate_url}")
-            logger.info("🤖 Configurado para usar Ollama local como proveedor de embeddings")
+            logger.info(f"🔗 Conectando a Weaviate en: {self.base_url}")
             
-            # Usar la nueva API de Weaviate v4
-            if weaviate_api_key and weaviate_api_key.strip():
-                # Código para conexión a la nube (NO TOCA ESTO)
-                self.client = weaviate.connect_to_weaviate_cloud(
-                    cluster_url=weaviate_url,
-                    auth_credentials=weaviate.AuthApiKey(api_key=weaviate_api_key)
-                )
-                logger.info("🔑 Usando autenticación con API key")
-            else:
-                # --- INICIO DE LA CORRECCIÓN ---
-                
-                # 1. Parsear la URL para obtener host y puerto por separado
-                parsed_url = urlparse(weaviate_url)
-                host = parsed_url.hostname
-                port = parsed_url.port or 8080 # Usa el puerto si está, si no, 8080 por defecto
-                
-                # Validar que el host no sea None
-                if not host:
-                    logger.error(f"❌ No se pudo extraer el host de la URL: {weaviate_url}")
-                    self.client = None
-                    return
-                
-                # 2. Conectarse usando host y puerto separados
-                self.client = weaviate.connect_to_local(
-                    host=host,
-                    port=port
-                )
-                logger.info(f"🔓 Usando acceso local en: {host}:{port}")
-                
-                # --- FIN DE LA CORRECCIÓN ---
+            # Probar conexión
+            response = requests.get(f"{self.base_url}/v1/meta", timeout=10)
             
-            # Verificar conexión
-            if self.client.is_ready():
+            if response.status_code == 200:
+                self.connected = True
                 logger.info("✅ Conexión a Weaviate establecida exitosamente")
-                self._setup_schema()
             else:
-                logger.error("❌ No se pudo conectar a Weaviate")
+                logger.error(f"❌ Error de conexión: {response.status_code}")
+                self.connected = False
                 
         except Exception as e:
             logger.error(f"❌ Error al inicializar Weaviate: {str(e)}")
-            self.client = None
+            self.connected = False
 
     def _setup_schema(self):
         """Configurar el esquema de Weaviate para servicios con Ollama v4"""
@@ -271,43 +241,86 @@ class WeaviateService:
             logger.error(f"❌ Error al indexar servicio {servicio.get('id_servicio', 'unknown')}: {str(e)}")
     
     def search_servicios(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Buscar servicios usando búsqueda semántica con Ollama"""
-        if not self.client:
-            logger.error("❌ Cliente de Weaviate no disponible")
+        """Buscar servicios usando HTTP directo con Weaviate"""
+        if not self.connected:
+            logger.error("❌ Conexión a Weaviate no disponible")
             return []
         
         try:
-            logger.info(f"🔍 Buscando servicios con query: '{query}' (usando Ollama)")
+            logger.info(f"🔍 Buscando servicios con query: '{query}' (usando HTTP directo)")
             
-            # Obtener la colección
-            collection = self.client.collections.get(self.class_name)
+            # Usar búsqueda HTTP directa
+            search_url = f"{self.base_url}/v1/objects"
+            params = {
+                'class': self.class_name,
+                'limit': limit
+            }
             
-            # Ejecutar búsqueda semántica (Ollama vectoriza automáticamente)
-            result = collection.query.near_text(
-                query=query,
-                limit=limit,
-                return_metadata=weaviate.classes.query.MetadataQuery(distance=True, certainty=True)
-            )
+            # Si hay query, usar filtro de texto
+            if query and query.strip():
+                # Búsqueda por texto en propiedades
+                where_filter = {
+                    "operator": "Or",
+                    "operands": [
+                        {
+                            "path": ["nombre"],
+                            "operator": "Like",
+                            "valueText": f"*{query}*"
+                        },
+                        {
+                            "path": ["descripcion"],
+                            "operator": "Like", 
+                            "valueText": f"*{query}*"
+                        },
+                        {
+                            "path": ["categoria"],
+                            "operator": "Like",
+                            "valueText": f"*{query}*"
+                        },
+                        {
+                            "path": ["empresa"],
+                            "operator": "Like",
+                            "valueText": f"*{query}*"
+                        }
+                    ]
+                }
+                params['where'] = json.dumps(where_filter)
             
-            # Procesar resultados
-            servicios = []
-            for obj in result.objects:
-                servicios.append({
-                    "id_servicio": obj.properties.get("id_servicio"),
-                    "nombre": obj.properties.get("nombre"),
-                    "descripcion": obj.properties.get("descripcion"),
-                    "precio": obj.properties.get("precio"),
-                    "categoria": obj.properties.get("categoria"),
-                    "empresa": obj.properties.get("empresa"),
-                    "certainty": obj.metadata.certainty if obj.metadata.certainty else 0,
-                    "distance": obj.metadata.distance if obj.metadata.distance else 0
-                })
+            # Headers para la petición
+            headers = {}
+            if self.api_key:
+                headers['Authorization'] = f'Bearer {self.api_key}'
             
-            logger.info(f"📊 Resultados encontrados: {len(servicios)}")
-            return servicios
+            # Realizar búsqueda
+            response = requests.get(search_url, params=params, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                objects = data.get('objects', [])
+                
+                # Procesar resultados
+                servicios = []
+                for obj in objects:
+                    properties = obj.get('properties', {})
+                    servicios.append({
+                        "id_servicio": properties.get("id_servicio"),
+                        "nombre": properties.get("nombre"),
+                        "descripcion": properties.get("descripcion"),
+                        "precio": properties.get("precio"),
+                        "categoria": properties.get("categoria"),
+                        "empresa": properties.get("empresa"),
+                        "ubicacion": properties.get("ubicacion"),
+                        "estado": properties.get("estado")
+                    })
+                
+                logger.info(f"📊 Resultados encontrados: {len(servicios)}")
+                return servicios
+            else:
+                logger.error(f"❌ Error en búsqueda HTTP: {response.status_code}")
+                return []
             
         except Exception as e:
-            logger.error(f"❌ Error en búsqueda semántica: {str(e)}")
+            logger.error(f"❌ Error en búsqueda HTTP: {str(e)}")
             return []
     
     def get_servicio_by_id(self, id_servicio: int) -> Optional[Dict[str, Any]]:
@@ -373,25 +386,37 @@ class WeaviateService:
             return False
     
     def get_stats(self) -> Dict[str, Any]:
-        """Obtener estadísticas del índice de Weaviate"""
-        if not self.client:
-            return {"error": "Cliente no disponible"}
+        """Obtener estadísticas del índice de Weaviate usando HTTP"""
+        if not self.connected:
+            return {"error": "Conexión no disponible"}
         
         try:
-            # Obtener información de la colección
-            collection = self.client.collections.get(self.class_name)
-            
-            # Obtener estadísticas básicas
-            total_objects = collection.aggregate.over_all(total_count=True).total_count
-            
-            return {
-                "collection_name": self.class_name,
-                "total_objects": total_objects,
-                "vectorizer": "text2vec-ollama",
-                "ollama_endpoint": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434"),
-                "ollama_model": os.getenv("OLLAMA_MODEL", "nomic-embed-text"),
-                "status": "active"
+            # Obtener información de la colección usando HTTP
+            stats_url = f"{self.base_url}/v1/objects"
+            params = {
+                'class': self.class_name,
+                'limit': 1
             }
+            
+            headers = {}
+            if self.api_key:
+                headers['Authorization'] = f'Bearer {self.api_key}'
+            
+            response = requests.get(stats_url, params=params, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                total_objects = data.get('totalResults', 0)
+                
+                return {
+                    "collection_name": self.class_name,
+                    "total_objects": total_objects,
+                    "connection_type": "HTTP",
+                    "base_url": self.base_url,
+                    "status": "active"
+                }
+            else:
+                return {"error": f"HTTP {response.status_code}"}
                 
         except Exception as e:
             logger.error(f"❌ Error al obtener estadísticas: {str(e)}")

@@ -2,95 +2,70 @@
 """
 Script para probar Weaviate usando HTTP directo
 """
-import os
-import urllib.request
+import requests
 import json
 
 def test_weaviate_http():
-    """Probar conexión HTTP directa a Weaviate"""
-    print("🔍 Probando conexión HTTP directa a Weaviate...")
+    """Probar Weaviate usando HTTP directo"""
+    print("🔍 Probando Weaviate con HTTP directo...")
     
-    # Obtener URL
-    weaviate_url = os.getenv("WEAVIATE_URL")
-    if not weaviate_url:
-        print("❌ Variable WEAVIATE_URL no configurada")
-        return False
-    
-    print(f"🌐 URL: {weaviate_url}")
+    weaviate_url = "https://weaviate-production-0af4.up.railway.app"
     
     try:
-        # Probar endpoint de meta
-        meta_url = f"{weaviate_url}/v1/meta"
-        print(f"🔗 Probando: {meta_url}")
+        # 1. Probar endpoint de meta
+        print("1️⃣ Probando endpoint /v1/meta...")
+        response = requests.get(f"{weaviate_url}/v1/meta", timeout=10)
         
-        request = urllib.request.Request(meta_url)
-        request.add_header('User-Agent', 'Python-Weaviate-Test')
+        if response.status_code == 200:
+            print("✅ Meta endpoint funcionando")
+            meta = response.json()
+            print(f"📊 Módulos disponibles: {list(meta.get('modules', {}).keys())}")
+        else:
+            print(f"❌ Error en meta: {response.status_code}")
+            return False
         
-        with urllib.request.urlopen(request, timeout=10) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode())
-                print("✅ Conexión HTTP exitosa!")
-                print(f"📊 Versión: {data.get('version', 'Unknown')}")
-                print(f"📊 Hostname: {data.get('hostname', 'Unknown')}")
-                return True
+        # 2. Probar endpoint de schema
+        print("\n2️⃣ Probando endpoint /v1/schema...")
+        response = requests.get(f"{weaviate_url}/v1/schema", timeout=10)
+        
+        if response.status_code == 200:
+            print("✅ Schema endpoint funcionando")
+            schema = response.json()
+            classes = list(schema.get('classes', []))
+            print(f"📋 Clases disponibles: {[cls.get('class') for cls in classes]}")
+        else:
+            print(f"❌ Error en schema: {response.status_code}")
+        
+        # 3. Probar búsqueda si hay clases
+        if classes:
+            class_name = classes[0]['class']
+            print(f"\n3️⃣ Probando búsqueda en clase '{class_name}'...")
+            
+            search_url = f"{weaviate_url}/v1/objects"
+            params = {
+                'class': class_name,
+                'limit': 5
+            }
+            
+            response = requests.get(search_url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                print("✅ Búsqueda funcionando")
+                results = response.json()
+                objects = results.get('objects', [])
+                print(f"📊 Objetos encontrados: {len(objects)}")
+                
+                for i, obj in enumerate(objects[:3], 1):
+                    properties = obj.get('properties', {})
+                    print(f"  {i}. {properties.get('nombre', 'Sin nombre')} - {properties.get('empresa', 'Sin empresa')}")
             else:
-                print(f"❌ Error HTTP: {response.status}")
-                return False
-                
-    except urllib.error.URLError as e:
-        print(f"❌ Error de conexión: {e}")
-        return False
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        return False
-
-def test_weaviate_schema_http():
-    """Probar esquema via HTTP"""
-    print("\n🔍 Probando esquema via HTTP...")
-    
-    weaviate_url = os.getenv("WEAVIATE_URL")
-    
-    try:
-        schema_url = f"{weaviate_url}/v1/schema"
-        request = urllib.request.Request(schema_url)
-        request.add_header('User-Agent', 'Python-Weaviate-Test')
+                print(f"❌ Error en búsqueda: {response.status_code}")
         
-        with urllib.request.urlopen(request, timeout=10) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode())
-                classes = data.get('classes', [])
-                print(f"✅ Esquema accesible! Clases: {len(classes)}")
-                
-                for cls in classes:
-                    print(f"  - {cls.get('class', 'Unknown')}")
-                
-                return True
-            else:
-                print(f"❌ Error HTTP: {response.status}")
-                return False
-                
+        return True
+        
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         return False
 
 if __name__ == "__main__":
-    print("🚀 Probando Weaviate via HTTP...")
-    print("=" * 50)
-    
-    # Probar conexión básica
-    connection_ok = test_weaviate_http()
-    
-    # Probar esquema si la conexión es exitosa
-    schema_ok = False
-    if connection_ok:
-        schema_ok = test_weaviate_schema_http()
-    
-    print("\n" + "=" * 50)
-    print("RESUMEN:")
-    print(f"✅ Conexión HTTP: {'OK' if connection_ok else 'ERROR'}")
-    print(f"✅ Esquema: {'OK' if schema_ok else 'ERROR'}")
-    
-    if connection_ok and schema_ok:
-        print("\n🎉 ¡Weaviate está funcionando correctamente!")
-    else:
-        print("\n❌ Error en la conexión a Weaviate")
+    test_weaviate_http()
