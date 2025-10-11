@@ -62,7 +62,18 @@ class WeaviateService:
 class WeaviateService:
     def __init__(self):
         """Inicializar el servicio de Weaviate usando HTTP directo"""
-        self.base_url = os.getenv("WEAVIATE_URL", "http://localhost:8080")
+        # Detectar si estamos en desarrollo local
+        weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8080")
+        
+        # Si la URL contiene 'railway.app' pero estamos en local, usar localhost
+        if "railway.app" in weaviate_url and "localhost" not in weaviate_url:
+            # Estamos en desarrollo local pero la URL es de Railway
+            # Usar localhost para desarrollo
+            self.base_url = "http://localhost:8080"
+            logger.info("🔧 Modo desarrollo: usando localhost en lugar de Railway")
+        else:
+            self.base_url = weaviate_url
+            
         self.api_key = os.getenv("WEAVIATE_API_KEY", "")
         self.class_name = "Servicios"
         self.connected = False
@@ -256,40 +267,17 @@ class WeaviateService:
                 'limit': limit
             }
             
-            # Si hay query, usar filtro de texto
-            if query and query.strip():
-                # Búsqueda por texto en propiedades
-                where_filter = {
-                    "operator": "Or",
-                    "operands": [
-                        {
-                            "path": ["nombre"],
-                            "operator": "Like",
-                            "valueText": f"*{query}*"
-                        },
-                        {
-                            "path": ["descripcion"],
-                            "operator": "Like", 
-                            "valueText": f"*{query}*"
-                        },
-                        {
-                            "path": ["categoria"],
-                            "operator": "Like",
-                            "valueText": f"*{query}*"
-                        },
-                        {
-                            "path": ["empresa"],
-                            "operator": "Like",
-                            "valueText": f"*{query}*"
-                        }
-                    ]
-                }
-                params['where'] = json.dumps(where_filter)
+            # Obtener todos los objetos (sin filtro HTTP para evitar 404)
+            logger.info("🔍 Obteniendo todos los objetos de Weaviate (filtro local se aplicará después)")
             
             # Headers para la petición
             headers = {}
             if self.api_key:
                 headers['Authorization'] = f'Bearer {self.api_key}'
+            
+            # Debug: mostrar URL completa
+            full_url = f"{search_url}?{requests.compat.urlencode(params)}"
+            logger.info(f"🔍 URL completa: {full_url}")
             
             # Realizar búsqueda
             response = requests.get(search_url, params=params, headers=headers, timeout=30)
@@ -312,6 +300,21 @@ class WeaviateService:
                         "ubicacion": properties.get("ubicacion"),
                         "estado": properties.get("estado")
                     })
+                
+                # Aplicar filtro local si hay query
+                if query and query.strip():
+                    query_lower = query.lower().strip()
+                    servicios_filtrados = []
+                    for servicio in servicios:
+                        # Buscar en nombre, descripción, categoría y empresa
+                        if (query_lower in servicio.get('nombre', '').lower() or
+                            query_lower in servicio.get('descripcion', '').lower() or
+                            query_lower in servicio.get('categoria', '').lower() or
+                            query_lower in servicio.get('empresa', '').lower()):
+                            servicios_filtrados.append(servicio)
+                    
+                    servicios = servicios_filtrados
+                    logger.info(f"🔍 Filtro local aplicado: {len(servicios)} resultados de {len(objects)} objetos")
                 
                 logger.info(f"📊 Resultados encontrados: {len(servicios)}")
                 return servicios
