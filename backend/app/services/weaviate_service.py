@@ -307,11 +307,20 @@ class WeaviateService:
                     servicios_filtrados = []
                     for servicio in servicios:
                         # Buscar en nombre, descripción, categoría y empresa
-                        if (query_lower in servicio.get('nombre', '').lower() or
-                            query_lower in servicio.get('descripcion', '').lower() or
-                            query_lower in servicio.get('categoria', '').lower() or
-                            query_lower in servicio.get('empresa', '').lower()):
+                        nombre = servicio.get('nombre', '').lower()
+                        descripcion = servicio.get('descripcion', '').lower()
+                        categoria = servicio.get('categoria', '').lower()
+                        empresa = servicio.get('empresa', '').lower()
+                        
+                        # Debug: mostrar qué está buscando
+                        logger.info(f"🔍 Buscando '{query_lower}' en: nombre='{nombre}', desc='{descripcion}', cat='{categoria}', emp='{empresa}'")
+                        
+                        if (query_lower in nombre or
+                            query_lower in descripcion or
+                            query_lower in categoria or
+                            query_lower in empresa):
                             servicios_filtrados.append(servicio)
+                            logger.info(f"✅ Match encontrado: {servicio.get('nombre')}")
                     
                     servicios = servicios_filtrados
                     logger.info(f"🔍 Filtro local aplicado: {len(servicios)} resultados de {len(objects)} objetos")
