@@ -11,6 +11,7 @@ import {
 } from '../components/icons';
 import { useAuth } from '../contexts/AuthContext';
 import { buildApiUrl, getJsonHeaders } from '../config/api';
+import CalificacionModal from '../components/CalificacionModal';
 
 // Tipos
 interface Reserva {
@@ -126,6 +127,9 @@ const ReservationsPage: React.FC = () => {
     const [accionLoading, setAccionLoading] = useState<number | null>(null);
     const [mensajeExito, setMensajeExito] = useState<string | null>(null);
     const [sincronizando, setSincronizando] = useState(false);
+    const [showCalificacionModal, setShowCalificacionModal] = useState(false);
+    const [calificacionReservaId, setCalificacionReservaId] = useState<number | null>(null);
+    const [calificacionLoading, setCalificacionLoading] = useState(false);
 
     // Debug: Verificar que el componente se está cargando
     console.log('🔍 ReservationsPage cargado - activeTab:', activeTab);
@@ -344,6 +348,45 @@ const ReservationsPage: React.FC = () => {
             console.error('Error:', err);
         } finally {
             setAccionLoading(null);
+        }
+    };
+
+    // Funciones para calificación
+    const handleCalificar = (reservaId: number) => {
+        setCalificacionReservaId(reservaId);
+        setShowCalificacionModal(true);
+    };
+
+    const handleEnviarCalificacion = async (data: {puntaje: number, comentario: string, satisfaccion_nps?: number}) => {
+        if (!calificacionReservaId) return;
+
+        try {
+            setCalificacionLoading(true);
+            setError(null);
+
+            const response = await fetch(buildApiUrl(`/calificacion/cliente/${calificacionReservaId}`), {
+                method: 'POST',
+                headers: getJsonHeaders(),
+                body: JSON.stringify(data)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Error al enviar calificación');
+            }
+
+            setMensajeExito('✅ Calificación registrada con éxito');
+            setTimeout(() => setMensajeExito(null), 3000);
+
+            // Recargar datos para actualizar UI
+            await loadReservas(1);
+            setShowCalificacionModal(false);
+            setCalificacionReservaId(null);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Error al enviar calificación');
+            console.error('Error:', err);
+        } finally {
+            setCalificacionLoading(false);
         }
     };
 
@@ -914,6 +957,18 @@ const ReservationsPage: React.FC = () => {
                                                 </div>
                                             </div>
                                         )}
+
+                                        {/* Botón de calificar para clientes */}
+                                        {activeTab === 'mis-reservas' && reserva.estado === 'completada' && (
+                                            <div className="mt-4 pt-4 border-t border-gray-200">
+                                                <button
+                                                    onClick={() => handleCalificar(reserva.id_reserva)}
+                                                    className="bg-yellow-600 text-white px-4 py-2 rounded text-sm hover:bg-yellow-700 transition-all duration-200 hover:scale-105"
+                                                >
+                                                    ⭐ Calificar Servicio
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1027,6 +1082,19 @@ const ReservationsPage: React.FC = () => {
                         </div>
                     </div>
                 )}
+
+                {/* Modal de calificación */}
+                <CalificacionModal
+                    isOpen={showCalificacionModal}
+                    onClose={() => {
+                        setShowCalificacionModal(false);
+                        setCalificacionReservaId(null);
+                    }}
+                    onSubmit={handleEnviarCalificacion}
+                    tipo="cliente"
+                    reservaId={calificacionReservaId || 0}
+                    loading={calificacionLoading}
+                />
             </div>
         </div>
     );
