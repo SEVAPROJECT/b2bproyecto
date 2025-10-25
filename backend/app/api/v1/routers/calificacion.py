@@ -81,9 +81,10 @@ async def calificar_como_cliente(
         try:
             # 1. Verificar que la reserva existe y está completada
             reserva_query = """
-                SELECT r.id_reserva, r.estado, r.user_id as cliente_id, s.id_proveedor
+                SELECT r.id_reserva, r.estado, r.user_id as cliente_id, pe.user_id as proveedor_user_id
                 FROM public.reserva r
                 JOIN public.servicio s ON r.id_servicio = s.id_servicio
+                JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
                 WHERE r.id_reserva = $1
             """
             reserva = await conn.fetchrow(reserva_query, reserva_id)
@@ -178,9 +179,10 @@ async def calificar_como_proveedor(
         try:
             # 1. Verificar que la reserva existe y está completada
             reserva_query = """
-                SELECT r.id_reserva, r.estado, r.user_id as cliente_id, s.id_proveedor
+                SELECT r.id_reserva, r.estado, r.user_id as cliente_id, pe.user_id as proveedor_user_id
                 FROM public.reserva r
                 JOIN public.servicio s ON r.id_servicio = s.id_servicio
+                JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
                 WHERE r.id_reserva = $1
             """
             reserva = await conn.fetchrow(reserva_query, reserva_id)
@@ -198,7 +200,7 @@ async def calificar_como_proveedor(
                 )
             
             # 2. Verificar que el usuario es el proveedor del servicio
-            if str(reserva['id_proveedor']) != str(user_info['id']):
+            if str(reserva['proveedor_user_id']) != str(user_info['id']):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="No autorizado para calificar esta reserva."
