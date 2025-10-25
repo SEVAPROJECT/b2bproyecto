@@ -42,6 +42,7 @@ const ReservasPage: React.FC = () => {
   const [busqueda, setBusqueda] = useState<string>('');
   const [accionLoading, setAccionLoading] = useState<number | null>(null);
   const [mensajeExito, setMensajeExito] = useState<string | null>(null);
+  const [sincronizando, setSincronizando] = useState(false);
 
   // Debug: Verificar que el componente se está cargando
   console.log('🔍 ReservasPage cargado - activeTab:', activeTab);
@@ -151,12 +152,18 @@ const ReservasPage: React.FC = () => {
       const result = await response.json();
       console.log('Estado actualizado:', result);
 
-      // Mostrar mensaje de éxito
-      setMensajeExito(`Reserva ${nuevoEstado} exitosamente`);
-      setTimeout(() => setMensajeExito(null), 3000);
+      // Mensaje específico para cancelación
+      if (nuevoEstado === 'cancelada') {
+        setMensajeExito('✅ Reserva cancelada - Los cambios se sincronizarán automáticamente');
+      } else {
+        setMensajeExito(`Reserva ${nuevoEstado} exitosamente`);
+      }
+      setTimeout(() => setMensajeExito(null), 5000);
 
-      // Recargar datos
+      // Refetch inmediato para sincronización
+      setSincronizando(true);
       await loadData();
+      setSincronizando(false);
       setShowModal(false);
       setModalData(null);
     } catch (err) {
@@ -333,6 +340,18 @@ const ReservasPage: React.FC = () => {
               <div className="ml-3">
                 <h3 className="text-sm font-medium text-green-800">Éxito</h3>
                 <div className="mt-2 text-sm text-green-700">{mensajeExito}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Indicador de sincronización */}
+        {sincronizando && (
+          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-md p-4 animate-fade-in">
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+              <div className="text-sm text-blue-700">
+                Sincronizando cambios con el servidor...
               </div>
             </div>
           </div>
