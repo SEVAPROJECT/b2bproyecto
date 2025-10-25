@@ -1341,7 +1341,7 @@ async def cancelar_reserva(
         
         # 6. Registrar en el historial
         try:
-            await registrar_cambio_estado(
+            await registrar_cambio_historial(
                 conn,
                 reserva_id,
                 current_user.id,
@@ -1393,6 +1393,135 @@ async def cancelar_reserva(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al cancelar la reserva: {str(e)}"
+        )
+    finally:
+        await direct_db_service.pool.release(conn)
+
+
+@router.put(
+    "/{reserva_id}/confirmar",
+    description="Confirma una reserva. Solo el cliente dueño de la reserva puede confirmarla."
+)
+async def confirmar_reserva(
+    reserva_id: int,
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Confirma una reserva.
+    Solo el cliente dueño de la reserva puede confirmarla.
+    Solo se puede confirmar si el estado es 'pendiente'.
+    """
+    logger.info(f"🔍 [PUT /reservas/{reserva_id}/confirmar] ========== INICIO CONFIRMAR RESERVA ==========")
+    logger.info(f"🔍 [PUT /reservas/{reserva_id}/confirmar] User ID: {current_user.id}")
+    
+    try:
+        conn = await direct_db_service.pool.acquire()
+        
+        # 1. Verificar que la reserva existe y obtener información
+        reserva_query = """
+            SELECT r.id_reserva, r.estado as estado_actual, r.user_id as cliente_user_id
+            FROM reserva r
+            WHERE r.id_reserva = $1
+        """
+        
+        reserva_result = await conn.fetchrow(reserva_query, reserva_id)
+        
+        if not reserva_result:
+            logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Reserva no encontrada")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Reserva no encontrada"
+            )
+        
+        logger.info(f"🔍 [PUT /reservas/{reserva_id}/confirmar] Cliente: {reserva_result['cliente_user_id']}")
+        
+        # 2. Verificar que el usuario es el cliente dueño de la reserva
+        cliente_user_id = str(reserva_result['cliente_user_id'])
+        current_user_id = str(current_user.id)
+        
+        if current_user_id != cliente_user_id:
+            logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Usuario no autorizado")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No autorizado para gestionar esta reserva"
+            )
+        
+        # 3. Verificar que la reserva está en estado pendiente
+        estado_actual = reserva_result['estado_actual']
+        if estado_actual != 'pendiente':
+            logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Estado inválido: {estado_actual}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No es posible realizar esta acción en el estado actual"
+            )
+        
+        # 4. Actualizar el estado de la reserva
+        update_query = """
+            UPDATE reserva 
+            SET estado = 'confirmada'
+            WHERE id_reserva = $1
+            RETURNING id_reserva, estado, fecha, hora_inicio, hora_fin
+        """
+        
+        updated_reserva = await conn.fetchrow(update_query, reserva_id)
+        
+        if not updated_reserva:
+            logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Error al actualizar reserva")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al confirmar la reserva"
+            )
+        
+        # 5. Registrar en el historial
+        try:
+            await registrar_cambio_historial(
+                conn,
+                reserva_id,
+                current_user.id,
+                estado_actual,
+                'confirmada',
+                'Reserva confirmada por el cliente'
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/confirmar] Error al registrar historial: {str(e)}")
+        
+        # 6. Enviar notificación (opcional)
+        try:
+            await enviar_notificacion_cliente(
+                conn, 
+                reserva_id, 
+                estado_actual, 
+                'confirmada', 
+                'Reserva confirmada por el cliente'
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/confirmar] Error al enviar notificación: {str(e)}")
+        
+        logger.info(f"✅ [PUT /reservas/{reserva_id}/confirmar] Reserva confirmada por cliente")
+        logger.info(f"🔍 [PUT /reservas/{reserva_id}/confirmar] ========== FIN CONFIRMAR RESERVA ==========")
+        
+        return {
+            "message": "✅ Reserva confirmada",
+            "reserva": {
+                "id_reserva": updated_reserva['id_reserva'],
+                "estado": updated_reserva['estado'],
+                "fecha": updated_reserva['fecha'].isoformat() if updated_reserva['fecha'] else None,
+                "hora_inicio": str(updated_reserva['hora_inicio']) if updated_reserva['hora_inicio'] else None,
+                "hora_fin": str(updated_reserva['hora_fin']) if updated_reserva['hora_fin'] else None
+            },
+            "confirmado_por": "cliente",
+            "notificacion_enviada": True
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Error crítico: {str(e)}")
+        import traceback
+        logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al confirmar la reserva: {str(e)}"
         )
     finally:
         await direct_db_service.pool.release(conn)
