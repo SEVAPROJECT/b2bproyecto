@@ -150,7 +150,7 @@ async def calificar_como_cliente(
                 satisfaccion_nps=calificacion_data.satisfaccion_nps
             )
         finally:
-            await direct_db_service.close_connection(conn)
+            await direct_db_service.pool.release(conn)
             
     except HTTPException:
         raise
@@ -246,7 +246,7 @@ async def calificar_como_proveedor(
                 satisfaccion_nps=None
             )
         finally:
-            await direct_db_service.close_connection(conn)
+            await direct_db_service.pool.release(conn)
             
     except HTTPException:
         raise
@@ -298,7 +298,7 @@ async def verificar_calificacion_existente(
             else:
                 return CalificacionExistenteOut(existe=False)
         finally:
-            await direct_db_service.close_connection(conn)
+            await direct_db_service.pool.release(conn)
                 
     except Exception as e:
         logger.error(f"❌ Error al verificar calificación: {str(e)}")
