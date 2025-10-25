@@ -196,6 +196,10 @@ const ReservationsPage: React.FC = () => {
             // Mapeo simplificado para el endpoint de prueba
             const reservasData = data.reservas || data || [];
             console.log('📊 Estados de reservas encontradas:', reservasData.map((r: any) => r.estado));
+            console.log('📊 Verificando campo ya_calificado_por_cliente:', reservasData.map((r: any) => ({
+                id: r.id_reserva,
+                ya_calificado: r.ya_calificado_por_cliente
+            })));
             
             const reservasMapeadas = reservasData.map((reserva: any) => ({
                 id_reserva: reserva.id_reserva,
@@ -211,7 +215,8 @@ const ReservationsPage: React.FC = () => {
                 email_contacto: reserva.email_contacto || null,
                 precio_servicio: reserva.precio_servicio || reserva.servicio?.precio || 0,
                 imagen_servicio: reserva.imagen_servicio || reserva.servicio?.imagen,
-                nombre_categoria: reserva.nombre_categoria || reserva.servicio?.categoria || 'Sin categoría'
+                nombre_categoria: reserva.nombre_categoria || reserva.servicio?.categoria || 'Sin categoría',
+                ya_calificado_por_cliente: reserva.ya_calificado_por_cliente || false
             }));
 
             setReservas(reservasMapeadas);
