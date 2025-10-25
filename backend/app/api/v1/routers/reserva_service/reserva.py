@@ -624,12 +624,14 @@ async def obtener_reservas_proveedor(
                     pe.nombre_fantasia as nombre_empresa,
                     pe.razon_social,
                     u.nombre_persona as nombre_cliente,
-                    c.nombre as nombre_categoria
+                    c.nombre as nombre_categoria,
+                    CASE WHEN cal.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_proveedor
                 FROM reserva r
                 INNER JOIN servicio s ON r.id_servicio = s.id_servicio
                 INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
                 INNER JOIN users u ON r.user_id = u.id
                 LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+                LEFT JOIN calificacion cal ON r.id_reserva = cal.id_reserva AND cal.rol_emisor = 'proveedor'
                 WHERE s.id_perfil = $1
             """
             
@@ -714,6 +716,9 @@ async def obtener_reservas_proveedor(
             
             reservas_list = []
             for row in reservas_result:
+                ya_calificado = row['ya_calificado_por_proveedor']
+                logger.info(f"🔍 [GET /reservas-proveedor] Reserva {row['id_reserva']} - Estado: {row['estado']}, Ya calificado: {ya_calificado}")
+                
                 reserva_dict = {
                     "id_reserva": row['id_reserva'],
                     "id_servicio": row['id_servicio'],
@@ -733,7 +738,8 @@ async def obtener_reservas_proveedor(
                     "razon_social": row['razon_social'],
                     "id_perfil": row['id_perfil'],
                     "nombre_cliente": row['nombre_cliente'],
-                    "nombre_categoria": row['nombre_categoria']
+                    "nombre_categoria": row['nombre_categoria'],
+                    "ya_calificado_por_proveedor": ya_calificado
                 }
                 reservas_list.append(reserva_dict)
             

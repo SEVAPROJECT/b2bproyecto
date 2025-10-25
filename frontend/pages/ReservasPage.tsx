@@ -12,6 +12,7 @@ interface Reserva {
   fecha: string;
   estado: string;
   created_at: string;
+  ya_calificado_por_proveedor?: boolean;
   servicio?: {
     nombre: string;
     precio: number;
@@ -643,16 +644,27 @@ const ReservasPage: React.FC = () => {
                             </div>
                           )}
                           {/* Botón de calificar para proveedores */}
-                          {reserva.estado === 'completada' && (
-                            <div className="mt-2">
-                              <button
-                                onClick={() => handleCalificar(reserva.id_reserva)}
-                                className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700 transition-all duration-200 hover:scale-105"
-                              >
-                                ⭐ Calificar Cliente
-                              </button>
-                            </div>
-                          )}
+                          {(() => {
+                            const shouldShowButton = reserva.estado === 'completada' && 
+                                                    !reserva.ya_calificado_por_proveedor;
+                            
+                            console.log(`🔍 Botón Calificar Cliente - Reserva ${reserva.id_reserva}:`, {
+                              estado: reserva.estado,
+                              ya_calificado: reserva.ya_calificado_por_proveedor,
+                              shouldShow: shouldShowButton
+                            });
+                            
+                            return shouldShowButton ? (
+                              <div className="mt-2">
+                                <button
+                                  onClick={() => handleCalificar(reserva.id_reserva)}
+                                  className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700 transition-all duration-200 hover:scale-105"
+                                >
+                                  ⭐ Calificar Cliente
+                                </button>
+                              </div>
+                            ) : null;
+                          })()}
                         </div>
                       </div>
                     </div>
