@@ -1,6 +1,6 @@
 # backend/app/api/v1/routers/reserva_service/reserva.py
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from app.schemas.reserva_servicio.reserva import ReservaIn, ReservaOut, ReservaEstadoUpdate
+from app.schemas.reserva_servicio.reserva import ReservaIn, ReservaOut, ReservaEstadoUpdate, ReservaCancelacionData
 from app.api.v1.dependencies.auth_user import get_current_user
 from app.schemas.auth_user import SupabaseUser
 import logging
@@ -1244,6 +1244,155 @@ async def actualizar_estado_reserva(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar el estado de la reserva: {str(e)}"
+        )
+    finally:
+        await direct_db_service.pool.release(conn)
+
+
+@router.put(
+    "/{reserva_id}/cancelar",
+    description="Cancela una reserva. Puede ser usado tanto por el cliente como por el proveedor del servicio."
+)
+async def cancelar_reserva(
+    reserva_id: int,
+    cancelacion_data: ReservaCancelacionData,
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Cancela una reserva.
+    Puede ser usado tanto por el cliente como por el proveedor del servicio.
+    Solo se puede cancelar si el estado es 'pendiente'.
+    El motivo de cancelación es obligatorio.
+    """
+    logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] ========== INICIO CANCELAR RESERVA ==========")
+    logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] User ID: {current_user.id}")
+    logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] Motivo: {cancelacion_data.motivo}")
+    
+    try:
+        conn = await direct_db_service.pool.acquire()
+        
+        # 1. Verificar que la reserva existe y obtener información
+        reserva_query = """
+            SELECT r.id_reserva, r.estado as estado_actual, r.id_servicio, r.user_id as cliente_user_id,
+                   s.id_perfil, pe.user_id as proveedor_user_id
+            FROM reserva r
+            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+            WHERE r.id_reserva = $1
+        """
+        
+        reserva_result = await conn.fetchrow(reserva_query, reserva_id)
+        
+        if not reserva_result:
+            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Reserva no encontrada")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Reserva no encontrada"
+            )
+        
+        logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] Cliente: {reserva_result['cliente_user_id']}")
+        logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] Proveedor: {reserva_result['proveedor_user_id']}")
+        
+        # 2. Verificar que el usuario tiene permisos para cancelar
+        cliente_user_id = str(reserva_result['cliente_user_id'])
+        proveedor_user_id = str(reserva_result['proveedor_user_id'])
+        current_user_id = str(current_user.id)
+        
+        if current_user_id != cliente_user_id and current_user_id != proveedor_user_id:
+            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Usuario no autorizado")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No autorizado para gestionar esta reserva"
+            )
+        
+        # 3. Verificar que la reserva está en estado pendiente
+        estado_actual = reserva_result['estado_actual']
+        if estado_actual != 'pendiente':
+            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Estado inválido: {estado_actual}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Solo se pueden cancelar reservas en estado 'pendiente'. Estado actual: '{estado_actual}'"
+            )
+        
+        # 4. Validar que el motivo no esté vacío
+        if not cancelacion_data.motivo or not cancelacion_data.motivo.strip():
+            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Motivo vacío")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Debés ingresar un motivo para cancelar la reserva"
+            )
+        
+        # 5. Actualizar el estado de la reserva
+        update_query = """
+            UPDATE reserva 
+            SET estado = 'cancelada'
+            WHERE id_reserva = $1
+            RETURNING id_reserva, estado, fecha, hora_inicio, hora_fin
+        """
+        
+        updated_reserva = await conn.fetchrow(update_query, reserva_id)
+        
+        if not updated_reserva:
+            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Error al actualizar reserva")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al cancelar la reserva"
+            )
+        
+        # 6. Registrar en el historial
+        try:
+            await registrar_cambio_estado(
+                conn,
+                reserva_id,
+                current_user.id,
+                estado_actual,
+                'cancelada',
+                cancelacion_data.motivo
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/cancelar] Error al registrar historial: {str(e)}")
+        
+        # 7. Enviar notificación (opcional)
+        try:
+            await enviar_notificacion_cliente(
+                conn, 
+                reserva_id, 
+                estado_actual, 
+                'cancelada', 
+                cancelacion_data.motivo
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/cancelar] Error al enviar notificación: {str(e)}")
+        
+        # 8. Determinar quién canceló
+        quien_cancelo = "cliente" if current_user_id == cliente_user_id else "proveedor"
+        
+        logger.info(f"✅ [PUT /reservas/{reserva_id}/cancelar] Reserva cancelada por {quien_cancelo}")
+        logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] ========== FIN CANCELAR RESERVA ==========")
+        
+        return {
+            "message": "✅ Reserva cancelada",
+            "reserva": {
+                "id_reserva": updated_reserva['id_reserva'],
+                "estado": updated_reserva['estado'],
+                "fecha": updated_reserva['fecha'].isoformat() if updated_reserva['fecha'] else None,
+                "hora_inicio": str(updated_reserva['hora_inicio']) if updated_reserva['hora_inicio'] else None,
+                "hora_fin": str(updated_reserva['hora_fin']) if updated_reserva['hora_fin'] else None
+            },
+            "motivo": cancelacion_data.motivo,
+            "cancelado_por": quien_cancelo,
+            "notificacion_enviada": True
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Error crítico: {str(e)}")
+        import traceback
+        logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al cancelar la reserva: {str(e)}"
         )
     finally:
         await direct_db_service.pool.release(conn)

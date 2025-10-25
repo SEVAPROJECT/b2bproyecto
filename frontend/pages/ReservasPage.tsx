@@ -131,13 +131,16 @@ const ReservasPage: React.FC = () => {
       setAccionLoading(reservaId);
       setError(null);
 
-      const response = await fetch(buildApiUrl(`/reservas/${reservaId}/estado`), {
+      // Usar endpoint específico para cancelación
+      const endpoint = nuevoEstado === 'cancelada' ? `/reservas/${reservaId}/cancelar` : `/reservas/${reservaId}/estado`;
+      const body = nuevoEstado === 'cancelada' 
+        ? { motivo: observacion || '' }
+        : { nuevo_estado: nuevoEstado, observacion: observacion || '' };
+
+      const response = await fetch(buildApiUrl(endpoint), {
         method: 'PUT',
         headers: getJsonHeaders(),
-        body: JSON.stringify({
-          nuevo_estado: nuevoEstado,
-          observacion: observacion || ''
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
@@ -182,6 +185,11 @@ const ReservasPage: React.FC = () => {
     if (!modalData) return;
     
     // Validaciones del modal
+    if (modalData.accion === 'cancelada' && !modalData.observacion.trim()) {
+      setError('Debés ingresar un motivo para cancelar la reserva');
+      return;
+    }
+    
     if (modalData.accion === 'rechazado' && !modalData.observacion.trim()) {
       setError('Es recomendable agregar una observación al rechazar una reserva');
       return;
@@ -525,7 +533,7 @@ const ReservasPage: React.FC = () => {
                                 )}
                               </button>
                               <button
-                                onClick={() => handleAccionReserva(reserva.id_reserva, 'rechazado')}
+                                onClick={() => handleAccionReserva(reserva.id_reserva, 'cancelada')}
                                 disabled={accionLoading === reserva.id_reserva}
                                 className={`bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-all duration-200 ${
                                   accionLoading === reserva.id_reserva 
@@ -542,7 +550,7 @@ const ReservasPage: React.FC = () => {
                                     Procesando...
                                   </span>
                                 ) : (
-                                  'Rechazar'
+                                  'Cancelar'
                                 )}
                               </button>
                             </div>
@@ -639,29 +647,41 @@ const ReservasPage: React.FC = () => {
                 <h3 className="text-lg font-medium text-gray-900 mb-4">
                   {modalData.accion === 'aprobado' ? 'Aprobar Reserva' : 
                    modalData.accion === 'rechazado' ? 'Rechazar Reserva' : 
+                   modalData.accion === 'cancelada' ? 'Cancelar Reserva' :
                    modalData.accion === 'concluido' ? 'Marcar como Concluido' : 'Confirmar Acción'}
                 </h3>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Observación {modalData.accion === 'rechazado' || modalData.accion === 'concluido' ? '(recomendado)' : '(opcional)'}:
+                    {modalData.accion === 'cancelada' ? 'Motivo de cancelación (obligatorio)' : 
+                     modalData.accion === 'rechazado' || modalData.accion === 'concluido' ? 'Observación (recomendado)' : 
+                     'Observación (opcional)'}:
                   </label>
                   <textarea
                     value={modalData.observacion}
                     onChange={(e) => setModalData({...modalData, observacion: e.target.value})}
                     className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-                      (modalData.accion === 'rechazado' || modalData.accion === 'concluido') && !modalData.observacion.trim()
+                      modalData.accion === 'cancelada' && !modalData.observacion.trim()
+                        ? 'border-red-300 focus:ring-red-500'
+                        : (modalData.accion === 'rechazado' || modalData.accion === 'concluido') && !modalData.observacion.trim()
                         ? 'border-yellow-300 focus:ring-yellow-500'
                         : 'border-gray-300 focus:ring-blue-500'
                     }`}
                     rows={3}
                     placeholder={
-                      modalData.accion === 'rechazado' 
+                      modalData.accion === 'cancelada'
+                        ? 'Debés ingresar un motivo para cancelar la reserva...'
+                        : modalData.accion === 'rechazado' 
                         ? 'Explica por qué rechazas esta reserva...'
                         : modalData.accion === 'concluido'
                         ? 'Describe cómo se completó el servicio...'
                         : 'Agrega una observación sobre esta acción...'
                     }
                   />
+                  {modalData.accion === 'cancelada' && !modalData.observacion.trim() && (
+                    <p className="mt-1 text-sm text-red-600">
+                      ❌ Debés ingresar un motivo para cancelar la reserva
+                    </p>
+                  )}
                   {(modalData.accion === 'rechazado' || modalData.accion === 'concluido') && !modalData.observacion.trim() && (
                     <p className="mt-1 text-sm text-yellow-600">
                       ⚠️ Es recomendable agregar una observación para esta acción
@@ -681,13 +701,14 @@ const ReservasPage: React.FC = () => {
                   <button
                     onClick={confirmarAccion}
                     className={`px-4 py-2 text-white rounded-md ${
-                      modalData.accion === 'rechazado' ? 'bg-red-600 hover:bg-red-700' :
+                      modalData.accion === 'rechazado' || modalData.accion === 'cancelada' ? 'bg-red-600 hover:bg-red-700' :
                       modalData.accion === 'aprobado' ? 'bg-green-600 hover:bg-green-700' :
                       'bg-blue-600 hover:bg-blue-700'
                     }`}
                   >
                     {modalData.accion === 'aprobado' ? 'Aprobar' : 
                      modalData.accion === 'rechazado' ? 'Rechazar' : 
+                     modalData.accion === 'cancelada' ? 'Cancelar' :
                      modalData.accion === 'concluido' ? 'Marcar como Concluido' : 'Confirmar'}
                   </button>
                 </div>

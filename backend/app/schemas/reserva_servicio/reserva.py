@@ -44,3 +44,13 @@ class ReservaEstadoUpdate(BaseModel):
     
     class Config:
         from_attributes = True
+
+class ReservaCancelacionData(BaseModel):
+    """
+    Schema para cancelar una reserva.
+    El motivo es obligatorio.
+    """
+    motivo: str = Field(..., min_length=1, max_length=500, description="Motivo obligatorio para cancelar la reserva")
+    
+    class Config:
+        from_attributes = True
