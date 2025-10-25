@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.api.v1.dependencies.auth_user import get_current_user
+from app.api.v1.dependencies.auth_user import get_current_user, get_admin_user
 from app.schemas.calificacion import (
     CalificacionClienteData, 
     CalificacionProveedorData, 
@@ -8,23 +8,59 @@ from app.schemas.calificacion import (
 )
 from app.services.direct_db_service import direct_db_service
 from gotrue.types import User
+from app.schemas.auth_user import SupabaseUser
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+async def get_user_with_roles(current_user: SupabaseUser = Depends(get_current_user)):
+    """
+    Obtiene el perfil del usuario con sus roles para determinar si es cliente o proveedor.
+    """
+    try:
+        user_uuid = str(current_user.id)
+        user_data = await direct_db_service.get_user_profile_with_roles(user_uuid)
+        
+        if not user_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Perfil de usuario no encontrado"
+            )
+        
+        # Extraer los nombres de los roles
+        roles_data = user_data.get('roles', [])
+        roles_nombres = [rol.get('nombre') for rol in roles_data if rol.get('nombre')]
+        roles_lower = [rol.lower() for rol in roles_nombres]
+        
+        # Determinar si es proveedor
+        is_provider = any(rol in ['provider', 'proveedor', 'proveedores'] for rol in roles_lower)
+        
+        return {
+            'id': user_data['id'],
+            'email': current_user.email,
+            'roles': roles_nombres,
+            'is_provider': is_provider
+        }
+    except Exception as e:
+        logger.error(f"❌ Error al obtener perfil del usuario: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al obtener información del usuario"
+        )
+
 @router.post("/cliente/{reserva_id}", response_model=CalificacionOut)
 async def calificar_como_cliente(
     reserva_id: int,
     calificacion_data: CalificacionClienteData,
-    current_user: User = Depends(get_current_user)
+    user_info = Depends(get_user_with_roles)
 ):
     """
     Calificar servicio como cliente (con NPS)
     """
     try:
         logger.info(f"🔍 [POST /calificacion/cliente/{reserva_id}] Iniciando calificación de cliente")
-        logger.info(f"🔍 Usuario: {current_user.id}, Rol: {current_user.role}")
+        logger.info(f"🔍 Usuario: {user_info['id']}, Es proveedor: {user_info['is_provider']}")
         
         async with direct_db_service.get_connection() as conn:
             # 1. Verificar que la reserva existe y está completada
@@ -49,7 +85,7 @@ async def calificar_como_cliente(
                 )
             
             # 2. Verificar que el usuario es el cliente de la reserva
-            if str(reserva['cliente_id']) != str(current_user.id):
+            if str(reserva['cliente_id']) != str(user_info['id']):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="No autorizado para calificar esta reserva."
@@ -82,7 +118,7 @@ async def calificar_como_cliente(
                 calificacion_data.puntaje,
                 calificacion_data.comentario,
                 calificacion_data.satisfaccion_nps,
-                current_user.id
+                user_info['id']
             )
             
             logger.info(f"✅ Calificación de cliente creada: {result['id_calificacion']}")
@@ -94,7 +130,7 @@ async def calificar_como_cliente(
                 comentario=calificacion_data.comentario,
                 fecha=result['fecha'],
                 rol_emisor='cliente',
-                usuario_id=str(current_user.id),
+                usuario_id=str(user_info['id']),
                 satisfaccion_nps=calificacion_data.satisfaccion_nps
             )
             
@@ -111,14 +147,14 @@ async def calificar_como_cliente(
 async def calificar_como_proveedor(
     reserva_id: int,
     calificacion_data: CalificacionProveedorData,
-    current_user: User = Depends(get_current_user)
+    user_info = Depends(get_user_with_roles)
 ):
     """
     Calificar cliente como proveedor (sin NPS)
     """
     try:
         logger.info(f"🔍 [POST /calificacion/proveedor/{reserva_id}] Iniciando calificación de proveedor")
-        logger.info(f"🔍 Usuario: {current_user.id}, Rol: {current_user.role}")
+        logger.info(f"🔍 Usuario: {user_info['id']}, Es proveedor: {user_info['is_provider']}")
         
         async with direct_db_service.get_connection() as conn:
             # 1. Verificar que la reserva existe y está completada
@@ -143,7 +179,7 @@ async def calificar_como_proveedor(
                 )
             
             # 2. Verificar que el usuario es el proveedor del servicio
-            if str(reserva['id_proveedor']) != str(current_user.id):
+            if str(reserva['id_proveedor']) != str(user_info['id']):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="No autorizado para calificar esta reserva."
@@ -175,7 +211,7 @@ async def calificar_como_proveedor(
                 reserva_id,
                 calificacion_data.puntaje,
                 calificacion_data.comentario,
-                current_user.id
+                user_info['id']
             )
             
             logger.info(f"✅ Calificación de proveedor creada: {result['id_calificacion']}")
@@ -187,7 +223,7 @@ async def calificar_como_proveedor(
                 comentario=calificacion_data.comentario,
                 fecha=result['fecha'],
                 rol_emisor='proveedor',
-                usuario_id=str(current_user.id),
+                usuario_id=str(user_info['id']),
                 satisfaccion_nps=None
             )
             
@@ -203,7 +239,7 @@ async def calificar_como_proveedor(
 @router.get("/verificar/{reserva_id}", response_model=CalificacionExistenteOut)
 async def verificar_calificacion_existente(
     reserva_id: int,
-    current_user: User = Depends(get_current_user)
+    user_info = Depends(get_user_with_roles)
 ):
     """
     Verificar si ya existe calificación para una reserva por el usuario actual
@@ -213,7 +249,7 @@ async def verificar_calificacion_existente(
         
         async with direct_db_service.get_connection() as conn:
             # Determinar rol del usuario
-            rol_emisor = 'cliente' if current_user.role != 'provider' else 'proveedor'
+            rol_emisor = 'proveedor' if user_info['is_provider'] else 'cliente'
             
             # Buscar calificación existente
             calificacion_query = """
@@ -233,7 +269,7 @@ async def verificar_calificacion_existente(
                         comentario=calificacion['comentario'],
                         fecha=calificacion['fecha'],
                         rol_emisor=rol_emisor,
-                        usuario_id=str(current_user.id),
+                        usuario_id=str(user_info['id']),
                         satisfaccion_nps=calificacion['satisfaccion_nps']
                     )
                 )
