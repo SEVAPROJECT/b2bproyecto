@@ -960,16 +960,29 @@ const ReservationsPage: React.FC = () => {
                                         )}
 
                                         {/* Botón de calificar para clientes */}
-                                        {activeTab === 'mis-reservas' && reserva.estado === 'completada' && !reserva.ya_calificado_por_cliente && (
-                                            <div className="mt-4 pt-4 border-t border-gray-200">
-                                                <button
-                                                    onClick={() => handleCalificar(reserva.id_reserva)}
-                                                    className="bg-yellow-600 text-white px-4 py-2 rounded text-sm hover:bg-yellow-700 transition-all duration-200 hover:scale-105"
-                                                >
-                                                    ⭐ Calificar Servicio
-                                                </button>
-                                            </div>
-                                        )}
+                                        {(() => {
+                                            const shouldShowButton = activeTab === 'mis-reservas' && 
+                                                                    reserva.estado === 'completada' && 
+                                                                    !reserva.ya_calificado_por_cliente;
+                                            
+                                            console.log(`🔍 Botón Calificar - Reserva ${reserva.id_reserva}:`, {
+                                                activeTab,
+                                                estado: reserva.estado,
+                                                ya_calificado: reserva.ya_calificado_por_cliente,
+                                                shouldShow: shouldShowButton
+                                            });
+                                            
+                                            return shouldShowButton ? (
+                                                <div className="mt-4 pt-4 border-t border-gray-200">
+                                                    <button
+                                                        onClick={() => handleCalificar(reserva.id_reserva)}
+                                                        className="bg-yellow-600 text-white px-4 py-2 rounded text-sm hover:bg-yellow-700 transition-all duration-200 hover:scale-105"
+                                                    >
+                                                        ⭐ Calificar Servicio
+                                                    </button>
+                                                </div>
+                                            ) : null;
+                                        })()}
                                     </div>
                                 </div>
                             </div>

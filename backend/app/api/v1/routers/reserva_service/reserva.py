@@ -478,6 +478,9 @@ async def obtener_mis_reservas_detalladas(
             
             reservas_list = []
             for row in reservas_result:
+                ya_calificado = row['ya_calificado_por_cliente']
+                logger.info(f"🔍 [GET /mis-reservas] Reserva {row['id_reserva']} - Estado: {row['estado']}, Ya calificado: {ya_calificado}")
+                
                 reserva_dict = {
                     "id_reserva": row['id_reserva'],
                     "id_servicio": row['id_servicio'],
@@ -500,7 +503,7 @@ async def obtener_mis_reservas_detalladas(
                     "email_contacto": None,
                     "telefono_contacto": None,
                     "nombre_categoria": row['nombre_categoria'],
-                    "ya_calificado_por_cliente": row['ya_calificado_por_cliente']
+                    "ya_calificado_por_cliente": ya_calificado
                 }
                 reservas_list.append(reserva_dict)
             
