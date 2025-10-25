@@ -38,6 +38,7 @@ interface Reserva {
     telefono_contacto: string | null;
     nombre_categoria: string | null;
     ya_calificado_por_cliente?: boolean;
+    ya_calificado_por_proveedor?: boolean;
 }
 
 interface PaginationInfo {
@@ -198,7 +199,8 @@ const ReservationsPage: React.FC = () => {
             console.log('📊 Estados de reservas encontradas:', reservasData.map((r: any) => r.estado));
             console.log('📊 Verificando campo ya_calificado_por_cliente:', reservasData.map((r: any) => ({
                 id: r.id_reserva,
-                ya_calificado: r.ya_calificado_por_cliente
+                ya_calificado_cliente: r.ya_calificado_por_cliente,
+                ya_calificado_proveedor: r.ya_calificado_por_proveedor
             })));
             
             const reservasMapeadas = reservasData.map((reserva: any) => ({
@@ -216,7 +218,8 @@ const ReservationsPage: React.FC = () => {
                 precio_servicio: reserva.precio_servicio || reserva.servicio?.precio || 0,
                 imagen_servicio: reserva.imagen_servicio || reserva.servicio?.imagen,
                 nombre_categoria: reserva.nombre_categoria || reserva.servicio?.categoria || 'Sin categoría',
-                ya_calificado_por_cliente: reserva.ya_calificado_por_cliente || false
+                ya_calificado_por_cliente: reserva.ya_calificado_por_cliente || false,
+                ya_calificado_por_proveedor: reserva.ya_calificado_por_proveedor || false
             }));
 
             setReservas(reservasMapeadas);
@@ -370,7 +373,12 @@ const ReservationsPage: React.FC = () => {
             setCalificacionLoading(true);
             setError(null);
 
-            const response = await fetch(buildApiUrl(`/calificacion/cliente/${calificacionReservaId}`), {
+            // Determinar el endpoint según la pestaña activa
+            const endpoint = activeTab === 'reservas-proveedor' 
+                ? `/calificacion/proveedor/${calificacionReservaId}`
+                : `/calificacion/cliente/${calificacionReservaId}`;
+
+            const response = await fetch(buildApiUrl(endpoint), {
                 method: 'POST',
                 headers: getJsonHeaders(),
                 body: JSON.stringify(data)
@@ -911,6 +919,29 @@ const ReservationsPage: React.FC = () => {
                                                         </button>
                                                     </div>
                                                 )}
+                                                
+                                                {/* Botón de calificar para proveedores */}
+                                                {(() => {
+                                                    const shouldShowButton = reserva.estado === 'completada' && 
+                                                                            !reserva.ya_calificado_por_proveedor;
+                                                    
+                                                    console.log(`🔍 Botón Calificar Cliente - Reserva ${reserva.id_reserva}:`, {
+                                                        estado: reserva.estado,
+                                                        ya_calificado: reserva.ya_calificado_por_proveedor,
+                                                        shouldShow: shouldShowButton
+                                                    });
+                                                    
+                                                    return shouldShowButton ? (
+                                                        <div className="mt-4">
+                                                            <button
+                                                                onClick={() => handleCalificar(reserva.id_reserva)}
+                                                                className="bg-yellow-600 text-white px-4 py-2 rounded text-sm hover:bg-yellow-700 transition-all duration-200 hover:scale-105"
+                                                            >
+                                                                ⭐ Calificar Cliente
+                                                            </button>
+                                                        </div>
+                                                    ) : null;
+                                                })()}
                                             </div>
                                         )}
 
@@ -1110,7 +1141,7 @@ const ReservationsPage: React.FC = () => {
                         setCalificacionReservaId(null);
                     }}
                     onSubmit={handleEnviarCalificacion}
-                    tipo="cliente"
+                    tipo={activeTab === 'reservas-proveedor' ? 'proveedor' : 'cliente'}
                     reservaId={calificacionReservaId || 0}
                     loading={calificacionLoading}
                 />
