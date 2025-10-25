@@ -77,7 +77,8 @@ async def calificar_como_cliente(
         logger.info(f"🔍 Usuario: {user_info['id']}, Es proveedor: {user_info['is_provider']}")
         logger.info(f"🔍 Datos de calificación: {calificacion_data}")
         
-        async with direct_db_service.get_connection() as conn:
+        conn = await direct_db_service.get_connection()
+        try:
             # 1. Verificar que la reserva existe y está completada
             reserva_query = """
                 SELECT r.id_reserva, r.estado, r.user_id as cliente_id, s.id_proveedor
@@ -148,6 +149,8 @@ async def calificar_como_cliente(
                 usuario_id=str(user_info['id']),
                 satisfaccion_nps=calificacion_data.satisfaccion_nps
             )
+        finally:
+            await direct_db_service.close_connection(conn)
             
     except HTTPException:
         raise
@@ -171,7 +174,8 @@ async def calificar_como_proveedor(
         logger.info(f"🔍 [POST /calificacion/proveedor/{reserva_id}] Iniciando calificación de proveedor")
         logger.info(f"🔍 Usuario: {user_info['id']}, Es proveedor: {user_info['is_provider']}")
         
-        async with direct_db_service.get_connection() as conn:
+        conn = await direct_db_service.get_connection()
+        try:
             # 1. Verificar que la reserva existe y está completada
             reserva_query = """
                 SELECT r.id_reserva, r.estado, r.user_id as cliente_id, s.id_proveedor
@@ -241,6 +245,8 @@ async def calificar_como_proveedor(
                 usuario_id=str(user_info['id']),
                 satisfaccion_nps=None
             )
+        finally:
+            await direct_db_service.close_connection(conn)
             
     except HTTPException:
         raise
@@ -262,7 +268,8 @@ async def verificar_calificacion_existente(
     try:
         logger.info(f"🔍 [GET /calificacion/verificar/{reserva_id}] Verificando calificación existente")
         
-        async with direct_db_service.get_connection() as conn:
+        conn = await direct_db_service.get_connection()
+        try:
             # Determinar rol del usuario
             rol_emisor = 'proveedor' if user_info['is_provider'] else 'cliente'
             
@@ -290,6 +297,8 @@ async def verificar_calificacion_existente(
                 )
             else:
                 return CalificacionExistenteOut(existe=False)
+        finally:
+            await direct_db_service.close_connection(conn)
                 
     except Exception as e:
         logger.error(f"❌ Error al verificar calificación: {str(e)}")
