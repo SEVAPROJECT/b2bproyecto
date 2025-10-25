@@ -19,10 +19,15 @@ async def get_user_with_roles(current_user: SupabaseUser = Depends(get_current_u
     Obtiene el perfil del usuario con sus roles para determinar si es cliente o proveedor.
     """
     try:
+        logger.info(f"🔍 [get_user_with_roles] Iniciando para usuario: {current_user.id}")
         user_uuid = str(current_user.id)
+        logger.info(f"🔍 [get_user_with_roles] UUID convertido: {user_uuid}")
+        
         user_data = await direct_db_service.get_user_profile_with_roles(user_uuid)
+        logger.info(f"🔍 [get_user_with_roles] Datos obtenidos: {user_data is not None}")
         
         if not user_data:
+            logger.error(f"❌ [get_user_with_roles] Perfil no encontrado para: {user_uuid}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, 
                 detail="Perfil de usuario no encontrado"
@@ -30,20 +35,29 @@ async def get_user_with_roles(current_user: SupabaseUser = Depends(get_current_u
         
         # Extraer los nombres de los roles
         roles_data = user_data.get('roles', [])
+        logger.info(f"🔍 [get_user_with_roles] Roles data: {roles_data}")
         roles_nombres = [rol.get('nombre') for rol in roles_data if rol.get('nombre')]
+        logger.info(f"🔍 [get_user_with_roles] Roles nombres: {roles_nombres}")
         roles_lower = [rol.lower() for rol in roles_nombres]
+        logger.info(f"🔍 [get_user_with_roles] Roles lower: {roles_lower}")
         
         # Determinar si es proveedor
         is_provider = any(rol in ['provider', 'proveedor', 'proveedores'] for rol in roles_lower)
+        logger.info(f"🔍 [get_user_with_roles] Es proveedor: {is_provider}")
         
-        return {
+        result = {
             'id': user_data['id'],
             'email': current_user.email,
             'roles': roles_nombres,
             'is_provider': is_provider
         }
+        logger.info(f"🔍 [get_user_with_roles] Resultado: {result}")
+        return result
     except Exception as e:
-        logger.error(f"❌ Error al obtener perfil del usuario: {e}")
+        logger.error(f"❌ [get_user_with_roles] Error al obtener perfil del usuario: {e}")
+        logger.error(f"❌ [get_user_with_roles] Tipo de error: {type(e)}")
+        import traceback
+        logger.error(f"❌ [get_user_with_roles] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al obtener información del usuario"
@@ -61,6 +75,7 @@ async def calificar_como_cliente(
     try:
         logger.info(f"🔍 [POST /calificacion/cliente/{reserva_id}] Iniciando calificación de cliente")
         logger.info(f"🔍 Usuario: {user_info['id']}, Es proveedor: {user_info['is_provider']}")
+        logger.info(f"🔍 Datos de calificación: {calificacion_data}")
         
         async with direct_db_service.get_connection() as conn:
             # 1. Verificar que la reserva existe y está completada
