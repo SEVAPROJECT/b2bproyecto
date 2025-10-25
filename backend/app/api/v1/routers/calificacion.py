@@ -7,7 +7,7 @@ from app.schemas.calificacion import (
     CalificacionExistenteOut
 )
 from app.services.direct_db_service import direct_db_service
-from app.schemas.user import User
+from gotrue.types import User
 import logging
 
 logger = logging.getLogger(__name__)
