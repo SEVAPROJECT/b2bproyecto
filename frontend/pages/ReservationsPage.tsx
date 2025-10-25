@@ -37,6 +37,7 @@ interface Reserva {
     email_contacto: string | null;
     telefono_contacto: string | null;
     nombre_categoria: string | null;
+    ya_calificado_por_cliente?: boolean;
 }
 
 interface PaginationInfo {
@@ -959,7 +960,7 @@ const ReservationsPage: React.FC = () => {
                                         )}
 
                                         {/* Botón de calificar para clientes */}
-                                        {activeTab === 'mis-reservas' && reserva.estado === 'completada' && (
+                                        {activeTab === 'mis-reservas' && reserva.estado === 'completada' && !reserva.ya_calificado_por_cliente && (
                                             <div className="mt-4 pt-4 border-t border-gray-200">
                                                 <button
                                                     onClick={() => handleCalificar(reserva.id_reserva)}

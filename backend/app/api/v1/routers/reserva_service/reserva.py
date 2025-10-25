@@ -375,12 +375,14 @@ async def obtener_mis_reservas_detalladas(
                     pe.nombre_fantasia as nombre_empresa,
                     pe.razon_social,
                     u.nombre_persona as nombre_contacto,
-                    c.nombre as nombre_categoria
+                    c.nombre as nombre_categoria,
+                    CASE WHEN cal.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_cliente
                 FROM reserva r
                 INNER JOIN servicio s ON r.id_servicio = s.id_servicio
                 INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
                 INNER JOIN users u ON pe.user_id = u.id
                 LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+                LEFT JOIN calificacion cal ON r.id_reserva = cal.id_reserva AND cal.rol_emisor = 'cliente'
                 WHERE r.user_id = $1
             """
             
@@ -497,7 +499,8 @@ async def obtener_mis_reservas_detalladas(
                     "nombre_contacto": row['nombre_contacto'],
                     "email_contacto": None,
                     "telefono_contacto": None,
-                    "nombre_categoria": row['nombre_categoria']
+                    "nombre_categoria": row['nombre_categoria'],
+                    "ya_calificado_por_cliente": row['ya_calificado_por_cliente']
                 }
                 reservas_list.append(reserva_dict)
             
