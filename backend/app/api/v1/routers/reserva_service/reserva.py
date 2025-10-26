@@ -1660,9 +1660,9 @@ async def confirmar_reserva(
                     au_cliente.email AS cliente_email,
                     u_prov.nombre_persona AS proveedor_nombre,
                     au_prov.email AS proveedor_email
-                FROM reserva r
-                JOIN servicio s ON r.id_servicio = s.id_servicio
-                JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                FROM public.reserva r
+                JOIN public.servicio s ON r.id_servicio = s.id_servicio
+                JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
                 JOIN public.users u_cliente ON r.user_id = u_cliente.id
                 JOIN auth.users au_cliente ON r.user_id = au_cliente.id
                 JOIN public.users u_prov ON pe.user_id = u_prov.id
