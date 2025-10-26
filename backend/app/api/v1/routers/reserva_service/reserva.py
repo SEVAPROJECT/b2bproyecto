@@ -690,6 +690,7 @@ async def obtener_reservas_proveedor(
                     pe.nombre_fantasia as nombre_empresa,
                     pe.razon_social,
                     u.nombre_persona as nombre_cliente,
+                    u.nombre_persona as nombre_contacto,
                     c.nombre as nombre_categoria,
                     CASE WHEN cal_proveedor.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_proveedor,
                     cal_cliente.puntaje as calificacion_cliente_puntaje,
@@ -810,6 +811,7 @@ async def obtener_reservas_proveedor(
                     "razon_social": row['razon_social'],
                     "id_perfil": row['id_perfil'],
                     "nombre_cliente": row['nombre_cliente'],
+                    "nombre_contacto": row['nombre_contacto'],
                     "nombre_categoria": row['nombre_categoria'],
                     "ya_calificado_por_proveedor": ya_calificado,
                     "calificacion_cliente": {
