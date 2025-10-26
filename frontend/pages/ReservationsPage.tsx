@@ -1181,7 +1181,7 @@ const ReservationsPage: React.FC = () => {
                                         }}
                                         className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
                                     >
-                                        Cancelar
+                                        Salir
                                     </button>
                                     <button
                                         onClick={confirmarAccion}
@@ -1192,7 +1192,7 @@ const ReservationsPage: React.FC = () => {
                                         }`}
                                     >
                                         {modalData.accion === 'confirmada' ? 'Confirmar' : 
-                                         modalData.accion === 'cancelada' ? 'Cancelar' : 
+                                         modalData.accion === 'cancelada' ? 'Cancelar Reserva' : 
                                          modalData.accion === 'completada' ? 'Marcar como Completada' : 'Confirmar'}
                                     </button>
                                 </div>
