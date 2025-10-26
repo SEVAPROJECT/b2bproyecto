@@ -1,145 +1,91 @@
 /**
- * Utilidades para manejo de fechas con zona horaria GMT-3 (Paraguay)
+ * Utilidades para manejo de fechas sin problemas de zona horaria
+ * 
+ * PROBLEMA: Al usar new Date(dateString) con formato YYYY-MM-DD,
+ * JavaScript lo interpreta como UTC medianoche, causando que en
+ * zonas horarias negativas (ej: Paraguay UTC-3) retroceda 1 día.
+ * 
+ * SOLUCIÓN: Estas funciones manipulan el string directamente
+ * sin crear objetos Date, evitando conversiones de zona horaria.
  */
 
 /**
- * Convierte una fecha UTC a zona horaria GMT-3 (Paraguay)
- * @param utcDate - Fecha en UTC (string o Date)
- * @returns Fecha en GMT-3 como string formateado
+ * Convierte fecha YYYY-MM-DD a DD/MM/YYYY
+ * @param dateStr - Fecha en formato "YYYY-MM-DD"
+ * @returns Fecha en formato "DD/MM/YYYY"
+ * @example formatDateToDDMMYYYY("2025-11-13") // "13/11/2025"
  */
-export const convertUTCToParaguay = (utcDate: string | Date): string => {
-  try {
-    const date = typeof utcDate === 'string' ? new Date(utcDate) : utcDate;
-    
-    // Verificar si la fecha ya está en UTC-3 comparando con la hora local
-    const now = new Date();
-    const dateOffset = date.getTimezoneOffset();
-    const nowOffset = now.getTimezoneOffset();
-    
-    // Si la fecha viene del backend y ya está en UTC-3, no restar horas
-    // Solo formatear la fecha tal como viene
-    let displayDate = date;
-    
-    // Solo convertir si la fecha viene en UTC puro (sin offset)
-    if (dateOffset === 0 && nowOffset !== 0) {
-      // La fecha viene en UTC, convertir a UTC-3
-      displayDate = new Date(date.getTime() - (3 * 60 * 60 * 1000));
-    }
-    
-    // Formatear manualmente para evitar problemas de timezone
-    const day = displayDate.getDate().toString().padStart(2, '0');
-    const month = (displayDate.getMonth() + 1).toString().padStart(2, '0');
-    const year = displayDate.getFullYear();
-    const hours = displayDate.getHours().toString().padStart(2, '0');
-    const minutes = displayDate.getMinutes().toString().padStart(2, '0');
-    const seconds = displayDate.getSeconds().toString().padStart(2, '0');
-    
-    return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
-  } catch (error) {
-    console.error('Error convirtiendo fecha UTC a Paraguay:', error);
-    return 'Fecha inválida';
-  }
-};
-
-/**
- * Convierte una fecha UTC a formato de fecha solamente (DD/MM/YYYY)
- * @param utcDate - Fecha en UTC (string o Date)
- * @returns Fecha en formato DD/MM/YYYY
- */
-export const convertUTCToParaguayDate = (utcDate: string | Date): string => {
-  try {
-    const date = typeof utcDate === 'string' ? new Date(utcDate) : utcDate;
-    
-    const paraguayTime = new Date(date.getTime() - (3 * 60 * 60 * 1000));
-    
-    // Formatear manualmente para evitar problemas de timezone
-    const day = paraguayTime.getDate().toString().padStart(2, '0');
-    const month = (paraguayTime.getMonth() + 1).toString().padStart(2, '0');
-    const year = paraguayTime.getFullYear();
-    
+export const formatDateToDDMMYYYY = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-');
     return `${day}/${month}/${year}`;
-  } catch (error) {
-    console.error('Error convirtiendo fecha UTC a Paraguay:', error);
-    return 'Fecha inválida';
-  }
 };
 
 /**
- * Convierte una fecha UTC a formato de hora solamente (HH:MM:SS)
- * @param utcDate - Fecha en UTC (string o Date)
- * @returns Hora en formato HH:MM:SS
+ * Convierte Date object a string YYYY-MM-DD sin conversión UTC
+ * @param date - Objeto Date
+ * @returns Fecha en formato "YYYY-MM-DD"
+ * @example formatDateToYYYYMMDD(new Date()) // "2025-11-13"
  */
-export const convertUTCToParaguayTime = (utcDate: string | Date): string => {
-  try {
-    const date = typeof utcDate === 'string' ? new Date(utcDate) : utcDate;
+export const formatDateToYYYYMMDD = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+/**
+ * Formatea fecha YYYY-MM-DD a formato largo en español
+ * @param dateStr - Fecha en formato "YYYY-MM-DD"
+ * @returns Fecha en formato largo español, ej: "jueves, 13 de noviembre de 2025"
+ * @example formatDateSpanishLong("2025-11-13") // "jueves, 13 de noviembre de 2025"
+ */
+export const formatDateSpanishLong = (dateStr: string): string => {
+    if (!dateStr) return '';
     
-    const paraguayTime = new Date(date.getTime() - (3 * 60 * 60 * 1000));
+    const [yearStr, monthStr, dayStr] = dateStr.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const day = parseInt(dayStr, 10);
     
-    // Formatear manualmente para evitar problemas de timezone
-    const hours = paraguayTime.getHours().toString().padStart(2, '0');
-    const minutes = paraguayTime.getMinutes().toString().padStart(2, '0');
-    const seconds = paraguayTime.getSeconds().toString().padStart(2, '0');
+    // Crear fecha en hora local (no UTC) agregando 'T00:00:00' para forzar interpretación local
+    const date = new Date(year, month - 1, day);
     
-    return `${hours}:${minutes}:${seconds}`;
-  } catch (error) {
-    console.error('Error convirtiendo hora UTC a Paraguay:', error);
-    return 'Hora inválida';
-  }
+    return date.toLocaleDateString('es-ES', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
 };
 
 /**
- * Obtiene la fecha y hora actual en GMT-3 (Paraguay)
- * @returns Fecha actual en GMT-3
+ * Parsea fecha string a Date sin problemas de zona horaria
+ * Agrega 'T00:00:00' para forzar interpretación en hora local
+ * @param dateStr - Fecha en formato "YYYY-MM-DD"
+ * @returns Objeto Date en hora local
  */
-export const getCurrentParaguayTime = (): Date => {
-  const now = new Date();
-  return new Date(now.getTime() - (3 * 60 * 60 * 1000));
+export const parseLocalDate = (dateStr: string): Date => {
+    if (!dateStr) return new Date();
+    
+    const [yearStr, monthStr, dayStr] = dateStr.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10) - 1; // Mes es 0-indexed en Date
+    const day = parseInt(dayStr, 10);
+    
+    return new Date(year, month, day);
 };
 
 /**
- * Formatea una fecha en formato legible para Paraguay
- * @param utcDate - Fecha en UTC (string o Date)
- * @returns Fecha formateada como "DD/MM/YYYY HH:MM:SS"
+ * Formatea fecha ISO a DD/MM/YYYY manejando correctamente la zona horaria
+ * @param isoString - Fecha en formato ISO (puede incluir hora)
+ * @returns Fecha en formato "DD/MM/YYYY"
+ * @example formatISODateToDDMMYYYY("2025-11-13T10:00:00Z") // "13/11/2025"
  */
-export const formatParaguayDateTime = (utcDate: string | Date): string => {
-  return convertUTCToParaguay(utcDate);
-};
-
-/**
- * Formatea una fecha en formato de fecha para Paraguay
- * @param utcDate - Fecha en UTC (string o Date)
- * @returns Fecha formateada como "DD/MM/YYYY"
- */
-export const formatParaguayDate = (utcDate: string | Date): string => {
-  return convertUTCToParaguayDate(utcDate);
-};
-
-/**
- * Verifica si una fecha es válida
- * @param date - Fecha a verificar
- * @returns true si la fecha es válida
- */
-export const isValidDate = (date: string | Date): boolean => {
-  try {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    return !isNaN(d.getTime());
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Obtiene información sobre la zona horaria configurada
- * @returns Información de la zona horaria
- */
-export const getTimezoneInfo = () => {
-  const now = getCurrentParaguayTime();
-  return {
-    timezone: 'GMT-3',
-    country: 'Paraguay',
-    offset_hours: -3,
-    current_time: formatParaguayDateTime(now),
-    current_date: formatParaguayDate(now),
-    iso_format: now.toISOString()
-  };
+export const formatISODateToDDMMYYYY = (isoString: string): string => {
+    if (!isoString) return '';
+    
+    // Extraer solo la parte de fecha (YYYY-MM-DD)
+    const dateOnly = isoString.split('T')[0];
+    return formatDateToDDMMYYYY(dateOnly);
 };

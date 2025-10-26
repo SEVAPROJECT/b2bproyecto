@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { buildApiUrl, getJsonHeaders } from '../config/api';
 import CalificacionModal from '../components/CalificacionModal';
+import { formatDateSpanishLong, formatDateToDDMMYYYY } from '../utils/dateUtils';
 
 // Tipos
 interface Calificacion {
@@ -64,22 +65,7 @@ interface ReservasResponse {
     pagination: PaginationInfo;
 }
 
-// Funciones auxiliares para formateo de fechas
-const formatDateSpanish = (dateString: string): string => {
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('es-ES', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    } catch (error) {
-        console.error('Error formateando fecha:', error);
-        return dateString;
-    }
-};
-
+// Funciones auxiliares para formateo de tiempo
 const formatTime = (timeString: string | null): string => {
     if (!timeString) return 'No especificada';
     return timeString.substring(0, 5); // HH:MM
@@ -789,7 +775,7 @@ const ReservationsPage: React.FC = () => {
                                                     📅 Fecha de servicio
                                                 </p>
                                                 <p className="text-sm text-gray-900">
-                                                    {formatDateSpanish(reserva.fecha)}
+                                                    {formatDateSpanishLong(reserva.fecha)}
                                                 </p>
                                             </div>
 

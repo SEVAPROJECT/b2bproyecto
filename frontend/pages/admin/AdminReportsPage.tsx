@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { adminAPI, categoryRequestsAPI, categoriesAPI } from '../../services/api';
 import { ChartBarIcon, DocumentArrowDownIcon, EyeIcon } from '../../components/icons';
 import { API_CONFIG, buildApiUrl } from '../../config/api';
+import { formatDateToDDMMYYYY } from '../../utils/dateUtils';
 
 interface ReporteData {
     total_usuarios?: number;
@@ -80,6 +81,23 @@ const AdminReportsPage: React.FC = () => {
         
         if (isDateField || looksLikeDate) {
             try {
+                // Si ya está en formato DD/MM/YYYY, devolverlo tal cual
+                if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
+                    return value;
+                }
+                
+                // Si es formato YYYY-MM-DD, usar la función sin conversión UTC
+                if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                    return formatDateToDDMMYYYY(value);
+                }
+                
+                // Para fechas ISO con hora (YYYY-MM-DDTHH:MM:SS)
+                if (value.includes('T')) {
+                    const dateOnly = value.split('T')[0];
+                    return formatDateToDDMMYYYY(dateOnly);
+                }
+                
+                // Fallback para otros formatos
                 const date = new Date(value);
                 if (!isNaN(date.getTime())) {
                     return date.toLocaleDateString('es-ES', {
@@ -1176,7 +1194,7 @@ const AdminReportsPage: React.FC = () => {
                 <div class="header">
                     <h1>SEVA Empresas</h1>
                     <h2>${reportTypes.find(r => r.id === reportType)?.title}</h2>
-                    <p>Generado el: ${formatArgentinaDate(reporte.fecha_generacion)}</p>
+                    <p>Generado el: ${formatDateToDDMMYYYY(reporte.fecha_generacion.split('T')[0])}</p>
                 </div>
         `;
 
