@@ -410,19 +410,61 @@ const AdminReportsPage: React.FC = () => {
             
             console.log('📊 Solicitudes reales obtenidas:', solicitudes.length);
 
-            // Procesar las solicitudes reales (si las hay)
-            const solicitudesProcesadas = solicitudes.map((solicitud: any) => ({
-                id_solicitud: solicitud.id_solicitud,
-                nombre_servicio: solicitud.nombre_servicio,
-                descripcion: solicitud.descripcion,
-                estado_aprobacion: solicitud.estado_aprobacion,
-                comentario_admin: solicitud.comentario_admin || '',
-                fecha_creacion: formatDateToDDMMAAAA(solicitud.created_at),
-                categoria: solicitud.nombre_categoria || 'Sin especificar',
-                empresa: solicitud.nombre_empresa || 'Sin especificar',
-                contacto: solicitud.nombre_contacto || 'Sin especificar',
-                email_contacto: solicitud.email_contacto || 'Sin especificar'
-            }));
+            // Obtener emails reales usando la misma lógica que el reporte de categorías
+            console.log('📧 Obteniendo emails reales desde reporte de proveedores...');
+            const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
+            const proveedoresResponse = await fetch(`${apiBaseUrl}/api/v1/admin/reports/proveedores-verificados`, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            let emailsDict: {[key: string]: string} = {};
+            if (proveedoresResponse.ok) {
+                const proveedoresData = await proveedoresResponse.json();
+                const proveedores = proveedoresData.proveedores || [];
+                console.log('🏢 Proveedores obtenidos para emails:', proveedores.length);
+                
+                // Crear diccionario de emails por nombre de contacto
+                proveedores.forEach((proveedor: any) => {
+                    if (proveedor.nombre_contacto && proveedor.email_contacto && proveedor.email_contacto !== 'No disponible') {
+                        emailsDict[proveedor.nombre_contacto] = proveedor.email_contacto;
+                    }
+                });
+                
+                console.log('📧 Emails extraídos del reporte de proveedores:', Object.keys(emailsDict).length);
+            } else {
+                console.log('❌ No se pudo obtener reporte de proveedores para emails');
+            }
+
+            // Procesar las solicitudes reales con emails
+            const solicitudesProcesadas = solicitudes.map((solicitud: any) => {
+                // Obtener email real del diccionario
+                let emailContacto = 'Sin especificar';
+                if (solicitud.nombre_contacto && solicitud.nombre_contacto !== 'No especificado') {
+                    const userEmail = emailsDict[solicitud.nombre_contacto];
+                    if (userEmail) {
+                        emailContacto = userEmail;
+                        console.log(`Email real encontrado para contacto ${solicitud.nombre_contacto}: ${emailContacto}`);
+                    } else {
+                        console.log(`❌ No se encontró email para contacto ${solicitud.nombre_contacto}`);
+                    }
+                }
+                
+                return {
+                    id_solicitud: solicitud.id_solicitud,
+                    nombre_servicio: solicitud.nombre_servicio,
+                    descripcion: solicitud.descripcion,
+                    estado_aprobacion: solicitud.estado_aprobacion,
+                    comentario_admin: solicitud.comentario_admin || '',
+                    fecha_creacion: formatDateToDDMMAAAA(solicitud.created_at),
+                    categoria: solicitud.nombre_categoria || 'Sin especificar',
+                    empresa: solicitud.nombre_empresa || 'Sin especificar',
+                    contacto: solicitud.nombre_contacto || 'Sin especificar',
+                    email_contacto: emailContacto
+                };
+            });
 
             const totalSolicitudes = solicitudesProcesadas.length;
             const pendientes = solicitudesProcesadas.filter(s => s.estado_aprobacion === 'pendiente').length;

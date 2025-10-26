@@ -102,39 +102,9 @@ async def get_service_requests(
             estados = [row.estado_aprobacion for row in rows]
             print(f"🔍 Estados encontrados: {set(estados)}")
 
-        # Obtener emails desde Supabase
-        from app.supabase.auth_service import supabase_admin
-        emails_dict = {}
-        try:
-            # Obtener todos los perfiles únicos de las solicitudes
-            perfil_ids = list(set([row.id_perfil for row in rows if row.id_perfil]))
-            
-            if perfil_ids:
-                # Obtener user_ids de los perfiles
-                perfil_query = select(PerfilEmpresa.id_perfil, PerfilEmpresa.user_id).where(
-                    PerfilEmpresa.id_perfil.in_(perfil_ids)
-                )
-                perfil_result = await db.execute(perfil_query)
-                perfiles = perfil_result.fetchall()
-                
-                # Obtener emails desde Supabase
-                auth_users = supabase_admin.auth.admin.list_users()
-                if auth_users and len(auth_users) > 0:
-                    for perfil in perfiles:
-                        if perfil.user_id:
-                            for auth_user in auth_users:
-                                if str(auth_user.id) == str(perfil.user_id):
-                                    emails_dict[perfil.id_perfil] = auth_user.email or "No disponible"
-                                    break
-        except Exception as email_error:
-            print(f"⚠️ Error obteniendo emails: {email_error}")
-        
         # Formatear respuesta con información completa
         formatted_requests = []
         for row in rows:
-            # Obtener email del diccionario
-            email_contacto = emails_dict.get(row.id_perfil, "No disponible")
-            
             formatted_request = {
                 "id_solicitud": row.id_solicitud,
                 "nombre_servicio": row.nombre_servicio,
@@ -146,8 +116,8 @@ async def get_service_requests(
                 "id_perfil": row.id_perfil,
                 "nombre_categoria": row.nombre_categoria or "Sin categoría",
                 "nombre_empresa": row.nombre_empresa or "No especificado",
-                "nombre_contacto": row.nombre_contacto or "No especificado",
-                "email_contacto": email_contacto
+                "nombre_contacto": row.nombre_contacto or "No especificado"
+                # email_contacto se agregará en el frontend usando el reporte de proveedores
             }
             formatted_requests.append(formatted_request)
 
@@ -178,8 +148,8 @@ async def get_service_requests(
                 "id_perfil": request.id_perfil,
                 "nombre_categoria": "Sin categoría",
                 "nombre_empresa": "No especificado",
-                "nombre_contacto": "No especificado",
-                "email_contacto": "No disponible"
+                "nombre_contacto": "No especificado"
+                # email_contacto se agregará en el frontend
             }
             formatted_requests.append(formatted_request)
 
@@ -218,7 +188,7 @@ async def get_all_service_requests_for_admin(
                 UserModel.nombre_persona.label('nombre_contacto')
             )
             .select_from(SolicitudServicio)
-            .join(Categoria, SolicitudServicio.id_categoria == Categoria.id_categoria, isouter=True)
+            .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)
             .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)
             .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)
             .order_by(SolicitudServicio.created_at.desc())
