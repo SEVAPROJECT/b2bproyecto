@@ -2289,12 +2289,21 @@ async def get_reporte_usuarios_activos(
                 else:
                     rol_principal = "Cliente"
                 
+                # Formatear estado: True -> "ACTIVO", False/None -> "INACTIVO"
+                estado_boolean = row['estado']
+                if estado_boolean is None:
+                    estado_formateado = "INACTIVO"
+                elif estado_boolean is True or estado_boolean == True:
+                    estado_formateado = "ACTIVO"
+                else:
+                    estado_formateado = "INACTIVO"
+                
                 usuarios_con_roles.append({
                     "id": user_id,
                     "nombre_persona": row['nombre_persona'] or "Sin nombre",
                     "nombre_empresa": row['nombre_empresa'] or "Sin empresa",
                     "email": email,
-                    "estado": row['estado'] or "ACTIVO",
+                    "estado": estado_formateado,
                     "rol_principal": rol_principal,
                     "fecha_creacion": fecha_creacion
                 })
