@@ -151,25 +151,48 @@ const AdminReportsPage: React.FC = () => {
 
         // Formatear estado booleano como ACTIVO/INACTIVO
         if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo') {
+            console.log('🎯 formatValue para estado:', { value, tipo: typeof value });
             // Si ya es un string formateado (del backend), devolverlo tal cual
             if (typeof value === 'string') {
                 const upperValue = value.toUpperCase();
+                console.log('📝 upperValue:', upperValue);
                 if (upperValue === 'ACTIVO' || upperValue === 'INACTIVO') {
+                    console.log('✅ Match directo, devolviendo:', upperValue);
                     return upperValue;
                 }
                 // Manejar variantes como "Activo", "Inactivo"
-                if (upperValue.includes('ACTIV')) return 'ACTIVO';
-                if (upperValue.includes('INACTIV')) return 'INACTIVO';
+                if (upperValue.includes('ACTIV')) {
+                    console.log('✅ Contiene ACTIV, devolviendo: ACTIVO');
+                    return 'ACTIVO';
+                }
+                if (upperValue.includes('INACTIV')) {
+                    console.log('✅ Contiene INACTIV, devolviendo: INACTIVO');
+                    return 'INACTIVO';
+                }
+                console.warn('⚠️ String no reconocido:', upperValue);
             }
             // Si es booleano, formatearlo
             if (typeof value === 'boolean') {
-                return value ? 'ACTIVO' : 'INACTIVO';
+                const resultado = value ? 'ACTIVO' : 'INACTIVO';
+                console.log('✅ Boolean, devolviendo:', resultado);
+                return resultado;
             }
-            if (value === 'true' || value === true) return 'ACTIVO';
-            if (value === 'false' || value === false) return 'INACTIVO';
+            if (value === 'true' || value === true) {
+                console.log('✅ String "true", devolviendo: ACTIVO');
+                return 'ACTIVO';
+            }
+            if (value === 'false' || value === false) {
+                console.log('✅ String "false", devolviendo: INACTIVO');
+                return 'INACTIVO';
+            }
+            console.error('❌ Ninguna condición cumplida para estado, cayendo a String(value)');
         }
 
-        return String(value);
+        const resultado = String(value);
+        if (fieldName === 'estado') {
+            console.log('🔚 Resultado final para estado:', resultado);
+        }
+        return resultado;
     };
 
     // Función helper para obtener el total de registros de un reporte
