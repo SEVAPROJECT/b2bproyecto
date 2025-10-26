@@ -146,6 +146,17 @@ const AdminReportsPage: React.FC = () => {
 
         // Formatear estado booleano como ACTIVO/INACTIVO
         if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo') {
+            // Si ya es un string formateado (del backend), devolverlo tal cual
+            if (typeof value === 'string') {
+                const upperValue = value.toUpperCase();
+                if (upperValue === 'ACTIVO' || upperValue === 'INACTIVO') {
+                    return upperValue;
+                }
+                // Manejar variantes como "Activo", "Inactivo"
+                if (upperValue.includes('ACTIV')) return 'ACTIVO';
+                if (upperValue.includes('INACTIV')) return 'INACTIVO';
+            }
+            // Si es booleano, formatearlo
             if (typeof value === 'boolean') {
                 return value ? 'ACTIVO' : 'INACTIVO';
             }
@@ -1177,17 +1188,18 @@ const AdminReportsPage: React.FC = () => {
                                     // Personalizar nombres específicos
                                     if (key === 'created_at') headerName = 'FECHA CREACION';
                                     if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
-                                    if (key === 'active' || key === 'activo') headerName = 'ESTADO';
+                                    if (key === 'active' || key === 'activo' || key === 'estado') headerName = 'ESTADO';
                                     return `<th>${headerName}</th>`;
                                 }).join('')}
                             </tr>
                         </thead>
                         <tbody>
-                            ${data.map(item => 
-                                `<tr>${Object.entries(item).map(([key, value]) => 
-                                    `<td>${formatValue(value, key)}</td>`
-                                ).join('')}</tr>`
-                            ).join('')}
+                            ${data.map(item => {
+                                return `<tr>${Object.entries(item).map(([key, value]) => {
+                                    const formattedValue = formatValue(value, key);
+                                    return `<td>${formattedValue}</td>`;
+                                }).join('')}</tr>`;
+                            }).join('')}
                         </tbody>
                     </table>
 
@@ -1311,7 +1323,8 @@ const AdminReportsPage: React.FC = () => {
                 data.forEach(item => {
                     htmlContent += '<tr>';
                     Object.entries(item).forEach(([key, value]) => {
-                        htmlContent += `<td>${formatValue(value, key)}</td>`;
+                        const formattedValue = formatValue(value, key);
+                        htmlContent += `<td>${formattedValue}</td>`;
                     });
                     htmlContent += '</tr>';
                 });
