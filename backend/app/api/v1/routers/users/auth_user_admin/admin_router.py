@@ -1191,10 +1191,8 @@ async def get_user_id_by_profile(
     Obtiene el user_id usando el id_perfil de PerfilEmpresa.
     """
     try:
-        from app.models.perfil_empresa import PerfilEmpresaModel
-        
-        # Consulta simple para obtener user_id por id_perfil
-        query = select(PerfilEmpresaModel.user_id).where(PerfilEmpresaModel.id_perfil == id_perfil)
+        # Usar el modelo PerfilEmpresa ya importado al inicio del archivo
+        query = select(PerfilEmpresa.user_id).where(PerfilEmpresa.id_perfil == id_perfil)
         result = await db.execute(query)
         user_id = result.scalar()
         
@@ -2962,6 +2960,82 @@ async def get_reporte_calificaciones(
                 pass
         
         raise HTTPException(status_code=500, detail="Error generando reporte de calificaciones")
+
+@router.get(
+    "/reports/calificaciones-proveedores",
+    description="Genera reporte de calificaciones de proveedores hacia clientes"
+)
+async def get_reporte_calificaciones_proveedores(
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Genera reporte de calificaciones de proveedores hacia clientes (8 columnas)"""
+    try:
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Query SQL optimizada para reporte de calificaciones de proveedores
+            calificaciones_query = """
+                SELECT
+                    c.fecha::date AS fecha,
+                    s.nombre AS servicio,
+                    u_cli.nombre_persona AS cliente_persona,
+                    u_cli.nombre_empresa AS cliente_empresa,
+                    pe.nombre_fantasia AS proveedor_empresa,
+                    u_prov.nombre_persona AS proveedor_persona,
+                    c.puntaje AS puntaje,
+                    LEFT(COALESCE(c.comentario, ''), 120) AS comentario
+                FROM public.calificacion c
+                JOIN public.reserva r ON r.id_reserva = c.id_reserva
+                JOIN public.servicio s ON s.id_servicio = r.id_servicio
+                JOIN public.perfil_empresa pe ON pe.id_perfil = s.id_perfil
+                JOIN public.users u_prov ON u_prov.id = pe.user_id
+                JOIN public.users u_cli ON u_cli.id = r.user_id
+                WHERE c.rol_emisor = 'proveedor'
+                ORDER BY c.fecha DESC
+            """
+            
+            calificaciones_data = await conn.fetch(calificaciones_query)
+            
+            calificaciones_detalladas = []
+            for row in calificaciones_data:
+                # Formatear fecha a DD/MM/YYYY
+                fecha_formateada = None
+                if row['fecha']:
+                    fecha_formateada = row['fecha'].strftime("%d/%m/%Y")
+                
+                calificaciones_detalladas.append({
+                    "fecha": fecha_formateada,
+                    "servicio": row['servicio'],
+                    "cliente_persona": row['cliente_persona'],
+                    "cliente_empresa": row['cliente_empresa'] if row['cliente_empresa'] else "N/A",
+                    "proveedor_empresa": row['proveedor_empresa'],
+                    "proveedor_persona": row['proveedor_persona'],
+                    "puntaje": row['puntaje'],
+                    "comentario": row['comentario'] if row['comentario'] else "Sin comentario"
+                })
+        
+        finally:
+            await direct_db_service.pool.release(conn)
+
+        return {
+            "total_calificaciones_proveedores": len(calificaciones_detalladas),
+            "calificaciones_proveedores": calificaciones_detalladas,
+            "fecha_generacion": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        print(f"Error generando reporte de calificaciones de proveedores: {e}")
+        # Si es un error de PgBouncer, intentar rollback
+        if "prepared statement" in str(e).lower() or "pgbouncer" in str(e).lower():
+            try:
+                await db.rollback()
+            except:
+                pass
+        
+        raise HTTPException(status_code=500, detail="Error generando reporte de calificaciones de proveedores")
 
 @router.get(
     "/users/batch-emails",

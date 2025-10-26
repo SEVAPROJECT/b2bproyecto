@@ -39,6 +39,7 @@ export const API_CONFIG = {
             PROVIDERS_VERIFIED: '/admin/reports/proveedores-verificados',
             RESERVAS: '/admin/reports/reservas',
             CALIFICACIONES: '/admin/reports/calificaciones',
+            CALIFICACIONES_PROVEEDORES: '/admin/reports/calificaciones-proveedores',
         },
     },
     
