@@ -1194,7 +1194,7 @@ const AdminReportsPage: React.FC = () => {
                 <div class="header">
                     <h1>SEVA Empresas</h1>
                     <h2>${reportTypes.find(r => r.id === reportType)?.title}</h2>
-                    <p>Generado el: ${formatDateToDDMMYYYY(reporte.fecha_generacion.split('T')[0])}</p>
+                    <p>Generado el: ${formatArgentinaDateTime(reporte.fecha_generacion)}</p>
                 </div>
         `;
 
