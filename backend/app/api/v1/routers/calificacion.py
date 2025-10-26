@@ -7,6 +7,7 @@ from app.schemas.calificacion import (
     CalificacionExistenteOut
 )
 from app.services.direct_db_service import direct_db_service
+from app.services.calificacion_notification_service import calificacion_notification_service
 from gotrue.types import User
 from app.schemas.auth_user import SupabaseUser
 import logging
@@ -140,6 +141,50 @@ async def calificar_como_cliente(
             
             logger.info(f"✅ Calificación de cliente creada: {result['id_calificacion']}")
             
+            # 5. Enviar notificación al proveedor
+            try:
+                # Obtener datos completos para la notificación
+                notif_query = """
+                    SELECT 
+                        s.nombre as servicio_nombre,
+                        pe.nombre_fantasia as proveedor_empresa,
+                        u_prov.nombre_persona as proveedor_nombre,
+                        au_prov.email as proveedor_email,
+                        u_cli.nombre_persona as cliente_nombre,
+                        r.fecha_reserva::date as fecha,
+                        r.hora_inicio as hora
+                    FROM public.reserva r
+                    JOIN public.servicio s ON r.id_servicio = s.id_servicio
+                    JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                    JOIN public.users u_prov ON u_prov.id = pe.user_id
+                    JOIN auth.users au_prov ON au_prov.id = pe.user_id
+                    JOIN public.users u_cli ON u_cli.id = r.user_id
+                    WHERE r.id_reserva = $1
+                """
+                notif_data = await conn.fetchrow(notif_query, reserva_id)
+                
+                if notif_data:
+                    # Formatear fecha y hora
+                    fecha_formateada = notif_data['fecha'].strftime("%d/%m/%Y") if notif_data['fecha'] else "N/A"
+                    hora_formateada = notif_data['hora'].strftime("%H:%M") if notif_data['hora'] else "N/A"
+                    
+                    calificacion_notification_service.notify_calificacion_a_proveedor(
+                        reserva_id=reserva_id,
+                        servicio_nombre=notif_data['servicio_nombre'],
+                        proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+                        proveedor_email=notif_data['proveedor_email'],
+                        cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+                        puntaje=calificacion_data.puntaje,
+                        comentario=calificacion_data.comentario,
+                        nps=calificacion_data.satisfaccion_nps,
+                        fecha=fecha_formateada,
+                        hora=hora_formateada
+                    )
+                    logger.info(f"📧 Notificación de calificación enviada al proveedor")
+            except Exception as e:
+                logger.error(f"⚠️ Error enviando notificación al proveedor: {e}")
+                # No fallar si la notificación falla
+            
             return CalificacionOut(
                 id_calificacion=result['id_calificacion'],
                 id_reserva=reserva_id,
@@ -236,6 +281,50 @@ async def calificar_como_proveedor(
             )
             
             logger.info(f"✅ Calificación de proveedor creada: {result['id_calificacion']}")
+            
+            # 5. Enviar notificación al cliente
+            try:
+                # Obtener datos completos para la notificación
+                notif_query = """
+                    SELECT 
+                        s.nombre as servicio_nombre,
+                        pe.nombre_fantasia as proveedor_empresa,
+                        u_prov.nombre_persona as proveedor_nombre,
+                        u_cli.nombre_persona as cliente_nombre,
+                        au_cli.email as cliente_email,
+                        r.fecha_reserva::date as fecha,
+                        r.hora_inicio as hora
+                    FROM public.reserva r
+                    JOIN public.servicio s ON r.id_servicio = s.id_servicio
+                    JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                    JOIN public.users u_prov ON u_prov.id = pe.user_id
+                    JOIN public.users u_cli ON u_cli.id = r.user_id
+                    JOIN auth.users au_cli ON au_cli.id = r.user_id
+                    WHERE r.id_reserva = $1
+                """
+                notif_data = await conn.fetchrow(notif_query, reserva_id)
+                
+                if notif_data:
+                    # Formatear fecha y hora
+                    fecha_formateada = notif_data['fecha'].strftime("%d/%m/%Y") if notif_data['fecha'] else "N/A"
+                    hora_formateada = notif_data['hora'].strftime("%H:%M") if notif_data['hora'] else "N/A"
+                    
+                    calificacion_notification_service.notify_calificacion_a_cliente(
+                        reserva_id=reserva_id,
+                        servicio_nombre=notif_data['servicio_nombre'],
+                        cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+                        cliente_email=notif_data['cliente_email'],
+                        proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+                        proveedor_empresa=notif_data['proveedor_empresa'] or "Empresa",
+                        puntaje=calificacion_data.puntaje,
+                        comentario=calificacion_data.comentario,
+                        fecha=fecha_formateada,
+                        hora=hora_formateada
+                    )
+                    logger.info(f"📧 Notificación de calificación enviada al cliente")
+            except Exception as e:
+                logger.error(f"⚠️ Error enviando notificación al cliente: {e}")
+                # No fallar si la notificación falla
             
             return CalificacionOut(
                 id_calificacion=result['id_calificacion'],
