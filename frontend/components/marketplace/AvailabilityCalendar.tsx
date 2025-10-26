@@ -39,6 +39,12 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
         return `${year}-${month}-${day}`;
     };
 
+    // Helper para formatear fecha YYYY-MM-DD a DD/MM/YYYY sin conversión de zona horaria
+    const formatDateToDDMMYYYY = (dateStr: string): string => {
+        const [year, month, day] = dateStr.split('-');
+        return `${day}/${month}/${year}`;
+    };
+
     // Cargar disponibilidades del servicio
     useEffect(() => {
         const loadDisponibilidades = async () => {
@@ -235,7 +241,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
             {selectedDate && selectedTime && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                     <p className="text-sm text-green-800">
-                        ✅ Fecha y hora seleccionadas: {new Date(selectedDate).toLocaleDateString('es-PY')} a las {selectedTime}
+                        ✅ Fecha y hora seleccionadas: {formatDateToDDMMYYYY(selectedDate)} a las {selectedTime}
                     </p>
                 </div>
             )}
