@@ -2827,10 +2827,10 @@ async def get_reporte_reservas(
                     print(f"Error obteniendo email del cliente {row['cliente_user_id']}: {e}")
                     cliente_email = "No disponible"
                 
-                # Formatear fecha y hora de reserva a DD/MM/AAAA, HH:MM:SS
+                # Formatear fecha de reserva a DD/MM/AAAA (sin hora)
                 fecha_reserva_formateada = None
                 if row['created_at']:
-                    fecha_reserva_formateada = row['created_at'].strftime("%d/%m/%Y, %H:%M:%S")
+                    fecha_reserva_formateada = row['created_at'].strftime("%d/%m/%Y")
                 
                 # Formatear fecha y hora del servicio
                 fecha_servicio_formateada = None
