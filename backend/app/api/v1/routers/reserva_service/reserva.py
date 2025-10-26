@@ -251,6 +251,7 @@ async def crear_reserva(
             try:
                 logger.info(f"📧 [POST /reservas] Obteniendo datos para notificación...")
                 # Obtener datos del cliente y proveedor para la notificación
+                # NOTA: El email está en auth.users, no en public.users
                 notif_query = """
                     SELECT
                         r.id_reserva,
@@ -258,14 +259,16 @@ async def crear_reserva(
                         r.fecha,
                         r.hora_inicio,
                         u_cliente.nombre_persona AS cliente_nombre,
-                        u_cliente.email AS cliente_email,
+                        au_cliente.email AS cliente_email,
                         u_prov.nombre_persona AS proveedor_nombre,
-                        u_prov.email AS proveedor_email
+                        au_prov.email AS proveedor_email
                     FROM reserva r
                     JOIN servicio s ON r.id_servicio = s.id_servicio
                     JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                    JOIN users u_cliente ON r.user_id = u_cliente.id
-                    JOIN users u_prov ON pe.user_id = u_prov.id
+                    JOIN public.users u_cliente ON r.user_id = u_cliente.id
+                    JOIN auth.users au_cliente ON r.user_id = au_cliente.id
+                    JOIN public.users u_prov ON pe.user_id = u_prov.id
+                    JOIN auth.users au_prov ON pe.user_id = au_prov.id
                     WHERE r.id_reserva = $1
                 """
                 notif_data = await conn.fetchrow(notif_query, nueva_reserva['id_reserva'])
@@ -1308,14 +1311,16 @@ async def actualizar_estado_reserva(
                         r.fecha,
                         r.hora_inicio,
                         u_cliente.nombre_persona AS cliente_nombre,
-                        u_cliente.email AS cliente_email,
+                        au_cliente.email AS cliente_email,
                         u_prov.nombre_persona AS proveedor_nombre,
-                        u_prov.email AS proveedor_email
+                        au_prov.email AS proveedor_email
                     FROM reserva r
                     JOIN servicio s ON r.id_servicio = s.id_servicio
                     JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                    JOIN users u_cliente ON r.user_id = u_cliente.id
-                    JOIN users u_prov ON pe.user_id = u_prov.id
+                    JOIN public.users u_cliente ON r.user_id = u_cliente.id
+                    JOIN auth.users au_cliente ON r.user_id = au_cliente.id
+                    JOIN public.users u_prov ON pe.user_id = u_prov.id
+                    JOIN auth.users au_prov ON pe.user_id = au_prov.id
                     WHERE r.id_reserva = $1
                 """
                 notif_data = await conn.fetchrow(notif_query, reserva_id)
@@ -1485,14 +1490,16 @@ async def cancelar_reserva(
                     r.fecha,
                     r.hora_inicio,
                     u_cliente.nombre_persona AS cliente_nombre,
-                    u_cliente.email AS cliente_email,
+                    au_cliente.email AS cliente_email,
                     u_prov.nombre_persona AS proveedor_nombre,
-                    u_prov.email AS proveedor_email
+                    au_prov.email AS proveedor_email
                 FROM reserva r
                 JOIN servicio s ON r.id_servicio = s.id_servicio
                 JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                JOIN users u_cliente ON r.user_id = u_cliente.id
-                JOIN users u_prov ON pe.user_id = u_prov.id
+                JOIN public.users u_cliente ON r.user_id = u_cliente.id
+                JOIN auth.users au_cliente ON r.user_id = au_cliente.id
+                JOIN public.users u_prov ON pe.user_id = u_prov.id
+                JOIN auth.users au_prov ON pe.user_id = au_prov.id
                 WHERE r.id_reserva = $1
             """
             notif_data = await conn.fetchrow(notif_query, reserva_id)
@@ -1650,14 +1657,16 @@ async def confirmar_reserva(
                     r.fecha,
                     r.hora_inicio,
                     u_cliente.nombre_persona AS cliente_nombre,
-                    u_cliente.email AS cliente_email,
+                    au_cliente.email AS cliente_email,
                     u_prov.nombre_persona AS proveedor_nombre,
-                    u_prov.email AS proveedor_email
+                    au_prov.email AS proveedor_email
                 FROM reserva r
                 JOIN servicio s ON r.id_servicio = s.id_servicio
                 JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                JOIN users u_cliente ON r.user_id = u_cliente.id
-                JOIN users u_prov ON pe.user_id = u_prov.id
+                JOIN public.users u_cliente ON r.user_id = u_cliente.id
+                JOIN auth.users au_cliente ON r.user_id = au_cliente.id
+                JOIN public.users u_prov ON pe.user_id = u_prov.id
+                JOIN auth.users au_prov ON pe.user_id = au_prov.id
                 WHERE r.id_reserva = $1
             """
             notif_data = await conn.fetchrow(notif_query, reserva_id)
