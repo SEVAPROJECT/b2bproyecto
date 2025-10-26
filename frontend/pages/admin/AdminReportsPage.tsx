@@ -405,37 +405,59 @@ const AdminReportsPage: React.FC = () => {
         try {
             console.log('📋 Generando reporte de solicitudes de servicios...');
             
-            // Llama al endpoint real que actualmente puede fallar por CORS
+            // Llama al endpoint real
             const solicitudes = await adminAPI.getAllSolicitudesServiciosModificado(accessToken);
             
             console.log('📊 Solicitudes reales obtenidas:', solicitudes.length);
+            console.log('🔍 Primera solicitud (si existe):', solicitudes[0]);
+
+            // Si no hay solicitudes, devolver reporte vacío
+            if (!solicitudes || solicitudes.length === 0) {
+                console.log('⚠️ No hay solicitudes de servicios para reportar');
+                return {
+                    total_solicitudes_servicios: 0,
+                    solicitudes_servicios: [],
+                    fecha_generacion: new Date().toISOString(),
+                    pendientes: 0,
+                    aprobadas: 0,
+                    rechazadas: 0,
+                    generado_desde: 'sin_solicitudes',
+                    mensaje: 'No hay solicitudes de servicios registradas'
+                };
+            }
 
             // Obtener emails reales usando la misma lógica que el reporte de categorías
             console.log('📧 Obteniendo emails reales desde reporte de proveedores...');
-            const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
-            const proveedoresResponse = await fetch(`${apiBaseUrl}/api/v1/admin/reports/proveedores-verificados`, {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
             let emailsDict: {[key: string]: string} = {};
-            if (proveedoresResponse.ok) {
-                const proveedoresData = await proveedoresResponse.json();
-                const proveedores = proveedoresData.proveedores || [];
-                console.log('🏢 Proveedores obtenidos para emails:', proveedores.length);
-                
-                // Crear diccionario de emails por nombre de contacto
-                proveedores.forEach((proveedor: any) => {
-                    if (proveedor.nombre_contacto && proveedor.email_contacto && proveedor.email_contacto !== 'No disponible') {
-                        emailsDict[proveedor.nombre_contacto] = proveedor.email_contacto;
+            
+            try {
+                const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
+                const proveedoresResponse = await fetch(`${apiBaseUrl}/api/v1/admin/reports/proveedores-verificados`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
                     }
                 });
                 
-                console.log('📧 Emails extraídos del reporte de proveedores:', Object.keys(emailsDict).length);
-            } else {
-                console.log('❌ No se pudo obtener reporte de proveedores para emails');
+                if (proveedoresResponse.ok) {
+                    const proveedoresData = await proveedoresResponse.json();
+                    const proveedores = proveedoresData.proveedores || [];
+                    console.log('🏢 Proveedores obtenidos para emails:', proveedores.length);
+                    
+                    // Crear diccionario de emails por nombre de contacto
+                    proveedores.forEach((proveedor: any) => {
+                        if (proveedor.nombre_contacto && proveedor.email_contacto && proveedor.email_contacto !== 'No disponible') {
+                            emailsDict[proveedor.nombre_contacto] = proveedor.email_contacto;
+                        }
+                    });
+                    
+                    console.log('📧 Emails extraídos del reporte de proveedores:', Object.keys(emailsDict).length);
+                } else {
+                    console.log('❌ No se pudo obtener reporte de proveedores para emails');
+                }
+            } catch (emailError) {
+                console.error('⚠️ Error obteniendo emails (no crítico):', emailError);
+                // Continuar sin emails
             }
 
             // Procesar las solicitudes reales con emails
@@ -446,9 +468,6 @@ const AdminReportsPage: React.FC = () => {
                     const userEmail = emailsDict[solicitud.nombre_contacto];
                     if (userEmail) {
                         emailContacto = userEmail;
-                        console.log(`Email real encontrado para contacto ${solicitud.nombre_contacto}: ${emailContacto}`);
-                    } else {
-                        console.log(`❌ No se encontró email para contacto ${solicitud.nombre_contacto}`);
                     }
                 }
                 
@@ -471,6 +490,13 @@ const AdminReportsPage: React.FC = () => {
             const aprobadas = solicitudesProcesadas.filter(s => s.estado_aprobacion === 'aprobada').length;
             const rechazadas = solicitudesProcesadas.filter(s => s.estado_aprobacion === 'rechazada').length;
 
+            console.log('✅ Reporte de solicitudes de servicios generado:', {
+                total: totalSolicitudes,
+                pendientes,
+                aprobadas,
+                rechazadas
+            });
+
             return {
                 total_solicitudes_servicios: totalSolicitudes,
                 solicitudes_servicios: solicitudesProcesadas,
@@ -482,6 +508,7 @@ const AdminReportsPage: React.FC = () => {
             };
         } catch (error) {
             console.error('❌ Error generando reporte de solicitudes de servicios:', error);
+            console.error('📋 Detalles del error:', error);
             // Fallback honesto: sin datos
             return {
                 total_solicitudes_servicios: 0,
@@ -490,8 +517,8 @@ const AdminReportsPage: React.FC = () => {
                 pendientes: 0,
                 aprobadas: 0,
                 rechazadas: 0,
-                generado_desde: 'sin_datos_backend',
-                mensaje: 'No se pudieron cargar las solicitudes desde el backend'
+                generado_desde: 'error_backend',
+                mensaje: 'Error al cargar las solicitudes desde el backend'
             };
         }
     };
