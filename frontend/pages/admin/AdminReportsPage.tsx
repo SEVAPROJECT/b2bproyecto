@@ -12,6 +12,8 @@ interface ReporteData {
     total_servicios?: number;
     total_solicitudes_servicios?: number;
     total_solicitudes_categorias?: number;
+    total_reservas?: number;
+    total_calificaciones?: number;
     usuarios?: any[];
     proveedores?: any[];
     solicitudes?: any[];
@@ -19,10 +21,21 @@ interface ReporteData {
     servicios?: any[];
     solicitudes_servicios?: any[];
     solicitudes_categorias?: any[];
+    reservas?: any[];
+    calificaciones?: any[];
     fecha_generacion: string;
     pendientes?: number;
     aprobadas?: number;
     rechazadas?: number;
+    generado_desde?: string;
+    mensaje?: string;
+    error?: string;
+    usuarios_activos?: number;
+    usuarios_inactivos?: number;
+    proveedores_verificados?: number;
+    proveedores_pendientes?: number;
+    solicitudes_proveedores?: any[];
+    estadisticas?: any;
 }
 
 const AdminReportsPage: React.FC = () => {
@@ -98,7 +111,9 @@ const AdminReportsPage: React.FC = () => {
                reportData.total_categorias ?? 
                reportData.total_servicios ?? 
                reportData.total_solicitudes_servicios ?? 
-               reportData.total_solicitudes_categorias ?? 0;
+               reportData.total_solicitudes_categorias ?? 
+               reportData.total_reservas ?? 
+               reportData.total_calificaciones ?? 0;
     };
 
     // Función helper para generar mensajes de error amigables
@@ -193,6 +208,13 @@ const AdminReportsPage: React.FC = () => {
             description: 'Reporte detallado de reservas de proveedores con información completa de clientes, servicios y estados',
             icon: '📅',
             color: 'pink'
+        },
+        {
+            id: 'calificaciones',
+            title: 'Calificaciones',
+            description: 'Calificaciones de clientes hacia proveedores',
+            icon: '⭐',
+            color: 'amber'
         }
     ];
 
@@ -842,6 +864,28 @@ const AdminReportsPage: React.FC = () => {
                         }
                     })();
                     break;
+                case 'calificaciones':
+                    dataPromise = (async () => {
+                        console.log('⭐ Cargando reporte de calificaciones...');
+                        try {
+                            const response = await fetch(buildApiUrl('/admin/reports/calificaciones'), {
+                                headers: { 'Authorization': `Bearer ${user.accessToken}` }
+                            });
+                            
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            }
+                            
+                            const data = await response.json();
+                            console.log('✅ Reporte de calificaciones cargado exitosamente:', data);
+                            return data;
+                        } catch (error) {
+                            console.error('❌ Error cargando reporte de calificaciones:', error);
+                            throw error;
+                        }
+                    })();
+                    timeoutDuration = 15000; // 15 segundos para calificaciones
+                    break;
                 default:
                     throw new Error('Tipo de reporte no válido');
             }
@@ -1153,6 +1197,16 @@ const AdminReportsPage: React.FC = () => {
                     if (key === 'hora_servicio') headerName = 'HORA DEL SERVICIO';
                     if (key === 'precio') headerName = 'PRECIO';
                     
+                    // Personalizar nombres para reporte de calificaciones
+                    if (key === 'fecha') headerName = 'FECHA';
+                    if (key === 'servicio') headerName = 'SERVICIO';
+                    if (key === 'proveedor_empresa') headerName = 'PROVEEDOR (EMPRESA)';
+                    if (key === 'proveedor_persona') headerName = 'PROVEEDOR (PERSONA)';
+                    if (key === 'cliente') headerName = 'CLIENTE';
+                    if (key === 'puntaje') headerName = 'PUNTAJE (1-5)';
+                    if (key === 'nps') headerName = 'NPS (1-10)';
+                    if (key === 'comentario') headerName = 'COMENTARIO';
+                    
                     htmlContent += `<th>${headerName}</th>`;
                 });
                 
@@ -1225,6 +1279,16 @@ const AdminReportsPage: React.FC = () => {
                                 if (key === 'fecha_servicio') headerName = 'FECHA DEL SERVICIO';
                                 if (key === 'hora_servicio') headerName = 'HORA DEL SERVICIO';
                                 if (key === 'precio') headerName = 'PRECIO';
+                                
+                                // Personalizar nombres para reporte de calificaciones
+                                if (key === 'fecha') headerName = 'FECHA';
+                                if (key === 'servicio') headerName = 'SERVICIO';
+                                if (key === 'proveedor_empresa') headerName = 'PROVEEDOR (EMPRESA)';
+                                if (key === 'proveedor_persona') headerName = 'PROVEEDOR (PERSONA)';
+                                if (key === 'cliente') headerName = 'CLIENTE';
+                                if (key === 'puntaje') headerName = 'PUNTAJE (1-5)';
+                                if (key === 'nps') headerName = 'NPS (1-10)';
+                                if (key === 'comentario') headerName = 'COMENTARIO';
                                 
                                 return (
                                 <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">

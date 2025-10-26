@@ -2888,6 +2888,82 @@ async def get_reporte_reservas(
         raise HTTPException(status_code=500, detail="Error generando reporte")
 
 @router.get(
+    "/reports/calificaciones",
+    description="Genera reporte de calificaciones de clientes hacia proveedores"
+)
+async def get_reporte_calificaciones(
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Genera reporte de calificaciones de clientes hacia proveedores (8 columnas)"""
+    try:
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Query SQL optimizada para reporte de calificaciones
+            calificaciones_query = """
+                SELECT
+                    c.fecha::date AS fecha,
+                    s.nombre AS servicio,
+                    pe.nombre_fantasia AS proveedor_empresa,
+                    u_prov.nombre_persona AS proveedor_persona,
+                    u_cli.nombre_persona AS cliente,
+                    c.puntaje AS puntaje,
+                    c.satisfaccion_nps AS nps,
+                    LEFT(COALESCE(c.comentario, ''), 120) AS comentario
+                FROM public.calificacion c
+                JOIN public.reserva r ON r.id_reserva = c.id_reserva
+                JOIN public.servicio s ON s.id_servicio = r.id_servicio
+                JOIN public.perfil_empresa pe ON pe.id_perfil = s.id_perfil
+                JOIN public.users u_prov ON u_prov.id = pe.user_id
+                JOIN public.users u_cli ON u_cli.id = r.user_id
+                WHERE c.rol_emisor = 'cliente'
+                ORDER BY c.fecha DESC
+            """
+            
+            calificaciones_data = await conn.fetch(calificaciones_query)
+            
+            calificaciones_detalladas = []
+            for row in calificaciones_data:
+                # Formatear fecha a DD/MM/YYYY
+                fecha_formateada = None
+                if row['fecha']:
+                    fecha_formateada = row['fecha'].strftime("%d/%m/%Y")
+                
+                calificaciones_detalladas.append({
+                    "fecha": fecha_formateada,
+                    "servicio": row['servicio'],
+                    "proveedor_empresa": row['proveedor_empresa'],
+                    "proveedor_persona": row['proveedor_persona'],
+                    "cliente": row['cliente'],
+                    "puntaje": row['puntaje'],
+                    "nps": row['nps'] if row['nps'] else "N/A",
+                    "comentario": row['comentario'] if row['comentario'] else "Sin comentario"
+                })
+        
+        finally:
+            await direct_db_service.pool.release(conn)
+
+        return {
+            "total_calificaciones": len(calificaciones_detalladas),
+            "calificaciones": calificaciones_detalladas,
+            "fecha_generacion": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        print(f"Error generando reporte de calificaciones: {e}")
+        # Si es un error de PgBouncer, intentar rollback
+        if "prepared statement" in str(e).lower() or "pgbouncer" in str(e).lower():
+            try:
+                await db.rollback()
+            except:
+                pass
+        
+        raise HTTPException(status_code=500, detail="Error generando reporte de calificaciones")
+
+@router.get(
     "/users/batch-emails",
     description="Obtiene emails de usuarios por lotes para evitar sobrecarga"
 )
