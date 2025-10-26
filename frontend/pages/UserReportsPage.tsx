@@ -80,11 +80,9 @@ const UserReportsPage: React.FC = () => {
         }
     };
 
-    // Función para generar fecha actual en zona horaria de Argentina (GMT-3)
-    const getArgentinaDateISO = (): string => {
-        const now = new Date();
-        const argDate = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-        return argDate.toISOString();
+    // Función para generar fecha actual en ISO (la conversión a zona horaria se hace en formatArgentinaDateTime)
+    const getCurrentDateISO = (): string => {
+        return new Date().toISOString();
     };
 
     const reportTypes = isProvider ? [
@@ -139,7 +137,7 @@ const UserReportsPage: React.FC = () => {
                         // Asegurar fecha_generacion actualizada con hora correcta
                         return {
                             ...data,
-                            fecha_generacion: getArgentinaDateISO()
+                            fecha_generacion: getCurrentDateISO()
                         };
                     } catch (error) {
                         console.error('❌ Error cargando calificaciones recibidas (cliente):', error);
@@ -164,7 +162,7 @@ const UserReportsPage: React.FC = () => {
                         // Asegurar fecha_generacion actualizada con hora correcta
                         return {
                             ...data,
-                            fecha_generacion: getArgentinaDateISO()
+                            fecha_generacion: getCurrentDateISO()
                         };
                     } catch (error) {
                         console.error('❌ Error cargando calificaciones recibidas (proveedor):', error);
