@@ -906,7 +906,11 @@ const AdminReportsPage: React.FC = () => {
                             
                             const data = await response.json();
                             console.log('✅ Reporte de calificaciones cargado exitosamente:', data);
-                            return data;
+                            // Asegurar fecha_generacion actualizada con hora correcta
+                            return {
+                                ...data,
+                                fecha_generacion: getArgentinaDateISO()
+                            };
                         } catch (error) {
                             console.error('❌ Error cargando reporte de calificaciones:', error);
                             throw error;
@@ -928,7 +932,11 @@ const AdminReportsPage: React.FC = () => {
                             
                             const data = await response.json();
                             console.log('✅ Reporte de calificaciones de proveedores cargado exitosamente:', data);
-                            return data;
+                            // Asegurar fecha_generacion actualizada con hora correcta
+                            return {
+                                ...data,
+                                fecha_generacion: getArgentinaDateISO()
+                            };
                         } catch (error) {
                             console.error('❌ Error cargando reporte de calificaciones de proveedores:', error);
                             throw error;
