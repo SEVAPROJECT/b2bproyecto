@@ -31,6 +31,14 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
 
     const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
 
+    // Helper para convertir Date a string en formato YYYY-MM-DD sin cambio de zona horaria
+    const formatDateToYYYYMMDD = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
     // Cargar disponibilidades del servicio
     useEffect(() => {
         const loadDisponibilidades = async () => {
@@ -71,11 +79,12 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
 
                 data.forEach((disp: Disponibilidad) => {
                     if (disp.disponible) {
-                        const fechaInicio = new Date(disp.fecha_inicio);
-                        const fechaFin = new Date(disp.fecha_fin);
+                        // Parsear fecha como UTC para evitar cambios de zona horaria
+                        const fechaInicio = new Date(disp.fecha_inicio + 'Z');
+                        const fechaFin = new Date(disp.fecha_fin + 'Z');
                         
-                        // Agregar fecha
-                        const fechaStr = fechaInicio.toISOString().split('T')[0];
+                        // Agregar fecha (usar función local sin conversión UTC)
+                        const fechaStr = formatDateToYYYYMMDD(fechaInicio);
                         dates.add(fechaStr);
                         
                         // Agregar hora
@@ -114,7 +123,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
         for (let i = 0; i < 30; i++) {
             const date = new Date(today);
             date.setDate(today.getDate() + i);
-            const dateStr = date.toISOString().split('T')[0];
+            const dateStr = formatDateToYYYYMMDD(date);
             
             if (availableDates.has(dateStr)) {
                 options.push({
