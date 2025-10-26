@@ -1299,11 +1299,11 @@ async def actualizar_estado_reserva(
         except Exception as e:
             logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/estado] Error al registrar historial: {str(e)}")
         
-        # 6. Enviar notificación por correo (3. Completar reserva - Completada)
+        # 6. Enviar notificación por correo (2. Confirmar o 3. Completar reserva)
         try:
-            # Solo enviar notificación si el nuevo estado es "completada"
-            if nuevo_estado == 'completada':
-                logger.info(f"📧 [PUT /reservas/{reserva_id}/estado] Obteniendo datos para notificación (completada)...")
+            # Enviar notificación para estados "confirmada" o "completada"
+            if nuevo_estado in ['confirmada', 'completada']:
+                logger.info(f"📧 [PUT /reservas/{reserva_id}/estado] Obteniendo datos para notificación ({nuevo_estado})...")
                 notif_query = """
                     SELECT
                         r.id_reserva,
@@ -1314,9 +1314,9 @@ async def actualizar_estado_reserva(
                         au_cliente.email AS cliente_email,
                         u_prov.nombre_persona AS proveedor_nombre,
                         au_prov.email AS proveedor_email
-                    FROM reserva r
-                    JOIN servicio s ON r.id_servicio = s.id_servicio
-                    JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                    FROM public.reserva r
+                    JOIN public.servicio s ON r.id_servicio = s.id_servicio
+                    JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
                     JOIN public.users u_cliente ON r.user_id = u_cliente.id
                     JOIN auth.users au_cliente ON r.user_id = au_cliente.id
                     JOIN public.users u_prov ON pe.user_id = u_prov.id
@@ -1330,17 +1330,32 @@ async def actualizar_estado_reserva(
                     fecha_formatted = notif_data['fecha'].strftime("%d/%m/%Y") if notif_data['fecha'] else ""
                     hora_formatted = str(notif_data['hora_inicio']) if notif_data['hora_inicio'] else ""
                     
-                    reserva_notification_service.notify_reserva_completada(
-                        reserva_id=notif_data['id_reserva'],
-                        servicio_nombre=notif_data['servicio_nombre'],
-                        fecha=fecha_formatted,
-                        hora=hora_formatted,
-                        cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
-                        cliente_email=notif_data['cliente_email'],
-                        proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
-                        proveedor_email=notif_data['proveedor_email']
-                    )
-                    logger.info(f"✅ [PUT /reservas/{reserva_id}/estado] Notificación de completada enviada exitosamente")
+                    if nuevo_estado == 'confirmada':
+                        # Enviar notificación de confirmación
+                        reserva_notification_service.notify_reserva_confirmada(
+                            reserva_id=notif_data['id_reserva'],
+                            servicio_nombre=notif_data['servicio_nombre'],
+                            fecha=fecha_formatted,
+                            hora=hora_formatted,
+                            cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+                            cliente_email=notif_data['cliente_email'],
+                            proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+                            proveedor_email=notif_data['proveedor_email']
+                        )
+                        logger.info(f"✅ [PUT /reservas/{reserva_id}/estado] Notificación de confirmada enviada exitosamente")
+                    elif nuevo_estado == 'completada':
+                        # Enviar notificación de completada
+                        reserva_notification_service.notify_reserva_completada(
+                            reserva_id=notif_data['id_reserva'],
+                            servicio_nombre=notif_data['servicio_nombre'],
+                            fecha=fecha_formatted,
+                            hora=hora_formatted,
+                            cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+                            cliente_email=notif_data['cliente_email'],
+                            proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+                            proveedor_email=notif_data['proveedor_email']
+                        )
+                        logger.info(f"✅ [PUT /reservas/{reserva_id}/estado] Notificación de completada enviada exitosamente")
                 else:
                     logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/estado] No se pudieron obtener datos para notificación")
         except Exception as e:
