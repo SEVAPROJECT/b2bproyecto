@@ -376,13 +376,19 @@ async def obtener_mis_reservas_detalladas(
                     pe.razon_social,
                     u.nombre_persona as nombre_contacto,
                     c.nombre as nombre_categoria,
-                    CASE WHEN cal.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_cliente
+                    CASE WHEN cal_cliente.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_cliente,
+                    cal_cliente.puntaje as calificacion_cliente_puntaje,
+                    cal_cliente.comentario as calificacion_cliente_comentario,
+                    cal_cliente.satisfaccion_nps as calificacion_cliente_nps,
+                    cal_proveedor.puntaje as calificacion_proveedor_puntaje,
+                    cal_proveedor.comentario as calificacion_proveedor_comentario
                 FROM reserva r
                 INNER JOIN servicio s ON r.id_servicio = s.id_servicio
                 INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
                 INNER JOIN users u ON pe.user_id = u.id
                 LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
-                LEFT JOIN calificacion cal ON r.id_reserva = cal.id_reserva AND cal.rol_emisor = 'cliente'
+                LEFT JOIN calificacion cal_cliente ON r.id_reserva = cal_cliente.id_reserva AND cal_cliente.rol_emisor = 'cliente'
+                LEFT JOIN calificacion cal_proveedor ON r.id_reserva = cal_proveedor.id_reserva AND cal_proveedor.rol_emisor = 'proveedor'
                 WHERE r.user_id = $1
             """
             
@@ -503,7 +509,16 @@ async def obtener_mis_reservas_detalladas(
                     "email_contacto": None,
                     "telefono_contacto": None,
                     "nombre_categoria": row['nombre_categoria'],
-                    "ya_calificado_por_cliente": ya_calificado
+                    "ya_calificado_por_cliente": ya_calificado,
+                    "calificacion_cliente": {
+                        "puntaje": row['calificacion_cliente_puntaje'],
+                        "comentario": row['calificacion_cliente_comentario'],
+                        "nps": row['calificacion_cliente_nps']
+                    } if row['calificacion_cliente_puntaje'] else None,
+                    "calificacion_proveedor": {
+                        "puntaje": row['calificacion_proveedor_puntaje'],
+                        "comentario": row['calificacion_proveedor_comentario']
+                    } if row['calificacion_proveedor_puntaje'] else None
                 }
                 reservas_list.append(reserva_dict)
             
@@ -625,13 +640,19 @@ async def obtener_reservas_proveedor(
                     pe.razon_social,
                     u.nombre_persona as nombre_cliente,
                     c.nombre as nombre_categoria,
-                    CASE WHEN cal.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_proveedor
+                    CASE WHEN cal_proveedor.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_proveedor,
+                    cal_cliente.puntaje as calificacion_cliente_puntaje,
+                    cal_cliente.comentario as calificacion_cliente_comentario,
+                    cal_cliente.satisfaccion_nps as calificacion_cliente_nps,
+                    cal_proveedor.puntaje as calificacion_proveedor_puntaje,
+                    cal_proveedor.comentario as calificacion_proveedor_comentario
                 FROM reserva r
                 INNER JOIN servicio s ON r.id_servicio = s.id_servicio
                 INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
                 INNER JOIN users u ON r.user_id = u.id
                 LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
-                LEFT JOIN calificacion cal ON r.id_reserva = cal.id_reserva AND cal.rol_emisor = 'proveedor'
+                LEFT JOIN calificacion cal_cliente ON r.id_reserva = cal_cliente.id_reserva AND cal_cliente.rol_emisor = 'cliente'
+                LEFT JOIN calificacion cal_proveedor ON r.id_reserva = cal_proveedor.id_reserva AND cal_proveedor.rol_emisor = 'proveedor'
                 WHERE s.id_perfil = $1
             """
             
@@ -739,7 +760,16 @@ async def obtener_reservas_proveedor(
                     "id_perfil": row['id_perfil'],
                     "nombre_cliente": row['nombre_cliente'],
                     "nombre_categoria": row['nombre_categoria'],
-                    "ya_calificado_por_proveedor": ya_calificado
+                    "ya_calificado_por_proveedor": ya_calificado,
+                    "calificacion_cliente": {
+                        "puntaje": row['calificacion_cliente_puntaje'],
+                        "comentario": row['calificacion_cliente_comentario'],
+                        "nps": row['calificacion_cliente_nps']
+                    } if row['calificacion_cliente_puntaje'] else None,
+                    "calificacion_proveedor": {
+                        "puntaje": row['calificacion_proveedor_puntaje'],
+                        "comentario": row['calificacion_proveedor_comentario']
+                    } if row['calificacion_proveedor_puntaje'] else None
                 }
                 reservas_list.append(reserva_dict)
             

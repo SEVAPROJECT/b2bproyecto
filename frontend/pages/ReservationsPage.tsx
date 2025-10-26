@@ -14,6 +14,12 @@ import { buildApiUrl, getJsonHeaders } from '../config/api';
 import CalificacionModal from '../components/CalificacionModal';
 
 // Tipos
+interface Calificacion {
+    puntaje: number;
+    comentario: string;
+    nps?: number;
+}
+
 interface Reserva {
     id_reserva: number;
     id_servicio: number;
@@ -39,6 +45,8 @@ interface Reserva {
     nombre_categoria: string | null;
     ya_calificado_por_cliente?: boolean;
     ya_calificado_por_proveedor?: boolean;
+    calificacion_cliente?: Calificacion | null;
+    calificacion_proveedor?: Calificacion | null;
 }
 
 interface PaginationInfo {
@@ -219,7 +227,9 @@ const ReservationsPage: React.FC = () => {
                 imagen_servicio: reserva.imagen_servicio || reserva.servicio?.imagen,
                 nombre_categoria: reserva.nombre_categoria || reserva.servicio?.categoria || 'Sin categoría',
                 ya_calificado_por_cliente: reserva.ya_calificado_por_cliente || false,
-                ya_calificado_por_proveedor: reserva.ya_calificado_por_proveedor || false
+                ya_calificado_por_proveedor: reserva.ya_calificado_por_proveedor || false,
+                calificacion_cliente: reserva.calificacion_cliente,
+                calificacion_proveedor: reserva.calificacion_proveedor
             }));
 
             setReservas(reservasMapeadas);
@@ -942,6 +952,42 @@ const ReservationsPage: React.FC = () => {
                                                         </div>
                                                     ) : null;
                                                 })()}
+                                                
+                                                {/* Mostrar calificaciones (Proveedor) */}
+                                                {reserva.estado === 'completada' && (
+                                                    <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+                                                        {/* Calificación del cliente hacia el servicio */}
+                                                        {reserva.calificacion_cliente && (
+                                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <h4 className="text-sm font-semibold text-blue-900">Calificación del cliente:</h4>
+                                                                    <div className="flex items-center">
+                                                                        <span className="text-yellow-500 mr-1">⭐</span>
+                                                                        <span className="text-sm font-bold text-blue-900">{reserva.calificacion_cliente.puntaje}/5</span>
+                                                                    </div>
+                                                                </div>
+                                                                <p className="text-sm text-blue-800 italic">"{reserva.calificacion_cliente.comentario}"</p>
+                                                                {reserva.calificacion_cliente.nps && (
+                                                                    <p className="text-xs text-blue-600 mt-1">NPS: {reserva.calificacion_cliente.nps}/10</p>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {/* Mi calificación (como proveedor) */}
+                                                        {reserva.calificacion_proveedor && (
+                                                            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <h4 className="text-sm font-semibold text-green-900">Tu calificación del cliente:</h4>
+                                                                    <div className="flex items-center">
+                                                                        <span className="text-yellow-500 mr-1">⭐</span>
+                                                                        <span className="text-sm font-bold text-green-900">{reserva.calificacion_proveedor.puntaje}/5</span>
+                                                                    </div>
+                                                                </div>
+                                                                <p className="text-sm text-green-800 italic">"{reserva.calificacion_proveedor.comentario}"</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 
@@ -1019,6 +1065,42 @@ const ReservationsPage: React.FC = () => {
                                                 </div>
                                             ) : null;
                                         })()}
+
+                                        {/* Mostrar calificaciones (Cliente) */}
+                                        {activeTab === 'mis-reservas' && reserva.estado === 'completada' && (
+                                            <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+                                                {/* Mi calificación (como cliente) */}
+                                                {reserva.calificacion_cliente && (
+                                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <h4 className="text-sm font-semibold text-blue-900">Tu calificación del servicio:</h4>
+                                                            <div className="flex items-center">
+                                                                <span className="text-yellow-500 mr-1">⭐</span>
+                                                                <span className="text-sm font-bold text-blue-900">{reserva.calificacion_cliente.puntaje}/5</span>
+                                                            </div>
+                                                        </div>
+                                                        <p className="text-sm text-blue-800 italic">"{reserva.calificacion_cliente.comentario}"</p>
+                                                        {reserva.calificacion_cliente.nps && (
+                                                            <p className="text-xs text-blue-600 mt-1">NPS: {reserva.calificacion_cliente.nps}/10</p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                
+                                                {/* Calificación del proveedor hacia mí */}
+                                                {reserva.calificacion_proveedor && (
+                                                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <h4 className="text-sm font-semibold text-green-900">Calificación del proveedor:</h4>
+                                                            <div className="flex items-center">
+                                                                <span className="text-yellow-500 mr-1">⭐</span>
+                                                                <span className="text-sm font-bold text-green-900">{reserva.calificacion_proveedor.puntaje}/5</span>
+                                                            </div>
+                                                        </div>
+                                                        <p className="text-sm text-green-800 italic">"{reserva.calificacion_proveedor.comentario}"</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
