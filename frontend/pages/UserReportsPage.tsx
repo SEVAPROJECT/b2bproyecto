@@ -82,7 +82,7 @@ const UserReportsPage: React.FC = () => {
 
     const reportTypes = isProvider ? [
         {
-            id: 'mis-calificaciones-recibidas',
+            id: 'mis-calificaciones-recibidas-proveedor',
             title: 'Mis Calificaciones Recibidas',
             description: 'Calificaciones que he recibido de mis clientes',
             icon: '⭐',
@@ -90,9 +90,9 @@ const UserReportsPage: React.FC = () => {
         }
     ] : [
         {
-            id: 'mis-calificaciones-enviadas',
-            title: 'Mis Calificaciones Enviadas',
-            description: 'Calificaciones que he enviado a proveedores',
+            id: 'mis-calificaciones-recibidas-cliente',
+            title: 'Mis Calificaciones Recibidas',
+            description: 'Calificaciones que he recibido de proveedores',
             icon: '⭐',
             color: 'green'
         }
@@ -114,12 +114,12 @@ const UserReportsPage: React.FC = () => {
 
             let dataPromise: Promise<ReporteData>;
             
-            if (reportType === 'mis-calificaciones-enviadas') {
-                // Cliente: calificaciones enviadas
+            if (reportType === 'mis-calificaciones-recibidas-cliente') {
+                // Cliente: calificaciones recibidas de proveedores
                 dataPromise = (async () => {
-                    console.log('⭐ Cargando calificaciones enviadas...');
+                    console.log('⭐ Cargando calificaciones recibidas (cliente)...');
                     try {
-                        const response = await fetch(buildApiUrl('/calificacion/mis-calificaciones-enviadas'), {
+                        const response = await fetch(buildApiUrl('/calificacion/mis-calificaciones-recibidas-cliente'), {
                             headers: { 'Authorization': `Bearer ${user.accessToken}` }
                         });
                         
@@ -128,19 +128,19 @@ const UserReportsPage: React.FC = () => {
                         }
                         
                         const data = await response.json();
-                        console.log('✅ Calificaciones enviadas cargadas:', data);
+                        console.log('✅ Calificaciones recibidas (cliente) cargadas:', data);
                         return data;
                     } catch (error) {
-                        console.error('❌ Error cargando calificaciones enviadas:', error);
+                        console.error('❌ Error cargando calificaciones recibidas (cliente):', error);
                         throw error;
                     }
                 })();
-            } else if (reportType === 'mis-calificaciones-recibidas') {
-                // Proveedor: calificaciones recibidas
+            } else if (reportType === 'mis-calificaciones-recibidas-proveedor') {
+                // Proveedor: calificaciones recibidas de clientes
                 dataPromise = (async () => {
-                    console.log('⭐ Cargando calificaciones recibidas...');
+                    console.log('⭐ Cargando calificaciones recibidas (proveedor)...');
                     try {
-                        const response = await fetch(buildApiUrl('/calificacion/mis-calificaciones-recibidas'), {
+                        const response = await fetch(buildApiUrl('/calificacion/mis-calificaciones-recibidas-proveedor'), {
                             headers: { 'Authorization': `Bearer ${user.accessToken}` }
                         });
                         
@@ -149,10 +149,10 @@ const UserReportsPage: React.FC = () => {
                         }
                         
                         const data = await response.json();
-                        console.log('✅ Calificaciones recibidas cargadas:', data);
+                        console.log('✅ Calificaciones recibidas (proveedor) cargadas:', data);
                         return data;
                     } catch (error) {
-                        console.error('❌ Error cargando calificaciones recibidas:', error);
+                        console.error('❌ Error cargando calificaciones recibidas (proveedor):', error);
                         throw error;
                     }
                 })();
@@ -423,7 +423,7 @@ const UserReportsPage: React.FC = () => {
                 <div className="mb-8">
                     <h1 className="text-3xl font-bold text-gray-900">Mis Reportes</h1>
                     <p className="mt-2 text-gray-600">
-                        {isProvider ? 'Consulta las calificaciones que has recibido de tus clientes' : 'Consulta las calificaciones que has enviado a proveedores'}
+                        {isProvider ? 'Consulta las calificaciones que has recibido de tus clientes' : 'Consulta las calificaciones que has recibido de proveedores'}
                     </p>
                 </div>
 
@@ -452,24 +452,28 @@ const UserReportsPage: React.FC = () => {
 
                             <div className="flex space-x-2">
                                 <button
-                                    onClick={() => {
+                                    onClick={async () => {
                                         if (!reportes[report.id]) {
-                                            loadReporte(report.id);
-                                        } else {
-                                            viewAllData(report.id);
+                                            await loadReporte(report.id);
                                         }
+                                        // Siempre abrir reporte completo después de cargar
+                                        setTimeout(() => viewAllData(report.id), 100);
                                     }}
                                     disabled={loading[report.id]}
                                     className="flex-1 flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
                                 >
                                     <EyeIcon className="w-4 h-4 mr-2" />
-                                    {loading[report.id] ? 'Cargando...' : 
-                                     loadedReports.has(report.id) ? 'Ver Reporte' : 'Cargar y Ver'}
+                                    {loading[report.id] ? 'Cargando...' : 'Ver Reporte'}
                                 </button>
                                 
                                 <button
-                                    onClick={() => generatePDF(report.id)}
-                                    disabled={!reportes[report.id]}
+                                    onClick={async () => {
+                                        if (!reportes[report.id]) {
+                                            await loadReporte(report.id);
+                                        }
+                                        setTimeout(() => generatePDF(report.id), 100);
+                                    }}
+                                    disabled={loading[report.id]}
                                     className="flex-1 flex items-center justify-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <DocumentArrowDownIcon className="w-4 h-4 mr-2" />
@@ -479,22 +483,6 @@ const UserReportsPage: React.FC = () => {
                         </div>
                     ))}
                 </div>
-
-                {reportTypes.map(report => (
-                    reportes[report.id] && (
-                        <div key={report.id} className="bg-white rounded-lg shadow border border-gray-200 mb-6">
-                            <div className="px-6 py-4 border-b border-gray-200">
-                                <h2 className="text-xl font-semibold text-gray-900">{report.title}</h2>
-                                <p className="text-sm text-gray-500">
-                                    Generado el: {formatArgentinaDateTime(reportes[report.id].fecha_generacion)}
-                                </p>
-                            </div>
-                            <div className="p-6">
-                                {renderReportData(report.id)}
-                            </div>
-                        </div>
-                    )
-                ))}
             </div>
         </div>
     );

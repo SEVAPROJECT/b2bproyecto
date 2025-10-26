@@ -314,20 +314,21 @@ async def verificar_calificacion_existente(
 # ========================================
 
 @router.get(
-    "/mis-calificaciones-enviadas",
-    description="Obtiene el reporte de calificaciones enviadas por el cliente actual"
+    "/mis-calificaciones-recibidas-cliente",
+    description="Obtiene el reporte de calificaciones recibidas por el cliente actual de proveedores"
 )
-async def get_mis_calificaciones_enviadas(
+async def get_mis_calificaciones_recibidas_cliente(
     user_info = Depends(get_user_with_roles)
 ):
-    """Reporte de calificaciones enviadas por un cliente a proveedores"""
+    """Reporte de calificaciones recibidas por un cliente de proveedores"""
     try:
         from datetime import datetime
         
         conn = await direct_db_service.get_connection()
         
         try:
-            # Query para obtener calificaciones del cliente actual
+            # Query para obtener calificaciones que el CLIENTE RECIBIÓ de PROVEEDORES
+            # El cliente es quien hizo la reserva (r.user_id), y el proveedor lo calificó (rol_emisor = 'proveedor')
             calificaciones_query = """
                 SELECT
                     c.fecha::date AS fecha,
@@ -335,14 +336,13 @@ async def get_mis_calificaciones_enviadas(
                     pe.nombre_fantasia AS proveedor_empresa,
                     u_prov.nombre_persona AS proveedor_persona,
                     c.puntaje AS puntaje,
-                    c.satisfaccion_nps AS nps,
                     LEFT(COALESCE(c.comentario, ''), 120) AS comentario
                 FROM public.calificacion c
                 JOIN public.reserva r ON r.id_reserva = c.id_reserva
                 JOIN public.servicio s ON s.id_servicio = r.id_servicio
                 JOIN public.perfil_empresa pe ON pe.id_perfil = s.id_perfil
                 JOIN public.users u_prov ON u_prov.id = pe.user_id
-                WHERE c.rol_emisor = 'cliente' AND c.usuario_id = $1
+                WHERE c.rol_emisor = 'proveedor' AND r.user_id = $1
                 ORDER BY c.fecha DESC
             """
             
@@ -361,7 +361,6 @@ async def get_mis_calificaciones_enviadas(
                     "proveedor_empresa": row['proveedor_empresa'],
                     "proveedor_persona": row['proveedor_persona'],
                     "puntaje": row['puntaje'],
-                    "nps": row['nps'] if row['nps'] else "N/A",
                     "comentario": row['comentario'] if row['comentario'] else "Sin comentario"
                 })
         
@@ -375,17 +374,17 @@ async def get_mis_calificaciones_enviadas(
         }
     
     except Exception as e:
-        logger.error(f"❌ Error generando reporte de calificaciones del cliente: {e}")
+        logger.error(f"❌ Error generando reporte de calificaciones recibidas del cliente: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error generando reporte de calificaciones"
         )
 
 @router.get(
-    "/mis-calificaciones-recibidas",
-    description="Obtiene el reporte de calificaciones recibidas por el proveedor actual"
+    "/mis-calificaciones-recibidas-proveedor",
+    description="Obtiene el reporte de calificaciones recibidas por el proveedor actual de clientes"
 )
-async def get_mis_calificaciones_recibidas(
+async def get_mis_calificaciones_recibidas_proveedor(
     user_info = Depends(get_user_with_roles)
 ):
     """Reporte de calificaciones recibidas por un proveedor de clientes"""
@@ -395,8 +394,8 @@ async def get_mis_calificaciones_recibidas(
         conn = await direct_db_service.get_connection()
         
         try:
-            # Query para obtener calificaciones recibidas por el proveedor actual
-            # Filtramos por servicios del proveedor (pe.user_id)
+            # Query para obtener calificaciones que el PROVEEDOR RECIBIÓ de CLIENTES
+            # El proveedor es dueño del servicio (pe.user_id), y el cliente lo calificó (rol_emisor = 'cliente')
             calificaciones_query = """
                 SELECT
                     c.fecha::date AS fecha,
@@ -444,7 +443,7 @@ async def get_mis_calificaciones_recibidas(
         }
     
     except Exception as e:
-        logger.error(f"❌ Error generando reporte de calificaciones del proveedor: {e}")
+        logger.error(f"❌ Error generando reporte de calificaciones recibidas del proveedor: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error generando reporte de calificaciones"
