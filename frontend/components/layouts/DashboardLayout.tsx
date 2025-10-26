@@ -74,10 +74,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         { name: 'Mis Servicios', href: '/dashboard/my-services', icon: BriefcaseIcon },
         { name: 'Mi Agenda', href: '/dashboard/agenda', icon: CalendarDaysIcon },
         { name: 'Mis Reservas', href: '/dashboard/reservations', icon: CalendarDaysIcon },
+        { name: 'Mis Reportes', href: '/dashboard/my-reports', icon: ChartBarIcon },
     ] : [
         { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
         { name: 'Marketplace', href: '/dashboard/marketplace', icon: MagnifyingGlassIcon },
         { name: 'Mis Reservas', href: '/dashboard/reservations', icon: CalendarDaysIcon },
+        { name: 'Mis Reportes', href: '/dashboard/my-reports', icon: ChartBarIcon },
     ];
 
     // Agregar "Mi Perfil" al final para todos los roles

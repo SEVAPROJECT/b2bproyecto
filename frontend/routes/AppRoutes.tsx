@@ -38,6 +38,7 @@ import AdminCategoryServicesPage from '../pages/admin/AdminCategoryServicesPage'
 import ProviderExploreCategoriesPage from '../pages/provider/ProviderExploreCategoriesPage';
 import ProviderMyRequestsPage from '../pages/provider/ProviderMyRequestsPage';
 import ProviderMyServicesPage from '../pages/provider/ProviderMyServicesPage';
+import UserReportsPage from '../pages/UserReportsPage';
 
 // Protected Route Components
 interface ProtectedRouteProps {
@@ -189,6 +190,7 @@ const AppRoutes: React.FC = () => {
                    <Route path="reservations" element={<ReservationsPage />} />
                    <Route path="reservas" element={<ReservasPage />} />
                    <Route path="profile" element={<ManageProfilePage />} />
+                   <Route path="my-reports" element={<UserReportsPage />} />
                    <Route path="become-provider" element={<ProviderOnboardingPage />} />
                    {/* Rutas de administrador */}
                    <Route path="verifications" element={<AdminRoute><AdminVerificationsPage /></AdminRoute>} />

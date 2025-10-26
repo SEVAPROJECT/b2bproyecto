@@ -308,3 +308,144 @@ async def verificar_calificacion_existente(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor"
         )
+
+# ========================================
+# REPORTES DE CALIFICACIONES
+# ========================================
+
+@router.get(
+    "/mis-calificaciones-enviadas",
+    description="Obtiene el reporte de calificaciones enviadas por el cliente actual"
+)
+async def get_mis_calificaciones_enviadas(
+    user_info = Depends(get_user_with_roles)
+):
+    """Reporte de calificaciones enviadas por un cliente a proveedores"""
+    try:
+        from datetime import datetime
+        
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Query para obtener calificaciones del cliente actual
+            calificaciones_query = """
+                SELECT
+                    c.fecha::date AS fecha,
+                    s.nombre AS servicio,
+                    pe.nombre_fantasia AS proveedor_empresa,
+                    u_prov.nombre_persona AS proveedor_persona,
+                    c.puntaje AS puntaje,
+                    c.satisfaccion_nps AS nps,
+                    LEFT(COALESCE(c.comentario, ''), 120) AS comentario
+                FROM public.calificacion c
+                JOIN public.reserva r ON r.id_reserva = c.id_reserva
+                JOIN public.servicio s ON s.id_servicio = r.id_servicio
+                JOIN public.perfil_empresa pe ON pe.id_perfil = s.id_perfil
+                JOIN public.users u_prov ON u_prov.id = pe.user_id
+                WHERE c.rol_emisor = 'cliente' AND c.usuario_id = $1
+                ORDER BY c.fecha DESC
+            """
+            
+            calificaciones_data = await conn.fetch(calificaciones_query, user_info['id'])
+            
+            calificaciones_detalladas = []
+            for row in calificaciones_data:
+                # Formatear fecha a DD/MM/YYYY
+                fecha_formateada = None
+                if row['fecha']:
+                    fecha_formateada = row['fecha'].strftime("%d/%m/%Y")
+                
+                calificaciones_detalladas.append({
+                    "fecha": fecha_formateada,
+                    "servicio": row['servicio'],
+                    "proveedor_empresa": row['proveedor_empresa'],
+                    "proveedor_persona": row['proveedor_persona'],
+                    "puntaje": row['puntaje'],
+                    "nps": row['nps'] if row['nps'] else "N/A",
+                    "comentario": row['comentario'] if row['comentario'] else "Sin comentario"
+                })
+        
+        finally:
+            await direct_db_service.pool.release(conn)
+
+        return {
+            "total_calificaciones": len(calificaciones_detalladas),
+            "calificaciones": calificaciones_detalladas,
+            "fecha_generacion": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"❌ Error generando reporte de calificaciones del cliente: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error generando reporte de calificaciones"
+        )
+
+@router.get(
+    "/mis-calificaciones-recibidas",
+    description="Obtiene el reporte de calificaciones recibidas por el proveedor actual"
+)
+async def get_mis_calificaciones_recibidas(
+    user_info = Depends(get_user_with_roles)
+):
+    """Reporte de calificaciones recibidas por un proveedor de clientes"""
+    try:
+        from datetime import datetime
+        
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Query para obtener calificaciones recibidas por el proveedor actual
+            # Filtramos por servicios del proveedor (pe.user_id)
+            calificaciones_query = """
+                SELECT
+                    c.fecha::date AS fecha,
+                    s.nombre AS servicio,
+                    u_cli.nombre_persona AS cliente_persona,
+                    u_cli.nombre_empresa AS cliente_empresa,
+                    c.puntaje AS puntaje,
+                    c.satisfaccion_nps AS nps,
+                    LEFT(COALESCE(c.comentario, ''), 120) AS comentario
+                FROM public.calificacion c
+                JOIN public.reserva r ON r.id_reserva = c.id_reserva
+                JOIN public.servicio s ON s.id_servicio = r.id_servicio
+                JOIN public.perfil_empresa pe ON pe.id_perfil = s.id_perfil
+                JOIN public.users u_cli ON u_cli.id = r.user_id
+                WHERE c.rol_emisor = 'cliente' AND pe.user_id = $1
+                ORDER BY c.fecha DESC
+            """
+            
+            calificaciones_data = await conn.fetch(calificaciones_query, user_info['id'])
+            
+            calificaciones_detalladas = []
+            for row in calificaciones_data:
+                # Formatear fecha a DD/MM/YYYY
+                fecha_formateada = None
+                if row['fecha']:
+                    fecha_formateada = row['fecha'].strftime("%d/%m/%Y")
+                
+                calificaciones_detalladas.append({
+                    "fecha": fecha_formateada,
+                    "servicio": row['servicio'],
+                    "cliente_persona": row['cliente_persona'],
+                    "cliente_empresa": row['cliente_empresa'] if row['cliente_empresa'] else "N/A",
+                    "puntaje": row['puntaje'],
+                    "nps": row['nps'] if row['nps'] else "N/A",
+                    "comentario": row['comentario'] if row['comentario'] else "Sin comentario"
+                })
+        
+        finally:
+            await direct_db_service.pool.release(conn)
+
+        return {
+            "total_calificaciones": len(calificaciones_detalladas),
+            "calificaciones": calificaciones_detalladas,
+            "fecha_generacion": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"❌ Error generando reporte de calificaciones del proveedor: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error generando reporte de calificaciones"
+        )
