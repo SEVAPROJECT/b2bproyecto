@@ -151,7 +151,7 @@ async def calificar_como_cliente(
                         u_prov.nombre_persona as proveedor_nombre,
                         au_prov.email as proveedor_email,
                         u_cli.nombre_persona as cliente_nombre,
-                        r.fecha_reserva::date as fecha,
+                        r.fecha::date as fecha,
                         r.hora_inicio as hora
                     FROM public.reserva r
                     JOIN public.servicio s ON r.id_servicio = s.id_servicio
@@ -292,7 +292,7 @@ async def calificar_como_proveedor(
                         u_prov.nombre_persona as proveedor_nombre,
                         u_cli.nombre_persona as cliente_nombre,
                         au_cli.email as cliente_email,
-                        r.fecha_reserva::date as fecha,
+                        r.fecha::date as fecha,
                         r.hora_inicio as hora
                     FROM public.reserva r
                     JOIN public.servicio s ON r.id_servicio = s.id_servicio
