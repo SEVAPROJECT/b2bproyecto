@@ -63,6 +63,39 @@ const AdminReportsPage: React.FC = () => {
             return 'N/A';
         }
 
+        // Caso especial: fecha_reserva siempre debe mostrar solo fecha (sin hora)
+        if (fieldName === 'fecha_reserva') {
+            try {
+                // Si ya está en formato DD/MM/YYYY (con o sin hora después)
+                const matchDDMMYYYY = value.match(/^(\d{2}\/\d{2}\/\d{4})/);
+                if (matchDDMMYYYY) {
+                    return matchDDMMYYYY[1]; // Retornar solo la parte de fecha
+                }
+                
+                // Si es formato YYYY-MM-DD
+                if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+                    const dateOnly = value.split('T')[0].split(' ')[0];
+                    return formatDateToDDMMYYYY(dateOnly);
+                }
+                
+                // Fallback: intentar parsear y formatear
+                const date = new Date(value);
+                if (!isNaN(date.getTime())) {
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    return `${day}/${month}/${year}`;
+                }
+            } catch (error) {
+                // Si todo falla, intentar extraer solo la parte de fecha del string
+                const matchAnyDate = value.match(/(\d{2}\/\d{2}\/\d{4})/);
+                if (matchAnyDate) {
+                    return matchAnyDate[1];
+                }
+                return String(value);
+            }
+        }
+
         // Formatear fechas como DD/MM/AAAA
         // Detectar fechas por nombre de campo o por contenido
         const isDateField = fieldName === 'created_at' || fieldName === 'fecha_creacion' || 
