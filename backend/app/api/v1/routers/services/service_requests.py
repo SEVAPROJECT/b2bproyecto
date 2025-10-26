@@ -114,10 +114,10 @@ async def get_service_requests(
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "id_categoria": row.id_categoria,
                 "id_perfil": row.id_perfil,
-                "nombre_categoria": row.nombre_categoria or "Sin categoría",
+                "nombre_categoria": row.nombre_categoria or "No especificado",
                 "nombre_empresa": row.nombre_empresa or "No especificado",
-                "nombre_contacto": row.nombre_contacto or "No especificado"
-                # email_contacto se agregará en el frontend usando el reporte de proveedores
+                "nombre_contacto": row.nombre_contacto or "No especificado",
+                "email_contacto": None  # Email no disponible en el modelo actual
             }
             formatted_requests.append(formatted_request)
 
@@ -131,7 +131,7 @@ async def get_service_requests(
         # Consulta básica como fallback
         result = await db.execute(
             select(SolicitudServicio)
-            .where(SolicitudServicio.estado_aprobacion == 'pendiente') if not all else select(SolicitudServicio)
+            .where(SolicitudServicio.estado_aprobacion == 'pendiente')
         )
         requests = result.scalars().all()
 
@@ -146,10 +146,10 @@ async def get_service_requests(
                 "created_at": request.created_at.isoformat() if request.created_at else None,
                 "id_categoria": request.id_categoria,
                 "id_perfil": request.id_perfil,
-                "nombre_categoria": "Sin categoría",
+                "nombre_categoria": "No especificado",
                 "nombre_empresa": "No especificado",
-                "nombre_contacto": "No especificado"
-                # email_contacto se agregará en el frontend
+                "nombre_contacto": "No especificado",
+                "email_contacto": "No especificado"
             }
             formatted_requests.append(formatted_request)
 
@@ -188,7 +188,7 @@ async def get_all_service_requests_for_admin(
                 UserModel.nombre_persona.label('nombre_contacto')
             )
             .select_from(SolicitudServicio)
-            .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)
+            .join(Categoria, SolicitudServicio.id_categoria == Categoria.id_categoria, isouter=True)
             .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)
             .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)
             .order_by(SolicitudServicio.created_at.desc())

@@ -54,21 +54,12 @@ const AdminReportsPage: React.FC = () => {
 
     // Función helper para formatear valores con formatos específicos
     const formatValue = (value: any, fieldName?: string): string => {
-        // CRÍTICO: Verificar valor antes de cualquier procesamiento
-        if (value === null || value === undefined) {
-            console.warn('⚠️ Valor null/undefined para campo:', fieldName);
+        if (value === null || value === undefined || value === '') {
             // Para comentarios, mostrar campo vacío en lugar de N/A
             if (fieldName === 'comentario_admin' || fieldName === 'comentario') {
                 return '';
             }
-            return 'N/A';
-        }
-        
-        if (value === '') {
-            // Para comentarios, mostrar campo vacío en lugar de N/A
-            if (fieldName === 'comentario_admin' || fieldName === 'comentario') {
-                return '';
-            }
+            // Para otros campos, mostrar N/A solo si es necesario
             return 'N/A';
         }
 
@@ -153,52 +144,15 @@ const AdminReportsPage: React.FC = () => {
             }
         }
 
-        // Formatear estado - VERSIÓN SIMPLIFICADA Y ROBUSTA
-        if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo' || fieldName === 'estado_verificacion') {
-            console.log('🎯 formatValue para campo estado:', { value, tipo: typeof value, fieldName });
-            
-            // Convertir a string de forma segura
-            const valorString = String(value);
-            const valorUpper = valorString.toUpperCase();
-            
-            console.log('📝 Valor convertido a string:', valorString, '| Upper:', valorUpper);
-            
-            // Si ya es "ACTIVO" o "INACTIVO", devolverlo directamente
-            if (valorUpper === 'ACTIVO' || valorUpper === 'INACTIVO') {
-                console.log('✅ Devolviendo:', valorUpper);
-                return valorUpper;
+        // Formatear estado booleano como ACTIVO/INACTIVO
+        if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo') {
+            if (typeof value === 'boolean') {
+                return value ? 'ACTIVO' : 'INACTIVO';
             }
-            
-            // Si contiene "ACTIV" (para "ACTIVO", "ACTIVA", etc.)
-            if (valorUpper.includes('ACTIV')) {
-                console.log('✅ Contiene ACTIV, devolviendo: ACTIVO');
-                return 'ACTIVO';
-            }
-            
-            // Si contiene "INACTIV"
-            if (valorUpper.includes('INACTIV')) {
-                console.log('✅ Contiene INACTIV, devolviendo: INACTIVO');
-                return 'INACTIVO';
-            }
-            
-            // Si es "true" (string o boolean)
-            if (valorUpper === 'TRUE' || value === true) {
-                console.log('✅ Es TRUE, devolviendo: ACTIVO');
-                return 'ACTIVO';
-            }
-            
-            // Si es "false" (string o boolean)
-            if (valorUpper === 'FALSE' || value === false) {
-                console.log('✅ Es FALSE, devolviendo: INACTIVO');
-                return 'INACTIVO';
-            }
-            
-            // Si llegamos aquí, devolver el string tal cual (caso extraño)
-            console.error('⚠️ Estado no reconocido, devolviendo tal cual:', valorString);
-            return valorString;
+            if (value === 'true' || value === true) return 'ACTIVO';
+            if (value === 'false' || value === false) return 'INACTIVO';
         }
 
-        // Para cualquier otro campo, convertir a string de forma segura
         return String(value);
     };
 
@@ -405,97 +359,29 @@ const AdminReportsPage: React.FC = () => {
         try {
             console.log('📋 Generando reporte de solicitudes de servicios...');
             
-            // Llama al endpoint real
+            // Llama al endpoint real que actualmente puede fallar por CORS
             const solicitudes = await adminAPI.getAllSolicitudesServiciosModificado(accessToken);
             
             console.log('📊 Solicitudes reales obtenidas:', solicitudes.length);
-            console.log('🔍 Primera solicitud (si existe):', solicitudes[0]);
 
-            // Si no hay solicitudes, devolver reporte vacío
-            if (!solicitudes || solicitudes.length === 0) {
-                console.log('⚠️ No hay solicitudes de servicios para reportar');
-                return {
-                    total_solicitudes_servicios: 0,
-                    solicitudes_servicios: [],
-                    fecha_generacion: new Date().toISOString(),
-                    pendientes: 0,
-                    aprobadas: 0,
-                    rechazadas: 0,
-                    generado_desde: 'sin_solicitudes',
-                    mensaje: 'No hay solicitudes de servicios registradas'
-                };
-            }
-
-            // Obtener emails reales usando la misma lógica que el reporte de categorías
-            console.log('📧 Obteniendo emails reales desde reporte de proveedores...');
-            let emailsDict: {[key: string]: string} = {};
-            
-            try {
-                const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
-                const proveedoresResponse = await fetch(`${apiBaseUrl}/api/v1/admin/reports/proveedores-verificados`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (proveedoresResponse.ok) {
-                    const proveedoresData = await proveedoresResponse.json();
-                    const proveedores = proveedoresData.proveedores || [];
-                    console.log('🏢 Proveedores obtenidos para emails:', proveedores.length);
-                    
-                    // Crear diccionario de emails por nombre de contacto
-                    proveedores.forEach((proveedor: any) => {
-                        if (proveedor.nombre_contacto && proveedor.email_contacto && proveedor.email_contacto !== 'No disponible') {
-                            emailsDict[proveedor.nombre_contacto] = proveedor.email_contacto;
-                        }
-                    });
-                    
-                    console.log('📧 Emails extraídos del reporte de proveedores:', Object.keys(emailsDict).length);
-                } else {
-                    console.log('❌ No se pudo obtener reporte de proveedores para emails');
-                }
-            } catch (emailError) {
-                console.error('⚠️ Error obteniendo emails (no crítico):', emailError);
-                // Continuar sin emails
-            }
-
-            // Procesar las solicitudes reales con emails
-            const solicitudesProcesadas = solicitudes.map((solicitud: any) => {
-                // Obtener email real del diccionario
-                let emailContacto = 'Sin especificar';
-                if (solicitud.nombre_contacto && solicitud.nombre_contacto !== 'No especificado') {
-                    const userEmail = emailsDict[solicitud.nombre_contacto];
-                    if (userEmail) {
-                        emailContacto = userEmail;
-                    }
-                }
-                
-                return {
-                    id_solicitud: solicitud.id_solicitud,
-                    nombre_servicio: solicitud.nombre_servicio,
-                    descripcion: solicitud.descripcion,
-                    estado_aprobacion: solicitud.estado_aprobacion,
-                    comentario_admin: solicitud.comentario_admin || '',
-                    fecha_creacion: formatDateToDDMMAAAA(solicitud.created_at),
-                    categoria: solicitud.nombre_categoria || 'Sin especificar',
-                    empresa: solicitud.nombre_empresa || 'Sin especificar',
-                    contacto: solicitud.nombre_contacto || 'Sin especificar',
-                    email_contacto: emailContacto
-                };
-            });
+            // Procesar las solicitudes reales (si las hay)
+            const solicitudesProcesadas = solicitudes.map((solicitud: any) => ({
+                id_solicitud: solicitud.id_solicitud,
+                nombre_servicio: solicitud.nombre_servicio,
+                descripcion: solicitud.descripcion,
+                estado_aprobacion: solicitud.estado_aprobacion,
+                comentario_admin: solicitud.comentario_admin || '',
+                fecha_creacion: formatDateToDDMMAAAA(solicitud.created_at),
+                categoria: solicitud.nombre_categoria || 'Sin especificar',
+                empresa: solicitud.nombre_empresa || 'Sin especificar',
+                contacto: solicitud.nombre_contacto || 'Sin especificar',
+                email_contacto: solicitud.email_contacto || 'Sin especificar'
+            }));
 
             const totalSolicitudes = solicitudesProcesadas.length;
             const pendientes = solicitudesProcesadas.filter(s => s.estado_aprobacion === 'pendiente').length;
             const aprobadas = solicitudesProcesadas.filter(s => s.estado_aprobacion === 'aprobada').length;
             const rechazadas = solicitudesProcesadas.filter(s => s.estado_aprobacion === 'rechazada').length;
-
-            console.log('✅ Reporte de solicitudes de servicios generado:', {
-                total: totalSolicitudes,
-                pendientes,
-                aprobadas,
-                rechazadas
-            });
 
             return {
                 total_solicitudes_servicios: totalSolicitudes,
@@ -508,7 +394,6 @@ const AdminReportsPage: React.FC = () => {
             };
         } catch (error) {
             console.error('❌ Error generando reporte de solicitudes de servicios:', error);
-            console.error('📋 Detalles del error:', error);
             // Fallback honesto: sin datos
             return {
                 total_solicitudes_servicios: 0,
@@ -517,8 +402,8 @@ const AdminReportsPage: React.FC = () => {
                 pendientes: 0,
                 aprobadas: 0,
                 rechazadas: 0,
-                generado_desde: 'error_backend',
-                mensaje: 'Error al cargar las solicitudes desde el backend'
+                generado_desde: 'sin_datos_backend',
+                mensaje: 'No se pudieron cargar las solicitudes desde el backend'
             };
         }
     };
@@ -928,15 +813,6 @@ const AdminReportsPage: React.FC = () => {
                             const data = await response.json();
                             console.log('✅ Servicios cargados desde reporte:', data);
                             
-                            // Debug: verificar el campo estado del primer servicio
-                            if (data.servicios && data.servicios.length > 0) {
-                                console.log('🔍 Primer servicio (estado):', {
-                                    estado: data.servicios[0].estado,
-                                    tipo: typeof data.servicios[0].estado,
-                                    servicio_completo: data.servicios[0]
-                                });
-                            }
-                            
                             return {
                                 ...data,
                                 fecha_generacion: getArgentinaDateISO()
@@ -1301,18 +1177,17 @@ const AdminReportsPage: React.FC = () => {
                                     // Personalizar nombres específicos
                                     if (key === 'created_at') headerName = 'FECHA CREACION';
                                     if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
-                                    if (key === 'active' || key === 'activo' || key === 'estado') headerName = 'ESTADO';
+                                    if (key === 'active' || key === 'activo') headerName = 'ESTADO';
                                     return `<th>${headerName}</th>`;
                                 }).join('')}
                             </tr>
                         </thead>
                         <tbody>
-                            ${data.map(item => {
-                                return `<tr>${Object.entries(item).map(([key, value]) => {
-                                    const formattedValue = formatValue(value, key);
-                                    return `<td>${formattedValue}</td>`;
-                                }).join('')}</tr>`;
-                            }).join('')}
+                            ${data.map(item => 
+                                `<tr>${Object.entries(item).map(([key, value]) => 
+                                    `<td>${formatValue(value, key)}</td>`
+                                ).join('')}</tr>`
+                            ).join('')}
                         </tbody>
                     </table>
 
@@ -1436,8 +1311,7 @@ const AdminReportsPage: React.FC = () => {
                 data.forEach(item => {
                     htmlContent += '<tr>';
                     Object.entries(item).forEach(([key, value]) => {
-                        const formattedValue = formatValue(value, key);
-                        htmlContent += `<td>${formattedValue}</td>`;
+                        htmlContent += `<td>${formatValue(value, key)}</td>`;
                     });
                     htmlContent += '</tr>';
                 });
