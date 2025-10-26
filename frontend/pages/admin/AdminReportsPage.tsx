@@ -54,6 +54,11 @@ const AdminReportsPage: React.FC = () => {
 
     // Función helper para formatear valores con formatos específicos
     const formatValue = (value: any, fieldName?: string): string => {
+        // Debug para detectar problemas con el estado
+        if (fieldName === 'estado' && (value === null || value === undefined || typeof value === 'object')) {
+            console.error('⚠️ Problema con campo estado:', { value, tipo: typeof value, fieldName });
+        }
+        
         if (value === null || value === undefined || value === '') {
             // Para comentarios, mostrar campo vacío en lugar de N/A
             if (fieldName === 'comentario_admin' || fieldName === 'comentario') {
@@ -823,6 +828,15 @@ const AdminReportsPage: React.FC = () => {
                             
                             const data = await response.json();
                             console.log('✅ Servicios cargados desde reporte:', data);
+                            
+                            // Debug: verificar el campo estado del primer servicio
+                            if (data.servicios && data.servicios.length > 0) {
+                                console.log('🔍 Primer servicio (estado):', {
+                                    estado: data.servicios[0].estado,
+                                    tipo: typeof data.servicios[0].estado,
+                                    servicio_completo: data.servicios[0]
+                                });
+                            }
                             
                             return {
                                 ...data,
