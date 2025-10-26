@@ -80,6 +80,13 @@ const UserReportsPage: React.FC = () => {
         }
     };
 
+    // Función para generar fecha actual en zona horaria de Argentina (GMT-3)
+    const getArgentinaDateISO = (): string => {
+        const now = new Date();
+        const argDate = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+        return argDate.toISOString();
+    };
+
     const reportTypes = isProvider ? [
         {
             id: 'mis-calificaciones-recibidas-proveedor',
@@ -129,7 +136,11 @@ const UserReportsPage: React.FC = () => {
                         
                         const data = await response.json();
                         console.log('✅ Calificaciones recibidas (cliente) cargadas:', data);
-                        return data;
+                        // Asegurar fecha_generacion actualizada con hora correcta
+                        return {
+                            ...data,
+                            fecha_generacion: getArgentinaDateISO()
+                        };
                     } catch (error) {
                         console.error('❌ Error cargando calificaciones recibidas (cliente):', error);
                         throw error;
@@ -150,7 +161,11 @@ const UserReportsPage: React.FC = () => {
                         
                         const data = await response.json();
                         console.log('✅ Calificaciones recibidas (proveedor) cargadas:', data);
-                        return data;
+                        // Asegurar fecha_generacion actualizada con hora correcta
+                        return {
+                            ...data,
+                            fecha_generacion: getArgentinaDateISO()
+                        };
                     } catch (error) {
                         console.error('❌ Error cargando calificaciones recibidas (proveedor):', error);
                         throw error;
@@ -318,7 +333,7 @@ const UserReportsPage: React.FC = () => {
             </head>
             <body>
                 <h1>SEVA Empresas - ${reportInfo.title}</h1>
-                <p>Generado el: ${formatArgentinaDate(reporte.fecha_generacion)}</p>
+                <p>Generado el: ${formatArgentinaDateTime(reporte.fecha_generacion)}</p>
                 <p><strong>Total: ${reporte.total_calificaciones || reporte.calificaciones.length}</strong></p>
                 <table>
                     <thead>
