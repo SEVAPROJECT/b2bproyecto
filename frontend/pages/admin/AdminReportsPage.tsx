@@ -54,17 +54,21 @@ const AdminReportsPage: React.FC = () => {
 
     // Función helper para formatear valores con formatos específicos
     const formatValue = (value: any, fieldName?: string): string => {
-        // Debug para detectar problemas con el estado
-        if (fieldName === 'estado' && (value === null || value === undefined || typeof value === 'object')) {
-            console.error('⚠️ Problema con campo estado:', { value, tipo: typeof value, fieldName });
-        }
-        
-        if (value === null || value === undefined || value === '') {
+        // CRÍTICO: Verificar valor antes de cualquier procesamiento
+        if (value === null || value === undefined) {
+            console.warn('⚠️ Valor null/undefined para campo:', fieldName);
             // Para comentarios, mostrar campo vacío en lugar de N/A
             if (fieldName === 'comentario_admin' || fieldName === 'comentario') {
                 return '';
             }
-            // Para otros campos, mostrar N/A solo si es necesario
+            return 'N/A';
+        }
+        
+        if (value === '') {
+            // Para comentarios, mostrar campo vacío en lugar de N/A
+            if (fieldName === 'comentario_admin' || fieldName === 'comentario') {
+                return '';
+            }
             return 'N/A';
         }
 
@@ -149,50 +153,53 @@ const AdminReportsPage: React.FC = () => {
             }
         }
 
-        // Formatear estado booleano como ACTIVO/INACTIVO
-        if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo') {
-            console.log('🎯 formatValue para estado:', { value, tipo: typeof value });
-            // Si ya es un string formateado (del backend), devolverlo tal cual
-            if (typeof value === 'string') {
-                const upperValue = value.toUpperCase();
-                console.log('📝 upperValue:', upperValue);
-                if (upperValue === 'ACTIVO' || upperValue === 'INACTIVO') {
-                    console.log('✅ Match directo, devolviendo:', upperValue);
-                    return upperValue;
-                }
-                // Manejar variantes como "Activo", "Inactivo"
-                if (upperValue.includes('ACTIV')) {
-                    console.log('✅ Contiene ACTIV, devolviendo: ACTIVO');
-                    return 'ACTIVO';
-                }
-                if (upperValue.includes('INACTIV')) {
-                    console.log('✅ Contiene INACTIV, devolviendo: INACTIVO');
-                    return 'INACTIVO';
-                }
-                console.warn('⚠️ String no reconocido:', upperValue);
+        // Formatear estado - VERSIÓN SIMPLIFICADA Y ROBUSTA
+        if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo' || fieldName === 'estado_verificacion') {
+            console.log('🎯 formatValue para campo estado:', { value, tipo: typeof value, fieldName });
+            
+            // Convertir a string de forma segura
+            const valorString = String(value);
+            const valorUpper = valorString.toUpperCase();
+            
+            console.log('📝 Valor convertido a string:', valorString, '| Upper:', valorUpper);
+            
+            // Si ya es "ACTIVO" o "INACTIVO", devolverlo directamente
+            if (valorUpper === 'ACTIVO' || valorUpper === 'INACTIVO') {
+                console.log('✅ Devolviendo:', valorUpper);
+                return valorUpper;
             }
-            // Si es booleano, formatearlo
-            if (typeof value === 'boolean') {
-                const resultado = value ? 'ACTIVO' : 'INACTIVO';
-                console.log('✅ Boolean, devolviendo:', resultado);
-                return resultado;
-            }
-            if (value === 'true' || value === true) {
-                console.log('✅ String "true", devolviendo: ACTIVO');
+            
+            // Si contiene "ACTIV" (para "ACTIVO", "ACTIVA", etc.)
+            if (valorUpper.includes('ACTIV')) {
+                console.log('✅ Contiene ACTIV, devolviendo: ACTIVO');
                 return 'ACTIVO';
             }
-            if (value === 'false' || value === false) {
-                console.log('✅ String "false", devolviendo: INACTIVO');
+            
+            // Si contiene "INACTIV"
+            if (valorUpper.includes('INACTIV')) {
+                console.log('✅ Contiene INACTIV, devolviendo: INACTIVO');
                 return 'INACTIVO';
             }
-            console.error('❌ Ninguna condición cumplida para estado, cayendo a String(value)');
+            
+            // Si es "true" (string o boolean)
+            if (valorUpper === 'TRUE' || value === true) {
+                console.log('✅ Es TRUE, devolviendo: ACTIVO');
+                return 'ACTIVO';
+            }
+            
+            // Si es "false" (string o boolean)
+            if (valorUpper === 'FALSE' || value === false) {
+                console.log('✅ Es FALSE, devolviendo: INACTIVO');
+                return 'INACTIVO';
+            }
+            
+            // Si llegamos aquí, devolver el string tal cual (caso extraño)
+            console.error('⚠️ Estado no reconocido, devolviendo tal cual:', valorString);
+            return valorString;
         }
 
-        const resultado = String(value);
-        if (fieldName === 'estado') {
-            console.log('🔚 Resultado final para estado:', resultado);
-        }
-        return resultado;
+        // Para cualquier otro campo, convertir a string de forma segura
+        return String(value);
     };
 
     // Función helper para obtener el total de registros de un reporte
