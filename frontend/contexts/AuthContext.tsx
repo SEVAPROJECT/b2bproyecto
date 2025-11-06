@@ -568,7 +568,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                     'ruc': 'Constancia de RUC',
                     'cedula': 'Cédula MiPymes',
                     'certificado': 'Certificado de Cumplimiento Tributario',
-                    'certificados_rubro': 'Certificacion del Rubro',
+                    'certificados_rubro': 'Certificados del Rubro',
                 };
 
                 // Procesar documentos subidos
