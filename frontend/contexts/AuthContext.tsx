@@ -568,7 +568,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                     'ruc': 'Constancia de RUC',
                     'cedula': 'Cédula MiPymes',
                     'certificado': 'Certificado de Cumplimiento Tributario',
-                    'certificados_rubro': 'Certificacion Profesional',
+                    'certificados_rubro': 'Certificacion del Rubro',
                 };
 
                 // Procesar documentos subidos
@@ -647,7 +647,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                     'ruc': 'Constancia de RUC',
                     'cedula': 'Cédula MiPymes',
                     'certificado': 'Certificado de Cumplimiento Tributario',
-                    'certificados_rubro': 'Certificacion Profesional',
+                    'certificados_rubro': 'Certificacion del Rubro',
                 };
 
                 // Procesar documentos subidos (nuevos y actualizados)
