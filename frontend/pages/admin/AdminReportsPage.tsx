@@ -63,6 +63,52 @@ const AdminReportsPage: React.FC = () => {
             return 'N/A';
         }
 
+        // IMPORTANTE: Procesar estado ANTES de la detección de fechas para evitar conflictos
+        if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo') {
+            // Manejar null/undefined ya procesado arriba, pero por si acaso
+            if (value === null || value === undefined) {
+                return 'N/A';
+            }
+            // Si es un objeto, intentar extraer el valor relevante
+            if (typeof value === 'object' && value !== null) {
+                // Si tiene propiedades label o valor (como en reservas)
+                if ('label' in value && typeof value.label === 'string') {
+                    const estadoUpper = value.label.trim().toUpperCase();
+                    if (estadoUpper === 'ACTIVO' || estadoUpper === 'INACTIVO') {
+                        return estadoUpper;
+                    }
+                    return estadoUpper;
+                }
+                if ('valor' in value && typeof value.valor === 'string') {
+                    const estadoUpper = value.valor.trim().toUpperCase();
+                    if (estadoUpper === 'ACTIVO' || estadoUpper === 'INACTIVO') {
+                        return estadoUpper;
+                    }
+                    return estadoUpper;
+                }
+                // Si es un objeto sin propiedades conocidas, convertirlo a string explícitamente
+                return 'ACTIVO'; // Fallback por defecto
+            }
+            // Si ya es un string válido, usarlo directamente
+            if (typeof value === 'string') {
+                const estadoUpper = value.trim().toUpperCase();
+                if (estadoUpper === 'ACTIVO' || estadoUpper === 'INACTIVO') {
+                    return estadoUpper;
+                }
+                // Si no es ACTIVO ni INACTIVO pero es un string, retornarlo tal cual (evitar procesarlo como fecha)
+                return estadoUpper;
+            }
+            // Manejar booleanos
+            if (typeof value === 'boolean') {
+                return value ? 'ACTIVO' : 'INACTIVO';
+            }
+            // Manejar strings true/false
+            if (value === 'true' || value === true) return 'ACTIVO';
+            if (value === 'false' || value === false) return 'INACTIVO';
+            // Fallback final para estado
+            return String(value).toUpperCase();
+        }
+
         // Caso especial: fecha_reserva siempre debe mostrar solo fecha (sin hora)
         if (fieldName === 'fecha_reserva') {
             try {
@@ -96,20 +142,42 @@ const AdminReportsPage: React.FC = () => {
             }
         }
 
+        // Lista de campos que NUNCA deben ser procesados como fechas
+        const camposNoFecha = [
+            'estado', 'active', 'activo',
+            'nombre_persona', 'nombre_empresa', 'nombre', 'name',
+            'nombre_contacto', 'email', 'email_contacto',
+            'rol_principal', 'roles', 'todos_roles',
+            'foto_perfil', 'comentario', 'comentario_admin',
+            'descripcion', 'observacion', 'direccion',
+            'empresa', 'contacto', 'cliente', 'proveedor',
+            'servicio', 'categoria', 'precio', 'moneda'
+        ];
+        
+        // Si el campo está en la lista de exclusión, retornar directamente como string
+        if (fieldName && camposNoFecha.includes(fieldName)) {
+            return String(value);
+        }
+
         // Formatear fechas como DD/MM/AAAA
-        // Detectar fechas por nombre de campo o por contenido
+        // Detectar fechas SOLO por nombre de campo específico
         const isDateField = fieldName === 'created_at' || fieldName === 'fecha_creacion' || 
                            fieldName === 'updated_at' || fieldName === 'fecha_actualizacion' ||
                            fieldName === 'createdAt' || fieldName === 'updatedAt' ||
-                           fieldName === 'fecha_creacion' || fieldName === 'fecha_actualizacion';
+                           fieldName === 'fecha_registro' || fieldName === 'fecha_reserva' ||
+                           fieldName === 'fecha_servicio' || fieldName === 'fecha_solicitud' ||
+                           fieldName === 'fecha_revision' || fieldName === 'fecha_verificacion' ||
+                           fieldName === 'fecha_inicio' || fieldName === 'fecha_fin';
         
         // También detectar si el valor parece ser una fecha
-        const looksLikeDate = typeof value === 'string' && (
-            value.includes('T') || // ISO format
-            value.includes('-') || // Date format
-            value.includes('/') || // Date format
-            /^\d{4}-\d{2}-\d{2}/.test(value) || // YYYY-MM-DD
-            /^\d{2}\/\d{2}\/\d{4}/.test(value) // DD/MM/YYYY
+        // PERO solo si tiene un formato de fecha válido y explícito
+        const looksLikeDate = typeof value === 'string' && 
+                              fieldName && !camposNoFecha.includes(fieldName) && (
+            // Solo considerar fechas si tiene formato explícito de fecha
+            /^\d{4}-\d{2}-\d{2}$/.test(value) || // YYYY-MM-DD exacto
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value) || // ISO completo con hora
+            /^\d{2}\/\d{2}\/\d{4}$/.test(value) || // DD/MM/YYYY exacto
+            /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(value) // YYYY-MM-DD con hora espacio
         );
         
         if (isDateField || looksLikeDate) {
@@ -127,35 +195,30 @@ const AdminReportsPage: React.FC = () => {
                 // Para fechas ISO con hora (YYYY-MM-DDTHH:MM:SS)
                 if (value.includes('T')) {
                     const dateOnly = value.split('T')[0];
-                    return formatDateToDDMMYYYY(dateOnly);
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+                        return formatDateToDDMMYYYY(dateOnly);
+                    }
                 }
                 
-                // Fallback para otros formatos
-                const date = new Date(value);
-                if (!isNaN(date.getTime())) {
-                    return date.toLocaleDateString('es-ES', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric'
-                    });
+                // Fallback para otros formatos SOLO si es un campo de fecha conocido
+                if (isDateField) {
+                    const date = new Date(value);
+                    if (!isNaN(date.getTime())) {
+                        return date.toLocaleDateString('es-ES', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                        });
+                    }
                 }
             } catch (error) {
+                // Si hay error procesando como fecha, retornar el valor original
                 return String(value);
             }
         }
 
-        // Formatear estado booleano como ACTIVO/INACTIVO
-        if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo') {
-            if (typeof value === 'boolean') {
-                return value ? 'ACTIVO' : 'INACTIVO';
-            }
-            if (value === 'true' || value === true) return 'ACTIVO';
-            if (value === 'false' || value === false) return 'INACTIVO';
-        }
-
         return String(value);
     };
-
     // Función helper para obtener el total de registros de un reporte
     const getReportTotal = (reportData: ReporteData): number => {
         return reportData.total_usuarios ?? 
@@ -681,56 +744,64 @@ const AdminReportsPage: React.FC = () => {
                     })();
                     break;
                 case 'solicitudes-proveedores':
-                    // Endpoint con error 500 - usar estrategia alternativa sin CORS
+                    // Usar el endpoint correcto del backend
                     dataPromise = (async () => {
-                        console.log('📋 Buscando solicitudes de proveedores...');
+                        console.log('📋 Cargando reporte de solicitudes de proveedores...');
                         try {
-                            // Obtener proveedores desde usuarios como alternativa
-                            const usersResponse = await fetch(buildApiUrl('/admin/users'), {
+                            // Intentar usar el endpoint específico de solicitudes
+                            const response = await fetch(buildApiUrl('/admin/reports/solicitudes-proveedores'), {
                                 headers: { 'Authorization': `Bearer ${user.accessToken}` }
                             });
-                            if (usersResponse.ok) {
-                                const usersData = await usersResponse.json();
-                                const usuarios = usersData.usuarios || [];
-                                const proveedores = usuarios.filter((u: any) =>
-                                    u.rol_principal === 'provider' || u.rol_principal === 'proveedor'
-                                );
-
-                                console.log('✅ Encontrados', proveedores.length, 'proveedores para reporte');
+                            
+                            if (response.ok) {
+                                const data = await response.json();
+                                console.log('✅ Solicitudes de proveedores cargadas:', data);
+                                
+                                // Adaptar la respuesta del backend al formato esperado por el frontend
+                                // El backend devuelve: razon_social, nombre_fantasia, nombre_contacto, email_contacto, estado, fecha_solicitud, fecha_revision, comentario
+                                const solicitudes_proveedores = (data.solicitudes || []).map((s: any, index: number) => ({
+                                    id_solicitud: index + 1, // ID numérico para identificación en el frontend
+                                    nombre_empresa: s.razon_social || s.nombre_fantasia || 'Sin especificar',
+                                    nombre_fantasia: s.nombre_fantasia || '',
+                                    nombre_contacto: s.nombre_contacto || 'Sin especificar',
+                                    email_contacto: s.email_contacto || 'Sin especificar',
+                                    estado_solicitud: s.estado || 'pendiente',
+                                    fecha_solicitud: s.fecha_solicitud || 'Sin fecha',
+                                    fecha_revision: s.fecha_revision || null,
+                                    comentario_admin: s.comentario || ''
+                                }));
+                                
+                                // Calcular estadísticas
+                                const pendientes = solicitudes_proveedores.filter((s: any) => s.estado_solicitud === 'pendiente').length;
+                                const aprobadas = solicitudes_proveedores.filter((s: any) => s.estado_solicitud === 'aprobada').length;
+                                const rechazadas = solicitudes_proveedores.filter((s: any) => s.estado_solicitud === 'rechazada').length;
+                                
                                 return {
-                                    fecha_generacion: getArgentinaDateISO(),
-                                    total_solicitudes: proveedores.length,
-                                    solicitudes_proveedores: proveedores.map((p: any) => ({
-                                        id_solicitud: p.id,
-                                        nombre_empresa: p.nombre_empresa || 'Sin especificar',
-                                        nombre_contacto: p.nombre_persona || 'Sin especificar',
-                                        email_contacto: p.email || 'Sin especificar',
-                                        estado_solicitud: p.estado === 'ACTIVO' ? 'aprobada' : 'pendiente',
-                                        fecha_solicitud: p.fecha_creacion || getArgentinaDateISO(),
-                                        servicios_solicitados: 'Servicios de proveedor',
-                                        comentario_admin: p.estado === 'ACTIVO' ? 'Proveedor verificado' : 'Pendiente de verificación'
-                                    })),
-                                    pendientes: proveedores.filter((p: any) => p.estado !== 'ACTIVO').length,
-                                    aprobadas: proveedores.filter((p: any) => p.estado === 'ACTIVO').length,
-                                    rechazadas: 0,
-                                    generado_desde: 'proveedores_from_users'
+                                    fecha_generacion: data.fecha_generacion || getArgentinaDateISO(),
+                                    total_solicitudes: data.total_solicitudes || solicitudes_proveedores.length,
+                                    solicitudes_proveedores: solicitudes_proveedores,
+                                    pendientes: pendientes,
+                                    aprobadas: aprobadas,
+                                    rechazadas: rechazadas,
+                                    generado_desde: 'solicitudes_proveedores_endpoint'
                                 };
+                            } else {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                             }
                         } catch (err) {
-                            console.log('⚠️ No se pudieron obtener proveedores de usuarios');
+                            console.error('❌ Error cargando solicitudes de proveedores:', err);
+                            // Fallback: sin datos si el endpoint falla
+                            return {
+                                fecha_generacion: getArgentinaDateISO(),
+                                total_solicitudes: 0,
+                                solicitudes_proveedores: [],
+                                pendientes: 0,
+                                aprobadas: 0,
+                                rechazadas: 0,
+                                generado_desde: 'sin_datos_backend',
+                                mensaje: 'No se pudieron cargar las solicitudes de proveedores'
+                            };
                         }
-
-                        // Fallback: sin datos
-                        return {
-                            fecha_generacion: getArgentinaDateISO(),
-                            total_solicitudes: 0,
-                            solicitudes_proveedores: [],
-                            pendientes: 0,
-                            aprobadas: 0,
-                            rechazadas: 0,
-                            generado_desde: 'sin_datos_backend',
-                            mensaje: 'No hay datos disponibles en el backend'
-                        };
                     })();
                     break;
                 case 'categorias':

@@ -27,6 +27,8 @@ from app.models.empresa.ciudad import Ciudad
 from app.models.empresa.departamento import Departamento
 from geoalchemy2 import WKTElement
 from app.models.empresa.tipo_documento import TipoDocumento
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 
 
 
@@ -204,7 +206,37 @@ async def solicitar_verificacion_completa(
                 coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)  # Centro de Asunción
             )
             db.add(nueva_direccion)
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError as e:
+                # Si falla por secuencia desincronizada, sincronizarla y reintentar
+                if 'duplicate key value violates unique constraint "direccion_pkey"' in str(e):
+                    print("⚠️ Secuencia de direccion desincronizada, sincronizando...")
+                    # Remover el objeto fallido de la sesión
+                    db.expunge(nueva_direccion)
+                    # Sincronizar la secuencia
+                    await db.execute(text("""
+                        SELECT setval(
+                            pg_get_serial_sequence('direccion', 'id_direccion'),
+                            COALESCE((SELECT MAX(id_direccion) FROM direccion), 0) + 1,
+                            false
+                        )
+                    """))
+                    await db.flush()  # Asegurar que la sincronización se ejecute
+                    # Recrear el objeto dirección
+                    nueva_direccion = Direccion(
+                        calle=perfil_data['direccion']['calle'],
+                        numero=perfil_data['direccion']['numero'],
+                        referencia=perfil_data['direccion']['referencia'],
+                        id_departamento=departamento.id_departamento,
+                        id_ciudad=ciudad.id_ciudad if ciudad else None,
+                        id_barrio=barrio.id_barrio if barrio else None,
+                        coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)
+                    )
+                    db.add(nueva_direccion)
+                    await db.flush()
+                else:
+                    raise
             
             # 5. Crear el perfil de empresa
             nuevo_perfil = PerfilEmpresa(
@@ -245,7 +277,37 @@ async def solicitar_verificacion_completa(
                     coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)
                 )
                 db.add(nueva_direccion)
-                await db.flush()
+                try:
+                    await db.flush()
+                except IntegrityError as e:
+                    # Si falla por secuencia desincronizada, sincronizarla y reintentar
+                    if 'duplicate key value violates unique constraint "direccion_pkey"' in str(e):
+                        print("⚠️ Secuencia de direccion desincronizada, sincronizando...")
+                        # Remover el objeto fallido de la sesión
+                        db.expunge(nueva_direccion)
+                        # Sincronizar la secuencia
+                        await db.execute(text("""
+                            SELECT setval(
+                                pg_get_serial_sequence('direccion', 'id_direccion'),
+                                COALESCE((SELECT MAX(id_direccion) FROM direccion), 0) + 1,
+                                false
+                            )
+                        """))
+                        await db.flush()  # Asegurar que la sincronización se ejecute
+                        # Recrear el objeto dirección
+                        nueva_direccion = Direccion(
+                            calle=perfil_data['direccion']['calle'],
+                            numero=perfil_data['direccion']['numero'],
+                            referencia=perfil_data['direccion']['referencia'],
+                            id_departamento=departamento.id_departamento,
+                            id_ciudad=ciudad.id_ciudad if ciudad else None,
+                            id_barrio=barrio.id_barrio if barrio else None,
+                            coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)
+                        )
+                        db.add(nueva_direccion)
+                        await db.flush()
+                    else:
+                        raise
                 nuevo_perfil.id_direccion = nueva_direccion.id_direccion
                 await db.flush()
 

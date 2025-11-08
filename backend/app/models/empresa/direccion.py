@@ -28,8 +28,8 @@ class Direccion(Base):
         {"comment": "Direcciones con coordenadas geográficas (PostGIS)"}
     )
 
-    # Usamos UUID para el id_direccion, con un valor por defecto generado
-    id_direccion: Mapped[BIGINT] = Column(BIGINT, primary_key=True) 
+    # Usamos BIGINT con autoincrement para el id_direccion
+    id_direccion: Mapped[BIGINT] = Column(BIGINT, primary_key=True, autoincrement=True) 
     calle: Mapped[str] = Column(String(150), nullable=False)
     numero: Mapped[str] = Column(String(20), nullable=False)
     referencia: Mapped[str] = Column(String(150), nullable=True) # Hacemos referencia opcional

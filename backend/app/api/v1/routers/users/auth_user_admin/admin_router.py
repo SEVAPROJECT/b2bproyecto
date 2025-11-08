@@ -2288,13 +2288,21 @@ async def get_reporte_usuarios_activos(
                     rol_principal = "Cliente"
                 else:
                     rol_principal = "Cliente"
+
+                estado_raw = row['estado']
+                if estado_raw is None or estado_raw == '':
+                    estado = "ACTIVO"
+                elif isinstance(estado_raw, str):
+                    estado = estado_raw.strip().upper()  # Limpiar y normalizar
+                else:
+                    estado = str(estado_raw).strip().upper()  # Convertir y normalizar
                 
                 usuarios_con_roles.append({
                     "id": user_id,
                     "nombre_persona": row['nombre_persona'] or "Sin nombre",
                     "nombre_empresa": row['nombre_empresa'] or "Sin empresa",
                     "email": email,
-                    "estado": row['estado'] or "ACTIVO",
+                    "estado": estado,
                     "rol_principal": rol_principal,
                     "fecha_creacion": fecha_creacion
                 })

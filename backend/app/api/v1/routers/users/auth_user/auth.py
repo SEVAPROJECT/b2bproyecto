@@ -9,7 +9,7 @@ from app.api.v1.dependencies.auth_user import get_current_user  # dependencia qu
 from app.api.v1.dependencies.database_supabase import get_async_db  # dependencia que proporciona la sesión de DB
 from app.services.rate_limit_service import email_rate_limit_service
 from app.services.direct_db_service import direct_db_service
-from app.supabase.auth_service import supabase_auth  # cliente Supabase inicializado
+from app.supabase.auth_service import supabase_auth, supabase_admin  # cliente Supabase inicializado
 from typing import Any, Dict, Union
 from app.schemas.user import UserProfileAndRolesOut
 from app.schemas.auth_user import SupabaseUser
@@ -43,7 +43,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     status_code=status.HTTP_201_CREATED,
     description="Crea un usuario en Supabase Auth. El perfil y rol se crean automáticamente via trigger."
 )
-async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> Union[TokenOut, SignUpSuccess]:
+async def sign_up(data: SignUpIn) -> Union[TokenOut, SignUpSuccess]:
     try:
         logger.info(f"Iniciando registro para usuario: {data.email}")
         
@@ -72,24 +72,92 @@ async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> U
         }
         
         logger.info(f"Enviando datos a Supabase Auth: {signup_data}")
-        signup_response = supabase_auth.auth.sign_up(signup_data)
-
-        if not signup_response.user:
-            handle_supabase_auth_error("Respuesta de Supabase incompleta (no hay user)")
         
-        # Registrar intento de envío de email
-        email_rate_limit_service.record_email_attempt(data.email)
-
-        id_user = str(signup_response.user.id)
-        logger.info(f"Usuario creado en Supabase Auth con ID: {id_user}")
-
-        # --- Paso 2: Verificar solo el perfil (sin verificar rol) ---
-        # Dar tiempo al trigger sin bloquearlo
-        #logger.info("⏳ Esperando que el trigger se ejecute...")
-        #await asyncio.sleep(2.0)  # Dar 2 segundos al trigger
+        signup_response = None
+        id_user = None
+        email_sent_error = False
         
-        # Verificar solo el perfil (sin verificar rol)
-        '''user_profile = None
+        try:
+            signup_response = supabase_auth.auth.sign_up(signup_data)
+            
+            if not signup_response.user:
+                handle_supabase_auth_error("Respuesta de Supabase incompleta (no hay user)")
+            
+            id_user = str(signup_response.user.id)
+            logger.info(f"Usuario creado en Supabase Auth con ID: {id_user}")
+            
+        except AuthApiError as e:
+            error_message = str(e).lower()
+            
+            # Si es error de envío de email, verificar si el usuario se creó
+            if "error sending confirmation email" in error_message:
+                logger.warning("⚠️ Error al enviar email de confirmación, verificando si el usuario se creó...")
+                email_sent_error = True
+                
+                # Intentar verificar si el usuario se creó a pesar del error usando list_users()
+                try:
+                    if supabase_admin:
+                        # Obtener todos los usuarios y buscar por email
+                        auth_users = supabase_admin.auth.admin.list_users()
+                        
+                        # Buscar el usuario por email
+                        found_user = None
+                        if auth_users:
+                            for auth_user in auth_users:
+                                if auth_user.email and auth_user.email.lower() == data.email.lower():
+                                    found_user = auth_user
+                                    break
+                        
+                        if found_user:
+                            id_user = str(found_user.id)
+                            logger.info(f"✅ Usuario encontrado a pesar del error de email: {id_user}")
+                            logger.warning("⚠️ El usuario se creó correctamente, pero no se pudo enviar el email de confirmación")
+                        else:
+                            logger.error("❌ Usuario no encontrado después del error de email")
+                            # Nota: El usuario puede haberse creado en auth.users pero aún no estar visible
+                            # debido a la naturaleza asíncrona. Es mejor asumir que no se creó.
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail="No se pudo crear el usuario ni enviar el email de confirmación debido a un problema con la configuración de email del servidor. Por favor, intenta nuevamente más tarde o contacta al administrador en b2bseva.notificaciones@gmail.com"
+                            )
+                    else:
+                        logger.error("❌ No se puede verificar usuario: supabase_admin no está configurado")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="No se pudo enviar el email de confirmación. El usuario puede haberse creado correctamente. Por favor, intenta iniciar sesión o contacta al administrador en b2bseva.notificaciones@gmail.com si el problema persiste."
+                        )
+                except HTTPException:
+                    # Re-lanzar HTTPException tal cual
+                    raise
+                except Exception as verify_error:
+                    logger.error(f"❌ Error verificando usuario después del error de email: {verify_error}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="No se pudo enviar el email de confirmación. El usuario puede haberse creado correctamente. Por favor, intenta iniciar sesión o contacta al administrador en b2bseva.notificaciones@gmail.com si el problema persiste."
+                    )
+            else:
+                # Otro tipo de error de AuthApiError, re-lanzar para manejo general
+                raise
+        
+        # Validar que id_user existe antes de continuar
+        # Si id_user es None, significa que hubo un error que impidió crear el usuario
+        if not id_user:
+            logger.error("❌ No se pudo crear el usuario: id_user es None")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No se pudo crear el usuario. Por favor, intenta nuevamente o contacta al administrador en b2bseva.notificaciones@gmail.com"
+            )
+        
+        # Registrar intento de envío de email (solo si no hubo error)
+        if not email_sent_error:
+            email_rate_limit_service.record_email_attempt(data.email)
+
+        # --- Paso 2: Verificar solo el perfil usando direct_db_service ---
+        # Usar direct_db_service.get_connection() para evitar problemas con PgBouncer
+        logger.info("⏳ Esperando que el trigger se ejecute...")
+        await asyncio.sleep(1.0)  # Dar tiempo al trigger
+        
+        user_profile = None
         max_retries = 3  # Solo 3 intentos para el perfil
         retry_delay = 0.5  # Retry rápido
         
@@ -97,7 +165,7 @@ async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> U
             try:
                 logger.info(f"Verificando perfil para usuario {id_user} (intento {attempt + 1}/{max_retries})")
                 
-                # Usar servicio directo para verificar solo el perfil
+                # Usar servicio directo para verificar solo el perfil (usa get_connection internamente)
                 user_profile_data = await direct_db_service.check_user_profile(id_user)
                 
                 if user_profile_data:
@@ -111,21 +179,22 @@ async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> U
                 logger.error(f"❌ Error en intento {attempt + 1}: {e}")
                 
                 if attempt == max_retries - 1:
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Error de conexión a la base de datos: {str(e)}"
-                )
+                    raise HTTPException(
+                        status_code=500, 
+                        detail=f"Error de conexión a la base de datos: {str(e)}"
+                    )
             
             # Esperar antes del siguiente intento
             if attempt < max_retries - 1:
                 await asyncio.sleep(retry_delay * (1.2 ** attempt))  # 0.5s, 0.6s
                 logger.info(f"⏳ Esperando {retry_delay * (1.2 ** attempt):.1f}s antes del siguiente intento...")
 
-        # Si no se encontró el perfil, crear manualmente
+        # Si no se encontró el perfil, crear manualmente usando direct_db_service
         if not user_profile:
             logger.warning("⚠️ Trigger no creó el perfil, creando manualmente...")
             
             try:
+                # Usar direct_db_service.create_user_profile que usa get_connection internamente
                 await direct_db_service.create_user_profile(
                     user_id=id_user,
                     nombre_persona=data.nombre_persona,
@@ -144,11 +213,11 @@ async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> U
                 
             except Exception as e:
                 logger.error(f"❌ Error creando perfil manualmente: {e}")
-                        raise HTTPException(
-                            status_code=500, 
+                raise HTTPException(
+                    status_code=500, 
                     detail=f"Error: No se pudo crear el perfil del usuario. Error: {str(e)}"
                 )
-        '''
+        
         # --- Paso 3: Confiar en el trigger para el rol ---
         logger.info("✅ Perfil verificado. El trigger asignará el rol automáticamente.")
         logger.info("💡 No verificamos el rol para evitar bloquear el trigger.")
@@ -156,32 +225,68 @@ async def sign_up(data: SignUpIn, db: AsyncSession = Depends(get_async_db)) -> U
         logger.info(f"Registro completado exitosamente para usuario: {id_user}")
 
         # --- Manejo de confirmación de email ---
-        if not signup_response.session:
+        # Si hubo error al enviar el email o no hay sesión (usuario no confirmado)
+        if email_sent_error or not signup_response or not signup_response.session:
+            message = "¡Registro exitoso! 📧 "
+            if email_sent_error:
+                message += "⚠️ No se pudo enviar el correo de confirmación automáticamente. Por favor, intenta iniciar sesión con tus credenciales. Si tienes problemas, contacta a b2bseva.notificaciones@gmail.com para ayuda."
+            else:
+                message += "Hemos enviado un correo de confirmación a tu dirección de email. Por favor, revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta. Si no encuentras el correo, revisa también tu carpeta de spam."
+            
             return SignUpSuccess(
-                message="¡Registro exitoso! 📧 Hemos enviado un correo de confirmación a tu dirección de email. Por favor, revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta. Si no encuentras el correo, revisa también tu carpeta de spam.",
+                message=message,
                 email=data.email,
                 nombre_persona=data.nombre_persona,
                 nombre_empresa=data.nombre_empresa,
                 ruc=data.ruc,
-                instructions="1. Revisa tu bandeja de entrada\n2. Busca el correo de confirmación\n3. Haz clic en el enlace del correo\n4. Si no encuentras el correo, revisa la carpeta de spam",
-                next_steps="Una vez confirmado tu email, podrás iniciar sesión en la plataforma"
+                instructions="1. Revisa tu bandeja de entrada\n2. Busca el correo de confirmación\n3. Haz clic en el enlace del correo\n4. Si no encuentras el correo, revisa la carpeta de spam" if not email_sent_error else "1. Intenta iniciar sesión con tus credenciales\n2. Si tienes problemas, contacta a b2bseva.notificaciones@gmail.com",
+                next_steps="Una vez confirmado tu email, podrás iniciar sesión en la plataforma" if not email_sent_error else "Intenta iniciar sesión ahora mismo con tus credenciales"
             )
 
-        return TokenOut(
-            access_token=signup_response.session.access_token,
-            refresh_token=signup_response.session.refresh_token,
-            expires_in=signup_response.session.expires_in,
+        # Crear respuesta JSON (consistente con signin)
+        token_data = {
+            "access_token": signup_response.session.access_token,
+            "expires_in": signup_response.session.expires_in,
+            "token_type": "bearer"
+        }
+
+        response = JSONResponse(content=token_data)
+
+        # Configurar SOLO refresh_token en cookie HttpOnly (consistente con signin)
+        logger.info(f"🍪 Estableciendo cookie refresh_token: {signup_response.session.refresh_token[:20]}...")
+        
+        # Detectar entorno para configurar cookies
+        import os
+        is_production = os.getenv("RAILWAY_ENVIRONMENT") is not None
+        
+        response.set_cookie(
+            key="refresh_token", 
+            value=signup_response.session.refresh_token,
+            httponly=True,
+            secure=False,  # True en producción (Railway), False en desarrollo
+            samesite="lax",
+            max_age=7 * 24 * 60 * 60,  # 7 días
+            path="/",
+            domain=None if is_production else "localhost"  # None en producción, "localhost" en desarrollo
         )
+        
+        logger.info("✅ Cookies HttpOnly establecidas correctamente")
+
+        return response
 
     except AuthApiError as e:
         logger.error(f"Error de Supabase Auth: {e}")
+        error_message = str(e).lower()
         
         # Manejar específicamente el rate limit de emails
-        if "email rate limit exceeded" in str(e).lower():
+        if "email rate limit exceeded" in error_message:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Has alcanzado el límite de envío de emails. Por favor, espera 1 hora antes de intentar registrarte nuevamente. Si necesitas ayuda inmediata, contacta a b2bseva.notificaciones@gmail.com"
             )
+        
+        # Este bloque ya no se ejecutará para "error sending confirmation email"
+        # porque ahora lo manejamos antes del try-except general
         
         handle_supabase_auth_error(e)
     except SQLAlchemyError as e:
