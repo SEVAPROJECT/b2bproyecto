@@ -566,12 +566,9 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                 // Mapear documentos a nombres de tipo (usando nombres en lugar de IDs)
                 const documentTypeMapping: Record<string, string> = {
                     'ruc': 'Constancia de RUC',
-                    'patente': 'Patente Comercial',
-                    'contrato': 'Cédula de Identidad del Representante',
-                    'balance': 'Constitución de la Empresa',
+                    'cedula': 'Cédula MiPymes',
                     'certificado': 'Certificado de Cumplimiento Tributario',
-                    'certificaciones': 'Certificado de Calidad',
-                    'certificados_rubro': 'Certificaciones del Rubro',
+                    'certificados_rubro': 'Certificados del Rubro',
                 };
 
                 // Procesar documentos subidos
@@ -648,12 +645,9 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                 // Mapear documentos a nombres de tipo (usando nombres en lugar de IDs)
                 const documentTypeMapping: Record<string, string> = {
                     'ruc': 'Constancia de RUC',
-                    'patente': 'Patente Comercial',
-                    'contrato': 'Cédula de Identidad del Representante',
-                    'balance': 'Constitución de la Empresa',
+                    'cedula': 'Cédula MiPymes',
                     'certificado': 'Certificado de Cumplimiento Tributario',
-                    'certificaciones': 'Certificado de Calidad',
-                    'certificados_rubro': 'Certificaciones del Rubro',
+                    'certificados_rubro': 'Certificacion del Rubro',
                 };
 
                 // Procesar documentos subidos (nuevos y actualizados)
