@@ -42,10 +42,9 @@ def clean_existing_services(weaviate_url: str) -> None:
     
     for obj in objects:
         obj_id = obj.get('id')
-        if obj_id:
-            if delete_weaviate_object(weaviate_url, obj_id):
-                nombre = obj.get('properties', {}).get('nombre', 'Sin nombre')
-                print(f"✅ Eliminado: {nombre}")
+        if obj_id and delete_weaviate_object(weaviate_url, obj_id):
+            nombre = obj.get('properties', {}).get('nombre', 'Sin nombre')
+            print(f"✅ Eliminado: {nombre}")
     
     print("✅ Servicios existentes eliminados")
 
@@ -95,7 +94,7 @@ def index_service_in_weaviate(weaviate_url: str, service_data: dict, service_nam
         print(f"❌ Error indexando {service_name}: {response.status_code}")
         return False
 
-async def index_all_services(weaviate_url: str, services: list) -> int:
+def index_all_services(weaviate_url: str, services: list) -> int:
     """Indexa todos los servicios en Weaviate"""
     print("\n🤖 Indexando servicios en Weaviate...")
     indexed_count = 0
@@ -147,7 +146,7 @@ async def reindex_services():
             print(f"📊 Servicios encontrados: {len(services)}")
             
             # 3. Indexar todos los servicios
-            indexed_count = await index_all_services(WEAVIATE_URL, services)
+            indexed_count = index_all_services(WEAVIATE_URL, services)
             print(f"\n🎉 Re-indexación completada: {indexed_count} servicios indexados")
             
             # 4. Verificar el servicio específico

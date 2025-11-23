@@ -13,6 +13,7 @@ from app.models.publicar_servicio.category import CategoriaModel
 from app.models.publicar_servicio.moneda import Moneda
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.models.perfil import UserModel
+from app.services.direct_db_service import direct_db_service
 
 router = APIRouter(prefix="/service-requests", tags=["service-requests"])
 
@@ -190,62 +191,66 @@ async def get_all_service_requests_for_admin(
     """
     Obtiene TODAS las solicitudes de servicios para administradores.
     Incluye solicitudes pendientes, aprobadas y rechazadas.
+    Usa direct_db_service para evitar problemas con PgBouncer y prepared statements.
     """
     try:
-        # Consulta para obtener TODAS las solicitudes
-        result = await db.execute(
-            select(
-                SolicitudServicio.id_solicitud,
-                SolicitudServicio.nombre_servicio,
-                SolicitudServicio.descripcion,
-                SolicitudServicio.estado_aprobacion,
-                SolicitudServicio.comentario_admin,
-                SolicitudServicio.created_at,
-                SolicitudServicio.id_categoria,
-                SolicitudServicio.id_perfil,
-                CategoriaModel.nombre.label('nombre_categoria'),
-                PerfilEmpresa.razon_social.label('nombre_empresa'),
-                UserModel.nombre_persona.label('nombre_contacto')
-            )
-            .select_from(SolicitudServicio)
-            .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)
-            .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)
-            .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)
-            .order_by(SolicitudServicio.created_at.desc())
-            .limit(limit)
-        )
+        conn = await direct_db_service.get_connection()
+        try:
+            # Query SQL directa para evitar prepared statements
+            query = """
+                SELECT 
+                    ss.id_solicitud,
+                    ss.nombre_servicio,
+                    ss.descripcion,
+                    ss.estado_aprobacion,
+                    ss.comentario_admin,
+                    ss.created_at,
+                    ss.id_categoria,
+                    ss.id_perfil,
+                    c.nombre AS nombre_categoria,
+                    pe.razon_social AS nombre_empresa,
+                    u.nombre_persona AS nombre_contacto
+                FROM solicitud_servicio ss
+                LEFT JOIN categoria c ON ss.id_categoria = c.id_categoria
+                LEFT JOIN perfil_empresa pe ON ss.id_perfil = pe.id_perfil
+                LEFT JOIN users u ON pe.user_id = u.id
+                ORDER BY ss.created_at DESC
+                LIMIT $1
+            """
+            
+            rows = await conn.fetch(query, limit)
+            
+            # Log para debugging
+            print(f"🔍 Endpoint /admin/todas - Total de solicitudes encontradas: {len(rows)}")
+            if rows:
+                estados = [row['estado_aprobacion'] for row in rows]
+                print(f"🔍 Estados encontrados: {set(estados)}")
 
-        rows = result.fetchall()
-        
-        # Log para debugging
-        print(f"🔍 Endpoint /admin/todas - Total de solicitudes encontradas: {len(rows)}")
-        if rows:
-            estados = [row.estado_aprobacion for row in rows]
-            print(f"🔍 Estados encontrados: {set(estados)}")
+            # Formatear respuesta con información completa
+            formatted_requests = []
+            for row in rows:
+                formatted_request = {
+                    "id_solicitud": row['id_solicitud'],
+                    "nombre_servicio": row['nombre_servicio'],
+                    "descripcion": row['descripcion'],
+                    "estado_aprobacion": row['estado_aprobacion'],
+                    "comentario_admin": row['comentario_admin'],
+                    "created_at": row['created_at'].isoformat() if row['created_at'] else None,
+                    "id_categoria": row['id_categoria'],
+                    "id_perfil": row['id_perfil'],
+                    "nombre_categoria": row['nombre_categoria'] or VALOR_DEFAULT_NO_ESPECIFICADO,
+                    "nombre_empresa": row['nombre_empresa'] or VALOR_DEFAULT_NO_ESPECIFICADO,
+                    "nombre_contacto": row['nombre_contacto'] or VALOR_DEFAULT_NO_ESPECIFICADO,
+                    "email_contacto": None  # Se obtendrá por separado
+                }
+                formatted_requests.append(formatted_request)
 
-        # Formatear respuesta con información completa
-        formatted_requests = []
-        for row in rows:
-            formatted_request = {
-                "id_solicitud": row.id_solicitud,
-                "nombre_servicio": row.nombre_servicio,
-                "descripcion": row.descripcion,
-                "estado_aprobacion": row.estado_aprobacion,
-                "comentario_admin": row.comentario_admin,
-                "created_at": row.created_at.isoformat() if row.created_at else None,
-                "id_categoria": row.id_categoria,
-                "id_perfil": row.id_perfil,
-                "nombre_categoria": row.nombre_categoria or VALOR_DEFAULT_NO_ESPECIFICADO,
-                "nombre_empresa": row.nombre_empresa or VALOR_DEFAULT_NO_ESPECIFICADO,
-                "nombre_contacto": row.nombre_contacto or VALOR_DEFAULT_NO_ESPECIFICADO,
-                "email_contacto": None  # Se obtendrá por separado
-            }
-            formatted_requests.append(formatted_request)
-
-        return formatted_requests
+            return formatted_requests
+        finally:
+            await direct_db_service.pool.release(conn)
 
     except Exception as e:
-        print(f"❌ Error en get_all_service_requests_for_admin: {str(e)}")
+        print(f"❌ Error en get_all_service_requests_for_admin: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=MSG_ERROR_OBTENER_SOLICITUDES.format(error=str(e))
@@ -406,94 +411,76 @@ async def get_my_service_requests(
     """
     Obtiene todas las solicitudes de servicios realizadas por el proveedor actual.
     Incluye información adicional de la empresa, contacto y categoría.
+    Usa direct_db_service para evitar problemas con PgBouncer y prepared statements.
     """
-    # Obtener el perfil de empresa del usuario actual
-    perfil_result = await db.execute(
-        select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
-    )
-    perfil = perfil_result.scalars().first()
-
-    if not perfil:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
-        )
-
-    # Obtener todas las solicitudes del proveedor con información completa
     try:
-        # Consulta con joins para obtener toda la información
-        result = await db.execute(
-            select(
-                SolicitudServicio.id_solicitud,
-                SolicitudServicio.nombre_servicio,
-                SolicitudServicio.descripcion,
-                SolicitudServicio.estado_aprobacion,
-                SolicitudServicio.comentario_admin,
-                SolicitudServicio.created_at,
-                SolicitudServicio.id_categoria,
-                SolicitudServicio.id_perfil,
-                CategoriaModel.nombre.label('nombre_categoria'),
-                PerfilEmpresa.razon_social.label('nombre_empresa'),
-                UserModel.nombre_persona.label('nombre_contacto')
-            )
-            .select_from(SolicitudServicio)
-            .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)
-            .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)
-            .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)
-            .where(SolicitudServicio.id_perfil == perfil.id_perfil)
-        )
+        conn = await direct_db_service.get_connection()
+        try:
+            # Obtener el perfil de empresa del usuario actual
+            perfil_query = "SELECT id_perfil, razon_social FROM perfil_empresa WHERE user_id = $1"
+            perfil_row = await conn.fetchrow(perfil_query, current_user.id)
+            
+            if not perfil_row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
+                )
+            
+            perfil_id = perfil_row['id_perfil']
+            razon_social = perfil_row['razon_social']
+            
+            # Consulta SQL directa con joins para obtener toda la información
+            query = """
+                SELECT 
+                    ss.id_solicitud,
+                    ss.nombre_servicio,
+                    ss.descripcion,
+                    ss.estado_aprobacion,
+                    ss.comentario_admin,
+                    ss.created_at,
+                    ss.id_categoria,
+                    ss.id_perfil,
+                    c.nombre AS nombre_categoria,
+                    pe.razon_social AS nombre_empresa,
+                    u.nombre_persona AS nombre_contacto
+                FROM solicitud_servicio ss
+                LEFT JOIN categoria c ON ss.id_categoria = c.id_categoria
+                LEFT JOIN perfil_empresa pe ON ss.id_perfil = pe.id_perfil
+                LEFT JOIN users u ON pe.user_id = u.id
+                WHERE ss.id_perfil = $1
+                ORDER BY ss.created_at DESC
+            """
+            
+            rows = await conn.fetch(query, perfil_id)
+            
+            # Formatear respuesta con información completa
+            formatted_requests = []
+            for row in rows:
+                formatted_request = {
+                    "id_solicitud": row['id_solicitud'],
+                    "nombre_servicio": row['nombre_servicio'],
+                    "descripcion": row['descripcion'],
+                    "estado_aprobacion": row['estado_aprobacion'],
+                    "comentario_admin": row['comentario_admin'],
+                    "created_at": row['created_at'].isoformat() if row['created_at'] else None,
+                    "id_categoria": row['id_categoria'],
+                    "id_perfil": row['id_perfil'],
+                    "nombre_categoria": row['nombre_categoria'] or VALOR_DEFAULT_NO_ESPECIFICADO,
+                    "nombre_empresa": row['nombre_empresa'] or razon_social or VALOR_DEFAULT_NO_ESPECIFICADO,
+                    "nombre_contacto": row['nombre_contacto'] or VALOR_DEFAULT_NO_ESPECIFICADO,
+                    "email_contacto": None
+                }
+                formatted_requests.append(formatted_request)
 
-        rows = result.fetchall()
+            return formatted_requests
+        finally:
+            await direct_db_service.pool.release(conn)
 
-        # Formatear respuesta con información completa
-        formatted_requests = []
-        for row in rows:
-            formatted_request = {
-                "id_solicitud": row.id_solicitud,
-                "nombre_servicio": row.nombre_servicio,
-                "descripcion": row.descripcion,
-                "estado_aprobacion": row.estado_aprobacion,
-                "comentario_admin": row.comentario_admin,
-                "created_at": row.created_at.isoformat() if row.created_at else None,
-                "id_categoria": row.id_categoria,
-                "id_perfil": row.id_perfil,
-                "nombre_categoria": row.nombre_categoria or VALOR_DEFAULT_NO_ESPECIFICADO,
-                "nombre_empresa": row.nombre_empresa or VALOR_DEFAULT_NO_ESPECIFICADO,
-                "nombre_contacto": row.nombre_contacto or VALOR_DEFAULT_NO_ESPECIFICADO,
-                "email_contacto": None
-            }
-            formatted_requests.append(formatted_request)
-
-        return formatted_requests
-
+    except HTTPException:
+        raise
     except Exception as e:
-        # Si hay algún error, devolver al menos las solicitudes básicas
         print(f"Error en get_my_service_requests: {e}")
-        print("Intentando consulta básica...")
-
-        # Consulta básica como fallback
-        result = await db.execute(
-            select(SolicitudServicio)
-            .where(SolicitudServicio.id_perfil == perfil.id_perfil)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error obteniendo solicitudes de servicios: {e}"
         )
-        requests = result.scalars().all()
-
-        formatted_requests = []
-        for request in requests:
-            formatted_request = {
-                "id_solicitud": request.id_solicitud,
-                "nombre_servicio": request.nombre_servicio,
-                "descripcion": request.descripcion,
-                "estado_aprobacion": request.estado_aprobacion,
-                "comentario_admin": request.comentario_admin,
-                "created_at": request.created_at.isoformat() if request.created_at else None,
-                "id_categoria": request.id_categoria,
-                "id_perfil": request.id_perfil,
-                "nombre_categoria": VALOR_DEFAULT_NO_ESPECIFICADO,
-                "nombre_empresa": perfil.razon_social or VALOR_DEFAULT_NO_ESPECIFICADO,
-                "nombre_contacto": VALOR_DEFAULT_NO_ESPECIFICADO,
-                "email_contacto": None
-            }
-            formatted_requests.append(formatted_request)
-
-        return formatted_requests

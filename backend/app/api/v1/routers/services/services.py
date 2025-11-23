@@ -642,22 +642,50 @@ async def get_services_by_category(
 ):
     """
     Obtiene todos los servicios activos de una categoría específica.
+    Usa direct_db_service para evitar problemas con PgBouncer y prepared statements.
     """
-    result = await db.execute(
-        select(ServicioModel).where(
-            ServicioModel.estado == True,
-            ServicioModel.id_categoria == category_id
-        )
-    )
-
-    services = result.scalars().all()
-
-    if not services:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontraron servicios activos en la categoría {category_id}."
-        )
-    return list(services)
+    try:
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        try:
+            # Query SQL directa para evitar prepared statements
+            query = """
+                SELECT 
+                    s.id_servicio, s.id_categoria, s.id_perfil, s.id_moneda, 
+                    s.nombre, s.descripcion, s.precio, s.imagen, s.estado, s.created_at
+                FROM servicio s
+                WHERE s.estado = true AND s.id_categoria = $1
+                ORDER BY s.created_at DESC
+            """
+            
+            rows = await conn.fetch(query, category_id)
+            
+            # Convertir rows a objetos ServicioModel para mantener compatibilidad
+            services = []
+            for row in rows:
+                service = ServicioModel(
+                    id_servicio=row['id_servicio'],
+                    id_categoria=row['id_categoria'],
+                    id_perfil=row['id_perfil'],
+                    id_moneda=row['id_moneda'],
+                    nombre=row['nombre'],
+                    descripcion=row['descripcion'],
+                    precio=row['precio'],
+                    imagen=row['imagen'],
+                    estado=row['estado'],
+                    created_at=row['created_at']
+                )
+                services.append(service)
+            
+            # Retornar lista vacía si no hay servicios (comportamiento RESTful normal)
+            return services
+        finally:
+            await direct_db_service.pool.release(conn)
+    except Exception as e:
+        print(f"Error obteniendo servicios por categoría: {e}")
+        # Retornar lista vacía en caso de error en lugar de lanzar excepción
+        return []
 
 
 @router.post(

@@ -7,6 +7,7 @@ import { categoriesAPI, servicesAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { buildBackendFilters, filterServices } from '../../utils/marketplaceFilters';
 import { buildApiUrl } from '../../config/api';
+import { locationsAPI } from '../../services/locations';
 
 // Función helper para calcular el offset de paginación
 const calculateOffset = (page: number, itemsPerPage: number): number => {
@@ -18,23 +19,32 @@ const getAccessToken = (user: any): string | undefined => {
     return user?.accessToken || localStorage.getItem('access_token') || undefined;
 };
 
+// Interfaz para los setters de estado
+interface DataStateSetters {
+    setTotalServices: (value: number) => void;
+    setServices: (services: BackendService[]) => void;
+    setCategories: (categories: BackendCategory[]) => void;
+    setUsingMockData: (value: boolean) => void;
+    setCurrentPage: (page: number) => void;
+}
+
+// Interfaz para los datos de respuesta
+interface UpdateDataStatesParams {
+    setters: DataStateSetters;
+    filteredResponse: any;
+    categoriesData: BackendCategory[];
+    page?: number;
+}
+
 // Función helper para actualizar estados después de cargar datos
-const updateDataStates = (
-    setTotalServices: (value: number) => void,
-    setServices: (services: BackendService[]) => void,
-    setCategories: (categories: BackendCategory[]) => void,
-    setUsingMockData: (value: boolean) => void,
-    setCurrentPage: (page: number) => void,
-    filteredResponse: any,
-    categoriesData: BackendCategory[],
-    page?: number
-) => {
-    setTotalServices(filteredResponse.pagination.total);
-    setServices(filteredResponse.services);
-    setCategories(categoriesData);
-    setUsingMockData(false);
+const updateDataStates = (params: UpdateDataStatesParams) => {
+    const { setters, filteredResponse, categoriesData, page } = params;
+    setters.setTotalServices(filteredResponse.pagination.total);
+    setters.setServices(filteredResponse.services);
+    setters.setCategories(categoriesData);
+    setters.setUsingMockData(false);
     if (page !== undefined) {
-        setCurrentPage(page);
+        setters.setCurrentPage(page);
     }
 };
 
@@ -93,6 +103,138 @@ const getDebounceTime = (priceRange: number[]): number => {
     return isSliderChange ? 500 : 100;
 };
 
+// Componente para el estado de carga
+const LoadingState: React.FC = () => (
+    <div className="bg-slate-50 min-h-screen">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+                    <p className="mt-4 text-slate-600">Cargando servicios...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+// Componente para el estado de error
+interface ErrorStateProps {
+    error: string;
+    onRetry: () => void;
+}
+
+const ErrorState: React.FC<ErrorStateProps> = ({ error, onRetry }) => (
+    <div className="bg-slate-50 min-h-screen">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="bg-white p-8 rounded-xl shadow-md border border-slate-200/80">
+                <div className="text-center py-12">
+                    <ExclamationCircleIcon className="mx-auto h-12 w-12 text-red-400" />
+                    <h3 className="mt-2 text-lg font-semibold text-slate-800">Error al cargar</h3>
+                    <p className="mt-1 text-sm text-slate-500">{error}</p>
+                    <button onClick={onRetry} className="mt-4 btn-blue touch-manipulation">
+                        <span>Reintentar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+// Componente para la barra de búsqueda
+interface SearchBarProps {
+    searchQuery: string;
+    isSearching: boolean;
+    isAISearching: boolean;
+    onSearchQueryChange: (value: string) => void;
+    onSearch: () => void;
+    onAISearch: () => void;
+}
+
+const SearchBar: React.FC<SearchBarProps> = ({
+    searchQuery,
+    isSearching,
+    isAISearching,
+    onSearchQueryChange,
+    onSearch,
+    onAISearch
+}) => (
+    <div className="mt-6 space-y-4">
+        <div className="relative">
+            <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchQueryChange(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && onSearch()}
+                placeholder="Buscar servicios profesionales..."
+                className="w-full pl-11 pr-4 py-2.5 sm:py-3 rounded-lg border-2 border-slate-300 focus:ring-primary-500 focus:border-primary-500 transition text-sm sm:text-base"
+                disabled={isSearching}
+            />
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3">
+            <button
+                onClick={onSearch}
+                disabled={isSearching || isAISearching}
+                className="flex-1 sm:flex-initial btn-blue disabled:opacity-50 touch-manipulation"
+            >
+                {isSearching ? (
+                    <div className="flex items-center justify-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Buscando...</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-center gap-2">
+                        <MagnifyingGlassIcon className="w-4 h-4 flex-shrink-0" />
+                        <span>Buscar servicio</span>
+                    </div>
+                )}
+            </button>
+            <button
+                onClick={onAISearch}
+                disabled={isSearching || isAISearching}
+                className="flex-1 sm:flex-initial btn-purple disabled:opacity-50 touch-manipulation"
+            >
+                {isAISearching ? (
+                    <div className="flex items-center justify-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Procesando IA...</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-center gap-2">
+                        <SparklesIcon className="w-4 h-4 flex-shrink-0" />
+                        <span>Buscar con IA</span>
+                    </div>
+                )}
+            </button>
+        </div>
+    </div>
+);
+
+// Componente para el encabezado
+interface HeaderProps {
+    usingMockData: boolean;
+    dataVersion: number;
+}
+
+const Header: React.FC<HeaderProps> = ({ usingMockData, dataVersion }) => (
+    <div className="text-center sm:text-left mb-6 sm:mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+            <h1 className="text-3xl font-bold text-gray-900">
+                Servicios profesionales de calidad
+            </h1>
+            {usingMockData && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
+                    <span>⚠️</span>
+                    <span>Datos de prueba v{dataVersion}</span>
+                </div>
+            )}
+        </div>
+        <p className="mt-1 text-sm text-gray-500">
+            Explorá categorías, filtrá por fecha y encontrá los servicios ideales para hacer crecer tu negocio. Todo en un solo lugar.
+        </p>
+    </div>
+);
+
 const MarketplacePage: React.FC = () => {
     const { isAuthenticated, user } = useAuth();
     
@@ -111,7 +253,7 @@ const MarketplacePage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [usingMockData, setUsingMockData] = useState(false);
-    const [dataVersion, setDataVersion] = useState(Date.now()); // Para forzar recarga
+    const dataVersion = Date.now(); // Versión estática para mostrar en el header
     const dataLoadedRef = useRef(false); // Para evitar cargas duplicadas
     const reloadFilteredDataRef = useRef<((page?: number, showFullLoading?: boolean) => Promise<void>) | null>(null);
     const getBackendFiltersRef = useRef<(() => Record<string, any>) | null>(null);
@@ -119,7 +261,7 @@ const MarketplacePage: React.FC = () => {
     // Estados para paginación del backend
     const [totalServices, setTotalServices] = useState<number>(0);
     const [isLoadingPage, setIsLoadingPage] = useState(false);
-    const [setIsLoadingFilters] = useState(false);
+    const [isLoadingFilters, setIsLoadingFilters] = useState(false);
 
     // Estados de filtros
     const [searchQuery, setSearchQuery] = useState('');
@@ -127,7 +269,7 @@ const MarketplacePage: React.FC = () => {
     const [categoryFilter, setCategoryFilter] = useState('all');
     const [ratingFilter, setRatingFilter] = useState(0);
     const [currencyFilter, setCurrencyFilter] = useState('all');
-    const [setPriceFilter] = useState('all');
+    const [priceFilter, setPriceFilter] = useState('all');
     const [priceRange, setPriceRange] = useState([0, 1000000000]);
     const [sliderValue, setSliderValue] = useState(1000000000); // Estado temporal para mostrar el valor mientras se arrastra
     
@@ -161,6 +303,9 @@ const MarketplacePage: React.FC = () => {
     // Estados separados para búsquedas
     const [isAISearching, setIsAISearching] = useState(false);
 
+    // Ref para el dialog de filtros avanzados
+    const advancedFiltersDialogRef = useRef<HTMLDialogElement>(null);
+
 
     // Función para construir filtros del backend (usando helper)
     const getBackendFilters = useCallback(() => {
@@ -187,6 +332,49 @@ const MarketplacePage: React.FC = () => {
     useEffect(() => {
         getBackendFiltersRef.current = getBackendFilters;
     }, [getBackendFilters]);
+
+    // Cargar departamentos y ciudades para los filtros avanzados
+    useEffect(() => {
+        const loadDepartmentsAndCities = async () => {
+            try {
+                const departamentosData = await locationsAPI.getDepartamentos();
+                // Convertir a array de strings (nombres) para los filtros
+                setDepartments(departamentosData.map(dept => dept.nombre));
+            } catch (error) {
+                console.error('❌ Error cargando departamentos para filtros:', error);
+                // Mantener array vacío si falla la carga
+            }
+        };
+        loadDepartmentsAndCities();
+    }, []);
+
+    // Cargar ciudades cuando se selecciona un departamento
+    useEffect(() => {
+        const loadCitiesForDepartment = async () => {
+            if (departmentFilter === 'all') {
+                setCities([]);
+                return;
+            }
+
+            try {
+                // Buscar el departamento por nombre para obtener el ID
+                const departamentosData = await locationsAPI.getDepartamentos();
+                const departamento = departamentosData.find(d => d.nombre === departmentFilter);
+                
+                if (departamento) {
+                    const ciudadesData = await locationsAPI.getCiudadesPorDepartamento(departamento.id_departamento);
+                    // Convertir a array de strings (nombres) para los filtros
+                    setCities(ciudadesData.map(ciudad => ciudad.nombre));
+                } else {
+                    setCities([]);
+                }
+            } catch (error) {
+                console.error('❌ Error cargando ciudades para filtros:', error);
+                setCities([]);
+            }
+        };
+        loadCitiesForDepartment();
+    }, [departmentFilter]);
 
     // Función helper para cargar datos de la API
     const fetchDataFromAPI = useCallback(async (pageToUse: number) => {
@@ -223,16 +411,18 @@ const MarketplacePage: React.FC = () => {
             try {
                 const { filteredResponse, categoriesData } = await fetchDataFromAPI(pageToUse);
                 
-                updateDataStates(
-                    setTotalServices,
-                    setServices,
-                    setCategories,
-                    setUsingMockData,
-                    setCurrentPage,
+                updateDataStates({
+                    setters: {
+                        setTotalServices,
+                        setServices,
+                        setCategories,
+                        setUsingMockData,
+                        setCurrentPage
+                    },
                     filteredResponse,
                     categoriesData,
                     page
-                );
+                });
                 
                 console.log('✅ Datos filtrados del servidor aplicados correctamente');
             } catch (apiError) {
@@ -519,12 +709,6 @@ const MarketplacePage: React.FC = () => {
         setSelectedService(null);
     }, []);
 
-    // Función para cuando se crea una reserva
-    const handleReservaCreada = useCallback(() => {
-        // Aquí podrías mostrar una notificación de éxito
-        console.log('Reserva creada exitosamente');
-    }, []);
-
     // Función helper para obtener el nombre de la moneda
     const getCurrencyName = useCallback((currency: string): string => {
         if (currency === 'GS') return 'Guaraníes';
@@ -662,119 +846,27 @@ const MarketplacePage: React.FC = () => {
 
     // Estados de loading y error
     if (isLoading) {
-        return (
-            <div className="bg-slate-50 min-h-screen">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                    <div className="flex items-center justify-center min-h-[400px]">
-                        <div className="text-center">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-                            <p className="mt-4 text-slate-600">Cargando servicios...</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
+        return <LoadingState />;
     }
 
     if (error) {
-        return (
-            <div className="bg-slate-50 min-h-screen">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                    <div className="bg-white p-8 rounded-xl shadow-md border border-slate-200/80">
-                        <div className="text-center py-12">
-                            <ExclamationCircleIcon className="mx-auto h-12 w-12 text-red-400" />
-                            <h3 className="mt-2 text-lg font-semibold text-slate-800">Error al cargar</h3>
-                            <p className="mt-1 text-sm text-slate-500">{error}</p>
-                            <button
-                                onClick={loadInitialData}
-                                className="mt-4 btn-blue touch-manipulation"
-                            >
-                                <span>Reintentar</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
+        return <ErrorState error={error} onRetry={loadInitialData} />;
     }
 
     return (
         <div className="bg-slate-50 min-h-screen">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <div className="max-w-7xl mx-auto">
-                    {/* Encabezado mejorado para móviles */}
-                    <div className="text-center sm:text-left mb-6 sm:mb-8">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-                        <h1 className="text-3xl font-bold text-gray-900">
-                                Servicios profesionales de calidad
-                            </h1>
-                            {usingMockData && (
-                                <div className="flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
-                                    <span>⚠️</span>
-                                    <span>Datos de prueba v{dataVersion}</span>
-                                </div>
-                            )}
-                        </div>
-                        <p className="mt-1 text-sm text-gray-500">
-                            Explorá categorías, filtrá por fecha y encontrá los servicios ideales para hacer crecer tu negocio. Todo en un solo lugar.
-                        </p>
-                    </div>
+                    <Header usingMockData={usingMockData} dataVersion={dataVersion} />
                     
-                    {/* Barra de búsqueda mejorada */}
-                    <div className="mt-6 space-y-4">
-                        {/* Input de búsqueda principal */}
-                        <div className="relative">
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                placeholder="Buscar servicios profesionales..."
-                                className="w-full pl-11 pr-4 py-2.5 sm:py-3 rounded-lg border-2 border-slate-300 focus:ring-primary-500 focus:border-primary-500 transition text-sm sm:text-base"
-                                disabled={isSearching}
-                            />
-                            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
-                        </div>
-
-                        {/* Botones de búsqueda - uniformes y bien distribuidos */}
-                        <div className="flex flex-col sm:flex-row gap-3">
-                            <button
-                                onClick={handleSearch}
-                                disabled={isSearching || isAISearching}
-                                className="flex-1 sm:flex-initial btn-blue disabled:opacity-50 touch-manipulation"
-                            >
-                                {isSearching ? (
-                                    <div className="flex items-center justify-center gap-2">
-                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                        <span>Buscando...</span>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center justify-center gap-2">
-                                        <MagnifyingGlassIcon className="w-4 h-4 flex-shrink-0" />
-                                        <span>Buscar servicio</span>
-                                    </div>
-                                )}
-                            </button>
-
-                            <button
-                                onClick={handleAISearch}
-                                disabled={isSearching || isAISearching}
-                                className="flex-1 sm:flex-initial btn-purple disabled:opacity-50 touch-manipulation"
-                            >
-                                {isAISearching ? (
-                                    <div className="flex items-center justify-center gap-2">
-                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                        <span>Procesando IA...</span>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center justify-center gap-2">
-                                        <SparklesIcon className="w-4 h-4 flex-shrink-0" />
-                                        <span>Buscar con IA</span>
-                                    </div>
-                                )}
-                            </button>
-                        </div>
-                    </div>
+                    <SearchBar
+                        searchQuery={searchQuery}
+                        isSearching={isSearching}
+                        isAISearching={isAISearching}
+                        onSearchQueryChange={setSearchQuery}
+                        onSearch={handleSearch}
+                        onAISearch={handleAISearch}
+                    />
 
                     {/* Filtros compactos - diseño optimizado para dar más espacio a las tarjetas */}
                     <div className="mt-4 bg-primary-50 rounded-lg p-3 sm:p-4 border border-primary-200">
@@ -1217,22 +1309,18 @@ const MarketplacePage: React.FC = () => {
 
             {/* Modal de filtros avanzados */}
             {showAdvancedFilters && (
-                <button
-                    type="button"
-                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 border-0 cursor-pointer"
-                    onClick={() => setShowAdvancedFilters(false)}
-                    aria-label="Cerrar filtros avanzados"
+                <dialog
+                    ref={advancedFiltersDialogRef}
+                    open
+                    aria-modal="true"
+                    aria-labelledby="filtros-avanzados-title"
+                    className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border-0 p-0 backdrop:bg-black backdrop:bg-opacity-50"
+                    onCancel={(e) => {
+                        e.preventDefault();
+                        setShowAdvancedFilters(false);
+                    }}
                 >
-                    <div
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="filtros-avanzados-title"
-                        className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-                    >
-                        <div 
-                            className="p-6"
-                            onClick={(e) => e.stopPropagation()}
-                        >
+                        <div className="p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h2 id="filtros-avanzados-title" className="text-xl font-semibold text-slate-900">Filtros Avanzados</h2>
                                 <button
@@ -1309,8 +1397,7 @@ const MarketplacePage: React.FC = () => {
                                 </button>
                             </div>
                         </div>
-                    </div>
-                </button>
+                    </dialog>
             )}
 
             {/* Modal de reserva del servicio */}

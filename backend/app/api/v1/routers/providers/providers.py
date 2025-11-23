@@ -94,7 +94,7 @@ VALOR_DEFAULT_NO_ESPECIFICADO = "No especificado"
 VALOR_DEFAULT_TIPO_NO_ENCONTRADO = "Tipo no encontrado"
 
 # Funciones helper para reducir complejidad cognitiva
-async def parse_and_validate_profile(perfil_in: str) -> dict:
+def parse_and_validate_profile(perfil_in: str) -> dict:
     """Parsea y valida el JSON del perfil"""
     try:
         perfil_data = json.loads(perfil_in)
@@ -478,7 +478,7 @@ async def solicitar_verificacion_completa(
         print(f"💬 Comentario: {comentario_solicitud}")
 
         # Parsear y validar perfil
-        perfil_data = await parse_and_validate_profile(perfil_in)
+        perfil_data = parse_and_validate_profile(perfil_in)
         
         # Validar documentos
         validate_documents_count(nombres_tip_documento, documentos)
@@ -985,6 +985,133 @@ async def get_mis_documentos(
         )
 
 
+# Funciones helper para get_mis_datos_solicitud
+async def get_empresa_with_sucursales(db: AsyncSession, user_id: str) -> PerfilEmpresa:
+    """Obtiene el perfil de empresa del usuario con relación de sucursales"""
+    empresa_query = select(PerfilEmpresa).options(
+        selectinload(PerfilEmpresa.sucursal_empresa)
+    ).where(PerfilEmpresa.user_id == uuid.UUID(user_id))
+    empresa_result = await db.execute(empresa_query)
+    empresa = empresa_result.scalars().first()
+    
+    if not empresa:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
+        )
+    return empresa
+
+async def get_latest_verification_request(db: AsyncSession, perfil_id: int) -> VerificacionSolicitud:
+    """Obtiene la solicitud de verificación más reciente para un perfil"""
+    solicitud_query = select(VerificacionSolicitud).where(
+        VerificacionSolicitud.id_perfil == perfil_id
+    ).order_by(VerificacionSolicitud.created_at.desc())
+    solicitud_result = await db.execute(solicitud_query)
+    solicitud = solicitud_result.scalars().first()
+    
+    if not solicitud:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_SOLICITUD_VERIFICACION_NO_ENCONTRADA
+        )
+    return solicitud
+
+def extract_ciudad_data(departamento) -> Optional[dict]:
+    """Extrae los datos de ciudad desde el departamento"""
+    if departamento.ciudad and len(departamento.ciudad) > 0:
+        ciudad = departamento.ciudad[0]
+        return {"nombre": ciudad.nombre}
+    return None
+
+def extract_barrio_data(departamento) -> Optional[dict]:
+    """Extrae los datos de barrio desde el departamento"""
+    if departamento.ciudad and len(departamento.ciudad) > 0:
+        ciudad = departamento.ciudad[0]
+        if ciudad.barrio and len(ciudad.barrio) > 0:
+            barrio = ciudad.barrio[0]
+            return {"nombre": barrio.nombre}
+    return None
+
+async def get_direccion_data(db: AsyncSession, direccion_id: int) -> Optional[dict]:
+    """Obtiene los datos de dirección con sus relaciones"""
+    if not direccion_id:
+        return None
+    
+    direccion_query = select(Direccion).options(
+        selectinload(Direccion.departamento).selectinload(Departamento.ciudad).selectinload(Ciudad.barrio)
+    ).where(Direccion.id_direccion == direccion_id)
+    direccion_result = await db.execute(direccion_query)
+    direccion = direccion_result.scalars().first()
+    
+    if not direccion or not direccion.departamento:
+        return None
+    
+    departamento_data = {"nombre": direccion.departamento.nombre}
+    ciudad_data = extract_ciudad_data(direccion.departamento)
+    barrio_data = extract_barrio_data(direccion.departamento)
+    
+    return {
+        "calle": direccion.calle,
+        "numero": direccion.numero,
+        "referencia": direccion.referencia,
+        "departamento": departamento_data["nombre"],
+        "ciudad": ciudad_data["nombre"] if ciudad_data else None,
+        "barrio": barrio_data["nombre"] if barrio_data else None
+    }
+
+def get_sucursal_data(empresa: PerfilEmpresa) -> Optional[dict]:
+    """Obtiene los datos de la sucursal principal de la empresa"""
+    print(f"🔍 Sucursales encontradas: {len(empresa.sucursal_empresa) if empresa.sucursal_empresa else 0}")
+    print(f"🔍 Tipo de sucursal_empresa: {type(empresa.sucursal_empresa)}")
+    
+    if not empresa.sucursal_empresa:
+        print("⚠️ No se encontraron sucursales para esta empresa")
+        print(f"🔍 Verificando si empresa tiene id_perfil: {empresa.id_perfil if hasattr(empresa, 'id_perfil') else 'No tiene id_perfil'}")
+        return None
+    
+    print(f"🔍 Lista de sucursales: {[s.nombre for s in empresa.sucursal_empresa]}")
+    sucursal = empresa.sucursal_empresa[0] if empresa.sucursal_empresa else None
+    
+    if not sucursal:
+        print("⚠️ No se encontró sucursal principal")
+        return None
+    
+    print(f"✅ Sucursal encontrada: {sucursal.nombre}")
+    return {
+        "nombre": sucursal.nombre,
+        "telefono": sucursal.telefono,
+        "email": sucursal.email
+    }
+
+def build_empresa_data(empresa: PerfilEmpresa, sucursal_data: Optional[dict]) -> dict:
+    """Construye los datos de empresa para la respuesta"""
+    return {
+        "razon_social": empresa.razon_social,
+        "nombre_fantasia": empresa.nombre_fantasia,
+        "telefono_contacto": sucursal_data["telefono"] if sucursal_data else None,
+        "email_contacto": sucursal_data["email"] if sucursal_data else None,
+        "nombre_sucursal": sucursal_data["nombre"] if sucursal_data else None
+    }
+
+def build_solicitud_data(solicitud: VerificacionSolicitud) -> dict:
+    """Construye los datos de solicitud para la respuesta"""
+    return {
+        "id_verificacion": solicitud.id_verificacion,
+        "estado": solicitud.estado,
+        "comentario": solicitud.comentario,
+        "fecha_solicitud": solicitud.fecha_solicitud,
+        "fecha_revision": solicitud.fecha_revision
+    }
+
+def build_response_data(empresa: PerfilEmpresa, direccion_data: Optional[dict], 
+                       sucursal_data: Optional[dict], solicitud: VerificacionSolicitud) -> dict:
+    """Construye la respuesta completa con todos los datos"""
+    return {
+        "empresa": build_empresa_data(empresa, sucursal_data),
+        "direccion": direccion_data,
+        "solicitud": build_solicitud_data(solicitud)
+    }
+
 @router.get(
     "/mis-datos-solicitud",
     description="Obtiene los datos de la solicitud de verificación del proveedor autenticado para recuperación."
@@ -994,116 +1121,12 @@ async def get_mis_datos_solicitud(
     db: AsyncSession = Depends(get_async_db)
 ):
     """Obtiene los datos de la solicitud de verificación del proveedor autenticado para recuperación"""
-
     try:
-        # Buscar el perfil de empresa del usuario con relación de sucursales
-        empresa_query = select(PerfilEmpresa).options(
-            selectinload(PerfilEmpresa.sucursal_empresa)
-        ).where(PerfilEmpresa.user_id == uuid.UUID(current_user.id))
-        empresa_result = await db.execute(empresa_query)
-        empresa = empresa_result.scalars().first()
-        
-        if not empresa:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
-            )
-        
-        # Buscar la solicitud de verificación más reciente
-        solicitud_query = select(VerificacionSolicitud).where(
-            VerificacionSolicitud.id_perfil == empresa.id_perfil
-        ).order_by(VerificacionSolicitud.created_at.desc())
-        solicitud_result = await db.execute(solicitud_query)
-        solicitud = solicitud_result.scalars().first()
-        
-        if not solicitud:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=MSG_SOLICITUD_VERIFICACION_NO_ENCONTRADA
-            )
-        
-        # Obtener datos de dirección
-        direccion_data = None
-        if empresa.id_direccion:
-            # Usar selectinload para cargar las relaciones automáticamente
-            direccion_query = select(Direccion).options(
-                selectinload(Direccion.departamento).selectinload(Departamento.ciudad).selectinload(Ciudad.barrio)
-            ).where(Direccion.id_direccion == empresa.id_direccion)
-            direccion_result = await db.execute(direccion_query)
-            direccion = direccion_result.scalars().first()
-            
-            if direccion and direccion.departamento:
-                # Obtener datos a través de las relaciones existentes
-                departamento_data = {
-                    "nombre": direccion.departamento.nombre
-                }
-                
-                # Obtener ciudad (si existe)
-                ciudad_data = None
-                if direccion.departamento.ciudad and len(direccion.departamento.ciudad) > 0:
-                    ciudad = direccion.departamento.ciudad[0]
-                    ciudad_data = {
-                        "nombre": ciudad.nombre
-                    }
-                
-                # Obtener barrio (opcional, si existe)
-                barrio_data = None
-                if direccion.departamento.ciudad and len(direccion.departamento.ciudad) > 0:
-                    ciudad = direccion.departamento.ciudad[0]
-                    if ciudad.barrio and len(ciudad.barrio) > 0:
-                        barrio = ciudad.barrio[0]
-                        barrio_data = {
-                            "nombre": barrio.nombre
-                        }
-                
-                direccion_data = {
-                    "calle": direccion.calle,
-                    "numero": direccion.numero,
-                    "referencia": direccion.referencia,
-                    "departamento": departamento_data["nombre"],
-                    "ciudad": ciudad_data["nombre"] if ciudad_data else None,
-                    "barrio": barrio_data["nombre"] if barrio_data else None
-                }
-        
-        # Obtener datos de sucursal (si existe)
-        sucursal_data = None
-        print(f"🔍 Sucursales encontradas: {len(empresa.sucursal_empresa) if empresa.sucursal_empresa else 0}")
-        print(f"🔍 Tipo de sucursal_empresa: {type(empresa.sucursal_empresa)}")
-        if empresa.sucursal_empresa:
-            print(f"🔍 Lista de sucursales: {[s.nombre for s in empresa.sucursal_empresa]}")
-            # Obtener la primera sucursal (principal)
-            sucursal = empresa.sucursal_empresa[0] if empresa.sucursal_empresa else None
-            if sucursal:
-                sucursal_data = {
-                    "nombre": sucursal.nombre,
-                    "telefono": sucursal.telefono,
-                    "email": sucursal.email
-                }
-                print(f"✅ Sucursal encontrada: {sucursal.nombre}")
-            else:
-                print("⚠️ No se encontró sucursal principal")
-        else:
-            print("⚠️ No se encontraron sucursales para esta empresa")
-            print("🔍 Verificando si empresa tiene id_perfil:", empresa.id_perfil if hasattr(empresa, 'id_perfil') else 'No tiene id_perfil')
-        
-        # Preparar datos de respuesta
-        datos_solicitud = {
-            "empresa": {
-                "razon_social": empresa.razon_social,
-                "nombre_fantasia": empresa.nombre_fantasia,
-                "telefono_contacto": sucursal_data["telefono"] if sucursal_data else None,
-                "email_contacto": sucursal_data["email"] if sucursal_data else None,
-                "nombre_sucursal": sucursal_data["nombre"] if sucursal_data else None
-            },
-            "direccion": direccion_data,
-            "solicitud": {
-                "id_verificacion": solicitud.id_verificacion,
-                "estado": solicitud.estado,
-                "comentario": solicitud.comentario,
-                "fecha_solicitud": solicitud.fecha_solicitud,
-                "fecha_revision": solicitud.fecha_revision
-            }
-        }
+        empresa = await get_empresa_with_sucursales(db, current_user.id)
+        solicitud = await get_latest_verification_request(db, empresa.id_perfil)
+        direccion_data = await get_direccion_data(db, empresa.id_direccion)
+        sucursal_data = get_sucursal_data(empresa)
+        datos_solicitud = build_response_data(empresa, direccion_data, sucursal_data, solicitud)
         
         print(f"🔍 Datos de solicitud preparados para usuario {current_user.id}:")
         print(f"  - Empresa: {empresa.razon_social}")

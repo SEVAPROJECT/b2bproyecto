@@ -111,6 +111,7 @@ export const LocationSelector = <T extends { id: number; nombre: string }>({
                         onChange={handleInputChange}
                         onFocus={handleInputFocus}
                         disabled={disabled}
+                        list={`${label}-datalist`}
                         className={`
                             w-full px-3 py-2 sm:px-4 sm:py-3 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
                             transition-colors duration-200 text-sm sm:text-base
@@ -118,6 +119,12 @@ export const LocationSelector = <T extends { id: number; nombre: string }>({
                             ${error ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}
                         `}
                     />
+
+                    <datalist id={`${label}-datalist`}>
+                        {filteredOptions.map((option) => (
+                            <option key={option.id} value={option.nombre} />
+                        ))}
+                    </datalist>
 
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3">
                         {isLoading ? (
@@ -138,22 +145,26 @@ export const LocationSelector = <T extends { id: number; nombre: string }>({
                                 {searchTerm.trim() === '' ? 'No hay opciones disponibles' : 'No se encontraron coincidencias'}
                             </div>
                         ) : (
-                            <div role="listbox" aria-label={label}>
+                            <ul role="listbox" aria-label={label} className="list-none m-0 p-0">
                                 {filteredOptions.map((option) => (
-                                    <button
-                                        key={option.id}
-                                        type="button"
-                                        role="option"
-                                        tabIndex={0}
-                                        className="w-full text-left px-3 py-3 sm:py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-900 transition-colors duration-150 touch-manipulation focus:outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-500"
-                                        onClick={() => handleSelect(option)}
-                                        onKeyDown={(e) => handleKeyDown(e, option)}
+                                    <li 
+                                        key={option.id} 
+                                        id={`option-${option.id}`}
                                         aria-selected={value?.id === option.id}
+                                        className={value?.id === option.id ? 'bg-blue-50' : ''}
                                     >
-                                        {option.nombre}
-                                    </button>
+                                        <button
+                                            type="button"
+                                            tabIndex={0}
+                                            className="w-full text-left px-3 py-3 sm:py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-900 transition-colors duration-150 touch-manipulation focus:outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-500"
+                                            onClick={() => handleSelect(option)}
+                                            onKeyDown={(e) => handleKeyDown(e, option)}
+                                        >
+                                            {option.nombre}
+                                        </button>
+                                    </li>
                                 ))}
-                            </div>
+                            </ul>
                         )}
                     </div>
                 )}

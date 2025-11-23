@@ -32,7 +32,7 @@ const applyPriceFilter = (filters: Record<string, any>, priceRange: [number, num
 
 const applyCategoryFilter = (filters: Record<string, any>, categoryFilter: string): void => {
     if (categoryFilter !== 'all') {
-        filters.category_id = parseInt(categoryFilter);
+        filters.category_id = Number.parseInt(categoryFilter);
     }
 };
 

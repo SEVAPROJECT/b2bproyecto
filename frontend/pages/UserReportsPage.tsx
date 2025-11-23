@@ -50,6 +50,7 @@ const UserReportsPage: React.FC = () => {
                     });
                 }
             } catch (error) {
+                console.debug('Error al formatear fecha:', error);
                 return String(value);
             }
         }
@@ -65,6 +66,7 @@ const UserReportsPage: React.FC = () => {
                 hour12: false,
             });
         } catch (error) {
+            console.debug('Error al formatear fecha/hora de Argentina:', error);
             return dateString;
         }
     };

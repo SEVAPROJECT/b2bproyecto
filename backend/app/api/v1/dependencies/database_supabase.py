@@ -19,9 +19,15 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
             try:
                 yield session
             except Exception as e:
-                logger.error(f"❌ Error en sesión de base de datos: {e}")
+                # No registrar HTTPException como errores críticos (son respuestas HTTP normales)
+                from fastapi import HTTPException
+                if not isinstance(e, HTTPException):
+                    logger.error(f"❌ Error en sesión de base de datos: {e}")
                 await session.rollback()
                 raise
     except Exception as e:
-        logger.error(f"❌ Error crítico en configuración de BD: {e}")
+        # No registrar HTTPException como errores críticos (son respuestas HTTP normales)
+        from fastapi import HTTPException
+        if not isinstance(e, HTTPException):
+            logger.error(f"❌ Error crítico en configuración de BD: {e}")
         raise  # Re-lanzar la excepción para que FastAPI la maneje correctamente

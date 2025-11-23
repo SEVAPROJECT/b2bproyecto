@@ -107,11 +107,11 @@ export const useAdminUsers = () => {
         urlParams.append('page', page.toString());
         urlParams.append('limit', '100');
         
-        if (searchEmpresaParam && searchEmpresaParam.trim()) {
+        if (searchEmpresaParam?.trim()) {
             urlParams.append('search_empresa', searchEmpresaParam.trim());
         }
         
-        if (searchNombreParam && searchNombreParam.trim()) {
+        if (searchNombreParam?.trim()) {
             urlParams.append('search_nombre', searchNombreParam.trim());
         }
 
@@ -128,7 +128,7 @@ export const useAdminUsers = () => {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
         });
 
-        return await Promise.race([fetchPromise, timeoutPromise]) as Response;
+        return await Promise.race([fetchPromise, timeoutPromise]);
     }, []);
 
     // Función helper para procesar respuesta exitosa
@@ -208,10 +208,16 @@ export const useAdminUsers = () => {
             console.log(`📊 Cargando usuarios optimizado... (intento ${retryCount + 1})`);
 
             const url = buildUsersUrl(page, searchEmpresaParam, searchNombreParam);
+            console.log(`🔗 URL de carga: ${url}`);
+            const token = localStorage.getItem('access_token');
+            console.log(`🔑 Token presente: ${token ? 'Sí' : 'No'}`);
+            
             const response = await fetchUsersWithTimeout(url);
+            console.log(`📡 Respuesta recibida: ${response.status} ${response.statusText}`);
 
             if (response.ok) {
                 const data = await response.json();
+                console.log(`✅ Datos recibidos: ${data.usuarios?.length || 0} usuarios`);
                 processSuccessfulResponse(data);
             } else {
                 const shouldRetry = await handleResponseError(response, page, searchEmpresaParam, searchNombreParam, retryCount);
@@ -302,13 +308,15 @@ export const useAdminUsers = () => {
     useEffect(() => {
         const loadAllData = async () => {
             try {
+                console.log('🚀 Iniciando carga de datos iniciales...');
                 await loadUserPermissions();
-                await loadUsers();
+                await loadUsers(1);
                 loadRoles().catch(error => {
                     console.warn('⚠️ Error cargando roles (no crítico):', error);
                 });
             } catch (error) {
-                console.error('Error cargando datos iniciales:', error);
+                console.error('❌ Error cargando datos iniciales:', error);
+                // No establecer error aquí, dejar que loadUsers lo maneje
             }
         };
 
@@ -664,6 +672,7 @@ export const useAdminUsers = () => {
         handleUpdateProfile,
         getRoleBadgeColor,
         getRoleDisplayName,
+        showNotification,
         filteredUsers,
         paginatedUsers
     };

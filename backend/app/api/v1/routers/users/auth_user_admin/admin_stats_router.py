@@ -1,5 +1,6 @@
 # admin_stats_router.py
 import asyncio
+import time
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func 
@@ -11,6 +12,7 @@ from app.models.servicio.service import ServicioModel
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
 from app.schemas.user import UserProfileAndRolesOut
+from app.services.direct_db_service import direct_db_service
 
 
 
@@ -170,64 +172,66 @@ async def get_dashboard_stats(
         print(f"🔍 Cache miss - Consultando base de datos...")'''
         
         # OPTIMIZACIÓN: Usar una sola consulta SQL con subconsultas para máximo rendimiento
-        from sqlalchemy import text
-        
-        stats_query = text("""
-            SELECT 
-                (SELECT COUNT(*) FROM users) as total_users,
-                (SELECT COUNT(*) FROM categoria) as total_categories,
-                (SELECT COUNT(*) FROM servicio) as total_services,
-                (SELECT COUNT(*) FROM perfil_empresa) as total_providers,
-                (SELECT COUNT(*) FROM verificacion_solicitud) as total_verification_requests,
-                (SELECT COUNT(*) FROM verificacion_solicitud WHERE estado = 'aprobada') as approved_requests
-        """)
-        
-        result = await db.execute(stats_query)
-        stats_row = result.first()
-        
-        # Extraer resultados de la consulta única
-        total_users = stats_row.total_users or 0
-        total_categories = stats_row.total_categories or 0
-        total_services = stats_row.total_services or 0
-        total_providers = stats_row.total_providers or 0
-        total_verification_requests = stats_row.total_verification_requests or 0
-        approved_requests = stats_row.approved_requests or 0
-        
-        # Calcular tasa de verificación
-        verification_rate = 0
-        if total_verification_requests > 0:
-            verification_rate = round((approved_requests / total_verification_requests) * 100)
-        
-        # Preparar respuesta
-        response_data = {
-            "total_users": total_users,
-            "total_categories": total_categories,
-            "total_services": total_services,
-            "total_providers": total_providers,
-            "total_verification_requests": total_verification_requests,
-            "approved_requests": approved_requests,
-            "verification_rate": verification_rate,
-            "message": "Estadísticas del dashboard obtenidas exitosamente",
-            "cached": False,
-            "cache_ttl": 300
-        }
-        
-        # Guardar en cache Redis por 5 minutos (300 segundos)
-        #await redis_cache.set(cache_key_str, response_data, ttl=300)
-        
-        end_time = time.time()
-        query_time = (end_time - start_time) * 1000
-        print(f"⏱️ Tiempo total de consultas: {query_time:.2f}ms")
-        print(f"📊 Resultados: usuarios={total_users}, categorías={total_categories}, servicios={total_services}")
-        print("💾 Datos guardados en cache Redis por 5 minutos")
-        
-        return response_data
+        # Usar direct_db_service para evitar problemas con PgBouncer
+        conn = await direct_db_service.get_connection()
+        try:
+            stats_query = """
+                SELECT 
+                    (SELECT COUNT(*) FROM users) as total_users,
+                    (SELECT COUNT(*) FROM categoria) as total_categories,
+                    (SELECT COUNT(*) FROM servicio) as total_services,
+                    (SELECT COUNT(*) FROM perfil_empresa) as total_providers,
+                    (SELECT COUNT(*) FROM verificacion_solicitud) as total_verification_requests,
+                    (SELECT COUNT(*) FROM verificacion_solicitud WHERE estado = 'aprobada') as approved_requests
+            """
+            
+            stats_row = await conn.fetchrow(stats_query)
+            
+            # Extraer resultados de la consulta única
+            total_users = stats_row['total_users'] or 0
+            total_categories = stats_row['total_categories'] or 0
+            total_services = stats_row['total_services'] or 0
+            total_providers = stats_row['total_providers'] or 0
+            total_verification_requests = stats_row['total_verification_requests'] or 0
+            approved_requests = stats_row['approved_requests'] or 0
+            
+            # Calcular tasa de verificación
+            verification_rate = 0
+            if total_verification_requests > 0:
+                verification_rate = round((approved_requests / total_verification_requests) * 100)
+            
+            # Preparar respuesta
+            response_data = {
+                "total_users": total_users,
+                "total_categories": total_categories,
+                "total_services": total_services,
+                "total_providers": total_providers,
+                "total_verification_requests": total_verification_requests,
+                "approved_requests": approved_requests,
+                "verification_rate": verification_rate,
+                "message": "Estadísticas del dashboard obtenidas exitosamente",
+                "cached": False,
+                "cache_ttl": 300
+            }
+            
+            # Guardar en cache Redis por 5 minutos (300 segundos)
+            #await redis_cache.set(cache_key_str, response_data, ttl=300)
+            
+            end_time = time.time()
+            query_time = (end_time - start_time) * 1000
+            print(f"⏱️ Tiempo total de consultas: {query_time:.2f}ms")
+            print(f"📊 Resultados: usuarios={total_users}, categorías={total_categories}, servicios={total_services}")
+            print("💾 Datos guardados en cache Redis por 5 minutos")
+            
+            return response_data
+        finally:
+            await direct_db_service.pool.release(conn)
         
     except Exception as e:
-        print(f"❌ Error obteniendo estadísticas del dashboard: {str(e)}")
+        print(f"❌ Error obteniendo estadísticas del dashboard: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo estadísticas del dashboard: {str(e)}"
+            detail=f"Error obteniendo estadísticas del dashboard: {e}"
         )
 
 @router.post(

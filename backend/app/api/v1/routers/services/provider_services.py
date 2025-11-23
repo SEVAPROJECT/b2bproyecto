@@ -23,6 +23,7 @@ from app.models.publicar_servicio.category import CategoriaModel
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.schemas.servicio.service import ServicioUpdate, ServicioCreate, ServicioOut
 from app.schemas.publicar_servicio.tarifa_servicio import TarifaServicioIn, TarifaServicioOut
+from app.services.direct_db_service import direct_db_service
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/provider/services", tags=["provider-services"])
@@ -96,80 +97,101 @@ class TarifaResponse(BaseModel):
 # Usar TarifaServicioIn que ya existe
 
 # Funciones helper para get_provider_services
-async def get_provider_profile(db: AsyncSession, user_id: str) -> PerfilEmpresa:
-    """Obtiene el perfil de empresa del proveedor"""
-    perfil_result = await db.execute(
-        select(PerfilEmpresa).where(PerfilEmpresa.user_id == user_id)
-    )
-    perfil = perfil_result.scalars().first()
+async def get_provider_profile(conn, user_id: str) -> dict:
+    """Obtiene el perfil de empresa del proveedor usando direct_db_service"""
+    perfil_query = "SELECT id_perfil FROM perfil_empresa WHERE user_id = $1"
+    perfil_row = await conn.fetchrow(perfil_query, user_id)
     
-    if not perfil:
+    if not perfil_row:
         logger.warning(f"❌ Perfil no encontrado para usuario: {user_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
         )
     
-    logger.info(f"✅ Perfil encontrado: {perfil.id_perfil}")
-    return perfil
+    logger.info(f"✅ Perfil encontrado: {perfil_row['id_perfil']}")
+    return perfil_row
 
-async def get_servicios_by_perfil(db: AsyncSession, id_perfil: int) -> List[ServicioModel]:
-    """Obtiene todos los servicios del proveedor con información relacionada"""
-    result = await db.execute(
-        select(ServicioModel)
-        .options(
-            joinedload(ServicioModel.categoria),
-            joinedload(ServicioModel.moneda)
-        )
-        .where(ServicioModel.id_perfil == id_perfil)
-    )
-    return result.scalars().all()
+async def get_servicios_by_perfil(conn, id_perfil: int) -> List[dict]:
+    """Obtiene todos los servicios del proveedor con información relacionada usando direct_db_service"""
+    query = """
+        SELECT 
+            s.id_servicio,
+            s.nombre,
+            s.descripcion,
+            s.precio,
+            s.estado,
+            s.imagen,
+            s.id_categoria,
+            s.id_moneda,
+            s.created_at,
+            c.nombre AS nombre_categoria,
+            m.nombre AS nombre_moneda,
+            m.simbolo AS simbolo_moneda,
+            m.codigo_iso_moneda
+        FROM servicio s
+        LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+        LEFT JOIN moneda m ON s.id_moneda = m.id_moneda
+        WHERE s.id_perfil = $1
+        ORDER BY s.created_at DESC
+    """
+    return await conn.fetch(query, id_perfil)
 
-async def get_tarifas_for_servicio(db: AsyncSession, id_servicio: int) -> List[TarifaServicio]:
-    """Obtiene todas las tarifas de un servicio"""
-    tarifas_result = await db.execute(
-        select(TarifaServicio)
-        .where(TarifaServicio.id_servicio == id_servicio)
-    )
-    return tarifas_result.scalars().all()
+async def get_tarifas_for_servicio(conn, id_servicio: int) -> List[dict]:
+    """Obtiene todas las tarifas de un servicio usando direct_db_service"""
+    query = """
+        SELECT 
+            ts.id_tarifa_servicio,
+            ts.monto,
+            ts.descripcion,
+            ts.fecha_inicio,
+            ts.fecha_fin,
+            ts.id_tarifa,
+            tts.nombre AS nombre_tipo_tarifa
+        FROM tarifa_servicio ts
+        LEFT JOIN tipo_tarifa_servicio tts ON ts.id_tarifa = tts.id_tarifa
+        WHERE ts.id_servicio = $1
+        ORDER BY ts.fecha_inicio DESC
+    """
+    return await conn.fetch(query, id_servicio)
 
-def format_tarifa(tarifa: TarifaServicio) -> dict:
+def format_tarifa(tarifa_row: dict) -> dict:
     """Formatea una tarifa en el formato de respuesta"""
     return {
-        "id_tarifa_servicio": tarifa.id_tarifa_servicio,
-        "monto": float(tarifa.monto),
-        "descripcion": tarifa.descripcion,
-        "fecha_inicio": tarifa.fecha_inicio.isoformat(),
-        "fecha_fin": tarifa.fecha_fin.isoformat() if tarifa.fecha_fin else None,
-        "id_tarifa": tarifa.id_tarifa,
-        "nombre_tipo_tarifa": VALOR_DEFAULT_TIPO_TARIFA  # Temporalmente simplificado
+        "id_tarifa_servicio": tarifa_row['id_tarifa_servicio'],
+        "monto": float(tarifa_row['monto']),
+        "descripcion": tarifa_row['descripcion'],
+        "fecha_inicio": tarifa_row['fecha_inicio'].isoformat() if tarifa_row['fecha_inicio'] else None,
+        "fecha_fin": tarifa_row['fecha_fin'].isoformat() if tarifa_row['fecha_fin'] else None,
+        "id_tarifa": tarifa_row['id_tarifa'],
+        "nombre_tipo_tarifa": tarifa_row['nombre_tipo_tarifa'] or VALOR_DEFAULT_TIPO_TARIFA
     }
 
 async def format_servicio_completo(
-    db: AsyncSession,
-    servicio: ServicioModel
+    conn,
+    servicio_row: dict
 ) -> dict:
     """Formatea un servicio con todas sus tarifas"""
     # Obtener tarifas del servicio
-    tarifas_data = await get_tarifas_for_servicio(db, servicio.id_servicio)
+    tarifas_data = await get_tarifas_for_servicio(conn, servicio_row['id_servicio'])
     
     # Formatear tarifas
     tarifas = [format_tarifa(tarifa) for tarifa in tarifas_data]
     
     return {
-        "id_servicio": servicio.id_servicio,
-        "nombre": servicio.nombre,
-        "descripcion": servicio.descripcion,
-        "precio": float(servicio.precio) if servicio.precio is not None else None,
-        "estado": servicio.estado,
-        "imagen": servicio.imagen,
-        "id_categoria": servicio.id_categoria,
-        "id_moneda": servicio.id_moneda,
-        "nombre_categoria": servicio.categoria.nombre if servicio.categoria else None,
-        "nombre_moneda": servicio.moneda.nombre if servicio.moneda else None,
-        "simbolo_moneda": servicio.moneda.simbolo if servicio.moneda else None,
-        "codigo_iso_moneda": servicio.moneda.codigo_iso_moneda if servicio.moneda else None,
-        "created_at": servicio.created_at.isoformat() if servicio.created_at else None,
+        "id_servicio": servicio_row['id_servicio'],
+        "nombre": servicio_row['nombre'],
+        "descripcion": servicio_row['descripcion'],
+        "precio": float(servicio_row['precio']) if servicio_row['precio'] is not None else None,
+        "estado": servicio_row['estado'],
+        "imagen": servicio_row['imagen'],
+        "id_categoria": servicio_row['id_categoria'],
+        "id_moneda": servicio_row['id_moneda'],
+        "nombre_categoria": servicio_row['nombre_categoria'],
+        "nombre_moneda": servicio_row['nombre_moneda'],
+        "simbolo_moneda": servicio_row['simbolo_moneda'],
+        "codigo_iso_moneda": servicio_row['codigo_iso_moneda'],
+        "created_at": servicio_row['created_at'].isoformat() if servicio_row['created_at'] else None,
         "tarifas": tarifas
     }
 
@@ -180,28 +202,33 @@ async def get_provider_services(
 ):
     """
     Obtiene todos los servicios del proveedor actual con información completa.
+    Usa direct_db_service para evitar problemas con PgBouncer y prepared statements.
     """
     try:
         logger.info(f"🔍 Obteniendo servicios para usuario: {current_user.email}")
         
-        # Obtener el perfil del usuario
-        perfil = await get_provider_profile(db, current_user.id)
-        
-        # Obtener servicios del proveedor
-        servicios = await get_servicios_by_perfil(db, perfil.id_perfil)
-        
-        # Formatear servicios con sus tarifas
-        servicios_formateados = []
-        for servicio in servicios:
-            servicio_formateado = await format_servicio_completo(db, servicio)
-            servicios_formateados.append(servicio_formateado)
-        
-        return servicios_formateados
+        conn = await direct_db_service.get_connection()
+        try:
+            # Obtener el perfil del usuario
+            perfil = await get_provider_profile(conn, current_user.id)
+            
+            # Obtener servicios del proveedor
+            servicios = await get_servicios_by_perfil(conn, perfil['id_perfil'])
+            
+            # Formatear servicios con sus tarifas
+            servicios_formateados = []
+            for servicio_row in servicios:
+                servicio_formateado = await format_servicio_completo(conn, servicio_row)
+                servicios_formateados.append(servicio_formateado)
+            
+            return servicios_formateados
+        finally:
+            await direct_db_service.pool.release(conn)
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error en get_provider_services: {str(e)}")
+        logger.error(f"❌ Error en get_provider_services: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=MSG_ERROR_INTERNO_SERVIDOR.format(error=str(e))
@@ -407,75 +434,89 @@ async def update_provider_service(
 async def get_monedas_options(db: AsyncSession = Depends(get_async_db)):
     """
     Obtiene todas las monedas disponibles para los servicios.
+    Usa direct_db_service para evitar problemas con PgBouncer y prepared statements.
     """
-    result = await db.execute(
-        select(Moneda.id_moneda, Moneda.nombre, Moneda.simbolo, Moneda.codigo_iso_moneda)
-    )
+    try:
+        conn = await direct_db_service.get_connection()
+        try:
+            query = """
+                SELECT id_moneda, nombre, simbolo, codigo_iso_moneda
+                FROM moneda
+                ORDER BY nombre
+            """
+            monedas = await conn.fetch(query)
 
-    monedas = result.fetchall()
-
-    return [
-        {
-            "id_moneda": moneda[0],
-            "nombre": moneda[1],
-            "simbolo": moneda[2],
-            "codigo_iso": moneda[3]
-        }
-        for moneda in monedas
-    ]
+            return [
+                {
+                    "id_moneda": moneda['id_moneda'],
+                    "nombre": moneda['nombre'],
+                    "simbolo": moneda['simbolo'],
+                    "codigo_iso": moneda['codigo_iso_moneda']
+                }
+                for moneda in monedas
+            ]
+        finally:
+            await direct_db_service.pool.release(conn)
+    except Exception as e:
+        logger.error(f"❌ Error en get_monedas_options: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error obteniendo monedas: {e}"
+        )
 
 @router.get("/options/tipos-tarifa", response_model=List[dict])
 async def get_tipos_tarifa_options(db: AsyncSession = Depends(get_async_db)):
     """
     Obtiene todos los tipos de tarifa disponibles.
+    Usa direct_db_service para evitar problemas con PgBouncer y prepared statements.
     """
     try:
-        # Verificar si la columna estado existe
-        result = await db.execute(
-            select(TipoTarifaServicio.id_tarifa, TipoTarifaServicio.nombre)
-        )
+        conn = await direct_db_service.get_connection()
+        try:
+            # Consultar tipos de tarifa existentes
+            query = """
+                SELECT id_tarifa, nombre
+                FROM tipo_tarifa_servicio
+                ORDER BY nombre
+            """
+            tipos_tarifa = await conn.fetch(query)
 
-        tipos_tarifa = result.fetchall()
+            # Si no hay tipos de tarifa, insertar algunos por defecto
+            if not tipos_tarifa:
+                print("📝 Insertando tipos de tarifa por defecto...")
 
-        # Si no hay tipos de tarifa, insertar algunos por defecto
-        if not tipos_tarifa:
-            print("📝 Insertando tipos de tarifa por defecto...")
+                # Insertar tipos de tarifa por defecto usando SQL directo
+                default_tipos = [
+                    {'nombre': TIPO_TARIFA_POR_HORA, 'descripcion': 'Tarifa por hora de trabajo'},
+                    {'nombre': TIPO_TARIFA_POR_DIA, 'descripcion': 'Tarifa por día de trabajo'},
+                    {'nombre': TIPO_TARIFA_POR_PROYECTO, 'descripcion': 'Tarifa fija por proyecto'},
+                    {'nombre': TIPO_TARIFA_POR_SEMANA, 'descripcion': 'Tarifa por semana de trabajo'},
+                    {'nombre': TIPO_TARIFA_POR_MES, 'descripcion': 'Tarifa por mes de trabajo'}
+                ]
 
-            # Insertar tipos de tarifa por defecto
-            default_tipos = [
-                {'nombre': TIPO_TARIFA_POR_HORA, 'descripcion': 'Tarifa por hora de trabajo'},
-                {'nombre': TIPO_TARIFA_POR_DIA, 'descripcion': 'Tarifa por día de trabajo'},
-                {'nombre': TIPO_TARIFA_POR_PROYECTO, 'descripcion': 'Tarifa fija por proyecto'},
-                {'nombre': TIPO_TARIFA_POR_SEMANA, 'descripcion': 'Tarifa por semana de trabajo'},
-                {'nombre': TIPO_TARIFA_POR_MES, 'descripcion': 'Tarifa por mes de trabajo'}
+                insert_query = """
+                    INSERT INTO tipo_tarifa_servicio (nombre, descripcion, estado)
+                    VALUES ($1, $2, $3)
+                """
+                
+                for tipo in default_tipos:
+                    await conn.execute(insert_query, tipo['nombre'], tipo['descripcion'], True)
+
+                # Volver a consultar después de insertar
+                tipos_tarifa = await conn.fetch(query)
+
+            return [
+                {
+                    "id_tarifa": tipo['id_tarifa'],
+                    "nombre": tipo['nombre']
+                }
+                for tipo in tipos_tarifa
             ]
-
-            for tipo in default_tipos:
-                nueva_tarifa = TipoTarifaServicio(
-                    nombre=tipo['nombre'],
-                    descripcion=tipo['descripcion'],
-                    estado=True
-                )
-                db.add(nueva_tarifa)
-
-            await db.commit()
-
-            # Volver a consultar después de insertar
-            result = await db.execute(
-                select(TipoTarifaServicio.id_tarifa, TipoTarifaServicio.nombre)
-            )
-            tipos_tarifa = result.fetchall()
-
-        return [
-            {
-                "id_tarifa": tipo[0],
-                "nombre": tipo[1]
-            }
-            for tipo in tipos_tarifa
-        ]
+        finally:
+            await direct_db_service.pool.release(conn)
 
     except Exception as e:
-        print(f"❌ Error en get_tipos_tarifa_options: {e}")
+        logger.error(f"❌ Error en get_tipos_tarifa_options: {e}")
         # Retornar tipos por defecto si hay error
         return [
             {"id_tarifa": 1, "nombre": TIPO_TARIFA_POR_HORA},

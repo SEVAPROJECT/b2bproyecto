@@ -37,6 +37,12 @@ MSG_RANGO_MAXIMO_DIAS = "El rango de fechas no puede ser mayor a 30 días."
 DEFAULT_DURACION_MINUTOS = 60
 MAX_RANGO_DIAS = 30
 
+# Constantes para descripciones de Query
+DESC_FECHA_HORARIOS = "Fecha para la cual obtener horarios disponibles"
+DESC_DURACION_SLOT = "Duración de cada slot en minutos"
+DESC_FECHA_INICIO = "Fecha de inicio del rango"
+DESC_FECHA_FIN = "Fecha de fin del rango"
+
 def generar_slots_tiempo(hora_inicio: time, hora_fin: time, duracion_minutos: int = DEFAULT_DURACION_MINUTOS) -> List[time]:
     """
     Genera slots de tiempo entre hora_inicio y hora_fin con la duración especificada.
@@ -68,8 +74,8 @@ def hay_conflicto_horario(slot_inicio: time, slot_fin: time, reservas: List) -> 
 )
 async def obtener_horarios_disponibles_proveedor(
     proveedor_id: int,
-    fecha: date = Query(..., description="Fecha para la cual obtener horarios disponibles"),
-    duracion_minutos: int = Query(DEFAULT_DURACION_MINUTOS, ge=15, le=480, description="Duración de cada slot en minutos"),
+    fecha: date = Query(..., description=DESC_FECHA_HORARIOS),
+    duracion_minutos: int = Query(DEFAULT_DURACION_MINUTOS, ge=15, le=480, description=DESC_DURACION_SLOT),
     current_user: SupabaseUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -158,8 +164,8 @@ async def obtener_horarios_disponibles_proveedor(
 )
 async def obtener_horarios_disponibles_servicio(
     servicio_id: int,
-    fecha: date = Query(..., description="Fecha para la cual obtener horarios disponibles"),
-    duracion_minutos: int = Query(DEFAULT_DURACION_MINUTOS, ge=15, le=480, description="Duración de cada slot en minutos"),
+    fecha: date = Query(..., description=DESC_FECHA_HORARIOS),
+    duracion_minutos: int = Query(DEFAULT_DURACION_MINUTOS, ge=15, le=480, description=DESC_DURACION_SLOT),
     current_user: SupabaseUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -267,9 +273,9 @@ async def obtener_horarios_disponibles_servicio(
 )
 async def obtener_horarios_rango_fechas(
     proveedor_id: int,
-    fecha_inicio: date = Query(..., description="Fecha de inicio del rango"),
-    fecha_fin: date = Query(..., description="Fecha de fin del rango"),
-    duracion_minutos: int = Query(DEFAULT_DURACION_MINUTOS, ge=15, le=480, description="Duración de cada slot en minutos"),
+    fecha_inicio: date = Query(..., description=DESC_FECHA_INICIO),
+    fecha_fin: date = Query(..., description=DESC_FECHA_FIN),
+    duracion_minutos: int = Query(DEFAULT_DURACION_MINUTOS, ge=15, le=480, description=DESC_DURACION_SLOT),
     current_user: SupabaseUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):

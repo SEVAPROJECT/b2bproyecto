@@ -194,7 +194,7 @@ const AdminCategoryRequestsPage: React.FC = () => {
             // Procesar solicitudes básicas primero (sin emails)
             // Asegurar que cada request tenga un id_solicitud único y válido
             const requestsBasic = requestsData
-                .filter(request => request && request.id_solicitud) // Filtrar requests inválidos
+                .filter(request => request?.id_solicitud) // Filtrar requests inválidos
                 .map(request => ({
                     ...request,
                     email_contacto: request.email_contacto || 'Cargando...',

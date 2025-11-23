@@ -187,73 +187,72 @@ async def get_my_category_requests(
 ):
     """
     Obtiene las solicitudes de categorías del proveedor actual.
+    Usa direct_db_service para evitar problemas con PgBouncer y prepared statements.
     """
     try:
-        # Obtener el perfil de empresa del usuario
-        perfil_query = select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
-        perfil_result = await db.execute(perfil_query)
-        perfil = perfil_result.scalars().first()
-
-        if not perfil:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
-            )
-
-        # Obtener las solicitudes del proveedor
-        query = select(
-            SolicitudCategoria.id_solicitud,
-            SolicitudCategoria.id_perfil,
-            SolicitudCategoria.nombre_categoria,
-            SolicitudCategoria.descripcion,
-            SolicitudCategoria.estado_aprobacion,
-            SolicitudCategoria.comentario_admin,
-            SolicitudCategoria.created_at,
-            PerfilEmpresa.razon_social.label('nombre_empresa'),
-            UserModel.nombre_persona.label('nombre_contacto'),
-            PerfilEmpresa.user_id.label('user_id')  # ✅ USAR user_id de PerfilEmpresa
-        ).select_from(SolicitudCategoria)\
-         .join(PerfilEmpresa, SolicitudCategoria.id_perfil == PerfilEmpresa.id_perfil)\
-         .join(UserModel, PerfilEmpresa.user_id == UserModel.id)\
-         .where(SolicitudCategoria.id_perfil == perfil.id_perfil)\
-         .order_by(SolicitudCategoria.created_at.desc())
-
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
         try:
-            result = await db.execute(query)
-            rows = result.fetchall()
-        except Exception as db_error:
-            # Manejar errores de PgBouncer
-            if "DuplicatePreparedStatementError" in str(db_error):
-                print("🔄 Error de PgBouncer detectado, reintentando...")
-                await db.rollback()
-                # Reintentar la consulta
-                result = await db.execute(query)
-                rows = result.fetchall()
-            else:
-                raise db_error
+            # Obtener el perfil de empresa del usuario
+            perfil_query = "SELECT id_perfil FROM perfil_empresa WHERE user_id = $1"
+            perfil_row = await conn.fetchrow(perfil_query, current_user.id)
+            
+            if not perfil_row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
+                )
+            
+            perfil_id = perfil_row['id_perfil']
+            
+            # Query SQL directa para evitar prepared statements
+            query = """
+                SELECT 
+                    sc.id_solicitud,
+                    sc.id_perfil,
+                    sc.nombre_categoria,
+                    sc.descripcion,
+                    sc.estado_aprobacion,
+                    sc.comentario_admin,
+                    sc.created_at,
+                    pe.razon_social AS nombre_empresa,
+                    u.nombre_persona AS nombre_contacto,
+                    pe.user_id AS user_id
+                FROM solicitud_categoria sc
+                JOIN perfil_empresa pe ON sc.id_perfil = pe.id_perfil
+                JOIN users u ON pe.user_id = u.id
+                WHERE sc.id_perfil = $1
+                ORDER BY sc.created_at DESC
+            """
+            
+            rows = await conn.fetch(query, perfil_id)
+            
+            # Formatear respuesta
+            formatted_requests = []
+            for row in rows:
+                formatted_requests.append({
+                    'id_solicitud': row['id_solicitud'],
+                    'id_perfil': row['id_perfil'],
+                    'nombre_categoria': row['nombre_categoria'],
+                    'descripcion': row['descripcion'],
+                    'estado_aprobacion': row['estado_aprobacion'],
+                    'comentario_admin': row['comentario_admin'],
+                    'created_at': row['created_at'],
+                    'nombre_empresa': row['nombre_empresa'],
+                    'nombre_contacto': row['nombre_contacto'],
+                    'user_id': str(row['user_id']) if row['user_id'] else None,
+                    'email_contacto': None  # Email se obtendrá en el frontend usando user_id
+                })
 
-        # Formatear respuesta
-        formatted_requests = []
-        for row in rows:
-            formatted_requests.append({
-                'id_solicitud': row.id_solicitud,
-                'id_perfil': row.id_perfil,
-                'nombre_categoria': row.nombre_categoria,
-                'descripcion': row.descripcion,
-                'estado_aprobacion': row.estado_aprobacion,
-                'comentario_admin': row.comentario_admin,
-                'created_at': row.created_at,
-                'nombre_empresa': row.nombre_empresa,
-                'nombre_contacto': row.nombre_contacto,
-                'user_id': str(row.user_id) if row.user_id else None,  # ✅ CONVERTIR UUID A STRING
-                'email_contacto': None  # Email se obtendrá en el frontend usando user_id
-            })
-
-        return formatted_requests
+            return formatted_requests
+        finally:
+            await direct_db_service.pool.release(conn)
 
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Error obteniendo solicitudes de categorías del proveedor: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=MSG_ERROR_OBTENER_SOLICITUDES.format(error=str(e))
@@ -271,62 +270,60 @@ async def get_all_category_requests_for_admin(
 ):
     """
     Obtiene todas las solicitudes de categorías para administradores.
+    Usa direct_db_service para evitar problemas con PgBouncer y prepared statements.
     """
     try:
-        # Obtener todas las solicitudes con información completa
-        query = select(
-            SolicitudCategoria.id_solicitud,
-            SolicitudCategoria.id_perfil,
-            SolicitudCategoria.nombre_categoria,
-            SolicitudCategoria.descripcion,
-            SolicitudCategoria.estado_aprobacion,
-            SolicitudCategoria.comentario_admin,
-            SolicitudCategoria.created_at,
-            PerfilEmpresa.razon_social.label('nombre_empresa'),
-            UserModel.nombre_persona.label('nombre_contacto'),
-            PerfilEmpresa.user_id.label('user_id')  # ✅ USAR user_id de PerfilEmpresa
-        ).select_from(SolicitudCategoria)\
-         .join(PerfilEmpresa, SolicitudCategoria.id_perfil == PerfilEmpresa.id_perfil)\
-         .join(UserModel, PerfilEmpresa.user_id == UserModel.id)\
-         .order_by(SolicitudCategoria.created_at.desc())
-
-        if limit > 0:
-            query = query.limit(limit)
-
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
         try:
-            result = await db.execute(query)
-            rows = result.fetchall()
-        except Exception as db_error:
-            # Manejar errores de PgBouncer
-            if "DuplicatePreparedStatementError" in str(db_error):
-                print("🔄 Error de PgBouncer detectado, reintentando...")
-                await db.rollback()
-                # Reintentar la consulta
-                result = await db.execute(query)
-                rows = result.fetchall()
-            else:
-                raise db_error
+            # Query SQL directa para evitar prepared statements
+            limit_clause = f"LIMIT {limit}" if limit > 0 else ""
+            
+            query = f"""
+                SELECT 
+                    sc.id_solicitud,
+                    sc.id_perfil,
+                    sc.nombre_categoria,
+                    sc.descripcion,
+                    sc.estado_aprobacion,
+                    sc.comentario_admin,
+                    sc.created_at,
+                    pe.razon_social AS nombre_empresa,
+                    u.nombre_persona AS nombre_contacto,
+                    pe.user_id AS user_id
+                FROM solicitud_categoria sc
+                JOIN perfil_empresa pe ON sc.id_perfil = pe.id_perfil
+                JOIN users u ON pe.user_id = u.id
+                ORDER BY sc.created_at DESC
+                {limit_clause}
+            """
+            
+            rows = await conn.fetch(query)
+            
+            # Formatear respuesta
+            formatted_requests = []
+            for row in rows:
+                formatted_requests.append({
+                    'id_solicitud': row['id_solicitud'],
+                    'id_perfil': row['id_perfil'],
+                    'nombre_categoria': row['nombre_categoria'],
+                    'descripcion': row['descripcion'],
+                    'estado_aprobacion': row['estado_aprobacion'],
+                    'comentario_admin': row['comentario_admin'],
+                    'created_at': row['created_at'],
+                    'nombre_empresa': row['nombre_empresa'],
+                    'nombre_contacto': row['nombre_contacto'],
+                    'user_id': str(row['user_id']) if row['user_id'] else None,
+                    'email_contacto': None  # Email se obtendrá en el frontend usando user_id
+                })
 
-        # Formatear respuesta
-        formatted_requests = []
-        for row in rows:
-            formatted_requests.append({
-                'id_solicitud': row.id_solicitud,
-                'id_perfil': row.id_perfil,
-                'nombre_categoria': row.nombre_categoria,
-                'descripcion': row.descripcion,
-                'estado_aprobacion': row.estado_aprobacion,
-                'comentario_admin': row.comentario_admin,
-                'created_at': row.created_at,
-                'nombre_empresa': row.nombre_empresa,
-                'nombre_contacto': row.nombre_contacto,
-                'user_id': str(row.user_id) if row.user_id else None,  # ✅ CONVERTIR UUID A STRING
-                'email_contacto': None  # Email se obtendrá en el frontend usando user_id
-            })
-
-        return formatted_requests
+            return formatted_requests
+        finally:
+            await direct_db_service.pool.release(conn)
 
     except Exception as e:
+        print(f"Error obteniendo solicitudes de categorías: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=MSG_ERROR_OBTENER_SOLICITUDES.format(error=str(e))

@@ -349,6 +349,180 @@ async def crear_reserva(
         )
 
 
+# Funciones helper para obtener_mis_reservas_detalladas
+def validate_pagination_params(limit: Optional[int], offset: Optional[int]) -> tuple[int, int]:
+    """Valida y normaliza los parámetros de paginación"""
+    if limit is None or limit < 1:
+        limit = 20
+    if limit > 100:
+        limit = 100
+        
+    if offset is None or offset < 0:
+        offset = 0
+    
+    return limit, offset
+
+def build_where_conditions(
+    search: Optional[str],
+    nombre_servicio: Optional[str],
+    nombre_empresa: Optional[str],
+    fecha_desde: Optional[str],
+    fecha_hasta: Optional[str],
+    estado: Optional[str],
+    nombre_contacto: Optional[str],
+    params: list,
+    param_count: int
+) -> tuple[list[str], list, int]:
+    """Construye las condiciones WHERE dinámicas y actualiza los parámetros"""
+    where_conditions = []
+    
+    if search and search.strip():
+        param_count += 1
+        where_conditions.append(f"""
+            (LOWER(s.nombre) LIKE LOWER(${param_count}) 
+            OR LOWER(pe.nombre_fantasia) LIKE LOWER(${param_count})
+            OR LOWER(pe.razon_social) LIKE LOWER(${param_count}))
+        """)
+        params.append(f"%{search.strip()}%")
+    
+    if nombre_servicio and nombre_servicio.strip():
+        param_count += 1
+        where_conditions.append(f"LOWER(s.nombre) LIKE LOWER(${param_count})")
+        params.append(f"%{nombre_servicio.strip()}%")
+    
+    if nombre_empresa and nombre_empresa.strip():
+        param_count += 1
+        where_conditions.append(f"""
+            (LOWER(pe.nombre_fantasia) LIKE LOWER(${param_count}) 
+            OR LOWER(pe.razon_social) LIKE LOWER(${param_count}))
+        """)
+        params.append(f"%{nombre_empresa.strip()}%")
+    
+    if fecha_desde:
+        param_count += 1
+        where_conditions.append(f"r.fecha >= ${param_count}")
+        params.append(fecha_desde)
+    
+    if fecha_hasta:
+        param_count += 1
+        where_conditions.append(f"r.fecha <= ${param_count}")
+        params.append(fecha_hasta)
+    
+    if estado and estado.strip():
+        param_count += 1
+        where_conditions.append(f"r.estado = ${param_count}")
+        params.append(estado.strip().lower())
+    
+    if nombre_contacto and nombre_contacto.strip():
+        param_count += 1
+        where_conditions.append(f"LOWER(u.nombre_persona) LIKE LOWER(${param_count})")
+        params.append(f"%{nombre_contacto.strip()}%")
+    
+    return where_conditions, params, param_count
+
+def get_base_reservas_query() -> str:
+    """Retorna la query base para obtener reservas con información detallada"""
+    return """
+        SELECT 
+            r.id_reserva,
+            r.id_servicio,
+            r.user_id as id_usuario,
+            r.descripcion,
+            r.observacion,
+            r.fecha,
+            r.hora_inicio,
+            r.hora_fin,
+            r.estado,
+            r.created_at,
+            s.nombre as nombre_servicio,
+            s.descripcion as descripcion_servicio,
+            s.precio as precio_servicio,
+            s.imagen as imagen_servicio,
+            s.id_perfil,
+            pe.nombre_fantasia as nombre_empresa,
+            pe.razon_social,
+            u.nombre_persona as nombre_contacto,
+            c.nombre as nombre_categoria,
+            CASE WHEN cal_cliente.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_cliente,
+            cal_cliente.puntaje as calificacion_cliente_puntaje,
+            cal_cliente.comentario as calificacion_cliente_comentario,
+            cal_cliente.satisfaccion_nps as calificacion_cliente_nps,
+            cal_proveedor.puntaje as calificacion_proveedor_puntaje,
+            cal_proveedor.comentario as calificacion_proveedor_comentario
+        FROM reserva r
+        INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+        INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+        INNER JOIN users u ON pe.user_id = u.id
+        LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+        LEFT JOIN calificacion cal_cliente ON r.id_reserva = cal_cliente.id_reserva AND cal_cliente.rol_emisor = 'cliente'
+        LEFT JOIN calificacion cal_proveedor ON r.id_reserva = cal_proveedor.id_reserva AND cal_proveedor.rol_emisor = 'proveedor'
+        WHERE r.user_id = $1
+    """
+
+def get_count_reservas_query() -> str:
+    """Retorna la query base para contar reservas"""
+    return """
+        SELECT COUNT(*) as total
+        FROM reserva r
+        INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+        INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+        INNER JOIN users u ON pe.user_id = u.id
+        WHERE r.user_id = $1
+    """
+
+def process_reserva_row(row: dict) -> dict:
+    """Procesa una fila de resultado y la convierte en un diccionario de reserva"""
+    ya_calificado = row['ya_calificado_por_cliente']
+    
+    return {
+        "id_reserva": row['id_reserva'],
+        "id_servicio": row['id_servicio'],
+        "user_id": row['id_usuario'],
+        "descripcion": row['descripcion'],
+        "observacion": row['observacion'],
+        "fecha": row['fecha'],
+        "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
+        "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
+        "estado": row['estado'],
+        "created_at": row['created_at'],
+        "nombre_servicio": row['nombre_servicio'],
+        "descripcion_servicio": row['descripcion_servicio'],
+        "precio_servicio": float(row['precio_servicio']),
+        "imagen_servicio": row['imagen_servicio'],
+        "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
+        "razon_social": row['razon_social'],
+        "id_perfil": row['id_perfil'],
+        "nombre_contacto": row['nombre_contacto'],
+        "email_contacto": None,
+        "telefono_contacto": None,
+        "nombre_categoria": row['nombre_categoria'],
+        "ya_calificado_por_cliente": ya_calificado,
+        "calificacion_cliente": {
+            "puntaje": row['calificacion_cliente_puntaje'],
+            "comentario": row['calificacion_cliente_comentario'],
+            "nps": row['calificacion_cliente_nps']
+        } if row['calificacion_cliente_puntaje'] else None,
+        "calificacion_proveedor": {
+            "puntaje": row['calificacion_proveedor_puntaje'],
+            "comentario": row['calificacion_proveedor_comentario']
+        } if row['calificacion_proveedor_puntaje'] else None
+    }
+
+def build_pagination_info(total_count: int, limit: int, offset: int) -> dict:
+    """Construye la información de paginación"""
+    total_pages = (total_count + limit - 1) // limit
+    current_page = (offset // limit) + 1
+    
+    return {
+        "total": total_count,
+        "page": current_page,
+        "limit": limit,
+        "offset": offset,
+        "total_pages": total_pages,
+        "has_next": offset + limit < total_count,
+        "has_prev": offset > 0
+    }
+
 @router.get(
     "/mis-reservas",
     description="Obtiene las reservas del cliente autenticado con filtros avanzados y paginación optimizada."
@@ -369,113 +543,24 @@ async def obtener_mis_reservas_detalladas(
     Endpoint optimizado para obtener las reservas del cliente autenticado con información detallada.
     """
     try:
-        # Validaciones básicas de parámetros
-        if limit is None or limit < 1:
-            limit = 20
-        if limit > 100:
-            limit = 100
-            
-        if offset is None or offset < 0:
-            offset = 0
+        limit, offset = validate_pagination_params(limit, offset)
         
         conn = await direct_db_service.get_connection()
         
         try:
-            base_query = """
-                SELECT 
-                    r.id_reserva,
-                    r.id_servicio,
-                    r.user_id as id_usuario,
-                    r.descripcion,
-                    r.observacion,
-                    r.fecha,
-                    r.hora_inicio,
-                    r.hora_fin,
-                    r.estado,
-                    r.created_at,
-                    s.nombre as nombre_servicio,
-                    s.descripcion as descripcion_servicio,
-                    s.precio as precio_servicio,
-                    s.imagen as imagen_servicio,
-                    s.id_perfil,
-                    pe.nombre_fantasia as nombre_empresa,
-                    pe.razon_social,
-                    u.nombre_persona as nombre_contacto,
-                    c.nombre as nombre_categoria,
-                    CASE WHEN cal_cliente.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_cliente,
-                    cal_cliente.puntaje as calificacion_cliente_puntaje,
-                    cal_cliente.comentario as calificacion_cliente_comentario,
-                    cal_cliente.satisfaccion_nps as calificacion_cliente_nps,
-                    cal_proveedor.puntaje as calificacion_proveedor_puntaje,
-                    cal_proveedor.comentario as calificacion_proveedor_comentario
-                FROM reserva r
-                INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-                INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                INNER JOIN users u ON pe.user_id = u.id
-                LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
-                LEFT JOIN calificacion cal_cliente ON r.id_reserva = cal_cliente.id_reserva AND cal_cliente.rol_emisor = 'cliente'
-                LEFT JOIN calificacion cal_proveedor ON r.id_reserva = cal_proveedor.id_reserva AND cal_proveedor.rol_emisor = 'proveedor'
-                WHERE r.user_id = $1
-            """
-            
-            where_conditions = []
+            base_query = get_base_reservas_query()
             params = [current_user.id]
             param_count = 1
             
-            if search and search.strip():
-                param_count += 1
-                where_conditions.append(f"""
-                    (LOWER(s.nombre) LIKE LOWER(${param_count}) 
-                    OR LOWER(pe.nombre_fantasia) LIKE LOWER(${param_count})
-                    OR LOWER(pe.razon_social) LIKE LOWER(${param_count}))
-                """)
-                params.append(f"%{search.strip()}%")
-            
-            if nombre_servicio and nombre_servicio.strip():
-                param_count += 1
-                where_conditions.append(f"LOWER(s.nombre) LIKE LOWER(${param_count})")
-                params.append(f"%{nombre_servicio.strip()}%")
-            
-            if nombre_empresa and nombre_empresa.strip():
-                param_count += 1
-                where_conditions.append(f"""
-                    (LOWER(pe.nombre_fantasia) LIKE LOWER(${param_count}) 
-                    OR LOWER(pe.razon_social) LIKE LOWER(${param_count}))
-                """)
-                params.append(f"%{nombre_empresa.strip()}%")
-            
-            if fecha_desde:
-                param_count += 1
-                where_conditions.append(f"r.fecha >= ${param_count}")
-                params.append(fecha_desde)
-            
-            if fecha_hasta:
-                param_count += 1
-                where_conditions.append(f"r.fecha <= ${param_count}")
-                params.append(fecha_hasta)
-            
-            if estado and estado.strip():
-                param_count += 1
-                where_conditions.append(f"r.estado = ${param_count}")
-                params.append(estado.strip().lower())
-            
-            if nombre_contacto and nombre_contacto.strip():
-                param_count += 1
-                where_conditions.append(f"LOWER(u.nombre_persona) LIKE LOWER(${param_count})")
-                params.append(f"%{nombre_contacto.strip()}%")
+            where_conditions, params, param_count = build_where_conditions(
+                search, nombre_servicio, nombre_empresa, fecha_desde,
+                fecha_hasta, estado, nombre_contacto, params, param_count
+            )
             
             if where_conditions:
                 base_query += SQL_AND + SQL_AND.join(where_conditions)
             
-            count_query = """
-                SELECT COUNT(*) as total
-                FROM reserva r
-                INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-                INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                INNER JOIN users u ON pe.user_id = u.id
-                WHERE r.user_id = $1
-            """
-            
+            count_query = get_count_reservas_query()
             if where_conditions:
                 count_query += SQL_AND + SQL_AND.join(where_conditions)
             
@@ -489,58 +574,9 @@ async def obtener_mis_reservas_detalladas(
             params.extend([limit, offset])
             
             reservas_result = await conn.fetch(base_query, *params)
+            reservas_list = [process_reserva_row(row) for row in reservas_result]
             
-            reservas_list = []
-            for row in reservas_result:
-                ya_calificado = row['ya_calificado_por_cliente']
-                
-                reserva_dict = {
-                    "id_reserva": row['id_reserva'],
-                    "id_servicio": row['id_servicio'],
-                    "user_id": row['id_usuario'],
-                    "descripcion": row['descripcion'],
-                    "observacion": row['observacion'],
-                    "fecha": row['fecha'],
-                    "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
-                    "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
-                    "estado": row['estado'],
-                    "created_at": row['created_at'],
-                    "nombre_servicio": row['nombre_servicio'],
-                    "descripcion_servicio": row['descripcion_servicio'],
-                    "precio_servicio": float(row['precio_servicio']),
-                    "imagen_servicio": row['imagen_servicio'],
-                    "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
-                    "razon_social": row['razon_social'],
-                    "id_perfil": row['id_perfil'],
-                    "nombre_contacto": row['nombre_contacto'],
-                    "email_contacto": None,
-                    "telefono_contacto": None,
-                    "nombre_categoria": row['nombre_categoria'],
-                    "ya_calificado_por_cliente": ya_calificado,
-                    "calificacion_cliente": {
-                        "puntaje": row['calificacion_cliente_puntaje'],
-                        "comentario": row['calificacion_cliente_comentario'],
-                        "nps": row['calificacion_cliente_nps']
-                    } if row['calificacion_cliente_puntaje'] else None,
-                    "calificacion_proveedor": {
-                        "puntaje": row['calificacion_proveedor_puntaje'],
-                        "comentario": row['calificacion_proveedor_comentario']
-                    } if row['calificacion_proveedor_puntaje'] else None
-                }
-                reservas_list.append(reserva_dict)
-            
-            total_pages = (total_count + limit - 1) // limit
-            current_page = (offset // limit) + 1
-            
-            pagination_info = {
-                "total": total_count,
-                "page": current_page,
-                "limit": limit,
-                "offset": offset,
-                "total_pages": total_pages,
-                "has_next": offset + limit < total_count,
-                "has_prev": offset > 0
-            }
+            pagination_info = build_pagination_info(total_count, limit, offset)
             
             return {
                 "reservas": reservas_list,
@@ -591,7 +627,7 @@ async def get_provider_profile(conn, user_id: str) -> dict:
     
     return perfil_result
 
-def build_where_conditions(
+def build_where_conditions_proveedor(
     search: Optional[str],
     nombre_servicio: Optional[str],
     nombre_cliente: Optional[str],
@@ -599,7 +635,7 @@ def build_where_conditions(
     fecha_hasta: Optional[str],
     estado: Optional[str]
 ) -> tuple[list[str], list, int]:
-    """Construye las condiciones WHERE dinámicas y sus parámetros"""
+    """Construye las condiciones WHERE dinámicas y sus parámetros para reservas de proveedores"""
     where_conditions = []
     params = []
     param_count = 1  # Empezamos en 1 porque $1 es para proveedor_id
@@ -793,7 +829,7 @@ async def obtener_reservas_proveedor(
             proveedor_id = perfil_result['id_perfil']
             
             # Construir condiciones WHERE dinámicas
-            where_conditions, where_params, param_count = build_where_conditions(
+            where_conditions, where_params, param_count = build_where_conditions_proveedor(
                 search, nombre_servicio, nombre_cliente, fecha_desde, fecha_hasta, estado
             )
             

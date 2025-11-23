@@ -45,10 +45,8 @@ const AdminReportsPage: React.FC = () => {
     const { user } = useAuth();
     const [reportes, setReportes] = useState<{[key: string]: ReporteData}>({});
     const [loading, setLoading] = useState<{[key: string]: boolean}>({});
-    const [setError] = useState<string | null>(null);
-    const [selectedReport] = useState<string | null>(null);
+    const [selectedReport, setSelectedReport] = useState<string | null>(null);
     const [loadedReports, setLoadedReports] = useState<Set<string>>(new Set());
-    const [setInitialLoading] = useState<boolean>(true);
 
     // Sin cache para evitar complejidad - carga directa
 
@@ -117,6 +115,7 @@ const AdminReportsPage: React.FC = () => {
                 return `${day}/${month}/${year}`;
             }
         } catch (error) {
+            console.debug('Error formateando fecha de reserva:', error);
             const matchAnyDate = value.match(/(\d{2}\/\d{2}\/\d{4})/);
             if (matchAnyDate) {
                 return matchAnyDate[1];
@@ -318,12 +317,6 @@ const AdminReportsPage: React.FC = () => {
         }
     };
 
-    // Inicialización simple sin pre-carga automática
-    useEffect(() => {
-        if (user?.accessToken) {
-            setInitialLoading(false);
-        }
-    }, [user?.accessToken]);
 
     // Función para formatear fecha a DD/MM/AAAA
     const formatDateToDDMMAAAA = (dateString: string): string => {
@@ -531,6 +524,7 @@ const AdminReportsPage: React.FC = () => {
         if (reportType === 'categorias') return 8000;
         if (reportType === 'proveedores-verificados') return 15000;
         if (reportType === 'reservas') return 15000;
+        if (reportType === 'calificaciones' || reportType === 'calificaciones-proveedores') return 15000;
         return 12000; // Default
     };
 
@@ -577,7 +571,6 @@ const AdminReportsPage: React.FC = () => {
 
         console.log(`🚀 Iniciando carga de reporte: ${reportType}`);
         setLoading(prev => ({ ...prev, [reportType]: true }));
-        setError(null);
 
         if (reportType === 'usuarios-activos') {
             console.log('👥 Cargando reporte de usuarios activos (puede tardar más tiempo)...');
@@ -631,7 +624,7 @@ const AdminReportsPage: React.FC = () => {
                             console.error('Error en fallback de usuarios-activos:', fallbackError);
                         }
 
-                        // Fallback final: sin datos si todo falla
+                        // Fallback final: sin datos si falla
                         return {
                             fecha_generacion: new Date().toISOString(),
                             total_usuarios: 0,
@@ -710,7 +703,7 @@ const AdminReportsPage: React.FC = () => {
                                     console.debug('Error en estrategia 3 de proveedores:', error);
                                 }
                                 
-                                // Estrategia 4: sin datos si todo falla
+                                // Estrategia 4: sin datos si falla
                                 console.log('⚠️ No se pudieron cargar proveedores desde ninguna fuente');
                                 return {
                                     fecha_generacion: getArgentinaDateISO(),
@@ -1004,7 +997,6 @@ const AdminReportsPage: React.FC = () => {
                             throw error;
                         }
                     })();
-                    timeoutDuration = 15000; // 15 segundos para calificaciones
                     break;
                 case 'calificaciones-proveedores':
                     dataPromise = (async () => {
@@ -1030,7 +1022,6 @@ const AdminReportsPage: React.FC = () => {
                             throw error;
                         }
                     })();
-                    timeoutDuration = 15000; // 15 segundos para calificaciones de proveedores
                     break;
                 default:
                     throw new Error('Tipo de reporte no válido');

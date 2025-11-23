@@ -166,7 +166,8 @@ const ResetPasswordPage: React.FC = () => {
                     remainingAttempts: data.remaining_attempts || 0
                 });
             }
-        } catch (_error_) {
+        } catch (error) {
+            console.debug('Error al verificar código de restablecimiento:', error);
             updateState({
                 loading: false,
                 error: 'Error de conexión. Inténtalo nuevamente.'
@@ -229,7 +230,8 @@ const ResetPasswordPage: React.FC = () => {
                     error: data.message || 'Error actualizando la contraseña'
                 });
             }
-        } catch (_error_) {
+        } catch (error) {
+            console.debug('Error al establecer nueva contraseña:', error);
             updateState({
                 loading: false,
                 error: 'Error de conexión. Inténtalo nuevamente.'
@@ -267,7 +269,8 @@ const ResetPasswordPage: React.FC = () => {
                     error: data.message || 'Error enviando el código'
                 });
             }
-        } catch (_error_) {
+        } catch (error) {
+            console.debug('Error al reenviar código de restablecimiento:', error);
             updateState({
                 loading: false,
                 error: 'Error de conexión. Inténtalo nuevamente.'

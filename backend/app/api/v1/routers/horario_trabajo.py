@@ -244,7 +244,7 @@ async def actualizar_horario_trabajo(
         logger.info(f"🔍 [PUT /horario-trabajo] Campos a actualizar: {list(update_data.keys())}")
         
         if not update_data:
-            logger.info(f"✅ [PUT /horario-trabajo] No hay cambios que aplicar, devolviendo horario actual")
+            logger.info("✅ [PUT /horario-trabajo] No hay cambios que aplicar, devolviendo horario actual")
             return horario_existente
         
         # Construir query de actualización dinámicamente
@@ -264,7 +264,7 @@ async def actualizar_horario_trabajo(
             RETURNING id_horario, id_proveedor, dia_semana, hora_inicio, hora_fin, activo, created_at
         """
         
-        logger.info(f"🔍 [PUT /horario-trabajo] Ejecutando actualización...")
+        logger.info("🔍 [PUT /horario-trabajo] Ejecutando actualización...")
         horario_actualizado = await fetch_one_query(update_query, *params)
         logger.info(f"🔍 [PUT /horario-trabajo] Horario actualizado: {horario_actualizado}")
         

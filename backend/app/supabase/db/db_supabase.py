@@ -120,10 +120,9 @@ try:
         poolclass=None,  # Sin pool de conexiones para evitar PgBouncer
         echo=VALOR_FALSE,
         connect_args={
-            CLAVE_STATEMENT_CACHE_SIZE: CACHE_SIZE_DISABLED,  # Deshabilitar prepared statements para PgBouncer
-            CLAVE_PREPARED_STATEMENT_CACHE_SIZE: CACHE_SIZE_DISABLED,
-            CLAVE_COMMAND_TIMEOUT: COMMAND_TIMEOUT,  # Timeout para comandos
-            CLAVE_SERVER_SETTINGS: {
+            "statement_cache_size": CACHE_SIZE_DISABLED,  # Deshabilitar prepared statements para PgBouncer (asyncpg)
+            "command_timeout": COMMAND_TIMEOUT,  # Timeout para comandos
+            "server_settings": {
                 CLAVE_JIT: JIT_OFF,  # Deshabilitar JIT para evitar problemas con PgBouncer
                 CLAVE_APPLICATION_NAME: APP_NAME_SEVA_B2B,
                 CLAVE_DEFAULT_TRANSACTION_ISOLATION: ISOLATION_LEVEL_READ_COMMITTED
@@ -133,7 +132,7 @@ try:
         # Configuración optimizada para PgBouncer (que sigue siendo usado)
         pool_pre_ping=VALOR_TRUE,  # Verificar conexiones antes de usar
         pool_recycle=POOL_RECYCLE_3600,  # Reciclar conexiones cada hora
-        execution_options={CLAVE_PREPARED: VALOR_FALSE}  # 🚨 Clave para PgBouncer
+        execution_options={CLAVE_PREPARED: VALOR_FALSE}  # 🚨 Clave para PgBouncer - deshabilitar prepared statements
     )
 
     AsyncSessionLocal = sessionmaker(
