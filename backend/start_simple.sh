@@ -6,7 +6,7 @@ set -e
 echo "🚀 Iniciando SEVA B2B API (versión simplificada)..."
 
 # Verificar que las variables de entorno estén configuradas
-if [ -z "$PORT" ]; then
+if [[ -z "$PORT" ]]; then
     export PORT=8000
     echo "⚠️  PORT no configurado, usando puerto por defecto: $PORT"
 fi

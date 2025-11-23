@@ -138,19 +138,20 @@ export const LocationSelector = <T extends { id: number; nombre: string }>({
                                 {searchTerm.trim() === '' ? 'No hay opciones disponibles' : 'No se encontraron coincidencias'}
                             </div>
                         ) : (
-                            <div>
+                            <div role="listbox" aria-label={label}>
                                 {filteredOptions.map((option) => (
-                                    <div
+                                    <button
                                         key={option.id}
+                                        type="button"
                                         role="option"
                                         tabIndex={0}
-                                        className="px-3 py-3 sm:py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-900 transition-colors duration-150 touch-manipulation focus:outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-500"
+                                        className="w-full text-left px-3 py-3 sm:py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-900 transition-colors duration-150 touch-manipulation focus:outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-500"
                                         onClick={() => handleSelect(option)}
                                         onKeyDown={(e) => handleKeyDown(e, option)}
                                         aria-selected={value?.id === option.id}
                                     >
                                         {option.nombre}
-                                    </div>
+                                    </button>
                                 ))}
                             </div>
                         )}

@@ -13,16 +13,12 @@ try {
 
 // Verificar sintaxis básica JSX
 const testJSX = () => {
-  try {
-    return (
-      <div>
-        <h1>Test</h1>
-        <p>Verificación de sintaxis</p>
-      </div>
-    );
-  } catch (error) {
-    console.error("❌ Error de sintaxis JSX:", error);
-  }
+  return (
+    <div>
+      <h1>Test</h1>
+      <p>Verificación de sintaxis</p>
+    </div>
+  );
 };
 
 console.log("✅ Verificación completada");

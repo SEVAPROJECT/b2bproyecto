@@ -8,6 +8,91 @@ import { useAuth } from '../../contexts/AuthContext';
 import { buildBackendFilters, filterServices } from '../../utils/marketplaceFilters';
 import { buildApiUrl } from '../../config/api';
 
+// Función helper para calcular el offset de paginación
+const calculateOffset = (page: number, itemsPerPage: number): number => {
+    return (page - 1) * itemsPerPage;
+};
+
+// Función helper para obtener el token de acceso
+const getAccessToken = (user: any): string | undefined => {
+    return user?.accessToken || localStorage.getItem('access_token') || undefined;
+};
+
+// Función helper para actualizar estados después de cargar datos
+const updateDataStates = (
+    setTotalServices: (value: number) => void,
+    setServices: (services: BackendService[]) => void,
+    setCategories: (categories: BackendCategory[]) => void,
+    setUsingMockData: (value: boolean) => void,
+    setCurrentPage: (page: number) => void,
+    filteredResponse: any,
+    categoriesData: BackendCategory[],
+    page?: number
+) => {
+    setTotalServices(filteredResponse.pagination.total);
+    setServices(filteredResponse.services);
+    setCategories(categoriesData);
+    setUsingMockData(false);
+    if (page !== undefined) {
+        setCurrentPage(page);
+    }
+};
+
+// Función helper para verificar si hay filtros activos
+const hasActiveFilters = (
+    priceRange: number[],
+    currencyFilter: string,
+    categoryFilter: string,
+    departmentFilter: string,
+    cityFilter: string,
+    searchQuery: string
+): boolean => {
+    return priceRange[0] > 0 || 
+           priceRange[1] < 1000000000 || 
+           currencyFilter !== 'all' || 
+           categoryFilter !== 'all' || 
+           departmentFilter !== 'all' || 
+           cityFilter !== 'all' ||
+           searchQuery.trim() !== '';
+};
+
+// Función helper para calcular el total de páginas con servidor filtrado
+const calculateTotalPagesWithServer = (totalServices: number, itemsPerPage: number): number => {
+    return Math.ceil(totalServices / itemsPerPage);
+};
+
+// Función helper para calcular el total de páginas con filtros locales
+const calculateTotalPagesWithLocalFilters = (filteredServicesLength: number, itemsPerPage: number): number => {
+    return Math.ceil(filteredServicesLength / itemsPerPage);
+};
+
+// Función helper para convertir resultados de IA al formato esperado
+const convertAIResultsToServices = (results: any[]): BackendService[] => {
+    return results.map((result: any) => ({
+        id_servicio: result.id_servicio,
+        nombre: result.nombre,
+        descripcion: result.descripcion,
+        precio: result.precio,
+        categoria: result.categoria,
+        empresa: result.empresa,
+        id_categoria: 1,
+        razon_social: result.empresa,
+        departamento: '',
+        ciudad: '',
+        codigo_iso_moneda: 'GS',
+        simbolo_moneda: '₲',
+        id_moneda: 1,
+        created_at: new Date().toISOString(),
+        estado: 'activo'
+    }));
+};
+
+// Función helper para determinar el tiempo de debounce según el tipo de cambio
+const getDebounceTime = (priceRange: number[]): number => {
+    const isSliderChange = priceRange[0] > 0 || priceRange[1] < 1000000000;
+    return isSliderChange ? 500 : 100;
+};
+
 const MarketplacePage: React.FC = () => {
     const { isAuthenticated, user } = useAuth();
     
@@ -34,7 +119,7 @@ const MarketplacePage: React.FC = () => {
     // Estados para paginación del backend
     const [totalServices, setTotalServices] = useState<number>(0);
     const [isLoadingPage, setIsLoadingPage] = useState(false);
-    const [isLoadingFilters, setIsLoadingFilters] = useState(false);
+    const [setIsLoadingFilters] = useState(false);
 
     // Estados de filtros
     const [searchQuery, setSearchQuery] = useState('');
@@ -42,8 +127,18 @@ const MarketplacePage: React.FC = () => {
     const [categoryFilter, setCategoryFilter] = useState('all');
     const [ratingFilter, setRatingFilter] = useState(0);
     const [currencyFilter, setCurrencyFilter] = useState('all');
-    const [priceFilter, setPriceFilter] = useState('all');
+    const [setPriceFilter] = useState('all');
     const [priceRange, setPriceRange] = useState([0, 1000000000]);
+    const [sliderValue, setSliderValue] = useState(1000000000); // Estado temporal para mostrar el valor mientras se arrastra
+    
+    // Sincronizar sliderValue con priceRange[1] cuando cambia priceRange externamente (solo si no viene del slider)
+    const isSliderDraggingRef = useRef(false);
+    
+    useEffect(() => {
+        if (!isSliderDraggingRef.current) {
+            setSliderValue(priceRange[1]);
+        }
+    }, [priceRange[1]]);
     
     // Estados de filtros avanzados
     const [departmentFilter, setDepartmentFilter] = useState('all');
@@ -93,64 +188,55 @@ const MarketplacePage: React.FC = () => {
         getBackendFiltersRef.current = getBackendFilters;
     }, [getBackendFilters]);
 
+    // Función helper para cargar datos de la API
+    const fetchDataFromAPI = useCallback(async (pageToUse: number) => {
+        const offset = calculateOffset(pageToUse, itemsPerPage);
+        const accessToken = getAccessToken(user);
+        const filters = getBackendFiltersRef.current ? getBackendFiltersRef.current() : {};
+        
+        const [filteredResponse, categoriesData] = await Promise.all([
+            servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters),
+            categoriesAPI.getCategories(undefined, true)
+        ]);
+        
+        return { filteredResponse, categoriesData };
+    }, [itemsPerPage, user]);
+
+    // Función helper para manejar errores de API
+    const handleAPIError = useCallback((apiError: any) => {
+        console.error('❌ Error con API real:', apiError);
+        setError('No se pudo conectar con el servidor. Por favor, verifica que el backend esté funcionando.');
+        setServices([]);
+        setCategories([]);
+        setUsingMockData(false);
+    }, []);
+
     // Cargar datos iniciales con paginación del backend
     const loadInitialData = useCallback(async (page?: number) => {
         const pageToUse = page ?? currentPage;
         console.log('🚀 Iniciando loadInitialData...', { page: pageToUse });
-        // Removido: if (dataLoadedRef.current) return; // Evitar cargas duplicadas
         
         try {
-            console.log('🔄 Estableciendo isLoading = true');
             setIsLoading(true);
             setError(null);
             
-            // Intentar llamadas reales a la API del backend con paginación
             try {
-                console.log('Intentando cargar datos reales de la API con paginación...');
+                const { filteredResponse, categoriesData } = await fetchDataFromAPI(pageToUse);
                 
-                // Calcular offset basado en la página a usar
-                const offset = (pageToUse - 1) * itemsPerPage;
-                
-                // Obtener token de autenticación si está disponible
-                const accessToken = user?.accessToken || localStorage.getItem('access_token');
-                console.log(`🔄 Carga inicial con offset ${offset}, limit ${itemsPerPage}`);
-                
-                // Construir filtros del backend
-                const filters = getBackendFiltersRef.current ? getBackendFiltersRef.current() : {};
-                console.log('🔍 Filtros del backend:', filters);
-                
-                // Usar el nuevo endpoint filtrado que maneja filtros del lado del servidor
-                const [filteredResponse, categoriesData] = await Promise.all([
-                    servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters),
-                    categoriesAPI.getCategories(undefined, true) // Solo categorías activas
-                ]);
-
-                console.log('📊 Respuesta del endpoint filtrado:', filteredResponse);
-                console.log('📊 Servicios cargados del backend (filtrados):', filteredResponse.services.length);
-                console.log('📊 Total de servicios disponibles:', filteredResponse.pagination.total);
-                
-                // Actualizar estados
-                console.log('🔄 Actualizando estados...');
-                console.log('📊 filteredResponse.pagination.total:', filteredResponse.pagination.total);
-                console.log('📊 filteredResponse.services.length:', filteredResponse.services.length);
-                console.log('📊 categoriesData.length:', categoriesData.length);
-                
-                setTotalServices(filteredResponse.pagination.total);
-                setServices(filteredResponse.services);
-                setCategories(categoriesData);
-                setUsingMockData(false);
-                // Actualizar currentPage si se proporcionó un valor específico
-                if (page !== undefined) {
-                    setCurrentPage(page);
-                }
+                updateDataStates(
+                    setTotalServices,
+                    setServices,
+                    setCategories,
+                    setUsingMockData,
+                    setCurrentPage,
+                    filteredResponse,
+                    categoriesData,
+                    page
+                );
                 
                 console.log('✅ Datos filtrados del servidor aplicados correctamente');
             } catch (apiError) {
-                console.error('❌ Error con API real:', apiError);
-                setError('No se pudo conectar con el servidor. Por favor, verifica que el backend esté funcionando.');
-                setServices([]);
-                setCategories([]);
-                setUsingMockData(false);
+                handleAPIError(apiError);
                 return;
             }
             
@@ -158,13 +244,39 @@ const MarketplacePage: React.FC = () => {
             console.error('Error cargando datos:', err);
             setError('Error al cargar los datos. Por favor, intentá nuevamente.');
         } finally {
-            console.log('🔄 Finalizando loadInitialData - estableciendo isLoading = false');
             setIsLoading(false);
             dataLoadedRef.current = true;
             console.log('✅ loadInitialData completado');
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPage, itemsPerPage, user]); // No incluir getBackendFilters para evitar bucles
+    }, [currentPage, itemsPerPage, user, fetchDataFromAPI, handleAPIError]); // No incluir getBackendFilters para evitar bucles
+
+    // Función helper para establecer el estado de loading apropiado
+    const setLoadingState = useCallback((showFullLoading: boolean) => {
+        if (showFullLoading) {
+            setIsLoading(true);
+        } else {
+            setIsLoadingFilters(true);
+        }
+    }, []);
+
+    // Función helper para limpiar el estado de loading apropiado
+    const clearLoadingState = useCallback((showFullLoading: boolean) => {
+        if (showFullLoading) {
+            setIsLoading(false);
+        } else {
+            setIsLoadingFilters(false);
+        }
+    }, []);
+
+    // Función helper para actualizar servicios después de recargar
+    const updateServicesAfterReload = useCallback((filteredResponse: any, page?: number) => {
+        setServices(filteredResponse.services);
+        setTotalServices(filteredResponse.pagination.total);
+        if (page !== undefined) {
+            setCurrentPage(page);
+        }
+    }, []);
 
     // Función optimizada para recargar solo los datos filtrados (sin loading completo)
     const reloadFilteredData = useCallback(async (page?: number, showFullLoading: boolean = false) => {
@@ -172,41 +284,25 @@ const MarketplacePage: React.FC = () => {
         console.log('🔄 Recargando datos filtrados...', { page: pageToUse, showFullLoading });
         
         try {
-            // Usar loading completo solo si se especifica, sino usar loading de filtros
-            if (showFullLoading) {
-                setIsLoading(true);
-            } else {
-                setIsLoadingFilters(true);
-            }
+            setLoadingState(showFullLoading);
             
-            const offset = (pageToUse - 1) * itemsPerPage;
-            const accessToken = user?.accessToken || localStorage.getItem('access_token');
+            const offset = calculateOffset(pageToUse, itemsPerPage);
+            const accessToken = getAccessToken(user);
             const filters = getBackendFiltersRef.current ? getBackendFiltersRef.current() : {};
-            
-            console.log(`🔄 Recarga filtrada con offset ${offset}, limit ${itemsPerPage}`);
             
             const filteredResponse = await servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters);
             
-            setServices(filteredResponse.services);
-            setTotalServices(filteredResponse.pagination.total);
-            // Actualizar currentPage si se proporcionó un valor específico
-            if (page !== undefined) {
-                setCurrentPage(page);
-            }
+            updateServicesAfterReload(filteredResponse, page);
             console.log(`📄 Datos filtrados recargados: ${filteredResponse.services.length} servicios, total: ${filteredResponse.pagination.total}`);
             
         } catch (error) {
             console.error('❌ Error recargando datos filtrados:', error);
             setError('Error aplicando filtros. Inténtalo de nuevo.');
         } finally {
-            if (showFullLoading) {
-                setIsLoading(false);
-            } else {
-                setIsLoadingFilters(false);
-            }
+            clearLoadingState(showFullLoading);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPage, itemsPerPage, user]); // No incluir getBackendFilters para evitar bucles
+    }, [currentPage, itemsPerPage, user, setLoadingState, clearLoadingState, updateServicesAfterReload]); // No incluir getBackendFilters para evitar bucles
 
     // Mantener referencia actualizada de reloadFilteredData
     useEffect(() => {
@@ -267,16 +363,11 @@ const MarketplacePage: React.FC = () => {
         
         console.log('🔄 Filtros cambiaron, recargando datos...');
         
-        // Debounce inteligente: más corto para filtros inmediatos, más largo para slider
-        const isSliderChange = priceRange[0] > 0 || priceRange[1] < 1000000000;
-        const debounceTime = isSliderChange ? 500 : 100; // 500ms para slider, 100ms para otros filtros
+        const debounceTime = getDebounceTime(priceRange);
         
         const timeoutId = setTimeout(() => {
             console.log(`🔄 Ejecutando recarga después de ${debounceTime}ms...`);
             
-            // Siempre usar reloadFilteredData para evitar recargar toda la página
-            // Pasar showFullLoading=false para usar solo el loading de filtros (más sutil)
-            // Resetear a página 1 cuando cambian los filtros
             console.log('🔄 Recargando datos desde página 1 (sin loading completo)...');
             const reloadFn = reloadFilteredDataRef.current;
             if (reloadFn) {
@@ -319,6 +410,30 @@ const MarketplacePage: React.FC = () => {
         });
     }, [reloadFilteredData]);
 
+    // Función helper para realizar la búsqueda en Weaviate
+    const searchWeaviate = useCallback(async (query: string) => {
+        const weaviateSearchUrl = buildApiUrl('/weaviate/search-public');
+        const response = await fetch(`${weaviateSearchUrl}?query=${encodeURIComponent(query)}&limit=10`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+
+        return await response.json();
+    }, []);
+
+    // Función helper para actualizar servicios con resultados de IA
+    const updateServicesWithAIResults = useCallback((aiServices: BackendService[]) => {
+        setServices(aiServices);
+        setTotalServices(aiServices.length);
+        setCurrentPage(1);
+    }, []);
+
     // Función para búsqueda con IA usando Weaviate
     const handleAISearch = useCallback(async () => {
         if (!searchQuery.trim()) {
@@ -332,48 +447,12 @@ const MarketplacePage: React.FC = () => {
         try {
             console.log('🤖 Iniciando búsqueda con IA:', searchQuery);
 
-            // Llamar al endpoint correcto de búsqueda de Weaviate usando buildApiUrl
-            const weaviateSearchUrl = buildApiUrl('/weaviate/search-public');
-            const response = await fetch(`${weaviateSearchUrl}?query=${encodeURIComponent(searchQuery)}&limit=10`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                throw new Error(`Error ${response.status}: ${response.statusText}`);
-            }
-
-            const data = await response.json();
+            const data = await searchWeaviate(searchQuery);
             console.log('🤖 Resultados de IA:', data);
 
             if (data.results && data.results.length > 0) {
-                // Convertir resultados de Weaviate al formato esperado
-                const aiServices = data.results.map((result: any) => ({
-                    id_servicio: result.id_servicio,
-                    nombre: result.nombre,
-                    descripcion: result.descripcion,
-                    precio: result.precio,
-                    categoria: result.categoria,
-                    empresa: result.empresa,
-                    // Agregar campos requeridos con valores por defecto
-                    id_categoria: 1, // Valor por defecto
-                    razon_social: result.empresa,
-                    departamento: '',
-                    ciudad: '',
-                    codigo_iso_moneda: 'GS',
-                    simbolo_moneda: '₲',
-                    id_moneda: 1,
-                    created_at: new Date().toISOString(),
-                    estado: 'activo'
-                }));
-
-                // Actualizar servicios con resultados de IA
-                setServices(aiServices);
-                setTotalServices(aiServices.length);
-                setCurrentPage(1);
-                
+                const aiServices = convertAIResultsToServices(data.results);
+                updateServicesWithAIResults(aiServices);
                 console.log('✅ Búsqueda con IA completada:', aiServices.length, 'servicios encontrados');
             } else {
                 console.log('⚠️ No se encontraron resultados con IA');
@@ -387,12 +466,12 @@ const MarketplacePage: React.FC = () => {
         } finally {
             setIsAISearching(false);
         }
-    }, [searchQuery]);
+    }, [searchQuery, searchWeaviate, updateServicesWithAIResults]);
 
     // Función para manejar contacto con proveedor
     const handleContactProvider = useCallback((serviceId: number) => {
         if (!isAuthenticated) {
-            window.location.href = '/login#/login';
+            globalThis.location.href = '/login#/login';
             return;
         }
         
@@ -541,44 +620,30 @@ const MarketplacePage: React.FC = () => {
 
     // Calcular total de páginas basado en servicios filtrados cuando hay filtros activos
     const totalPages = useMemo(() => {
-        // NUEVO: Si estamos usando el endpoint filtrado del servidor, usar totalServices
         if (totalServices > 0) {
-            const pages = Math.ceil(totalServices / itemsPerPage);
-            console.log('📄 Calculando páginas con servidor filtrado:', {
-                totalServices,
-                itemsPerPage,
-                totalPages: pages
-            });
-            return pages;
+            return calculateTotalPagesWithServer(totalServices, itemsPerPage);
         }
         
-        // Fallback: Si no hay paginación del backend, usar filtros locales
-        const hasActiveFilters = priceRange[0] > 0 || priceRange[1] < 1000000000 || 
-                                currencyFilter !== 'all' || 
-                                categoryFilter !== 'all' || 
-                                departmentFilter !== 'all' || 
-                                cityFilter !== 'all' ||
-                                searchQuery.trim() !== '';
+        const hasFilters = hasActiveFilters(
+            priceRange,
+            currencyFilter,
+            categoryFilter,
+            departmentFilter,
+            cityFilter,
+            searchQuery
+        );
         
-        if (hasActiveFilters) {
-            const pages = Math.ceil(filteredServices.length / itemsPerPage);
-            console.log('📄 Calculando páginas con filtros locales:', {
-                filteredServices: filteredServices.length,
-                itemsPerPage,
-                totalPages: pages
-            });
-            return pages;
+        if (hasFilters) {
+            return calculateTotalPagesWithLocalFilters(filteredServices.length, itemsPerPage);
         }
         
-        // Si no hay filtros activos, usar paginación del backend
-        const pages = Math.ceil(totalServices / itemsPerPage);
-        console.log('📄 Calculando páginas del backend:', {
-            totalServices,
-            itemsPerPage,
-            totalPages: pages
-        });
-        return pages;
+        return calculateTotalPagesWithServer(totalServices, itemsPerPage);
     }, [filteredServices.length, totalServices, itemsPerPage, priceRange, currencyFilter, categoryFilter, departmentFilter, cityFilter, searchQuery]);
+
+    // Memoizar el texto formateado del precio para asegurar actualización en tiempo real
+    const formattedMaxPrice = useMemo(() => {
+        return formatPriceByCurrency(sliderValue, currencyFilter);
+    }, [sliderValue, currencyFilter, formatPriceByCurrency]);
 
     // Resetear filtros
     const resetFilters = useCallback(() => {
@@ -589,6 +654,7 @@ const MarketplacePage: React.FC = () => {
         setCurrencyFilter('all');
         setPriceFilter('all');
         setPriceRange([0, 1000000000]);
+        setSliderValue(1000000000);
         setDepartmentFilter('all');
         setCityFilter('all');
         setCurrentPage(1);
@@ -738,8 +804,9 @@ const MarketplacePage: React.FC = () => {
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                             {/* Filtro de fecha - compacto */}
                             <div className="space-y-1">
-                                <label className="block text-xs font-medium text-slate-700">Fecha</label>
+                                <label htmlFor="filter-date" className="block text-xs font-medium text-slate-700">Fecha</label>
                                 <select
+                                    id="filter-date"
                                     value={dateFilter}
                                     onChange={(e) => {
                                         setDateFilter(e.target.value);
@@ -874,8 +941,8 @@ const MarketplacePage: React.FC = () => {
                                     <label className="block text-xs sm:text-sm font-medium text-slate-700">
                                         Precio en {getCurrencyName(currencyFilter)}
                                     </label>
-                                    <span className="text-xs sm:text-sm font-semibold text-primary-600">
-                                        Hasta {formatPriceByCurrency(priceRange[1], currencyFilter)}
+                                    <span className="text-xs sm:text-sm font-semibold text-primary-600" key={`price-${sliderValue}`}>
+                                        Hasta {formattedMaxPrice}
                                     </span>
                                 </div>
 
@@ -885,11 +952,40 @@ const MarketplacePage: React.FC = () => {
                                         min="0"
                                         max="1000000000"
                                         step="1000000"
-                                        value={priceRange[1]}
-                                        onChange={(e) => setPriceRange([0, Number.parseInt(e.target.value)])}
+                                        value={sliderValue}
+                                        onInput={(e) => {
+                                            const target = e.target as HTMLInputElement;
+                                            const newValue = Number.parseInt(target.value, 10);
+                                            isSliderDraggingRef.current = true;
+                                            setSliderValue(() => newValue);
+                                        }}
+                                        onChange={(e) => {
+                                            const target = e.target as HTMLInputElement;
+                                            const newValue = Number.parseInt(target.value, 10);
+                                            isSliderDraggingRef.current = true;
+                                            setSliderValue(() => newValue);
+                                        }}
+                                        onMouseDown={() => {
+                                            isSliderDraggingRef.current = true;
+                                        }}
+                                        onMouseUp={(e) => {
+                                            const target = e.target as HTMLInputElement;
+                                            const newValue = Number.parseInt(target.value, 10);
+                                            isSliderDraggingRef.current = false;
+                                            setPriceRange([0, newValue]);
+                                        }}
+                                        onTouchStart={() => {
+                                            isSliderDraggingRef.current = true;
+                                        }}
+                                        onTouchEnd={(e) => {
+                                            const target = e.target as HTMLInputElement;
+                                            const newValue = Number.parseInt(target.value, 10);
+                                            isSliderDraggingRef.current = false;
+                                            setPriceRange([0, newValue]);
+                                        }}
                                         className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-thumb"
                                         style={{
-                                            background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(priceRange[1] / 1000000000) * 100}%, #e2e8f0 ${(priceRange[1] / 1000000000) * 100}%, #e2e8f0 100%)`
+                                            background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(sliderValue / 1000000000) * 100}%, #e2e8f0 ${(sliderValue / 1000000000) * 100}%, #e2e8f0 100%)`
                                         }}
                                     />
                                     <div className="flex justify-between text-xs text-slate-500">
@@ -1121,27 +1217,22 @@ const MarketplacePage: React.FC = () => {
 
             {/* Modal de filtros avanzados */}
             {showAdvancedFilters && (
-                <div
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Cerrar filtros avanzados"
-                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+                <button
+                    type="button"
+                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 border-0 cursor-pointer"
                     onClick={() => setShowAdvancedFilters(false)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
-                            e.preventDefault();
-                            setShowAdvancedFilters(false);
-                        }
-                    }}
+                    aria-label="Cerrar filtros avanzados"
                 >
                     <div
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="filtros-avanzados-title"
                         className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-                        onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="p-6">
+                        <div 
+                            className="p-6"
+                            onClick={(e) => e.stopPropagation()}
+                        >
                             <div className="flex items-center justify-between mb-6">
                                 <h2 id="filtros-avanzados-title" className="text-xl font-semibold text-slate-900">Filtros Avanzados</h2>
                                 <button
@@ -1155,10 +1246,11 @@ const MarketplacePage: React.FC = () => {
                             <div className="space-y-6">
                                 {/* Filtro por departamento */}
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    <label htmlFor="filter-department" className="block text-sm font-medium text-slate-700 mb-2">
                                         Departamento
                                     </label>
                                     <select
+                                        id="filter-department"
                                         value={departmentFilter}
                                         onChange={(e) => {
                                             setDepartmentFilter(e.target.value);
@@ -1178,10 +1270,11 @@ const MarketplacePage: React.FC = () => {
 
                                 {/* Filtro por ciudad */}
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    <label htmlFor="filter-city" className="block text-sm font-medium text-slate-700 mb-2">
                                         Ciudad
                                     </label>
                                     <select
+                                        id="filter-city"
                                         value={cityFilter}
                                         onChange={(e) => setCityFilter(e.target.value)}
                                         disabled={departmentFilter === 'all'}
@@ -1217,7 +1310,7 @@ const MarketplacePage: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                </div>
+                </button>
             )}
 
             {/* Modal de reserva del servicio */}

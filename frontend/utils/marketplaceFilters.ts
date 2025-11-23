@@ -12,6 +12,63 @@ export interface FilterParams {
     customDateRange: { start: string; end: string };
 }
 
+const applyCurrencyFilter = (filters: Record<string, any>, currencyFilter: string): void => {
+    if (currencyFilter !== 'all') {
+        filters.currency = currencyFilter;
+    }
+};
+
+const applyPriceFilter = (filters: Record<string, any>, priceRange: [number, number]): void => {
+    const isPriceFilterActive = priceRange[0] > 0 || priceRange[1] < 1000000000;
+    if (!isPriceFilterActive) return;
+
+    if (priceRange[0] > 0) {
+        filters.min_price = priceRange[0];
+    }
+    if (priceRange[1] < 1000000000) {
+        filters.max_price = priceRange[1];
+    }
+};
+
+const applyCategoryFilter = (filters: Record<string, any>, categoryFilter: string): void => {
+    if (categoryFilter !== 'all') {
+        filters.category_id = parseInt(categoryFilter);
+    }
+};
+
+const applyLocationFilters = (filters: Record<string, any>, departmentFilter: string, cityFilter: string): void => {
+    if (departmentFilter !== 'all') {
+        filters.department = departmentFilter;
+    }
+    if (cityFilter !== 'all') {
+        filters.city = cityFilter;
+    }
+};
+
+const applySearchFilter = (filters: Record<string, any>, searchQuery: string): void => {
+    if (searchQuery.trim()) {
+        filters.search = searchQuery.trim();
+    }
+};
+
+const applyDateFilter = (filters: Record<string, any>, dateFilter: string, customDateRange: { start: string; end: string }): void => {
+    if (dateFilter === 'all') return;
+
+    const dateFilters = getDateFilters(dateFilter, customDateRange);
+    if (dateFilters.dateFrom) {
+        filters.date_from = dateFilters.dateFrom;
+    }
+    if (dateFilters.dateTo) {
+        filters.date_to = dateFilters.dateTo;
+    }
+};
+
+const applyRatingFilter = (filters: Record<string, any>, ratingFilter: number): void => {
+    if (ratingFilter > 0) {
+        filters.min_rating = ratingFilter;
+    }
+};
+
 export const buildBackendFilters = (params: FilterParams): Record<string, any> => {
     const filters: Record<string, any> = {};
     const {
@@ -26,49 +83,13 @@ export const buildBackendFilters = (params: FilterParams): Record<string, any> =
         customDateRange
     } = params;
 
-    if (currencyFilter !== 'all') {
-        filters.currency = currencyFilter;
-    }
-
-    const isPriceFilterActive = priceRange[0] > 0 || priceRange[1] < 1000000000;
-    if (isPriceFilterActive) {
-        if (priceRange[0] > 0) {
-            filters.min_price = priceRange[0];
-        }
-        if (priceRange[1] < 1000000000) {
-            filters.max_price = priceRange[1];
-        }
-    }
-
-    if (categoryFilter !== 'all') {
-        filters.category_id = parseInt(categoryFilter);
-    }
-
-    if (departmentFilter !== 'all') {
-        filters.department = departmentFilter;
-    }
-
-    if (cityFilter !== 'all') {
-        filters.city = cityFilter;
-    }
-
-    if (searchQuery.trim()) {
-        filters.search = searchQuery.trim();
-    }
-
-    if (dateFilter !== 'all') {
-        const dateFilters = getDateFilters(dateFilter, customDateRange);
-        if (dateFilters.dateFrom) {
-            filters.date_from = dateFilters.dateFrom;
-        }
-        if (dateFilters.dateTo) {
-            filters.date_to = dateFilters.dateTo;
-        }
-    }
-
-    if (ratingFilter > 0) {
-        filters.min_rating = ratingFilter;
-    }
+    applyCurrencyFilter(filters, currencyFilter);
+    applyPriceFilter(filters, priceRange);
+    applyCategoryFilter(filters, categoryFilter);
+    applyLocationFilters(filters, departmentFilter, cityFilter);
+    applySearchFilter(filters, searchQuery);
+    applyDateFilter(filters, dateFilter, customDateRange);
+    applyRatingFilter(filters, ratingFilter);
 
     return filters;
 };
@@ -83,16 +104,18 @@ const getDateFilters = (dateFilter: string, customDateRange: { start: string; en
             dateFrom = today.toISOString().split('T')[0];
             dateTo = today.toISOString().split('T')[0];
             break;
-        case 'week':
+        case 'week': {
             const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
             dateFrom = weekAgo.toISOString().split('T')[0];
             dateTo = today.toISOString().split('T')[0];
             break;
-        case 'month':
+        }
+        case 'month': {
             const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
             dateFrom = monthAgo.toISOString().split('T')[0];
             dateTo = today.toISOString().split('T')[0];
             break;
+        }
         case 'custom':
             if (customDateRange.start && customDateRange.end) {
                 dateFrom = customDateRange.start;
@@ -126,7 +149,7 @@ const matchesSearchQuery = (service: BackendService, query: string): boolean => 
     const lowerQuery = query.toLowerCase();
     return service.nombre.toLowerCase().includes(lowerQuery) ||
         service.descripcion.toLowerCase().includes(lowerQuery) ||
-        (service.razon_social && service.razon_social.toLowerCase().includes(lowerQuery));
+        (service.razon_social?.toLowerCase().includes(lowerQuery) ?? false);
 };
 
 const matchesCategory = (service: BackendService, categoryFilter: string): boolean => {

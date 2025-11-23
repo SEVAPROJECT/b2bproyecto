@@ -11,7 +11,7 @@ class SmartUploadService:
         self.idrive_service = idrive_service
         self.local_storage = local_storage_service
     
-    async def upload_file_with_fallback(
+    def upload_file_with_fallback(
         self, 
         file_content: bytes, 
         filename: str, 
@@ -78,7 +78,7 @@ class SmartUploadService:
             logger.error(f"❌ Error en fallback local: {error_msg}")
             return False, f"Error en fallback local: {error_msg}", "", "none"
     
-    def get_file_url(self, file_url: str, storage_type: str) -> str:
+    def get_file_url(self, file_url: str) -> str:
         """Genera la URL correcta según el tipo de almacenamiento"""
         return file_url
     
@@ -125,7 +125,7 @@ class SmartUploadService:
 # Instancia global del servicio
 smart_upload_service = SmartUploadService()
 
-async def upload_file_to_idrive(
+def upload_file_to_idrive(
     file_content: bytes, 
     filename: str, 
     document_type: str = "provider"
@@ -133,7 +133,7 @@ async def upload_file_to_idrive(
     """
     Función de compatibilidad para subir archivos con fallback inteligente
     """
-    success, message, file_url, storage_type = await smart_upload_service.upload_file_with_fallback(
+    success, message, file_url, storage_type = smart_upload_service.upload_file_with_fallback(
         file_content, filename, document_type
     )
     

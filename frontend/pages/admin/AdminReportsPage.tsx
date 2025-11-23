@@ -45,10 +45,10 @@ const AdminReportsPage: React.FC = () => {
     const { user } = useAuth();
     const [reportes, setReportes] = useState<{[key: string]: ReporteData}>({});
     const [loading, setLoading] = useState<{[key: string]: boolean}>({});
-    const [error, setError] = useState<string | null>(null);
-    const [selectedReport, setSelectedReport] = useState<string | null>(null);
+    const [setError] = useState<string | null>(null);
+    const [selectedReport] = useState<string | null>(null);
     const [loadedReports, setLoadedReports] = useState<Set<string>>(new Set());
-    const [initialLoading, setInitialLoading] = useState<boolean>(true);
+    const [setInitialLoading] = useState<boolean>(true);
 
     // Sin cache para evitar complejidad - carga directa
 
@@ -1041,7 +1041,7 @@ const AdminReportsPage: React.FC = () => {
 
             // Sin cache - datos directos
 
-            setReportes(prev => ({ ...prev, [reportType]: data as ReporteData }));
+            setReportes(prev => ({ ...prev, [reportType]: data }));
             setLoadedReports(prev => new Set(prev).add(reportType));
         } catch (err: any) {
             handleLoadReporteError(err, reportType);
@@ -1293,17 +1293,15 @@ const AdminReportsPage: React.FC = () => {
         return headerMap[key] || key.replaceAll('_', ' ').toUpperCase();
     };
 
-    const generatePDF = (reportType: string) => {
-        const reporte = reportes[reportType];
-        if (!reporte) return;
-
-        // Crear contenido HTML para el PDF
-        let htmlContent = `
+    // Función helper para construir el HTML base del PDF
+    const buildPDFBaseHTML = (reportType: string, reporte: ReporteData): string => {
+        const reportTitle = reportTypes.find(r => r.id === reportType)?.title || 'Reporte';
+        return `
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="utf-8">
-                <title>Reporte - ${reportTypes.find(r => r.id === reportType)?.title}</title>
+                <title>Reporte - ${reportTitle}</title>
                 <style>
                     body { font-family: Arial, sans-serif; margin: 20px; }
                     .header { text-align: center; margin-bottom: 30px; }
@@ -1320,71 +1318,85 @@ const AdminReportsPage: React.FC = () => {
             <body>
                 <div class="header">
                     <h1>SEVA Empresas</h1>
-                    <h2>${reportTypes.find(r => r.id === reportType)?.title}</h2>
+                    <h2>${reportTitle}</h2>
                     <p>Generado el: ${formatArgentinaDateTime(reporte.fecha_generacion)}</p>
                 </div>
         `;
+    };
 
-        // Agregar resumen
+    // Función helper para construir el resumen del PDF
+    const buildPDFSummary = (reportType: string, reporte: ReporteData): string => {
         const totalKey = Object.keys(reporte).find(key => key.startsWith('total_'));
-        if (totalKey) {
-            const total = reporte[totalKey as keyof ReporteData];
-            htmlContent += `
-                <div class="summary">
-                    <h3>Resumen</h3>
-                    <p><strong>Total: ${total}</strong></p>
-                    ${(reportType === 'solicitudes-servicios' || reportType === 'solicitudes-categorias') && reporte.pendientes !== undefined ? `
-                        <p><strong>Estados:</strong></p>
-                        <p>• Pendientes: ${reporte.pendientes}</p>
-                        <p>• Aprobadas: ${reporte.aprobadas}</p>
-                        <p>• Rechazadas: ${reporte.rechazadas}</p>
-                    ` : ''}
-                </div>
-            `;
+        if (!totalKey) {
+            return '';
         }
 
-        // Agregar tabla de datos
+        const total = reporte[totalKey as keyof ReporteData];
+        const hasStatusInfo = (reportType === 'solicitudes-servicios' || reportType === 'solicitudes-categorias') && 
+                              reporte.pendientes !== undefined;
+        
+        const statusInfo = hasStatusInfo ? `
+            <p><strong>Estados:</strong></p>
+            <p>• Pendientes: ${reporte.pendientes}</p>
+            <p>• Aprobadas: ${reporte.aprobadas}</p>
+            <p>• Rechazadas: ${reporte.rechazadas}</p>
+        ` : '';
+
+        return `
+            <div class="summary">
+                <h3>Resumen</h3>
+                <p><strong>Total: ${total}</strong></p>
+                ${statusInfo}
+            </div>
+        `;
+    };
+
+    // Función helper para construir la tabla de datos del PDF
+    const buildPDFDataTable = (reporte: ReporteData, totalKey: string | undefined): string => {
         const dataKey = Object.keys(reporte).find(key => 
             key !== 'fecha_generacion' && 
             key !== totalKey && 
             Array.isArray(reporte[key as keyof ReporteData])
         );
 
-        if (dataKey) {
-            const data = reporte[dataKey as keyof ReporteData] as any[];
-            if (data && data.length > 0) {
-                htmlContent += '<table class="table"><thead><tr>';
-                
-                // Headers con nombres personalizados
-                for (const key of Object.keys(data[0])) {
-                    const headerName = getHeaderName(key);
-                    htmlContent += `<th>${headerName}</th>`;
-                }
-                
-                htmlContent += '</tr></thead><tbody>';
-                
-                // Data rows
-                for (const item of data) {
-                    htmlContent += '<tr>';
-                    for (const [key, value] of Object.entries(item)) {
-                        htmlContent += `<td>${formatValue(value, key)}</td>`;
-                    }
-                    htmlContent += '</tr>';
-                }
-                
-                htmlContent += '</tbody></table>';
-            }
+        if (!dataKey) {
+            return '';
         }
 
-        htmlContent += `
-                <div class="footer">
-                    <p>Reporte generado por SEVA Empresas - ${formatArgentinaDateTime(new Date().toISOString())}</p>
-                </div>
-            </body>
-            </html>
-        `;
+        const data = reporte[dataKey as keyof ReporteData] as any[];
+        if (!data || data.length === 0) {
+            return '';
+        }
 
-        // Crear y descargar PDF
+        // Construir headers
+        const headers = Object.keys(data[0])
+            .map(key => `<th>${getHeaderName(key)}</th>`)
+            .join('');
+
+        // Construir filas de datos
+        const rows = data.map(item => {
+            const cells = Object.entries(item)
+                .map(([key, value]) => `<td>${formatValue(value, key)}</td>`)
+                .join('');
+            return `<tr>${cells}</tr>`;
+        }).join('');
+
+        return `<table class="table"><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
+    };
+
+    // Función helper para construir el footer del PDF
+    const buildPDFFooter = (): string => {
+        return `
+            <div class="footer">
+                <p>Reporte generado por SEVA Empresas - ${formatArgentinaDateTime(new Date().toISOString())}</p>
+            </div>
+        </body>
+        </html>
+        `;
+    };
+
+    // Función helper para crear y abrir el PDF
+    const openPDFWindow = (htmlContent: string): void => {
         const printWindow = window.open('', '_blank');
         if (printWindow) {
             const blob = new Blob([htmlContent], { type: 'text/html' });
@@ -1394,6 +1406,20 @@ const AdminReportsPage: React.FC = () => {
                 printWindow.print();
             };
         }
+    };
+
+    const generatePDF = (reportType: string) => {
+        const reporte = reportes[reportType];
+        if (!reporte) return;
+
+        const htmlBase = buildPDFBaseHTML(reportType, reporte);
+        const htmlSummary = buildPDFSummary(reportType, reporte);
+        const totalKey = Object.keys(reporte).find(key => key.startsWith('total_'));
+        const htmlTable = buildPDFDataTable(reporte, totalKey);
+        const htmlFooter = buildPDFFooter();
+
+        const htmlContent = htmlBase + htmlSummary + htmlTable + htmlFooter;
+        openPDFWindow(htmlContent);
     };
 
     const renderReportData = (reportType: string) => {

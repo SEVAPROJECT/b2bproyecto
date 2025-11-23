@@ -27,7 +27,6 @@ DB_NAME     = os.getenv("DB_NAME", "postgres")
 DB_USER     = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 
-#DATABASE_URL = (f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
 
 #IDRIVE2 - Soporte para diferentes tipos de credenciales
 IDRIVE_ENDPOINT_URL = os.getenv("IDRIVE_ENDPOINT_URL")
@@ -41,8 +40,11 @@ print(f"🔐 Secret Key configurada: {'Sí' if AWS_SECRET_ACCESS_KEY else 'No'}"
 
 IDRIVE_BUCKET_NAME = os.getenv("IDRIVE_BUCKET_NAME")
 
+# AWS Region para iDrive2 (requerido por iDrive2, por defecto us-east-1)
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 
-#WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
+
+#WEAVIATE
 WEAVIATE_URL = os.getenv("WEAVIATE_URL")
 
 # SMTP Configuration for Email

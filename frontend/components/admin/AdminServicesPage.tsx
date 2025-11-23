@@ -116,10 +116,11 @@ const AdminServicesPage: React.FC = () => {
                     <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200/80 mb-6">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label htmlFor="search-services" className="block text-sm font-medium text-slate-700 mb-2">
                                     Buscar servicios
                                 </label>
                                 <input
+                                    id="search-services"
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -128,10 +129,11 @@ const AdminServicesPage: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label htmlFor="filter-category-services" className="block text-sm font-medium text-slate-700 mb-2">
                                     Filtrar por categoría
                                 </label>
                                 <select
+                                    id="filter-category-services"
                                     value={categoryFilter}
                                     onChange={(e) => setCategoryFilter(e.target.value)}
                                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
@@ -145,10 +147,11 @@ const AdminServicesPage: React.FC = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label htmlFor="filter-status-services" className="block text-sm font-medium text-slate-700 mb-2">
                                     Filtrar por estado
                                 </label>
                                 <select
+                                    id="filter-status-services"
                                     value={statusFilter}
                                     onChange={(e) => setStatusFilter(e.target.value)}
                                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"

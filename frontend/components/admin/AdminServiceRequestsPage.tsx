@@ -48,19 +48,21 @@ const matchesDateFilter = (requestDate: Date, dateFilter: string, customDate?: s
     switch (dateFilter) {
         case 'today':
             return requestDate.toDateString() === now.toDateString();
-        case 'week':
+        case 'week': {
             const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
             return requestDate >= weekAgo;
+        }
         case 'month':
             return requestDate.getMonth() === now.getMonth() && requestDate.getFullYear() === now.getFullYear();
         case 'year':
             return requestDate.getFullYear() === now.getFullYear();
-        case 'custom':
+        case 'custom': {
             if (customDate) {
                 const selectedDate = parseDateString(customDate);
                 return datesEqual(requestDate, selectedDate);
             }
             return true;
+        }
         default:
             return true;
     }
@@ -414,8 +416,9 @@ const AdminServiceRequestsPage: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         {/* Filtro por fecha */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
+                            <label htmlFor="filter-date-service" className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
                             <select
+                                id="filter-date-service"
                                 value={filters.dateFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, dateFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -431,8 +434,9 @@ const AdminServiceRequestsPage: React.FC = () => {
 
                         {/* Filtro por categoría */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Categoría</label>
+                            <label htmlFor="filter-category-service" className="block text-sm font-medium text-gray-700 mb-2">Categoría</label>
                             <select
+                                id="filter-category-service"
                                 value={filters.categoryFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, categoryFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -448,8 +452,9 @@ const AdminServiceRequestsPage: React.FC = () => {
 
                         {/* Filtro por estado */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+                            <label htmlFor="filter-status-service" className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
                             <select
+                                id="filter-status-service"
                                 value={filters.statusFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, statusFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -464,8 +469,9 @@ const AdminServiceRequestsPage: React.FC = () => {
                         {/* Fecha personalizada */}
                         {filters.dateFilter === 'custom' && (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Fecha específica</label>
+                                <label htmlFor="filter-custom-date-service" className="block text-sm font-medium text-gray-700 mb-2">Fecha específica</label>
                                 <input
+                                    id="filter-custom-date-service"
                                     type="date"
                                     value={filters.customDate}
                                     onChange={(e) => setFilters(prev => ({ ...prev, customDate: e.target.value }))}
@@ -609,10 +615,11 @@ const AdminServiceRequestsPage: React.FC = () => {
                             ¿Estás seguro de que deseas rechazar la solicitud "{selectedRequest.nombre_servicio}"?
                         </p>
                         <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label htmlFor="reject-comment-service" className="block text-sm font-medium text-gray-700 mb-2">
                                 Comentario <span className="text-red-500">*</span>
                             </label>
                             <textarea
+                                id="reject-comment-service"
                                 value={rejectComment}
                                 onChange={(e) => setRejectComment(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -654,10 +661,11 @@ const AdminServiceRequestsPage: React.FC = () => {
                         }}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-nombre-servicio" className="block text-sm font-medium text-gray-700 mb-2">
                                         Nombre del Servicio *
                                     </label>
                                     <input
+                                        id="edit-nombre-servicio"
                                         type="text"
                                         value={editForm.nombre_servicio}
                                         onChange={(e) => setEditForm(prev => ({ ...prev, nombre_servicio: e.target.value }))}
@@ -666,10 +674,11 @@ const AdminServiceRequestsPage: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-categoria-service" className="block text-sm font-medium text-gray-700 mb-2">
                                         Categoría
                                     </label>
                                     <select
+                                        id="edit-categoria-service"
                                         value={editForm.id_categoria}
                                         onChange={(e) => setEditForm(prev => ({ ...prev, id_categoria: e.target.value }))}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -685,10 +694,11 @@ const AdminServiceRequestsPage: React.FC = () => {
                             </div>
 
                             <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <label htmlFor="edit-descripcion-service" className="block text-sm font-medium text-gray-700 mb-2">
                                     Descripción *
                                 </label>
                                 <textarea
+                                    id="edit-descripcion-service"
                                     value={editForm.descripcion}
                                     onChange={(e) => setEditForm(prev => ({ ...prev, descripcion: e.target.value }))}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -699,10 +709,11 @@ const AdminServiceRequestsPage: React.FC = () => {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-nombre-empresa-service" className="block text-sm font-medium text-gray-700 mb-2">
                                         Nombre de la Empresa
                                     </label>
                                     <input
+                                        id="edit-nombre-empresa-service"
                                         type="text"
                                         value={editForm.nombre_empresa}
                                         onChange={(e) => setEditForm(prev => ({ ...prev, nombre_empresa: e.target.value }))}
@@ -710,10 +721,11 @@ const AdminServiceRequestsPage: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-nombre-contacto-service" className="block text-sm font-medium text-gray-700 mb-2">
                                         Nombre de Contacto
                                     </label>
                                     <input
+                                        id="edit-nombre-contacto-service"
                                         type="text"
                                         value={editForm.nombre_contacto}
                                         onChange={(e) => setEditForm(prev => ({ ...prev, nombre_contacto: e.target.value }))}
@@ -723,10 +735,11 @@ const AdminServiceRequestsPage: React.FC = () => {
                             </div>
 
                             <div className="mb-6">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <label htmlFor="edit-email-contacto-service" className="block text-sm font-medium text-gray-700 mb-2">
                                     Email de Contacto
                                 </label>
                                 <input
+                                    id="edit-email-contacto-service"
                                     type="email"
                                     value={editForm.email_contacto}
                                     onChange={(e) => setEditForm(prev => ({ ...prev, email_contacto: e.target.value }))}

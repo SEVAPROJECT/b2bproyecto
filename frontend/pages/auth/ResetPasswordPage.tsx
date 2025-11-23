@@ -60,7 +60,7 @@ const ResetPasswordPage: React.FC = () => {
         const hasUpperCase = /[A-Z]/.test(password);
         const hasLowerCase = /[a-z]/.test(password);
         const hasNumber = /\d/.test(password);
-        const hasSpecialChar = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>\/?]/.test(password);
+        const hasSpecialChar = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password);
         
         return {
             isValid: hasMinLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar,
@@ -110,7 +110,8 @@ const ResetPasswordPage: React.FC = () => {
                     error: data.message || 'Error enviando el código'
                 });
             }
-        } catch (_error_) {
+        } catch (error) {
+            console.debug('Error al enviar código de restablecimiento:', error);
             updateState({
                 loading: false,
                 error: 'Error de conexión. Inténtalo nuevamente.'

@@ -193,8 +193,8 @@ const Step1CompanyData: React.FC<{data: ProviderOnboardingData, setData: React.D
                 />
             </div>
             <div>
-                <label className="block text-sm font-medium text-slate-700">Estado</label>
-                <p className="mt-1 text-sm text-slate-500 bg-slate-100 px-3 py-2 rounded-md">Pendiente de Verificación</p>
+                <label htmlFor="provider-status" className="block text-sm font-medium text-slate-700">Estado</label>
+                <p id="provider-status" className="mt-1 text-sm text-slate-500 bg-slate-100 px-3 py-2 rounded-md">Pendiente de Verificación</p>
             </div>
         </form>
     );

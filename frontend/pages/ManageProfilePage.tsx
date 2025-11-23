@@ -365,8 +365,9 @@ const ManageProfilePage: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                             {/* Nombre - Editable */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Nombre</label>
+                                <label htmlFor="profile-name" className="block text-sm font-medium text-gray-700">Nombre</label>
                                 <input
+                                    id="profile-name"
                                     type="text"
                                     value={formData.name}
                                     onChange={(e) => setFormData({...formData, name: e.target.value})}
@@ -377,8 +378,9 @@ const ManageProfilePage: React.FC = () => {
 
                             {/* Email - No editable */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Email</label>
+                                <label htmlFor="profile-email" className="block text-sm font-medium text-gray-700">Email</label>
                                 <input
+                                    id="profile-email"
                                     type="email"
                                     value={formData.email}
                                     disabled
@@ -389,8 +391,9 @@ const ManageProfilePage: React.FC = () => {
 
                             {/* Empresa - No editable */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Razón social de la empresa</label>
+                                <label htmlFor="profile-company" className="block text-sm font-medium text-gray-700">Razón social de la empresa</label>
                                 <input
+                                    id="profile-company"
                                     type="text"
                                     value={formData.companyName || 'No especificada'}
                                     disabled
@@ -401,8 +404,9 @@ const ManageProfilePage: React.FC = () => {
 
                             {/* RUC - No editable */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">RUC</label>
+                                <label htmlFor="profile-ruc" className="block text-sm font-medium text-gray-700">RUC</label>
                                 <input
+                                    id="profile-ruc"
                                     type="text"
                                     value={(() => {
                                         const rucValue = user?.ruc || 'No especificado';
@@ -417,8 +421,9 @@ const ManageProfilePage: React.FC = () => {
 
                             {/* Rol - No editable */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Rol Principal</label>
+                                <label htmlFor="profile-role" className="block text-sm font-medium text-gray-700">Rol Principal</label>
                                 <input
+                                    id="profile-role"
                                     type="text"
                                     value={getRoleInSpanish(user?.role || '')}
                                     disabled
@@ -512,11 +517,14 @@ const ManageProfilePage: React.FC = () => {
                                 <p className="text-xs sm:text-sm text-gray-500 mt-3 font-medium">
                                     Si estás seguro, escribe "CONFIRMAR" en el campo de abajo:
                                 </p>
+                                <label htmlFor="confirmInput" className="sr-only">
+                                    Campo de confirmación para desactivar cuenta
+                                </label>
                                 <input
+                                    id="confirmInput"
                                     type="text"
                                     placeholder="Escribe CONFIRMAR"
                                     className="mt-2 w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                                    id="confirmInput"
                                 />
                             </div>
                             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 px-4 py-3">

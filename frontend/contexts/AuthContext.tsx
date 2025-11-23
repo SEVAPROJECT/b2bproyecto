@@ -674,68 +674,98 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
         }
     };
 
+    // Función helper para obtener el mapeo de tipos de documentos
+    const getDocumentTypeMapping = (): Record<string, string> => {
+        return {
+            'ruc': 'Constancia de RUC',
+            'cedula': 'Cédula MiPymes',
+            'certificado': 'Certificado de Cumplimiento Tributario',
+            'certificados_rubro': 'Certificacion del Rubro',
+        };
+    };
+
+    // Función helper para procesar documentos subidos
+    const processUploadedDocuments = (documents: Record<string, any>): { documentos: File[]; nombres_tip_documento: string[] } => {
+        const documentos: File[] = [];
+        const nombres_tip_documento: string[] = [];
+        const documentTypeMapping = getDocumentTypeMapping();
+
+        for (const [key, doc] of Object.entries(documents)) {
+            if (doc.status === 'uploaded' && doc.file) {
+                documentos.push(doc.file);
+                nombres_tip_documento.push(documentTypeMapping[key] || doc.name);
+                console.log(`📄 Enviando documento ${key}: ${doc.file.name}`);
+            } else if (doc.status === 'uploaded' && !doc.file) {
+                console.log(`⚠️ Documento ${key} marcado como actualizable pero no se ha subido uno nuevo`);
+            }
+        }
+
+        // Si no hay documentos nuevos para enviar, enviar al menos un documento vacío para evitar error 422
+        if (documentos.length === 0) {
+            console.log('⚠️ No hay documentos nuevos para enviar, creando documento vacío');
+            const emptyFile = new File([''], 'empty.txt', { type: 'text/plain' });
+            documentos.push(emptyFile);
+            nombres_tip_documento.push('Constancia de RUC');
+        }
+
+        return { documentos, nombres_tip_documento };
+    };
+
+    // Función helper para construir el objeto perfil_in
+    const buildPerfilIn = (data: ProviderOnboardingData) => {
+        return {
+            nombre_fantasia: data.company.tradeName,
+            direccion: {
+                departamento: data.address.department,
+                ciudad: data.address.city,
+                barrio: data.address.neighborhood,
+                calle: data.address.street,
+                numero: data.address.number,
+                referencia: data.address.reference
+            },
+            sucursal: {
+                nombre: data.branch.name,
+                telefono: data.branch.phone,
+                email: data.branch.email,
+                usar_direccion_fiscal: data.branch.useFiscalAddress
+            }
+        };
+    };
+
+    // Función helper para actualizar el estado después del envío
+    const updateApplicationState = (userEmail: string | undefined) => {
+        const updatedApplication: ProviderApplicationStatus = {
+            status: 'pending',
+            submittedAt: new Date().toISOString(),
+            documents: {}
+        };
+        
+        setProviderApplication(updatedApplication);
+        setProviderStatus('pending');
+        
+        if (userEmail) {
+            localStorage.setItem(`providerStatus_${userEmail}`, 'pending');
+            localStorage.setItem(`providerApplication_${userEmail}`, JSON.stringify(updatedApplication));
+        }
+    };
+
+    // Función helper para obtener y validar el token de acceso
+    const getAccessTokenForSubmission = (): string => {
+        const accessToken = localStorage.getItem('access_token');
+        if (!accessToken) {
+            throw new Error('No hay token de acceso');
+        }
+        return accessToken;
+    };
+
     const resubmitProviderApplication = async (data: ProviderOnboardingData) => {
         if (user?.role === 'client') {
             setIsLoading(true);
             try {
-                const accessToken = localStorage.getItem('access_token');
-                if (!accessToken) {
-                    throw new Error('No hay token de acceso');
-                }
+                const accessToken = getAccessTokenForSubmission();
+                const { documentos, nombres_tip_documento } = processUploadedDocuments(data.documents);
+                const perfil_in = buildPerfilIn(data);
 
-                // Preparar datos para la API
-                const documentos: File[] = [];
-                const nombres_tip_documento: string[] = [];
-                
-                // Mapear documentos a nombres de tipo (usando nombres en lugar de IDs)
-                const documentTypeMapping: Record<string, string> = {
-                    'ruc': 'Constancia de RUC',
-                    'cedula': 'Cédula MiPymes',
-                    'certificado': 'Certificado de Cumplimiento Tributario',
-                    'certificados_rubro': 'Certificacion del Rubro',
-                };
-
-                // Procesar documentos subidos (nuevos y actualizados)
-                for (const [key, doc] of Object.entries(data.documents)) {
-                    if (doc.status === 'uploaded' && doc.file) {
-                        // Documento nuevo o actualizado
-                        documentos.push(doc.file);
-                        nombres_tip_documento.push(documentTypeMapping[key] || doc.name);
-                        console.log(`📄 Enviando documento ${key}: ${doc.file.name}`);
-                    } else if (doc.status === 'uploaded' && !doc.file) {
-                        // Documento existente que puede ser actualizado pero no se ha subido uno nuevo
-                        console.log(`⚠️ Documento ${key} marcado como actualizable pero no se ha subido uno nuevo`);
-                    }
-                }
-
-                // Si no hay documentos nuevos para enviar, enviar al menos un documento vacío para evitar error 422
-                if (documentos.length === 0) {
-                    console.log('⚠️ No hay documentos nuevos para enviar, creando documento vacío');
-                    // Crear un archivo vacío temporal
-                    const emptyFile = new File([''], 'empty.txt', { type: 'text/plain' });
-                    documentos.push(emptyFile);
-                    nombres_tip_documento.push('Constancia de RUC'); // Tipo por defecto
-                }
-
-                const perfil_in = {
-                    nombre_fantasia: data.company.tradeName,
-                    direccion: {
-                        departamento: data.address.department,
-                        ciudad: data.address.city,
-                        barrio: data.address.neighborhood,
-                        calle: data.address.street,
-                        numero: data.address.number,
-                        referencia: data.address.reference
-                    },
-                    sucursal: {
-                        nombre: data.branch.name,
-                        telefono: data.branch.phone,
-                        email: data.branch.email,
-                        usar_direccion_fiscal: data.branch.useFiscalAddress
-                    }
-                };
-
-                // Enviar a la API
                 await providersAPI.submitProviderApplication({
                     perfil_in: JSON.stringify(perfil_in),
                     documentos,
@@ -743,20 +773,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                     comentario_solicitud: ''
                 }, accessToken);
                 
-                const updatedApplication: ProviderApplicationStatus = {
-                    status: 'pending',
-                    submittedAt: new Date().toISOString(),
-                    documents: {}
-                };
-                
-                setProviderApplication(updatedApplication);
-                setProviderStatus('pending');
-                
-                // Persistir en localStorage
-                if (user.email) {
-                    localStorage.setItem(`providerStatus_${user.email}`, 'pending');
-                    localStorage.setItem(`providerApplication_${user.email}`, JSON.stringify(updatedApplication));
-                }
+                updateApplicationState(user.email);
                 
             } catch (error) {
                 console.error('Error reenviando solicitud:', error);

@@ -655,7 +655,7 @@ def build_count_query(where_conditions: list[str]) -> str:
     
     return count_query
 
-def build_base_query(where_conditions: list[str], limit: int, offset: int, param_count: int) -> str:
+def build_base_query(where_conditions: list[str], param_count: int) -> str:
     """Construye la query base con ORDER BY y LIMIT"""
     base_query = """
         SELECT 
@@ -806,7 +806,7 @@ async def obtener_reservas_proveedor(
             total_count = total_result['total'] if total_result else 0
             
             # Construir y ejecutar query principal
-            base_query = build_base_query(where_conditions, limit, offset, param_count)
+            base_query = build_base_query(where_conditions, param_count)
             params.extend([limit, offset])
             reservas_result = await conn.fetch(base_query, *params)
             

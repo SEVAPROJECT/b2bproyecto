@@ -64,8 +64,9 @@ const StandardFilters: React.FC<StandardFiltersProps> = ({
                 {/* Filtro por fecha */}
                 {options.showDateFilter !== false && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">📅 Fecha</label>
+                        <label htmlFor="filter-date-standard" className="block text-sm font-medium text-gray-700 mb-2">📅 Fecha</label>
                         <select
+                            id="filter-date-standard"
                             value={filters.dateFilter}
                             onChange={(e) => handleFilterChange('dateFilter', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -83,8 +84,9 @@ const StandardFilters: React.FC<StandardFiltersProps> = ({
                 {/* Filtro por categoría */}
                 {options.showCategoryFilter !== false && options.categories && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">📂 Categoría</label>
+                        <label htmlFor="filter-category-standard" className="block text-sm font-medium text-gray-700 mb-2">📂 Categoría</label>
                         <select
+                            id="filter-category-standard"
                             value={filters.categoryFilter}
                             onChange={(e) => handleFilterChange('categoryFilter', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -102,8 +104,9 @@ const StandardFilters: React.FC<StandardFiltersProps> = ({
                 {/* Filtro por empresa */}
                 {options.showCompanyFilter !== false && options.companies && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">📊 Empresa</label>
+                        <label htmlFor="filter-company-standard" className="block text-sm font-medium text-gray-700 mb-2">📊 Empresa</label>
                         <select
+                            id="filter-company-standard"
                             value={filters.companyFilter}
                             onChange={(e) => handleFilterChange('companyFilter', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -121,8 +124,9 @@ const StandardFilters: React.FC<StandardFiltersProps> = ({
                 {/* Filtro por estado */}
                 {options.showStatusFilter !== false && options.statuses && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+                        <label htmlFor="filter-status-standard" className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
                         <select
+                            id="filter-status-standard"
                             value={filters.statusFilter}
                             onChange={(e) => handleFilterChange('statusFilter', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -140,10 +144,11 @@ const StandardFilters: React.FC<StandardFiltersProps> = ({
                 {/* Fecha personalizada */}
                 {showCustomDate && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label htmlFor="filter-custom-date-standard" className="block text-sm font-medium text-gray-700 mb-2">
                             {options.customDateLabel || 'Fecha específica'}
                         </label>
                         <input
+                            id="filter-custom-date-standard"
                             type="date"
                             value={filters.customDate}
                             onChange={(e) => handleFilterChange('customDate', e.target.value)}

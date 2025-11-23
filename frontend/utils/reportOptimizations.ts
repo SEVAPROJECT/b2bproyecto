@@ -32,7 +32,7 @@ export class ReportCache {
     private readonly cache = new Map<string, { data: unknown; timestamp: number }>();
     private readonly TTL = 5 * 60 * 1000; // 5 minutos
 
-    get(key: string): unknown | null {
+    get(key: string): unknown {
         const item = this.cache.get(key);
         if (!item) return null;
         

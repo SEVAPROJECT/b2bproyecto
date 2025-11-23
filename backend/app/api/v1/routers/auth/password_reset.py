@@ -16,6 +16,9 @@ from app.core.config import SUPABASE_SERVICE_ROLE_KEY
 
 logger = logging.getLogger(__name__)
 
+# Constantes de mensajes
+MSG_ERROR_INTERNO_SERVIDOR = "Error interno del servidor"
+
 router = APIRouter(prefix="/password-reset", tags=["Password Reset"])
 
 @router.post("/request", response_model=PasswordResetResponse)
@@ -72,7 +75,7 @@ async def request_password_reset(request: PasswordResetRequest):
         logger.error(f"❌ Error en request_password_reset: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 @router.post("/verify-code", response_model=PasswordResetResponse)
@@ -107,7 +110,7 @@ async def verify_reset_code(request: PasswordResetCodeVerify):
         logger.error(f"❌ Error en verify_reset_code: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 @router.post("/set-new-password", response_model=PasswordResetResponse)
@@ -117,7 +120,6 @@ async def set_new_password(request: PasswordResetNewPassword):
     """
     try:
         email = request.email.lower().strip()
-        code = request.code.strip()
         new_password = request.new_password
         
         # Verificar que el código esté verificado
@@ -181,7 +183,7 @@ async def set_new_password(request: PasswordResetNewPassword):
         logger.error(f"❌ Error en set_new_password: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 @router.get("/status/{email}")
@@ -222,5 +224,5 @@ async def get_reset_status(email: str):
         logger.error(f"❌ Error en get_reset_status: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )

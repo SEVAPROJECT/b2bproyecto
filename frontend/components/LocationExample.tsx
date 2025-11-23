@@ -155,10 +155,11 @@ export const LocationExample: React.FC = () => {
                 <form className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label htmlFor="empresa-nombre" className="block text-sm font-medium text-gray-700 mb-2">
                                 Nombre de la Empresa
                             </label>
                             <input
+                                id="empresa-nombre"
                                 type="text"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 placeholder="Mi Empresa S.A."
@@ -166,10 +167,11 @@ export const LocationExample: React.FC = () => {
                         </div>
                         
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label htmlFor="empresa-ruc" className="block text-sm font-medium text-gray-700 mb-2">
                                 RUC
                             </label>
                             <input
+                                id="empresa-ruc"
                                 type="text"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 placeholder="12345678-9"

@@ -1,7 +1,234 @@
 import React from 'react';
 import { UserCircleIcon, ExclamationCircleIcon } from '../icons';
-import { API_CONFIG, buildApiUrl } from '../../config/api';
+import { API_CONFIG } from '../../config/api';
 import { useAdminUsers, BackendUser } from '../../hooks/useAdminUsers';
+
+// Función helper para obtener las clases CSS según el tipo de notificación
+const getNotificationClasses = (type: string): string => {
+    if (type === 'success') {
+        return 'bg-green-100 border border-green-400 text-green-800';
+    }
+    if (type === 'error') {
+        return 'bg-red-100 border border-red-400 text-red-800';
+    }
+    return 'bg-blue-100 border border-blue-400 text-blue-800';
+};
+
+// Función helper para obtener el nombre del rol en español
+const getRoleDisplayNameFromFilter = (filterRole: string): string => {
+    if (filterRole === 'admin') {
+        return 'Administrador';
+    }
+    if (filterRole === 'provider') {
+        return 'Proveedor';
+    }
+    return 'Cliente';
+};
+
+// Función helper para obtener el texto del botón de activar/desactivar
+const getToggleUserStatusButtonText = (isUpdating: boolean, userEstado: string): string => {
+    if (isUpdating) {
+        return 'Procesando...';
+    }
+    if (userEstado === 'INACTIVO') {
+        return 'Reactivar';
+    }
+    return 'Desactivar';
+};
+
+// Función helper para obtener la URL de la foto de perfil
+const getUserPhotoUrl = (fotoPerfil: string | undefined): string => {
+    if (!fotoPerfil) return '';
+    return fotoPerfil.startsWith('/') 
+        ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${fotoPerfil}` 
+        : fotoPerfil;
+};
+
+// Función helper para manejar el error de carga de imagen
+const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const target = e.target as HTMLImageElement;
+    target.style.display = 'none';
+    const parent = target.parentElement;
+    if (parent) {
+        parent.innerHTML = '<svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>';
+    }
+};
+
+// Componente para renderizar la foto de perfil del usuario
+interface UserPhotoProps {
+    fotoPerfil?: string;
+    nombrePersona: string;
+    size?: 'sm' | 'md';
+}
+
+const UserPhoto: React.FC<UserPhotoProps> = ({ fotoPerfil, nombrePersona, size = 'sm' }) => {
+    const sizeClasses = size === 'sm' ? 'w-10 h-10' : 'w-12 h-12';
+    const iconSize = size === 'sm' ? 'w-6 h-6' : 'w-6 h-6';
+    
+    return (
+        <div className={`${sizeClasses} bg-primary-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0`}>
+            {fotoPerfil ? (
+                <img
+                    src={getUserPhotoUrl(fotoPerfil)}
+                    alt={`Foto de perfil de ${nombrePersona}`}
+                    className="w-full h-full object-cover rounded-full"
+                    onError={handleImageError}
+                />
+            ) : (
+                <UserCircleIcon className={`${iconSize} text-primary-600`} />
+            )}
+        </div>
+    );
+};
+
+// Componente para los botones de acción del usuario (editar y restablecer)
+interface UserActionButtonsProps {
+    user: BackendUser;
+    isUpdating: boolean;
+    userPermissions?: { is_admin?: boolean; can_reset_passwords?: boolean };
+    onEdit: (user: BackendUser) => void;
+    onResetPassword: (user: BackendUser) => void;
+    onDeactivate: (userId: string) => Promise<void>;
+    variant?: 'desktop' | 'mobile';
+}
+
+const UserActionButtons: React.FC<UserActionButtonsProps> = ({
+    user,
+    isUpdating,
+    userPermissions,
+    onEdit,
+    onResetPassword,
+    onDeactivate,
+    variant = 'desktop'
+}) => {
+    const canResetPassword = userPermissions?.is_admin || userPermissions?.can_reset_passwords;
+    const isInactive = user.estado === 'INACTIVO';
+    
+    const buttonBaseClasses = variant === 'desktop' 
+        ? 'flex items-center space-x-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border'
+        : 'w-full sm:w-auto flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors border';
+    
+    const editButtonClasses = variant === 'desktop'
+        ? `${buttonBaseClasses} text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 border-primary-200 hover:border-primary-300`
+        : 'w-full sm:w-auto flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors border border-primary-200 hover:border-primary-300';
+    
+    const resetButtonClasses = `${buttonBaseClasses} ${
+        canResetPassword
+            ? 'text-orange-600 hover:text-orange-900 bg-orange-50 hover:bg-orange-100 border-orange-200 hover:border-orange-300'
+            : 'text-gray-400 bg-gray-50 cursor-not-allowed border-gray-200'
+    }`;
+    
+    const toggleButtonClasses = variant === 'desktop'
+        ? `${buttonBaseClasses} disabled:opacity-50 disabled:cursor-not-allowed ${
+            isInactive
+                ? 'text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 border-green-200 hover:border-green-300'
+                : 'text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 border-red-200 hover:border-red-300'
+        }`
+        : `w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${
+            isInactive
+                ? 'text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 border-green-200 hover:border-green-300'
+                : 'text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 border-red-200 hover:border-red-300'
+        }`;
+
+    return (
+        <>
+            <button
+                onClick={() => onEdit(user)}
+                className={editButtonClasses}
+                title="Editar información del usuario"
+            >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <span>Editar</span>
+            </button>
+            
+            <button
+                onClick={() => onResetPassword(user)}
+                disabled={!canResetPassword}
+                className={resetButtonClasses}
+                title={canResetPassword ? "Restablecer contraseña del usuario" : "No tienes permisos para restablecer contraseñas"}
+            >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span>Restablecer</span>
+                {!userPermissions?.is_admin && (
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
+                    </svg>
+                )}
+            </button>
+            
+            {variant === 'desktop' && (
+                <button
+                    onClick={async () => await onDeactivate(user.id)}
+                    disabled={isUpdating}
+                    className={toggleButtonClasses}
+                    title={isInactive ? "Reactivar usuario" : "Desactivar usuario"}
+                >
+                    {isUpdating ? (
+                        <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
+                            isInactive ? 'border-green-600' : 'border-red-600'
+                        }`}></div>
+                    ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            {isInactive ? (
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            ) : (
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            )}
+                        </svg>
+                    )}
+                    <span>{getToggleUserStatusButtonText(isUpdating, user.estado)}</span>
+                </button>
+            )}
+        </>
+    );
+};
+
+// Componente para el botón de activar/desactivar (solo para móvil)
+interface ToggleUserStatusButtonProps {
+    user: BackendUser;
+    isUpdating: boolean;
+    onDeactivate: (userId: string) => Promise<void>;
+}
+
+const ToggleUserStatusButton: React.FC<ToggleUserStatusButtonProps> = ({
+    user,
+    isUpdating,
+    onDeactivate
+}) => {
+    const isInactive = user.estado === 'INACTIVO';
+    
+    return (
+        <button
+            onClick={async () => await onDeactivate(user.id)}
+            disabled={isUpdating}
+            className={`w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${
+                isInactive
+                    ? 'text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 border-green-200 hover:border-green-300'
+                    : 'text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 border-red-200 hover:border-red-300'
+            }`}
+            title={isInactive ? "Reactivar usuario" : "Desactivar usuario"}
+        >
+            {isUpdating ? (
+                <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
+                    isInactive ? 'border-green-600' : 'border-red-600'
+                }`}></div>
+            ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {isInactive ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    )}
+                </svg>
+            )}
+            <span>{getToggleUserStatusButtonText(isUpdating, user.estado)}</span>
+        </button>
+    );
+};
 
 const AdminUsersPage: React.FC = () => {
     const {
@@ -9,7 +236,6 @@ const AdminUsersPage: React.FC = () => {
         allUsers,
         loading,
         error,
-        availableRoles,
         userPermissions,
         searchQuery,
         searchEmpresa,
@@ -35,7 +261,6 @@ const AdminUsersPage: React.FC = () => {
         setSearchEmpresa,
         setFilterRole,
         setFilterStatus,
-        setSelectedUser,
         
         // Funciones
         loadUsers,
@@ -114,13 +339,7 @@ const AdminUsersPage: React.FC = () => {
 
                     {/* Sistema de Notificaciones */}
                     {notification && (
-                        <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ${
-                            notification.type === 'success'
-                                ? 'bg-green-100 border border-green-400 text-green-800'
-                                : notification.type === 'error'
-                                ? 'bg-red-100 border border-red-400 text-red-800'
-                                : 'bg-blue-100 border border-blue-400 text-blue-800'
-                        }`}>
+                        <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ${getNotificationClasses(notification.type)}`}>
                             <div className="flex items-center">
                                 <div className="flex-1">
                                     <p className="text-sm font-medium">{notification.message}</p>
@@ -153,7 +372,7 @@ const AdminUsersPage: React.FC = () => {
                                     )}
                                     {filterRole !== 'all' && (
                                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                            Rol: {filterRole === 'admin' ? 'Administrador' : filterRole === 'provider' ? 'Proveedor' : 'Cliente'}
+                                            Rol: {getRoleDisplayNameFromFilter(filterRole)}
                                         </span>
                                     )}
                                     {filterStatus !== 'all' && (
@@ -167,7 +386,7 @@ const AdminUsersPage: React.FC = () => {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label htmlFor="search-user" className="block text-sm font-medium text-slate-700 mb-2">
                                     Buscar Usuario
                                     {isSearching && searchQuery.trim() && (
                                         <span className="ml-2 text-xs text-blue-600 animate-pulse">
@@ -176,6 +395,7 @@ const AdminUsersPage: React.FC = () => {
                                     )}
                                 </label>
                                 <input
+                                    id="search-user"
                                     type="text"
                                     placeholder="Nombre o email..."
                                     value={searchQuery}
@@ -184,7 +404,7 @@ const AdminUsersPage: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label htmlFor="search-empresa" className="block text-sm font-medium text-slate-700 mb-2">
                                     Buscar Empresa
                                     {isSearching && searchEmpresa.trim() && (
                                         <span className="ml-2 text-xs text-blue-600 animate-pulse">
@@ -193,6 +413,7 @@ const AdminUsersPage: React.FC = () => {
                                     )}
                                 </label>
                                 <input
+                                    id="search-empresa"
                                     type="text"
                                     placeholder="Nombre de empresa..."
                                     value={searchEmpresa}
@@ -210,10 +431,11 @@ const AdminUsersPage: React.FC = () => {
                                 )}
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label htmlFor="filter-role" className="block text-sm font-medium text-slate-700 mb-2">
                                     Rol
                                 </label>
                                 <select
+                                    id="filter-role"
                                     value={filterRole}
                                     onChange={(e) => setFilterRole(e.target.value)}
                                     className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
@@ -225,10 +447,11 @@ const AdminUsersPage: React.FC = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label htmlFor="filter-status" className="block text-sm font-medium text-slate-700 mb-2">
                                     Estado
                                 </label>
                                 <select
+                                    id="filter-status"
                                     value={filterStatus}
                                     onChange={(e) => setFilterStatus(e.target.value)}
                                     className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
@@ -331,27 +554,7 @@ const AdminUsersPage: React.FC = () => {
                                         <tr key={user.id} className="hover:bg-slate-50">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center">
-                                                    <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
-                                                        {user.foto_perfil ? (
-                                                            <img
-                                                        src={user.foto_perfil.startsWith('/') 
-                                                            ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${user.foto_perfil}` 
-                                                            : user.foto_perfil}
-                                                                alt={`Foto de perfil de ${user.nombre_persona}`}
-                                                                className="w-full h-full object-cover rounded-full"
-                                                                onError={(e) => {
-                                                                    const target = e.target as HTMLImageElement;
-                                                                    target.style.display = 'none';
-                                                                    const parent = target.parentElement;
-                                                                    if (parent) {
-                                                                        parent.innerHTML = '<svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>';
-                                                                    }
-                                                                }}
-                                                            />
-                                                        ) : (
-                                                            <UserCircleIcon className="w-6 h-6 text-primary-600" />
-                                                        )}
-                                                    </div>
+                                                    <UserPhoto fotoPerfil={user.foto_perfil} nombrePersona={user.nombre_persona} size="sm" />
                                                     <div className="ml-4 min-w-0">
                                                         <div className="text-sm font-medium text-slate-900 truncate">
                                                             {user.nombre_persona}
@@ -381,80 +584,15 @@ const AdminUsersPage: React.FC = () => {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                                 <div className="flex items-center space-x-2">
-                                                    <button
-                                                        onClick={() => handleEditUser(user)}
-                                                        className="flex items-center space-x-1 px-3 py-1.5 text-sm font-medium text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors border border-primary-200 hover:border-primary-300"
-                                                        title="Editar información del usuario"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                        </svg>
-                                                        <span>Editar</span>
-                                                    </button>
-                                                    
-                                                    <button
-                                                        onClick={() => handleResetPassword(user)}
-                                                        disabled={!userPermissions?.is_admin && !userPermissions?.can_reset_passwords}
-                                                        className={`flex items-center space-x-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border ${
-                                                            (userPermissions?.is_admin || userPermissions?.can_reset_passwords)
-                                                                ? 'text-orange-600 hover:text-orange-900 bg-orange-50 hover:bg-orange-100 border-orange-200 hover:border-orange-300'
-                                                                : 'text-gray-400 bg-gray-50 cursor-not-allowed border-gray-200'
-                                                        }`}
-                                                        title={
-                                                            (userPermissions?.is_admin || userPermissions?.can_reset_passwords)
-                                                                ? "Restablecer contraseña del usuario"
-                                                                : "No tienes permisos para restablecer contraseñas"
-                                                        }
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                                        </svg>
-                                                        <span>Restablecer</span>
-                                                        {!userPermissions?.is_admin && (
-                                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                                <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
-                                                            </svg>
-                                                        )}
-                                                    </button>
-                                                    
-                                                    <button
-                                                        onClick={async () => {
-                                                            await handleDeactivateUser(user.id);
-                                                        }}
-                                                        disabled={isUpdating}
-                                                        className={`flex items-center space-x-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${
-                                                            user.estado === 'INACTIVO'
-                                                                ? 'text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 border-green-200 hover:border-green-300'
-                                                                : 'text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 border-red-200 hover:border-red-300'
-                                                        }`}
-                                                        title={
-                                                            user.estado === 'INACTIVO' 
-                                                                ? "Reactivar usuario" 
-                                                                : "Desactivar usuario"
-                                                        }
-                                                    >
-                                                        {isUpdating ? (
-                                                            <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
-                                                                user.estado === 'INACTIVO' ? 'border-green-600' : 'border-red-600'
-                                                            }`}></div>
-                                                        ) : (
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                {user.estado === 'INACTIVO' ? (
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                                ) : (
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                                )}
-                                                            </svg>
-                                                        )}
-                                                        <span>
-                                                            {isUpdating
-                                                                ? 'Procesando...'
-                                                                : user.estado === 'INACTIVO'
-                                                                    ? 'Reactivar'
-                                                                    : 'Desactivar'
-                                                            }
-                                                        </span>
-                                                    </button>
+                                                    <UserActionButtons
+                                                        user={user}
+                                                        isUpdating={isUpdating}
+                                                        userPermissions={userPermissions}
+                                                        onEdit={handleEditUser}
+                                                        onResetPassword={handleResetPassword}
+                                                        onDeactivate={handleDeactivateUser}
+                                                        variant="desktop"
+                                                    />
                                                 </div>
                                             </td>
                                         </tr>
@@ -471,27 +609,7 @@ const AdminUsersPage: React.FC = () => {
                                         <div className="flex flex-col space-y-4">
                                             {/* Información del usuario */}
                                             <div className="flex items-center space-x-3">
-                                                <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
-                                                    {user.foto_perfil ? (
-                                                        <img
-                                                            src={user.foto_perfil.startsWith('/') 
-                                                                ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${user.foto_perfil}` 
-                                                                : user.foto_perfil}
-                                                            alt={`Foto de perfil de ${user.nombre_persona}`}
-                                                            className="w-full h-full object-cover rounded-full"
-                                                            onError={(e) => {
-                                                                const target = e.target as HTMLImageElement;
-                                                                target.style.display = 'none';
-                                                                const parent = target.parentElement;
-                                                                if (parent) {
-                                                                    parent.innerHTML = '<svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>';
-                                                                }
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        <UserCircleIcon className="w-6 h-6 text-primary-600" />
-                                                    )}
-                                                </div>
+                                                <UserPhoto fotoPerfil={user.foto_perfil} nombrePersona={user.nombre_persona} size="md" />
                                                 <div className="flex-1 min-w-0">
                                                     <h3 className="text-lg font-medium text-slate-900 break-words">
                                                         {user.nombre_persona}
@@ -533,81 +651,21 @@ const AdminUsersPage: React.FC = () => {
                                             {/* Botones de acción */}
                                             <div className="flex flex-col space-y-2">
                                                 <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                                                    <button
-                                                        onClick={() => handleEditUser(user)}
-                                                        className="w-full sm:w-auto flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors border border-primary-200 hover:border-primary-300"
-                                                        title="Editar información del usuario"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                        </svg>
-                                                        <span>Editar</span>
-                                                    </button>
-                                                    
-                                                    <button
-                                                        onClick={() => handleResetPassword(user)}
-                                                        disabled={!userPermissions?.is_admin}
-                                                        className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors border ${
-                                                            userPermissions?.is_admin
-                                                                ? 'text-orange-600 hover:text-orange-900 bg-orange-50 hover:bg-orange-100 border-orange-200 hover:border-orange-300'
-                                                                : 'text-gray-400 bg-gray-50 cursor-not-allowed border-gray-200'
-                                                        }`}
-                                                        title={
-                                                            userPermissions?.is_admin 
-                                                                ? "Restablecer contraseña del usuario" 
-                                                                : "Solo administradores pueden restablecer contraseñas"
-                                                        }
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                                        </svg>
-                                                        <span>Restablecer</span>
-                                                        {!userPermissions?.is_admin && (
-                                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                                <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
-                                                            </svg>
-                                                        )}
-                                                    </button>
+                                                    <UserActionButtons
+                                                        user={user}
+                                                        isUpdating={isUpdating}
+                                                        userPermissions={userPermissions}
+                                                        onEdit={handleEditUser}
+                                                        onResetPassword={handleResetPassword}
+                                                        onDeactivate={handleDeactivateUser}
+                                                        variant="mobile"
+                                                    />
                                                 </div>
-                                                
-                                                <button
-                                                    onClick={async () => {
-                                                        await handleDeactivateUser(user.id);
-                                                    }}
-                                                    disabled={isUpdating}
-                                                    className={`w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${
-                                                        user.estado === 'INACTIVO'
-                                                            ? 'text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 border-green-200 hover:border-green-300'
-                                                            : 'text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 border-red-200 hover:border-red-300'
-                                                    }`}
-                                                    title={
-                                                        user.estado === 'INACTIVO' 
-                                                            ? "Reactivar usuario" 
-                                                            : "Desactivar usuario"
-                                                    }
-                                                >
-                                                    {isUpdating ? (
-                                                        <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
-                                                            user.estado === 'INACTIVO' ? 'border-green-600' : 'border-red-600'
-                                                        }`}></div>
-                                                    ) : (
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            {user.estado === 'INACTIVO' ? (
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                            ) : (
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                            )}
-                                                        </svg>
-                                                    )}
-                                                    <span>
-                                                        {isUpdating
-                                                            ? 'Procesando...'
-                                                            : user.estado === 'INACTIVO'
-                                                                ? 'Reactivar'
-                                                                : 'Desactivar'
-                                                        }
-                                                    </span>
-                                                </button>
+                                                <ToggleUserStatusButton
+                                                    user={user}
+                                                    isUpdating={isUpdating}
+                                                    onDeactivate={handleDeactivateUser}
+                                                />
                                             </div>
                                         </div>
                                     </div>
@@ -772,47 +830,7 @@ const AdminUsersPage: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {!resetPasswordData.newPassword ? (
-                                        <div className="space-y-3">
-                                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                                <div className="flex items-start">
-                                                    <div className="flex-shrink-0">
-                                                        <ExclamationCircleIcon className="h-5 w-5 text-yellow-400" />
-                                                    </div>
-                                                    <div className="ml-3">
-                                                        <h4 className="text-sm font-medium text-yellow-800">
-                                                            Confirmación requerida
-                                                        </h4>
-                                                        <p className="mt-1 text-sm text-yellow-700">
-                                                            ¿Estás seguro de que quieres restablecer la contraseña de este usuario? 
-                                                            Se generará una nueva contraseña temporal que deberás compartir de forma segura.
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            
-                                            <div className="flex justify-end space-x-3">
-                                                <button
-                                                    onClick={closeResetPasswordModal}
-                                                    disabled={isResettingPassword}
-                                                    className="btn-uniform btn-secondary disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
-                                                >
-                                                    <span>Cancelar</span>
-                                                </button>
-                                                <button
-                                                    onClick={executePasswordReset}
-                                                    disabled={isResettingPassword}
-                                                    className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation flex items-center space-x-2"
-                                                >
-                                                    {isResettingPassword && (
-                                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                                    )}
-                                                    <span>{isResettingPassword ? 'Restableciendo...' : 'Confirmar Restablecimiento'}</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
+                                    {resetPasswordData.newPassword ? (
                                         <div className="space-y-3">
                                             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                                                 <div className="flex items-start">
@@ -833,11 +851,12 @@ const AdminUsersPage: React.FC = () => {
                                             </div>
 
                                             <div className="space-y-2">
-                                                <label className="block text-sm font-medium text-slate-700">
+                                                <label htmlFor="new-password-temp" className="block text-sm font-medium text-slate-700">
                                                     Nueva Contraseña Temporal:
                                                 </label>
                                                 <div className="relative">
                                                     <input
+                                                        id="new-password-temp"
                                                         type="text"
                                                         value={resetPasswordData.newPassword}
                                                         readOnly
@@ -878,6 +897,46 @@ const AdminUsersPage: React.FC = () => {
                                                 </button>
                                             </div>
                                         </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                                <div className="flex items-start">
+                                                    <div className="flex-shrink-0">
+                                                        <ExclamationCircleIcon className="h-5 w-5 text-yellow-400" />
+                                                    </div>
+                                                    <div className="ml-3">
+                                                        <h4 className="text-sm font-medium text-yellow-800">
+                                                            Confirmación requerida
+                                                        </h4>
+                                                        <p className="mt-1 text-sm text-yellow-700">
+                                                            ¿Estás seguro de que quieres restablecer la contraseña de este usuario? 
+                                                            Se generará una nueva contraseña temporal que deberás compartir de forma segura.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            
+                                            <div className="flex justify-end space-x-3">
+                                                <button
+                                                    onClick={closeResetPasswordModal}
+                                                    disabled={isResettingPassword}
+                                                    className="btn-uniform btn-secondary disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+                                                >
+                                                    <span>Cancelar</span>
+                                                </button>
+                                                <button
+                                                    onClick={executePasswordReset}
+                                                    disabled={isResettingPassword}
+                                                    className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation flex items-center space-x-2"
+                                                >
+                                                    {isResettingPassword && (
+                                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                                    )}
+                                                    <span>{isResettingPassword ? 'Restableciendo...' : 'Confirmar Restablecimiento'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -902,10 +961,11 @@ const AdminUsersPage: React.FC = () => {
                                 }}>
                                     <div className="space-y-4">
                                         <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            <label htmlFor="edit-nombre-persona" className="block text-sm font-medium text-slate-700 mb-1">
                                                 Nombre y Apellido
                                             </label>
                                             <input
+                                                id="edit-nombre-persona"
                                                 type="text"
                                                 name="nombre_persona"
                                                 defaultValue={selectedUser.nombre_persona}
@@ -914,10 +974,11 @@ const AdminUsersPage: React.FC = () => {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            <label htmlFor="edit-nombre-empresa" className="block text-sm font-medium text-slate-700 mb-1">
                                                 Razón social de la empresa
                                             </label>
                                             <input
+                                                id="edit-nombre-empresa"
                                                 type="text"
                                                 name="nombre_empresa"
                                                 defaultValue={selectedUser.nombre_empresa || ''}
@@ -925,10 +986,11 @@ const AdminUsersPage: React.FC = () => {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            <label htmlFor="edit-email" className="block text-sm font-medium text-slate-700 mb-1">
                                                 Email
                                             </label>
                                             <input
+                                                id="edit-email"
                                                 type="email"
                                                 name="email"
                                                 defaultValue={selectedUser.email}

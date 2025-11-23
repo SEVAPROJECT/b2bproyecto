@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { CheckCircleIcon, ExclamationCircleIcon, XMarkIcon, ClockIcon } from '../../components/icons';
+import { CheckCircleIcon, ExclamationCircleIcon, XMarkIcon } from '../../components/icons';
 import OptimizedLoading from '../ui/OptimizedLoading';
 import { adminAPI } from '../../services/api';
 import { AuthContext } from '../../contexts/AuthContext';
 import { useDateUtils } from '../../hooks/useDateUtils';
-import { API_CONFIG, buildApiUrl } from '../../config/api';
+import { buildApiUrl } from '../../config/api';
 
 const AdminVerificationsPage: React.FC = () => {
     const { user } = React.useContext(AuthContext);
@@ -47,6 +47,17 @@ const AdminVerificationsPage: React.FC = () => {
         }
         
         return result;
+    };
+
+    // Función helper para obtener las clases CSS según el estado de revisión del documento
+    const getDocumentStatusClasses = (estadoRevision: string | undefined | null): string => {
+        if (estadoRevision === 'aprobado') {
+            return 'bg-green-100 text-green-800';
+        }
+        if (estadoRevision === 'rechazado') {
+            return 'bg-red-100 text-red-800';
+        }
+        return 'bg-yellow-100 text-yellow-800';
     };
 
     // Función para limpiar filtros
@@ -167,22 +178,13 @@ const AdminVerificationsPage: React.FC = () => {
         return filterRequests(solicitudes);
     }, [solicitudes, filterRequests]);
 
-    // Estadísticas memoizadas
-    const statistics = useMemo(() => {
-        const total = solicitudes.length;
-        const filtered = filteredRequests.length;
-        // El backend devuelve 'estado', no 'estado_aprobacion'
-        const pending = solicitudes.filter(r => (r.estado_aprobacion || r.estado) === 'pendiente').length;
-        const approved = solicitudes.filter(r => (r.estado_aprobacion || r.estado) === 'aprobada').length;
-        const rejected = solicitudes.filter(r => (r.estado_aprobacion || r.estado) === 'rechazada').length;
-
-        return { total, filtered, pending, approved, rejected };
-    }, [solicitudes, filteredRequests]);
-
     // Empresas únicas para el filtro
     const uniqueCompanies = useMemo(() => {
         const companies = [...new Set(solicitudes.map(s => s.nombre_empresa).filter(Boolean))];
-        return companies.sort();
+        return companies.sort((a, b) => {
+            if (!a || !b) return 0;
+            return a.localeCompare(b, 'es', { sensitivity: 'base' });
+        });
     }, [solicitudes]);
 
 
@@ -450,8 +452,9 @@ const AdminVerificationsPage: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         {/* Filtro por fecha */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
+                            <label htmlFor="filter-date-verifications" className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
                             <select
+                                id="filter-date-verifications"
                                 value={filters.dateFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, dateFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -467,8 +470,9 @@ const AdminVerificationsPage: React.FC = () => {
 
                         {/* Filtro por empresa */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Empresa</label>
+                            <label htmlFor="filter-company-verifications" className="block text-sm font-medium text-gray-700 mb-2">Empresa</label>
                             <select
+                                id="filter-company-verifications"
                                 value={filters.companyFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, companyFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -484,8 +488,9 @@ const AdminVerificationsPage: React.FC = () => {
 
                         {/* Filtro por estado */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+                            <label htmlFor="filter-status-verifications" className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
                             <select
+                                id="filter-status-verifications"
                                 value={filters.statusFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, statusFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -500,8 +505,9 @@ const AdminVerificationsPage: React.FC = () => {
                         {/* Fecha personalizada */}
                         {filters.dateFilter === 'custom' && (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Fecha específica</label>
+                                <label htmlFor="filter-custom-date-verifications" className="block text-sm font-medium text-gray-700 mb-2">Fecha específica</label>
                                 <input
+                                    id="filter-custom-date-verifications"
                                     type="date"
                                     value={filters.customDate}
                                     onChange={(e) => setFilters(prev => ({ ...prev, customDate: e.target.value }))}
@@ -744,11 +750,7 @@ const AdminVerificationsPage: React.FC = () => {
                                             <div className="space-y-1 text-sm">
                                                 <div>
                                                     <span className="text-gray-600">Estado:</span>
-                                                    <span className={`ml-1 px-2 py-1 text-xs rounded-full ${
-                                                        doc.estado_revision === 'aprobado' ? 'bg-green-100 text-green-800' :
-                                                        doc.estado_revision === 'rechazado' ? 'bg-red-100 text-red-800' :
-                                                        'bg-yellow-100 text-yellow-800'
-                                                    }`}>
+                                                    <span className={`ml-1 px-2 py-1 text-xs rounded-full ${getDocumentStatusClasses(doc.estado_revision)}`}>
                                                         {doc.estado_revision || 'Pendiente'}
                                                     </span>
                                                 </div>
@@ -936,10 +938,11 @@ const AdminVerificationsPage: React.FC = () => {
                         </div>
 
                         <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label htmlFor="reject-comment-verifications" className="block text-sm font-medium text-gray-700 mb-2">
                                 Comentario <span className="text-red-500">*</span>
                             </label>
                             <textarea
+                                id="reject-comment-verifications"
                                 value={rejectComment}
                                 onChange={(e) => setRejectComment(e.target.value)}
                                 rows={3}

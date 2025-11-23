@@ -63,19 +63,21 @@ const matchesDateFilter = (requestDate: Date, dateFilter: string, customDate?: s
     switch (dateFilter) {
         case 'today':
             return requestDate.toDateString() === now.toDateString();
-        case 'week':
+        case 'week': {
             const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
             return requestDate >= weekAgo;
+        }
         case 'month':
             return requestDate.getMonth() === now.getMonth() && requestDate.getFullYear() === now.getFullYear();
         case 'year':
             return requestDate.getFullYear() === now.getFullYear();
-        case 'custom':
+        case 'custom': {
             if (customDate) {
                 const selectedDate = parseDateString(customDate);
                 return datesEqual(requestDate, selectedDate);
             }
             return true;
+        }
         default:
             return true;
     }
@@ -152,7 +154,8 @@ const AdminCategoryRequestsPage: React.FC = () => {
     }, [requests, filters]);
 
     useEffect(() => {
-        setFilteredRequests(filteredRequestsMemo);
+        // Usar una copia del array para evitar problemas de referencia
+        setFilteredRequests([...filteredRequestsMemo]);
     }, [filteredRequestsMemo]);
 
     const resetFilters = useCallback(() => {
@@ -171,30 +174,48 @@ const AdminCategoryRequestsPage: React.FC = () => {
             
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) {
+                setError('No se encontró token de acceso. Por favor, inicia sesión nuevamente.');
+                setLoading(false);
                 return;
             }
 
+            console.log('🚀 Cargando solicitudes de categorías...');
             const requestsData = await categoryRequestsAPI.getAllCategoryRequests(accessToken);
+            console.log('📊 Solicitudes obtenidas:', requestsData?.length || 0);
+            
+            // Verificar que requestsData sea un array
+            if (!Array.isArray(requestsData)) {
+                console.error('❌ La respuesta no es un array:', requestsData);
+                setError('Error: La respuesta del servidor no es válida');
+                setLoading(false);
+                return;
+            }
             
             // Procesar solicitudes básicas primero (sin emails)
-            const requestsBasic = requestsData.map(request => ({
-                ...request,
-                email_contacto: request.email_contacto || 'Cargando...',
-                nombre_empresa: request.nombre_empresa || '',
-                nombre_contacto: request.nombre_contacto || ''
-            }));
+            // Asegurar que cada request tenga un id_solicitud único y válido
+            const requestsBasic = requestsData
+                .filter(request => request && request.id_solicitud) // Filtrar requests inválidos
+                .map(request => ({
+                    ...request,
+                    email_contacto: request.email_contacto || 'Cargando...',
+                    nombre_empresa: request.nombre_empresa || '',
+                    nombre_contacto: request.nombre_contacto || ''
+                }));
             
             // Establecer datos básicos inmediatamente
             setRequests(requestsBasic);
             setLoading(false);
             
-            // Cargar emails en segundo plano (lazy loading)
-            loadEmailsInBackground(requestsData, accessToken);
+            // Cargar emails en segundo plano (lazy loading) solo si hay requests válidos
+            if (requestsBasic.length > 0) {
+                loadEmailsInBackground(requestsData, accessToken);
+            }
             
         } catch (err: any) {
             console.error('❌ Error cargando solicitudes:', err);
-            console.error('❌ Error completo:', JSON.stringify(err, null, 2));
-            setError(err.detail || 'Error al cargar las solicitudes');
+            console.error('❌ Error completo:', err);
+            const errorMessage = err?.detail || err?.message || 'Error al cargar las solicitudes. Por favor, intenta nuevamente.';
+            setError(errorMessage);
             setLoading(false);
         }
     }, []);
@@ -377,8 +398,34 @@ const AdminCategoryRequestsPage: React.FC = () => {
             // Procesar solicitudes con emails reales
             const requestsWithEmails = processRequestsWithEmails(requestsData, emailsDict);
             
-            // Actualizar con emails reales
-            setRequests(requestsWithEmails);
+            // Actualizar con emails reales usando función de actualización que preserva la estructura
+            setRequests(prevRequests => {
+                // Si no hay requests previos, usar los nuevos directamente
+                if (prevRequests.length === 0) {
+                    return requestsWithEmails;
+                }
+                
+                // Crear un mapa de requests existentes por id_solicitud para preservar referencias
+                const prevMap = new Map(prevRequests.map(req => [req.id_solicitud, req]));
+                
+                // Actualizar solo los emails, manteniendo el mismo orden y estructura
+                const updated = requestsWithEmails.map(newRequest => {
+                    const prevRequest = prevMap.get(newRequest.id_solicitud);
+                    if (prevRequest) {
+                        // Solo actualizar el email si es diferente para evitar re-renders innecesarios
+                        if (prevRequest.email_contacto === newRequest.email_contacto) {
+                            return prevRequest; // Mantener la misma referencia
+                        }
+                        return {
+                            ...prevRequest,
+                            email_contacto: newRequest.email_contacto
+                        };
+                    }
+                    return newRequest;
+                });
+                
+                return updated;
+            });
             
         } catch (error) {
             console.error('Error obteniendo emails reales:', error);
@@ -482,7 +529,18 @@ const AdminCategoryRequestsPage: React.FC = () => {
                 {/* Mensajes de estado */}
                 {error && (
                     <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
-                        <p className="text-red-800">{error}</p>
+                        <div className="flex items-center justify-between">
+                            <p className="text-red-800">{error}</p>
+                            <button
+                                onClick={() => {
+                                    setError(null);
+                                    loadRequests();
+                                }}
+                                className="ml-4 text-sm text-red-600 hover:text-red-800 underline"
+                            >
+                                Reintentar
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -507,8 +565,9 @@ const AdminCategoryRequestsPage: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {/* Filtro por fecha */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
+                            <label htmlFor="filter-date" className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
                             <select
+                                id="filter-date"
                                 value={filters.dateFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, dateFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -524,8 +583,9 @@ const AdminCategoryRequestsPage: React.FC = () => {
 
                         {/* Filtro por estado */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+                            <label htmlFor="filter-status" className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
                             <select
+                                id="filter-status"
                                 value={filters.statusFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, statusFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -540,8 +600,9 @@ const AdminCategoryRequestsPage: React.FC = () => {
                         {/* Fecha personalizada */}
                         {filters.dateFilter === 'custom' && (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Fecha específica</label>
+                                <label htmlFor="filter-custom-date" className="block text-sm font-medium text-gray-700 mb-2">Fecha específica</label>
                                 <input
+                                    id="filter-custom-date"
                                     type="date"
                                     value={filters.customDate}
                                     onChange={(e) => setFilters(prev => ({ ...prev, customDate: e.target.value }))}
@@ -683,10 +744,11 @@ const AdminCategoryRequestsPage: React.FC = () => {
                             ¿Estás seguro de que deseas rechazar la solicitud "{selectedRequest.nombre_categoria}"?
                         </p>
                         <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label htmlFor="reject-comment" className="block text-sm font-medium text-gray-700 mb-2">
                                 Comentario *
                             </label>
                             <textarea
+                                id="reject-comment"
                                 value={rejectComment}
                                 onChange={(e) => setRejectComment(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
@@ -732,10 +794,11 @@ const AdminCategoryRequestsPage: React.FC = () => {
                         }}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-nombre-categoria" className="block text-sm font-medium text-gray-700 mb-2">
                                         Nombre de la Categoría *
                                     </label>
                                     <input
+                                        id="edit-nombre-categoria"
                                         type="text"
                                         value={editForm.nombre_categoria}
                                         onChange={(e) => setEditForm(prev => ({ ...prev, nombre_categoria: e.target.value }))}
@@ -744,10 +807,11 @@ const AdminCategoryRequestsPage: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-nombre-empresa" className="block text-sm font-medium text-gray-700 mb-2">
                                         Nombre de la Empresa
                                     </label>
                                     <input
+                                        id="edit-nombre-empresa"
                                         type="text"
                                         value={editForm.nombre_empresa}
                                         onChange={(e) => setEditForm(prev => ({ ...prev, nombre_empresa: e.target.value }))}
@@ -757,10 +821,11 @@ const AdminCategoryRequestsPage: React.FC = () => {
                             </div>
 
                             <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <label htmlFor="edit-descripcion" className="block text-sm font-medium text-gray-700 mb-2">
                                     Descripción *
                                 </label>
                                 <textarea
+                                    id="edit-descripcion"
                                     value={editForm.descripcion}
                                     onChange={(e) => setEditForm(prev => ({ ...prev, descripcion: e.target.value }))}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -771,10 +836,11 @@ const AdminCategoryRequestsPage: React.FC = () => {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-nombre-contacto" className="block text-sm font-medium text-gray-700 mb-2">
                                         Nombre de Contacto
                                     </label>
                                     <input
+                                        id="edit-nombre-contacto"
                                         type="text"
                                         value={editForm.nombre_contacto}
                                         onChange={(e) => setEditForm(prev => ({ ...prev, nombre_contacto: e.target.value }))}
@@ -782,10 +848,11 @@ const AdminCategoryRequestsPage: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-email-contacto" className="block text-sm font-medium text-gray-700 mb-2">
                                         Email de Contacto
                                     </label>
                                     <input
+                                        id="edit-email-contacto"
                                         type="email"
                                         value={editForm.email_contacto}
                                         onChange={(e) => setEditForm(prev => ({ ...prev, email_contacto: e.target.value }))}

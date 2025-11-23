@@ -152,7 +152,7 @@ export const useStandardFilters = <T extends FilterableItem>(
             items
                 .map(item => item.nombre_empresa || item.razon_social)
                 .filter(Boolean)
-        )].sort();
+        )].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
         // Estados únicos
         const statuses = [

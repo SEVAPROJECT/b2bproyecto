@@ -1,10 +1,9 @@
 import boto3
 import logging
 from typing import Optional, Tuple, Dict, Any
-from app.core.config import IDRIVE_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, IDRIVE_BUCKET_NAME
+from app.core.config import IDRIVE_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, IDRIVE_BUCKET_NAME, AWS_REGION
 
 # Constantes
-AWS_REGION_US_EAST_1 = "us-east-1"
 AWS_SERVICE_S3 = "s3"
 MSG_FALTAN_CREDENCIALES_IDRIVE = "❌ Faltan credenciales de iDrive"
 MSG_CLIENTE_IDRIVE_INICIALIZADO = "✅ Cliente iDrive inicializado correctamente"
@@ -54,7 +53,7 @@ class IDriveService:
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
                 endpoint_url=self.endpoint_url,
-                region_name=AWS_REGION_US_EAST_1  # iDrive2 requiere región
+                region_name=AWS_REGION  # iDrive2 requiere región (configurable desde variables de entorno)
             )
             logger.info(MSG_CLIENTE_IDRIVE_INICIALIZADO)
         except Exception as e:

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { MainLayout } from '../../components/layouts';
 import Button from '../../components/ui/Button';
 import { buildApiUrl } from '../../config/api';
@@ -35,7 +35,8 @@ const SimpleResetPasswordPage: React.FC = () => {
             } else {
                 setError(data.message || 'Error enviando el email de restablecimiento');
             }
-        } catch (_error_) {
+        } catch (error) {
+            console.debug('Error al enviar email de restablecimiento:', error);
             setError('Error de conexión. Inténtalo nuevamente.');
         } finally {
             setLoading(false);
@@ -63,7 +64,8 @@ const SimpleResetPasswordPage: React.FC = () => {
             } else {
                 setError(data.message || 'Error reenviando el email');
             }
-        } catch (_error_) {
+        } catch (error) {
+            console.debug('Error al reenviar email de restablecimiento:', error);
             setError('Error de conexión. Inténtalo nuevamente.');
         } finally {
             setLoading(false);

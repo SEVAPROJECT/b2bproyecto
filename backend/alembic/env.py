@@ -8,7 +8,7 @@ from app.db.base_class import Base
 
 #load_dotenv()
 config = context.config
-#config.set_main_option("sqlalchemy.url", os.getenv.get("DATABASE_URL_LOCAL"))
+
 config.set_main_option("sqlalchemy.url", DATABASE_URL_LOCAL)
 
 if config.config_file_name is not None:

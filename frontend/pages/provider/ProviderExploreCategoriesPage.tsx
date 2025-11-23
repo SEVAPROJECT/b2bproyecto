@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BuildingStorefrontIcon, PlusCircleIcon } from '../../components/icons';
-import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, servicesAPI, serviceRequestsAPI } from '../../services/api';
 import { BackendCategory, BackendService } from '../../types';
 

@@ -1,12 +1,10 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-    
     PlusCircleIcon, 
     BuildingStorefrontIcon, 
     ClockIcon
 } from '../../components/icons';
-import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, serviceRequestsAPI, categoryRequestsAPI } from '../../services/api';
 import { ServiceRequest, CategoryRequest } from '../../types';
 

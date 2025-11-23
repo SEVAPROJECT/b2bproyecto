@@ -33,7 +33,7 @@ const formatPriceInput = (value: string): string => {
     if (!cleanValue) return '';
     
     // Si el valor ya tiene puntos, removerlos todos y reformatear
-    const numericOnly = cleanValue.replaceAll(/\./g, '');
+    const numericOnly = cleanValue.replaceAll('.', '');
     
     // Separar parte entera y decimal
     const parts = numericOnly.split(',');
@@ -938,8 +938,9 @@ const ProviderMyServicesPage: React.FC = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
                         {/* Filtro por categoría */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Categoría</label>
+                            <label htmlFor="filter-category-provider-services" className="block text-sm font-medium text-gray-700 mb-2">Categoría</label>
                             <select
+                                id="filter-category-provider-services"
                                 value={filters.categoryFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, categoryFilter: e.target.value }))}
                                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -955,8 +956,9 @@ const ProviderMyServicesPage: React.FC = () => {
 
                         {/* Filtro por nombre */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Nombre del Servicio</label>
+                            <label htmlFor="filter-name-provider-services" className="block text-sm font-medium text-gray-700 mb-2">Nombre del Servicio</label>
                             <input
+                                id="filter-name-provider-services"
                                 type="text"
                                 value={filters.nameFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, nameFilter: e.target.value }))}
@@ -967,8 +969,9 @@ const ProviderMyServicesPage: React.FC = () => {
 
                         {/* Filtro por estado */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+                            <label htmlFor="filter-status-provider-services" className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
                             <select
+                                id="filter-status-provider-services"
                                 value={filters.statusFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, statusFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -981,8 +984,9 @@ const ProviderMyServicesPage: React.FC = () => {
 
                         {/* Filtro por precio mínimo */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Precio Mínimo</label>
+                            <label htmlFor="filter-min-price-provider-services" className="block text-sm font-medium text-gray-700 mb-2">Precio Mínimo</label>
                             <input
+                                id="filter-min-price-provider-services"
                                 type="text"
                                 value={filters.minPrice}
                                 onChange={(e) => {
@@ -996,8 +1000,9 @@ const ProviderMyServicesPage: React.FC = () => {
 
                         {/* Filtro por precio máximo */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Precio Máximo</label>
+                            <label htmlFor="filter-max-price-provider-services" className="block text-sm font-medium text-gray-700 mb-2">Precio Máximo</label>
                             <input
+                                id="filter-max-price-provider-services"
                                 type="text"
                                 value={filters.maxPrice}
                                 onChange={(e) => {
@@ -1078,10 +1083,11 @@ const ProviderMyServicesPage: React.FC = () => {
                             <div className="space-y-4">
                                 {/* Nombre */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-service-name" className="block text-sm font-medium text-gray-700 mb-2">
                                         Nombre del servicio *
                                     </label>
                                     <input
+                                        id="edit-service-name"
                                         type="text"
                                         value={editForm.nombre}
                                         readOnly
@@ -1095,10 +1101,11 @@ const ProviderMyServicesPage: React.FC = () => {
 
                                 {/* Descripción */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="edit-service-description" className="block text-sm font-medium text-gray-700 mb-2">
                                         Descripción *
                                     </label>
                                     <textarea
+                                        id="edit-service-description"
                                         value={editForm.descripcion}
                                         onChange={(e) => setEditForm(prev => ({ ...prev, descripcion: e.target.value }))}
                                         rows={3}
@@ -1109,10 +1116,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                 {/* Precio y Moneda */}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        <label htmlFor="edit-service-price" className="block text-sm font-medium text-gray-700 mb-2">
                                             Precio *
                                         </label>
                                         <input
+                                            id="edit-service-price"
                                             type="text"
                                             value={editForm.precio}
                                             onChange={(e) => {
@@ -1126,10 +1134,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        <label htmlFor="edit-service-currency" className="block text-sm font-medium text-gray-700 mb-2">
                                             Moneda
                                         </label>
                                         <select
+                                            id="edit-service-currency"
                                             value={editForm.id_moneda}
                                             onChange={(e) => setEditForm(prev => ({ ...prev, id_moneda: Number.parseInt(e.target.value) }))}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
@@ -1238,10 +1247,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                             
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                                 <div>
-                                                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                    <label htmlFor={`tarifa-monto-${index}`} className="block text-xs font-medium text-gray-600 mb-1">
                                                         Monto
                                                     </label>
                                                     <input
+                                                        id={`tarifa-monto-${index}`}
                                                         type="text"
                                                         value={tarifa.monto || ''}
                                                         onChange={(e) => {
@@ -1255,10 +1265,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                    <label htmlFor={`tarifa-descripcion-${index}`} className="block text-xs font-medium text-gray-600 mb-1">
                                                         Descripción
                                                     </label>
                                                     <input
+                                                        id={`tarifa-descripcion-${index}`}
                                                         type="text"
                                                         value={tarifa.descripcion}
                                                         onChange={(e) => updateTarifa(index, 'descripcion', e.target.value)}
@@ -1266,10 +1277,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                    <label htmlFor={`tarifa-tipo-${index}`} className="block text-xs font-medium text-gray-600 mb-1">
                                                         Tipo de Tarifa
                                                     </label>
                                                     <select
+                                                        id={`tarifa-tipo-${index}`}
                                                         value={tarifa.id_tarifa}
                                                         onChange={(e) => updateTarifa(index, 'id_tarifa', Number.parseInt(e.target.value))}
                                                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -1333,10 +1345,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        <label htmlFor="new-service-request-name" className="block text-sm font-medium text-gray-700 mb-2">
                                             Nombre del Servicio *
                                         </label>
                                         <input
+                                            id="new-service-request-name"
                                             type="text"
                                             value={newServiceRequest.nombre}
                                             onChange={(e) => setNewServiceRequest(prev => ({ ...prev, nombre: e.target.value }))}
@@ -1346,10 +1359,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        <label htmlFor="new-service-request-description" className="block text-sm font-medium text-gray-700 mb-2">
                                             Descripción del Servicio *
                                         </label>
                                         <textarea
+                                            id="new-service-request-description"
                                             value={newServiceRequest.descripcion}
                                             onChange={(e) => setNewServiceRequest(prev => ({ ...prev, descripcion: e.target.value }))}
                                             rows={4}
@@ -1409,19 +1423,12 @@ const ProviderMyServicesPage: React.FC = () => {
                                                     
                                                     <div className="max-h-80 overflow-y-auto space-y-2">
                                                         {templates.map((template) => (
-                                                            <div
+                                                            <button
                                                                 key={template.id_servicio}
-                                                                role="button"
-                                                                tabIndex={0}
+                                                                type="button"
                                                                 aria-label={`Seleccionar plantilla ${template.nombre}`}
                                                                 onClick={() => handleSelectTemplate(template)}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter' || e.key === ' ') {
-                                                                        e.preventDefault();
-                                                                        handleSelectTemplate(template);
-                                                                    }
-                                                                }}
-                                                                className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                                                                className={`w-full text-left p-3 border rounded-lg cursor-pointer transition-colors ${
                                                                     selectedTemplate?.id_servicio === template.id_servicio
                                                                         ? 'border-green-500 bg-green-50'
                                                                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
@@ -1448,7 +1455,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                                                         </div>
                                                                     </div>
                                                                 </div>
-                                                            </div>
+                                                            </button>
                                                         ))}
                                                     </div>
 
@@ -1459,10 +1466,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                                             
                                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                 <div>
-                                                                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                                    <label htmlFor="template-service-name" className="block text-xs font-medium text-gray-600 mb-1">
                                                                         Nombre del Servicio
                                                                     </label>
                                                                     <input
+                                                                        id="template-service-name"
                                                                         type="text"
                                                                         value={selectedTemplate.nombre}
                                                                         readOnly
@@ -1470,10 +1478,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                                                     />
                                                                 </div>
                                                                 <div>
-                                                                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                                    <label htmlFor="template-service-price" className="block text-xs font-medium text-gray-600 mb-1">
                                                                         Precio *
                                                                     </label>
                                                                     <input
+                                                                        id="template-service-price"
                                                                         type="text"
                                                                         value={templateForm.precio}
                                                                         onChange={(e) => {
@@ -1489,10 +1498,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                                             </div>
                                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                                                                 <div>
-                                                                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                                    <label htmlFor="template-service-currency" className="block text-xs font-medium text-gray-600 mb-1">
                                                                         Moneda *
                                                                     </label>
                                                                     <select
+                                                                        id="template-service-currency"
                                                                         value={templateForm.id_moneda}
                                                                         onChange={(e) => setTemplateForm(prev => ({ ...prev, id_moneda: Number.parseInt(e.target.value) }))}
                                                                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -1507,10 +1517,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                                                 </div>
                                                             </div>
                                                             <div className="mt-3">
-                                                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                                <label htmlFor="template-service-description" className="block text-xs font-medium text-gray-600 mb-1">
                                                                     Descripción
                                                                 </label>
                                                                 <textarea
+                                                                    id="template-service-description"
                                                                     value={templateForm.descripcion}
                                                                     onChange={(e) => setTemplateForm(prev => ({ ...prev, descripcion: e.target.value }))}
                                                                     rows={2}
@@ -1610,10 +1621,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="new-category-name" className="block text-sm font-medium text-gray-700 mb-2">
                                         Nombre de la Categoría *
                                     </label>
                                     <input
+                                        id="new-category-name"
                                         type="text"
                                         value={newCategoryForm.nombre_categoria}
                                         onChange={(e) => setNewCategoryForm(prev => ({ ...prev, nombre_categoria: e.target.value }))}
@@ -1623,10 +1635,11 @@ const ProviderMyServicesPage: React.FC = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="new-category-description" className="block text-sm font-medium text-gray-700 mb-2">
                                         Descripción de la Categoría *
                                     </label>
                                     <textarea
+                                        id="new-category-description"
                                         value={newCategoryForm.descripcion}
                                         onChange={(e) => setNewCategoryForm(prev => ({ ...prev, descripcion: e.target.value }))}
                                         rows={4}

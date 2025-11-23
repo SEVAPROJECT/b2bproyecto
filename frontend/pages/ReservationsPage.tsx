@@ -9,7 +9,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import CalificacionModal from '../components/CalificacionModal';
 import { formatDateSpanishLong } from '../utils/dateUtils';
-import { useReservations, Reserva } from '../hooks/useReservations';
+import { useReservations } from '../hooks/useReservations';
 
 // Funciones auxiliares para formateo de tiempo
 const formatTime = (timeString: string | null): string => {
@@ -101,13 +101,11 @@ const ReservationsPage: React.FC = () => {
         activeFiltersCount,
         loadReservas,
         handleClearFilters,
-        actualizarEstadoReserva,
         handleAccionReserva,
         handleConfirmarReserva,
         handleCalificar,
         handleEnviarCalificacion,
         confirmarAccion,
-        setError
     } = useReservations();
 
     // Badges de estado

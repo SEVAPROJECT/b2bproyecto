@@ -392,7 +392,6 @@ async def _obtener_reservas(conn: Any, servicio_id: int, fecha_inicio: date, fec
 
 
 def _obtener_horarios_efectivos(
-    fecha_actual: date,
     horario_base: Dict[str, Any],
     excepcion: Optional[Dict[str, Any]]
 ) -> Optional[tuple]:
@@ -477,7 +476,7 @@ def _generar_horarios_disponibles(
         horario_base = horarios_map[dia_semana]
         excepcion = excepciones_map.get(fecha_actual)
         
-        horarios_efectivos = _obtener_horarios_efectivos(fecha_actual, horario_base, excepcion)
+        horarios_efectivos = _obtener_horarios_efectivos(horario_base, excepcion)
         if not horarios_efectivos:
             fecha_actual += timedelta(days=1)
             continue

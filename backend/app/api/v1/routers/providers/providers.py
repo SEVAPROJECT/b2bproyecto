@@ -30,14 +30,11 @@ from app.models.empresa.tipo_documento import TipoDocumento
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from app.models.empresa.sucursal_empresa import SucursalEmpresa
-#import mimetype
 from fastapi.responses import Response
 import mimetypes
 import urllib.parse
 from sqlalchemy import select
 from app.models.publicar_servicio.category import CategoriaModel
-from app.models.empresa.perfil_empresa import PerfilEmpresa
-#from app.models.perfil import UserModel
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
 from app.models.empresa.sucursal_empresa import SucursalEmpresa
@@ -413,7 +410,7 @@ async def process_documents(
         try:
             file_content = await file.read()
             file_key = f"{razon_social}/{nombre_tip_documento}/{uuid.uuid4()}_{file.filename}"
-            idrive_url = await upload_file_to_idrive(
+            idrive_url = upload_file_to_idrive(
                 file_content=file_content,
                 filename=file_key,
                 document_type=DOCUMENT_TYPE_PROVIDER
@@ -557,7 +554,7 @@ async def solicitar_verificacion_completa(
 
 
 # Funciones helper para servir_mi_documento
-async def validate_token_and_get_user_id(token: Optional[str]) -> Optional[str]:
+def validate_token_and_get_user_id(token: Optional[str]) -> Optional[str]:
     """Valida el token y retorna el ID del usuario"""
     if not token:
         print("⚠️ No se recibió token, continuando sin autenticación...")
@@ -650,7 +647,7 @@ async def servir_mi_documento(
         print(f"🔍 Token recibido: {token[:20] if token else 'None'}...")
 
         # Validar token y obtener ID de usuario
-        current_user_id = await validate_token_and_get_user_id(token)
+        current_user_id = validate_token_and_get_user_id(token)
 
         # Buscar el documento
         doc_query = select(Documento).where(Documento.id_documento == documento_id)
@@ -862,7 +859,7 @@ async def get_mis_documentos_test(
                 "error": "Solicitud no encontrada",
                 "user_id": user_id,
                 "empresa_id": str(empresa.id_perfil),
-                "message": "No se encontró solicitud de verificación"
+                "message": MSG_SOLICITUD_VERIFICACION_NO_ENCONTRADA
             }
 
         # Obtener documentos de la solicitud
@@ -1258,7 +1255,7 @@ async def test_datos_solicitud(
 
         if not solicitud:
             return {
-                "error": "No se encontró solicitud de verificación",
+                "error": MSG_SOLICITUD_VERIFICACION_NO_ENCONTRADA,
                 "empresa": {
                     "id": empresa.id_perfil,
                     "razon_social": empresa.razon_social,

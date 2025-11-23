@@ -83,100 +83,152 @@ export const useAdminUsers = () => {
     // Ref para saber si es la carga inicial
     const isInitialLoadRef = useRef(true);
 
+    // Función helper para verificar si se debe saltar la carga
+    const shouldSkipLoad = useCallback((retryCount: number): boolean => {
+        if (isLoadingRef.current && retryCount === 0) {
+            console.log('⚠️ Carga ya en progreso, saltando llamada duplicada');
+            return true;
+        }
+        return false;
+    }, []);
+
+    // Función helper para configurar estados de loading
+    const setLoadingStates = useCallback(() => {
+        if (isInitialLoadRef.current) {
+            setLoading(true);
+        } else {
+            setIsSearching(true);
+        }
+    }, []);
+
+    // Función helper para construir URL con parámetros
+    const buildUsersUrl = useCallback((page: number, searchEmpresaParam?: string, searchNombreParam?: string): string => {
+        const urlParams = new URLSearchParams();
+        urlParams.append('page', page.toString());
+        urlParams.append('limit', '100');
+        
+        if (searchEmpresaParam && searchEmpresaParam.trim()) {
+            urlParams.append('search_empresa', searchEmpresaParam.trim());
+        }
+        
+        if (searchNombreParam && searchNombreParam.trim()) {
+            urlParams.append('search_nombre', searchNombreParam.trim());
+        }
+
+        return buildApiUrl(`${API_CONFIG.ADMIN.USERS}?${urlParams.toString()}`);
+    }, []);
+
+    // Función helper para realizar el fetch con timeout
+    const fetchUsersWithTimeout = useCallback(async (url: string): Promise<Response> => {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout de usuarios')), 10000)
+        );
+
+        const fetchPromise = fetch(url, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+        });
+
+        return await Promise.race([fetchPromise, timeoutPromise]) as Response;
+    }, []);
+
+    // Función helper para procesar respuesta exitosa
+    const processSuccessfulResponse = useCallback((data: any) => {
+        console.log('✅ Usuarios cargados:', data.usuarios?.length || 0);
+        
+        setAllUsers(data.usuarios || []);
+        setTotalUsers(data.total || 0);
+        setTotalPages(data.total_pages || 1);
+        setCurrentPage(data.page || 1);
+        
+        isInitialLoadRef.current = false;
+    }, []);
+
+    // Función helper para manejar errores de respuesta
+    const handleResponseError = useCallback(async (
+        response: Response,
+        page: number,
+        searchEmpresaParam: string | undefined,
+        searchNombreParam: string | undefined,
+        retryCount: number
+    ): Promise<boolean> => {
+        console.log('❌ Error en respuesta del servidor:', response.status);
+        
+        if (response.status === 500 && retryCount < 2) {
+            console.log(`🔄 Reintentando carga de usuarios... (${retryCount + 1}/2)`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return true; // Indica que se debe reintentar
+        }
+        
+        setError('Error al cargar usuarios. Verifica tu conexión.');
+        setAllUsers(prev => prev.length === 0 ? [] : prev);
+        return false;
+    }, []);
+
+    // Función helper para manejar errores de excepción
+    const handleFetchError = useCallback(async (
+        error: unknown,
+        page: number,
+        searchEmpresaParam: string | undefined,
+        searchNombreParam: string | undefined,
+        retryCount: number
+    ): Promise<boolean> => {
+        console.error('❌ Error cargando usuarios:', error);
+        
+        if (error instanceof Error && 
+            (error.message.includes('Timeout') || error.message.includes('Failed to fetch')) && 
+            retryCount < 2) {
+            console.log(`🔄 Reintentando por ${error.message.includes('Timeout') ? 'timeout' : 'conexión'}... (${retryCount + 1}/2)`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return true; // Indica que se debe reintentar
+        }
+        
+        setError('Error al cargar usuarios. Verifica tu conexión.');
+        setAllUsers(prev => prev.length === 0 ? [] : prev);
+        return false;
+    }, []);
+
+    // Función helper para limpiar estados de loading
+    const clearLoadingStates = useCallback(() => {
+        isLoadingRef.current = false;
+        setLoading(false);
+        setIsSearching(false);
+    }, []);
+
     // Función para cargar usuarios
     const loadUsers = useCallback(async (page: number = 1, searchEmpresaParam?: string, searchNombreParam?: string, retryCount: number = 0) => {
         try {
-            // Prevenir llamadas múltiples simultáneas (excepto en carga inicial)
-            if (isLoadingRef.current && retryCount === 0) {
-                console.log('⚠️ Carga ya en progreso, saltando llamada duplicada');
+            if (shouldSkipLoad(retryCount)) {
                 return;
             }
             
             isLoadingRef.current = true;
-            
-            // Solo mostrar loading completo en la carga inicial
-            if (isInitialLoadRef.current) {
-                setLoading(true);
-            } else {
-                // Para búsquedas, solo mostrar indicador de búsqueda
-                setIsSearching(true);
-            }
-            
+            setLoadingStates();
             setError(null);
 
             console.log(`📊 Cargando usuarios optimizado... (intento ${retryCount + 1})`);
 
-            // Construir URL con parámetros de paginación y búsqueda
-            const urlParams = new URLSearchParams();
-            urlParams.append('page', page.toString());
-            urlParams.append('limit', '100');
-            
-            if (searchEmpresaParam && searchEmpresaParam.trim()) {
-                urlParams.append('search_empresa', searchEmpresaParam.trim());
-            }
-            
-            if (searchNombreParam && searchNombreParam.trim()) {
-                urlParams.append('search_nombre', searchNombreParam.trim());
-            }
-
-            const url = buildApiUrl(`${API_CONFIG.ADMIN.USERS}?${urlParams.toString()}`);
-            
-            // Timeout de 10 segundos para usuarios
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de usuarios')), 10000)
-            );
-
-            const fetchPromise = fetch(url, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-            });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+            const url = buildUsersUrl(page, searchEmpresaParam, searchNombreParam);
+            const response = await fetchUsersWithTimeout(url);
 
             if (response.ok) {
                 const data = await response.json();
-                console.log('✅ Usuarios cargados:', data.usuarios?.length || 0);
-                
-                setAllUsers(data.usuarios || []);
-                setTotalUsers(data.total || 0);
-                setTotalPages(data.total_pages || 1);
-                setCurrentPage(data.page || 1);
-                
-                // Marcar que la carga inicial ya terminó
-                isInitialLoadRef.current = false;
+                processSuccessfulResponse(data);
             } else {
-                console.log('❌ Error en respuesta del servidor:', response.status);
-                
-                // Reintentar si es error 500 y no hemos intentado más de 2 veces
-                if (response.status === 500 && retryCount < 2) {
-                    console.log(`🔄 Reintentando carga de usuarios... (${retryCount + 1}/2)`);
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                const shouldRetry = await handleResponseError(response, page, searchEmpresaParam, searchNombreParam, retryCount);
+                if (shouldRetry) {
                     return loadUsers(page, searchEmpresaParam, searchNombreParam, retryCount + 1);
                 }
-                
-                setError('Error al cargar usuarios. Verifica tu conexión.');
-                setAllUsers(prev => prev.length === 0 ? [] : prev);
             }
 
         } catch (error) {
-            console.error('❌ Error cargando usuarios:', error);
-            
-            // Reintentar si es timeout o Failed to fetch y no hemos intentado más de 2 veces
-            if (error instanceof Error && 
-                (error.message.includes('Timeout') || error.message.includes('Failed to fetch')) && 
-                retryCount < 2) {
-                console.log(`🔄 Reintentando por ${error.message.includes('Timeout') ? 'timeout' : 'conexión'}... (${retryCount + 1}/2)`);
-                await new Promise(resolve => setTimeout(resolve, 1000));
+            const shouldRetry = await handleFetchError(error, page, searchEmpresaParam, searchNombreParam, retryCount);
+            if (shouldRetry) {
                 return loadUsers(page, searchEmpresaParam, searchNombreParam, retryCount + 1);
             }
-            
-            setError('Error al cargar usuarios. Verifica tu conexión.');
-            setAllUsers(prev => prev.length === 0 ? [] : prev);
         } finally {
-            isLoadingRef.current = false;
-            setLoading(false);
-            setIsSearching(false);
+            clearLoadingStates();
         }
-    }, []);
+    }, [shouldSkipLoad, setLoadingStates, buildUsersUrl, fetchUsersWithTimeout, processSuccessfulResponse, handleResponseError, handleFetchError, clearLoadingStates]);
     
     // Actualizar ref cuando loadUsers cambie
     useEffect(() => {
@@ -522,14 +574,12 @@ export const useAdminUsers = () => {
 
                 showNotification('success', 'Perfil actualizado exitosamente');
                 setShowEditModal(false);
+            } else if (response.status === 401) {
+                showNotification('error', 'Sesión expirada. Por favor, refresca la página e inicia sesión nuevamente.', 5000);
+            } else if (responseData.detail) {
+                showNotification('error', `Error: ${responseData.detail}`, 5000);
             } else {
-                if (response.status === 401) {
-                    showNotification('error', 'Sesión expirada. Por favor, refresca la página e inicia sesión nuevamente.', 5000);
-                } else if (responseData.detail) {
-                    showNotification('error', `Error: ${responseData.detail}`, 5000);
-                } else {
-                    showNotification('error', 'Error actualizando perfil', 4000);
-                }
+                showNotification('error', 'Error actualizando perfil', 4000);
             }
         } catch (err: any) {
             showNotification('error', `Error: ${err.message}`, 5000);

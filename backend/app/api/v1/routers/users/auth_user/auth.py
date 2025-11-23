@@ -28,6 +28,7 @@ import uuid
 from datetime import datetime
 import asyncio
 from fastapi.responses import JSONResponse
+from app.services.supabase_storage_service import supabase_storage_service
 
  # Importar modelos necesarios
 from app.models.empresa.perfil_empresa import PerfilEmpresa
@@ -140,44 +141,66 @@ async def create_user_in_supabase(signup_data: dict) -> tuple[Any, str, bool]:
             logger.warning("⚠️ Error al enviar email de confirmación, verificando si el usuario se creó...")
             email_sent_error = True
             
-            id_user = await verify_user_created_despite_email_error(signup_data["email"])
+            id_user = verify_user_created_despite_email_error(signup_data["email"])
             return signup_response, id_user, email_sent_error
         else:
             # Otro tipo de error de AuthApiError, re-lanzar para manejo general
             raise
 
-async def verify_user_created_despite_email_error(email: str) -> str:
+# Funciones helper para verify_user_created_despite_email_error
+def verify_supabase_admin_configured() -> bool:
+    """Verifica si supabase_admin está configurado"""
+    if not supabase_admin:
+        logger.error("❌ No se puede verificar usuario: supabase_admin no está configurado")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=MSG_ERROR_ENVIAR_EMAIL_CONFIRMACION
+        )
+    return True
+
+def find_user_by_email(auth_users, email: str):
+    """Busca un usuario por email en la lista de usuarios"""
+    if not auth_users:
+        return None
+    
+    email_lower = email.lower()
+    for auth_user in auth_users:
+        if auth_user.email and auth_user.email.lower() == email_lower:
+            return auth_user
+    return None
+
+def process_found_user(found_user) -> str:
+    """Procesa un usuario encontrado y retorna su ID"""
+    id_user = str(found_user.id)
+    logger.info(f"✅ Usuario encontrado a pesar del error de email: {id_user}")
+    logger.warning("⚠️ El usuario se creó correctamente, pero no se pudo enviar el email de confirmación")
+    return id_user
+
+def handle_user_not_found():
+    """Maneja el caso cuando el usuario no se encuentra"""
+    logger.error("❌ Usuario no encontrado después del error de email")
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=MSG_ERROR_CREAR_USUARIO_EMAIL
+    )
+
+def verify_user_created_despite_email_error(email: str) -> str:
     """Verifica si el usuario se creó a pesar del error de email"""
     try:
-        if supabase_admin:
-            # Obtener todos los usuarios y buscar por email
-            auth_users = supabase_admin.auth.admin.list_users()
-            
-            # Buscar el usuario por email
-            found_user = None
-            if auth_users:
-                for auth_user in auth_users:
-                    if auth_user.email and auth_user.email.lower() == email.lower():
-                        found_user = auth_user
-                        break
-            
-            if found_user:
-                id_user = str(found_user.id)
-                logger.info(f"✅ Usuario encontrado a pesar del error de email: {id_user}")
-                logger.warning("⚠️ El usuario se creó correctamente, pero no se pudo enviar el email de confirmación")
-                return id_user
-            else:
-                logger.error("❌ Usuario no encontrado después del error de email")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=MSG_ERROR_CREAR_USUARIO_EMAIL
-                )
+        # Verificar que supabase_admin esté configurado
+        verify_supabase_admin_configured()
+        
+        # Obtener todos los usuarios y buscar por email
+        auth_users = supabase_admin.auth.admin.list_users()
+        
+        # Buscar el usuario por email
+        found_user = find_user_by_email(auth_users, email)
+        
+        if found_user:
+            return process_found_user(found_user)
         else:
-            logger.error("❌ No se puede verificar usuario: supabase_admin no está configurado")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=MSG_ERROR_ENVIAR_EMAIL_CONFIRMACION
-            )
+            handle_user_not_found()
+            
     except HTTPException:
         raise
     except Exception as verify_error:
@@ -933,8 +956,6 @@ async def upload_profile_photo(
                 detail=MSG_ARCHIVO_SUPERA_TAMANO
             )
         
-        # Usar Supabase Storage para fotos de perfil
-        from app.services.supabase_storage_service import supabase_storage_service
         
         # Subir imagen a Supabase Storage en la carpeta perfiles/
         success, public_url = await supabase_storage_service.upload_profile_image(
@@ -1099,7 +1120,8 @@ def get_sucursal_data(empresa: PerfilEmpresa) -> Optional[dict]:
     
     print(f"🔍 Lista de sucursales: {[s.nombre for s in empresa.sucursal_empresa]}")
     # Obtener la primera sucursal (principal)
-    sucursal = empresa.sucursal_empresa[0] if empresa.sucursal_empresa else None
+    # Ya verificamos que empresa.sucursal_empresa no está vacío en la línea 1116
+    sucursal = empresa.sucursal_empresa[0]
     
     if not sucursal:
         print("⚠️ No se encontró sucursal principal")

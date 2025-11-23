@@ -21,10 +21,11 @@ EXPIRES_IN_SECONDS_EJEMPLO = 60
 CAMPO_CODE = "code"
 CAMPO_NEW_PASSWORD = "new_password"
 CAMPO_CONFIRM_PASSWORD = "confirm_password"
+DESC_EMAIL_USUARIO = "Email del usuario"
 
 class PasswordResetRequest(BaseModel):
     """Esquema para solicitar restablecimiento de contraseña"""
-    email: EmailStr = Field(..., description="Email del usuario")
+    email: EmailStr = Field(..., description=DESC_EMAIL_USUARIO)
     
     class Config:
         json_schema_extra = {
@@ -35,7 +36,7 @@ class PasswordResetRequest(BaseModel):
 
 class PasswordResetCodeVerify(BaseModel):
     """Esquema para verificar código de restablecimiento"""
-    email: EmailStr = Field(..., description="Email del usuario")
+    email: EmailStr = Field(..., description=DESC_EMAIL_USUARIO)
     code: str = Field(..., min_length=LONGITUD_CODIGO, max_length=LONGITUD_CODIGO, description="Código de 4 dígitos")
     
     @validator(CAMPO_CODE)
@@ -54,7 +55,7 @@ class PasswordResetCodeVerify(BaseModel):
 
 class PasswordResetNewPassword(BaseModel):
     """Esquema para establecer nueva contraseña"""
-    email: EmailStr = Field(..., description="Email del usuario")
+    email: EmailStr = Field(..., description=DESC_EMAIL_USUARIO)
     code: Optional[str] = Field(None, min_length=LONGITUD_CODIGO, max_length=LONGITUD_CODIGO, description="Código de 4 dígitos (opcional si ya fue verificado)")
     new_password: str = Field(..., min_length=LONGITUD_MIN_PASSWORD, description="Nueva contraseña")
     confirm_password: str = Field(..., min_length=LONGITUD_MIN_PASSWORD, description="Confirmación de nueva contraseña")

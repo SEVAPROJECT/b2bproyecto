@@ -243,17 +243,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
 
             {/* Overlay para móviles */}
             {isSidebarOpen && (
-                <div 
-                    role="button"
-                    tabIndex={0}
-                    className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
+                <button
+                    type="button"
+                    className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 border-0 p-0 cursor-pointer"
                     onClick={closeSidebar}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            closeSidebar();
-                        }
-                    }}
                     aria-label="Cerrar menú lateral"
                 />
             )}

@@ -243,6 +243,30 @@ def build_filters_applied(currency: Optional[str], min_price: Optional[float], m
         "search": search
     }
 
+def build_filters_applied_response(
+    services: list,
+    total: int,
+    offset: int,
+    limit: int,
+    currency: Optional[str],
+    min_price: Optional[float],
+    max_price: Optional[float],
+    category_id: Optional[int],
+    department: Optional[str],
+    city: Optional[str],
+    search: Optional[str]
+) -> FilteredServicesResponse:
+    """Construye la respuesta completa con servicios, paginación y filtros aplicados"""
+    pagination = build_pagination_info(total, offset, limit)
+    filters_applied = build_filters_applied(
+        currency, min_price, max_price, category_id, department, city, search
+    )
+    return FilteredServicesResponse(
+        services=services,
+        pagination=pagination,
+        filters_applied=filters_applied
+    )
+
 class ServiceFilters(BaseModel):
     currency: Optional[str] = None
     min_price: Optional[float] = None
@@ -326,7 +350,7 @@ async def get_service_templates_by_category(
     if not services:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontraron servicios disponibles en esta categoría como plantillas."
+            detail="No se encontraron servicios disponibles en esta categoría como plantillas."
         )
     return list(services)
 
@@ -416,97 +440,14 @@ async def get_services_unified(
         # Usar direct_db_service para evitar problemas con PgBouncer
         conn = await direct_db_service.get_connection()
         try:
-            # Construir la consulta base
-            base_query = """
-                SELECT 
-                    s.id_servicio, s.id_categoria, s.id_perfil, s.id_moneda, s.nombre, s.descripcion,
-                    s.precio, s.imagen, s.estado, s.created_at, pe.razon_social, u.nombre_persona as nombre_contacto,
-                    d.nombre as departamento, c.nombre as ciudad, b.nombre as barrio, m.codigo_iso_moneda,
-                    m.nombre as nombre_moneda, m.simbolo as simbolo_moneda
-                FROM servicio s
-                JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                JOIN users u ON pe.user_id = u.id
-                LEFT JOIN direccion dir ON pe.id_direccion = dir.id_direccion
-                LEFT JOIN departamento d ON dir.id_departamento = d.id_departamento
-                LEFT JOIN ciudad c ON dir.id_ciudad = c.id_ciudad
-                LEFT JOIN barrio b ON dir.id_barrio = b.id_barrio
-                LEFT JOIN moneda m ON s.id_moneda = m.id_moneda
-                WHERE s.estado = true AND pe.verificado = true
-            """
+            # Construir filtros dinámicos usando función helper
+            filters, params = build_dynamic_filters(
+                currency, min_price, max_price, category_id, 
+                department, city, search, min_rating
+            )
             
-            # Construir filtros dinámicamente
-            filters = []
-            params = []
-            param_count = 0
-            
-            # Filtro por moneda
-            if currency:
-                currency_upper = currency.strip().upper()
-                param_count += 1
-                # Filtrar por codigo_iso_moneda o por id_moneda como respaldo
-                # Mapeo: 1=GS, 2=USD, 3=BRL, 4/8=ARS
-                currency_conditions = []
-                
-                # Condición para codigo_iso_moneda
-                currency_conditions.append(f"(m.codigo_iso_moneda IS NOT NULL AND TRIM(m.codigo_iso_moneda) = UPPER(${param_count}))")
-                
-                # Condición para id_moneda como respaldo
-                if currency_upper == 'GS':
-                    currency_conditions.append("s.id_moneda = 1")
-                elif currency_upper == 'USD':
-                    currency_conditions.append("s.id_moneda = 2")
-                elif currency_upper == 'BRL':
-                    currency_conditions.append("s.id_moneda = 3")
-                elif currency_upper == 'ARS':
-                    currency_conditions.append("(s.id_moneda = 4 OR s.id_moneda = 8)")
-                
-                filters.append(f"({' OR '.join(currency_conditions)})")
-                params.append(currency_upper)
-            
-            # Filtro por precio mínimo
-            if min_price is not None:
-                param_count += 1
-                filters.append(f"s.precio >= ${param_count}")
-                params.append(min_price)
-            
-            # Filtro por precio máximo
-            if max_price is not None:
-                param_count += 1
-                filters.append(f"s.precio <= ${param_count}")
-                params.append(max_price)
-            
-            # Filtro por categoría
-            if category_id:
-                param_count += 1
-                filters.append(f"s.id_categoria = ${param_count}")
-                params.append(category_id)
-            
-            # Filtro por departamento
-            if department:
-                param_count += 1
-                filters.append(f"LOWER(d.nombre) LIKE LOWER(${param_count})")
-                params.append(f"%{department}%")
-            
-            # Filtro por ciudad
-            if city:
-                param_count += 1
-                filters.append(f"LOWER(c.nombre) LIKE LOWER(${param_count})")
-                params.append(f"%{city}%")
-            
-            # Filtro por búsqueda
-            if search:
-                param_count += 1
-                filters.append(f"(LOWER(s.nombre) LIKE LOWER(${param_count}) OR LOWER(s.descripcion) LIKE LOWER(${param_count}))")
-                params.append(f"%{search}%")
-            
-            # Filtro por calificación mínima (solo si es > 0)
-            if min_rating is not None and float(min_rating) > 0:
-                # Filtrar servicios que tengan un promedio de calificaciones >= min_rating
-                # Solo considerar calificaciones de clientes
-                param_count += 1
-                rating_subquery = f"(SELECT r.id_servicio FROM reserva r INNER JOIN calificacion c ON r.id_reserva = c.id_reserva WHERE c.rol_emisor = 'cliente' GROUP BY r.id_servicio HAVING AVG(c.puntaje) >= ${param_count})"
-                filters.append(f"s.id_servicio IN {rating_subquery}")
-                params.append(float(min_rating))
+            # Construir query base usando función helper
+            base_query = get_base_query()
             
             # Aplicar filtros a la consulta
             if filters:
@@ -515,7 +456,8 @@ async def get_services_unified(
             # Agregar ordenamiento y paginación
             base_query += " ORDER BY s.created_at DESC"
             
-            # Parámetros para paginación
+            # Agregar paginación
+            param_count = len(params)
             param_count += 1
             limit_param = param_count
             param_count += 1
@@ -531,80 +473,22 @@ async def get_services_unified(
             services_data_tuples = await conn.fetch(base_query, *params)
             
             if not services_data_tuples:
-                return FilteredServicesResponse(
-                    services=[],
-                    pagination={
-                        "total": 0,
-                        "page": (offset // limit) + 1,
-                        "total_pages": 0,
-                        "limit": limit,
-                        "offset": offset
-                    },
-                    filters_applied={
-                        "currency": currency,
-                        "min_price": min_price,
-                        "max_price": max_price,
-                        "category_id": category_id,
-                        "department": department,
-                        "city": city,
-                        "search": search
-                    }
+                return build_empty_response(
+                    offset, limit, currency, min_price, max_price,
+                    category_id, department, city, search
                 )
 
             # Obtener IDs de servicios para consulta de tarifas
             service_ids = [row['id_servicio'] for row in services_data_tuples]
             
-            # Consulta de tarifas (N+1 optimization)
-            tarifas_data = []
-            if service_ids:
-                tarifas_data = await conn.fetch("""
-                    SELECT 
-                        ts.id_tarifa_servicio, ts.id_servicio, ts.monto, ts.descripcion, 
-                        ts.fecha_inicio, ts.fecha_fin, ts.id_tarifa, tt.nombre as nombre_tipo_tarifa
-                    FROM tarifa_servicio ts
-                    LEFT JOIN tipo_tarifa_servicio tt ON ts.id_tarifa = tt.id_tarifa
-                    WHERE ts.id_servicio = ANY($1)
-                """, service_ids)
+            # Obtener tarifas usando función helper
+            tarifas_data = await fetch_tarifas_for_services(conn, service_ids)
 
-            # Mapear datos a diccionarios
-            services_map_by_id = {}
-            for row in services_data_tuples:
-                service_dict = dict(row)
-                service_id = service_dict['id_servicio']
-                service_dict['tarifas'] = []
-                services_map_by_id[service_id] = service_dict
-
-            # Asignar tarifas
-            for tarifa_row in tarifas_data:
-                service_id = tarifa_row['id_servicio']
-                if service_id in services_map_by_id:
-                    tarifa_dict = {
-                        "id_tarifa_servicio": tarifa_row['id_tarifa_servicio'],
-                        "monto": float(tarifa_row['monto']),
-                        "descripcion": tarifa_row['descripcion'],
-                        "fecha_inicio": tarifa_row['fecha_inicio'].isoformat(),
-                        "fecha_fin": tarifa_row['fecha_fin'].isoformat() if tarifa_row['fecha_fin'] else None,
-                        "id_tarifa": tarifa_row['id_tarifa'],
-                        "nombre_tipo_tarifa": tarifa_row['nombre_tipo_tarifa'] or "Sin especificar"
-                    }
-                    services_map_by_id[service_id]['tarifas'].append(tarifa_dict)
-
-            # Crear objetos ServicioWithProvider
-            services = [ServicioWithProvider(**data) for data in services_map_by_id.values()]
+            # Mapear servicios con tarifas usando función helper
+            services = map_services_with_tarifas(services_data_tuples, tarifas_data)
             
-            # Consulta para obtener el total (sin paginación)
-            count_query = """
-                SELECT COUNT(*) as total
-                FROM servicio s
-                JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                JOIN users u ON pe.user_id = u.id
-                LEFT JOIN direccion dir ON pe.id_direccion = dir.id_direccion
-                LEFT JOIN departamento d ON dir.id_departamento = d.id_departamento
-                LEFT JOIN ciudad c ON dir.id_ciudad = c.id_ciudad
-                LEFT JOIN barrio b ON dir.id_barrio = b.id_barrio
-                LEFT JOIN moneda m ON s.id_moneda = m.id_moneda
-                WHERE s.estado = true AND pe.verificado = true
-            """
+            # Construir query de conteo usando función helper
+            count_query = get_count_query()
             
             # Aplicar los mismos filtros al count
             if filters:
@@ -615,28 +499,10 @@ async def get_services_unified(
             count_result = await conn.fetchrow(count_query, *count_params)
             total = count_result['total'] if count_result else 0
             
-            # Calcular paginación
-            current_page = (offset // limit) + 1
-            total_pages = (total + limit - 1) // limit  # Ceiling division
-            
-            return FilteredServicesResponse(
-                services=services,
-                pagination={
-                    "total": total,
-                    "page": current_page,
-                    "total_pages": total_pages,
-                    "limit": limit,
-                    "offset": offset
-                },
-                filters_applied={
-                    "currency": currency,
-                    "min_price": min_price,
-                    "max_price": max_price,
-                    "category_id": category_id,
-                    "department": department,
-                    "city": city,
-                    "search": search
-                }
+            # Construir respuesta usando función helper
+            return build_filters_applied_response(
+                services, total, offset, limit, currency, min_price,
+                max_price, category_id, department, city, search
             )
             
         finally:

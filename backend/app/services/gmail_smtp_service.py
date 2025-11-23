@@ -213,7 +213,20 @@ class GmailSMTPService:
                     ))
 
                     # Crear contexto SSL para todas las configuraciones
+                    # Usar protocolos TLS seguros (TLS 1.2 o superior)
                     context = ssl.create_default_context()
+                    # Asegurar que solo se usen protocolos TLS seguros
+                    # Deshabilitar protocolos inseguros (SSLv2, SSLv3, TLSv1.0, TLSv1.1)
+                    context.options |= ssl.OP_NO_SSLv2
+                    context.options |= ssl.OP_NO_SSLv3
+                    context.options |= ssl.OP_NO_TLSv1
+                    context.options |= ssl.OP_NO_TLSv1_1
+                    # Si está disponible, establecer versión mínima de TLS (Python 3.7+)
+                    try:
+                        context.minimum_version = ssl.TLSVersion.TLSv1_2
+                    except AttributeError:
+                        # Python < 3.7: las opciones anteriores ya deshabilitan protocolos inseguros
+                        pass
             
                     # Intentar conexión según la configuración
                     if config.get("use_ssl"):

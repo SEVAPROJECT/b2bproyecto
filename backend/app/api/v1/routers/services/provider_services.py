@@ -225,7 +225,7 @@ async def get_provider_service(
     if not perfil:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Perfil de empresa no encontrado."
+            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
         )
 
     # Obtener el servicio específico
@@ -330,7 +330,7 @@ def parse_tarifa_fechas(tarifa_data: dict) -> tuple[Optional[date], Optional[dat
     fecha_fin = convert_fecha_field(tarifa_data.get('fecha_fin'))
     return fecha_inicio, fecha_fin
 
-async def create_tarifa_from_data(
+def create_tarifa_from_data(
     db: AsyncSession,
     tarifa_data: dict,
     service_id: int
@@ -374,7 +374,7 @@ async def process_tarifas_update(
     
     # Agregar nuevas tarifas
     for tarifa_data in tarifas_data:
-        await create_tarifa_from_data(db, tarifa_data, service_id)
+        create_tarifa_from_data(db, tarifa_data, service_id)
 
 @router.put("/{service_id}")
 async def update_provider_service(
@@ -502,7 +502,7 @@ async def add_tarifa_to_service(
     if not perfil:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Perfil de empresa no encontrado."
+            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
         )
 
     # Verificar que el servicio existe y pertenece al usuario
@@ -555,7 +555,7 @@ async def remove_tarifa_from_service(
     if not perfil:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Perfil de empresa no encontrado."
+            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
         )
 
     # Verificar que el servicio existe y pertenece al usuario

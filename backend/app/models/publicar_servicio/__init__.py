@@ -8,9 +8,8 @@ from .solicitud_categoria import SolicitudCategoria
 
 __all__ = [
     'CategoriaModel',
-    #'ServicioModel',
     'Moneda',
-    'TarifaServicioM',
+    'TarifaServicio',
     'TipoTarifaServicio',
     'SolicitudServicio',
     'SolicitudCategoria'

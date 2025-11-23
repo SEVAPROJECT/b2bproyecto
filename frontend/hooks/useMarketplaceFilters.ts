@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { BackendService } from '../types';
+
 
 export interface MarketplaceFilters {
     searchQuery: string;
