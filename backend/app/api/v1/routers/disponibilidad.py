@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
+from sqlalchemy.orm import selectinload
 from app.schemas.disponibilidad import DisponibilidadIn, DisponibilidadOut, DisponibilidadUpdate
 from app.models.disponibilidad import DisponibilidadModel
 from app.models.servicio.service import ServicioModel
@@ -9,8 +10,10 @@ from app.api.v1.dependencies.database_supabase import get_async_db
 from app.api.v1.dependencies.auth_user import get_current_user
 from app.schemas.auth_user import SupabaseUser
 import logging
-from typing import List, Optional
-from datetime import datetime, date
+from typing import List, Optional, Dict, Any
+from datetime import datetime, date, timezone, timedelta
+from app.services.direct_db_service import direct_db_service
+
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +251,7 @@ async def actualizar_disponibilidad(
     for field, value in update_data.items():
         setattr(disponibilidad, field, value)
     
-    disponibilidad.updated_at = datetime.utcnow()
+    disponibilidad.updated_at = datetime.now(timezone.utc)
     
     try:
         await db.commit()
@@ -310,6 +313,189 @@ async def eliminar_disponibilidad(
             detail="Error al eliminar la disponibilidad."
         )
 
+# Funciones helper para reducir complejidad cognitiva
+async def _verificar_servicio(conn: Any, servicio_id: int) -> Dict[str, Any]:
+    """Verifica que el servicio existe y retorna su información."""
+    logger.info(f"🔍 [GET /disponibilidades] Verificando servicio {servicio_id}...")
+    servicio_query = """
+        SELECT s.id_servicio, s.id_perfil, s.estado, s.nombre, s.duracion_minutos
+        FROM servicio s
+        WHERE s.id_servicio = $1 AND s.estado = true
+    """
+    servicio_result = await conn.fetchrow(servicio_query, servicio_id)
+    
+    if not servicio_result:
+        logger.warning(f"❌ [GET /disponibilidades] Servicio {servicio_id} no encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Servicio no encontrado"
+        )
+    
+    proveedor_id = servicio_result['id_perfil']
+    duracion_minutos = servicio_result['duracion_minutos'] or 60
+    logger.info(f"✅ [GET /disponibilidades] Servicio válido. Proveedor: {proveedor_id}, Duración: {duracion_minutos}min")
+    
+    return {
+        'proveedor_id': proveedor_id,
+        'duracion_minutos': duracion_minutos
+    }
+
+
+async def _obtener_horarios_trabajo(conn: Any, proveedor_id: int) -> Dict[int, Any]:
+    """Obtiene todos los horarios de trabajo del proveedor."""
+    logger.info("🔍 [GET /disponibilidades] Obteniendo horarios de trabajo...")
+    horarios_query = """
+        SELECT dia_semana, hora_inicio, hora_fin, activo
+        FROM horario_trabajo
+        WHERE id_proveedor = $1 AND activo = true
+    """
+    horarios_result = await conn.fetch(horarios_query, proveedor_id)
+    horarios_map = {row['dia_semana']: row for row in horarios_result}
+    logger.info(f"✅ [GET /disponibilidades] Obtenidos {len(horarios_map)} horarios de trabajo")
+    return horarios_map
+
+
+async def _obtener_excepciones_horario(conn: Any, proveedor_id: int, fecha_inicio: date, fecha_fin: date) -> Dict[date, Any]:
+    """Obtiene todas las excepciones de horario en el rango de fechas."""
+    logger.info("🔍 [GET /disponibilidades] Obteniendo excepciones de horario...")
+    excepciones_query = """
+        SELECT fecha, tipo, hora_inicio, hora_fin
+        FROM excepciones_horario
+        WHERE id_proveedor = $1 AND fecha >= $2 AND fecha <= $3
+    """
+    excepciones_result = await conn.fetch(excepciones_query, proveedor_id, fecha_inicio, fecha_fin)
+    excepciones_map = {row['fecha']: row for row in excepciones_result}
+    logger.info(f"✅ [GET /disponibilidades] Obtenidas {len(excepciones_map)} excepciones")
+    return excepciones_map
+
+
+async def _obtener_reservas(conn: Any, servicio_id: int, fecha_inicio: date, fecha_fin: date) -> Dict[date, List[Dict[str, Any]]]:
+    """Obtiene todas las reservas del servicio en el rango de fechas."""
+    logger.info("🔍 [GET /disponibilidades] Obteniendo reservas existentes...")
+    reservas_query = """
+        SELECT fecha, hora_inicio, hora_fin
+        FROM reserva
+        WHERE id_servicio = $1 AND fecha >= $2 AND fecha <= $3 AND estado != 'cancelada'
+    """
+    reservas_result = await conn.fetch(reservas_query, servicio_id, fecha_inicio, fecha_fin)
+    reservas_map: Dict[date, List[Dict[str, Any]]] = {}
+    for reserva in reservas_result:
+        fecha_reserva = reserva['fecha']
+        if fecha_reserva not in reservas_map:
+            reservas_map[fecha_reserva] = []
+        reservas_map[fecha_reserva].append({
+            'hora_inicio': reserva['hora_inicio'],
+            'hora_fin': reserva['hora_fin']
+        })
+    logger.info(f"✅ [GET /disponibilidades] Obtenidas {len(reservas_map)} fechas con reservas")
+    return reservas_map
+
+
+def _obtener_horarios_efectivos(
+    fecha_actual: date,
+    horario_base: Dict[str, Any],
+    excepcion: Optional[Dict[str, Any]]
+) -> Optional[tuple]:
+    """Determina los horarios efectivos para una fecha considerando excepciones."""
+    if excepcion and excepcion['tipo'] == 'cerrado':
+        return None
+    
+    if excepcion and excepcion['tipo'] == 'horario_especial':
+        return (excepcion['hora_inicio'], excepcion['hora_fin'])
+    
+    return (horario_base['hora_inicio'], horario_base['hora_fin'])
+
+
+def _generar_slots_fecha(
+    fecha_actual: date,
+    hora_inicio: Any,
+    hora_fin: Any,
+    duracion_minutos: int,
+    servicio_id: int
+) -> List[Dict[str, Any]]:
+    """Genera los slots de tiempo para una fecha específica."""
+    slots = []
+    hora_actual = datetime.combine(fecha_actual, hora_inicio)
+    hora_final = datetime.combine(fecha_actual, hora_fin)
+    
+    while hora_actual + timedelta(minutes=duracion_minutos) <= hora_final:
+        hora_fin_slot = hora_actual + timedelta(minutes=duracion_minutos)
+        slots.append({
+            "id_servicio": servicio_id,
+            "fecha_inicio": hora_actual,
+            "fecha_fin": hora_fin_slot,
+            "disponible": True,
+            "precio_adicional": 0,
+            "observaciones": None,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now()
+        })
+        hora_actual += timedelta(minutes=duracion_minutos)
+    
+    return slots
+
+
+def _aplicar_reservas_a_slots(
+    slots: List[Dict[str, Any]],
+    reservas_fecha: List[Dict[str, Any]],
+    fecha_actual: date
+) -> None:
+    """Marca los slots como no disponibles si hay solapamiento con reservas."""
+    for reserva in reservas_fecha:
+        reserva_inicio = datetime.combine(fecha_actual, reserva['hora_inicio'])
+        reserva_fin = datetime.combine(fecha_actual, reserva['hora_fin'])
+        
+        for slot in slots:
+            slot_inicio = slot["fecha_inicio"]
+            slot_fin = slot["fecha_fin"]
+            
+            if (slot_inicio < reserva_fin and slot_fin > reserva_inicio):
+                slot["disponible"] = False
+
+
+def _generar_horarios_disponibles(
+    servicio_id: int,
+    fecha_inicio: date,
+    fecha_fin: date,
+    horarios_map: Dict[int, Any],
+    excepciones_map: Dict[date, Any],
+    reservas_map: Dict[date, List[Dict[str, Any]]],
+    duracion_minutos: int
+) -> List[Dict[str, Any]]:
+    """Genera todos los horarios disponibles en el rango de fechas."""
+    logger.info("🔍 [GET /disponibilidades] Generando horarios disponibles...")
+    todos_horarios = []
+    fecha_actual = fecha_inicio
+    
+    while fecha_actual <= fecha_fin:
+        dia_semana = fecha_actual.weekday()
+        
+        if dia_semana not in horarios_map:
+            fecha_actual += timedelta(days=1)
+            continue
+        
+        horario_base = horarios_map[dia_semana]
+        excepcion = excepciones_map.get(fecha_actual)
+        
+        horarios_efectivos = _obtener_horarios_efectivos(fecha_actual, horario_base, excepcion)
+        if not horarios_efectivos:
+            fecha_actual += timedelta(days=1)
+            continue
+        
+        hora_inicio, hora_fin = horarios_efectivos
+        slots = _generar_slots_fecha(fecha_actual, hora_inicio, hora_fin, duracion_minutos, servicio_id)
+        
+        reservas_fecha = reservas_map.get(fecha_actual, [])
+        _aplicar_reservas_a_slots(slots, reservas_fecha, fecha_actual)
+        
+        todos_horarios.extend(slots)
+        fecha_actual += timedelta(days=1)
+    
+    horarios_disponibles = [h for h in todos_horarios if h["disponible"]]
+    logger.info(f"✅ [GET /disponibilidades] Generados {len(horarios_disponibles)} horarios disponibles para servicio {servicio_id}")
+    return horarios_disponibles
+
+
 @router.get(
     "/servicio/{servicio_id}/disponibles",
     response_model=List[DisponibilidadOut],
@@ -328,147 +514,28 @@ async def obtener_disponibilidades_disponibles_servicio(
     logger.info(f"🔍 [GET /disponibilidades] Tipo de servicio_id: {type(servicio_id)}")
     
     try:
-        from app.services.direct_db_service import direct_db_service
-        from datetime import date, datetime, timedelta
-        
-        # Helper para obtener conexión
         conn = await direct_db_service.get_connection()
         try:
-            # 1. Verificar que el servicio existe
-            logger.info(f"🔍 [GET /disponibilidades] Verificando servicio {servicio_id}...")
-            servicio_query = """
-                SELECT s.id_servicio, s.id_perfil, s.estado, s.nombre, s.duracion_minutos
-                FROM servicio s
-                WHERE s.id_servicio = $1 AND s.estado = true
-            """
-            servicio_result = await conn.fetchrow(servicio_query, servicio_id)
+            servicio_info = await _verificar_servicio(conn, servicio_id)
+            proveedor_id = servicio_info['proveedor_id']
+            duracion_minutos = servicio_info['duracion_minutos']
             
-            if not servicio_result:
-                logger.warning(f"❌ [GET /disponibilidades] Servicio {servicio_id} no encontrado")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Servicio no encontrado"
-                )
-            
-            proveedor_id = servicio_result['id_perfil']
-            duracion_minutos = servicio_result['duracion_minutos'] or 60
-            logger.info(f"✅ [GET /disponibilidades] Servicio válido. Proveedor: {proveedor_id}, Duración: {duracion_minutos}min")
-            
-            # 2. OPTIMIZACIÓN: Obtener todos los horarios de trabajo de una vez
-            logger.info("🔍 [GET /disponibilidades] Obteniendo horarios de trabajo...")
-            horarios_query = """
-                SELECT dia_semana, hora_inicio, hora_fin, activo
-                FROM horario_trabajo
-                WHERE id_proveedor = $1 AND activo = true
-            """
-            horarios_result = await conn.fetch(horarios_query, proveedor_id)
-            horarios_map = {row['dia_semana']: row for row in horarios_result}
-            logger.info(f"✅ [GET /disponibilidades] Obtenidos {len(horarios_map)} horarios de trabajo")
-            
-            # 3. OPTIMIZACIÓN: Obtener todas las excepciones de una vez
             fecha_inicio = date.today()
             fecha_fin = fecha_inicio + timedelta(days=30)
-            logger.info("🔍 [GET /disponibilidades] Obteniendo excepciones de horario...")
-            excepciones_query = """
-                SELECT fecha, tipo, hora_inicio, hora_fin
-                FROM excepciones_horario
-                WHERE id_proveedor = $1 AND fecha >= $2 AND fecha <= $3
-            """
-            excepciones_result = await conn.fetch(excepciones_query, proveedor_id, fecha_inicio, fecha_fin)
-            excepciones_map = {row['fecha']: row for row in excepciones_result}
-            logger.info(f"✅ [GET /disponibilidades] Obtenidas {len(excepciones_map)} excepciones")
             
-            # 4. OPTIMIZACIÓN: Obtener todas las reservas de una vez
-            logger.info("🔍 [GET /disponibilidades] Obteniendo reservas existentes...")
-            reservas_query = """
-                SELECT fecha, hora_inicio, hora_fin
-                FROM reserva
-                WHERE id_servicio = $1 AND fecha >= $2 AND fecha <= $3 AND estado != 'cancelada'
-            """
-            reservas_result = await conn.fetch(reservas_query, servicio_id, fecha_inicio, fecha_fin)
-            reservas_map = {}
-            for reserva in reservas_result:
-                fecha_reserva = reserva['fecha']
-                if fecha_reserva not in reservas_map:
-                    reservas_map[fecha_reserva] = []
-                reservas_map[fecha_reserva].append({
-                    'hora_inicio': reserva['hora_inicio'],
-                    'hora_fin': reserva['hora_fin']
-                })
-            logger.info(f"✅ [GET /disponibilidades] Obtenidas {len(reservas_map)} fechas con reservas")
+            horarios_map = await _obtener_horarios_trabajo(conn, proveedor_id)
+            excepciones_map = await _obtener_excepciones_horario(conn, proveedor_id, fecha_inicio, fecha_fin)
+            reservas_map = await _obtener_reservas(conn, servicio_id, fecha_inicio, fecha_fin)
             
-            # 5. Generar horarios optimizado
-            logger.info("🔍 [GET /disponibilidades] Generando horarios disponibles...")
-            todos_horarios = []
-            slot_id_global = 1
-            fecha_actual = fecha_inicio
-            
-            while fecha_actual <= fecha_fin:
-                dia_semana = fecha_actual.weekday()
-                
-                # Verificar si hay horario para este día
-                if dia_semana not in horarios_map:
-                    fecha_actual += timedelta(days=1)
-                    continue
-                
-                horario_base = horarios_map[dia_semana]
-                
-                # Verificar excepciones para esta fecha
-                excepcion = excepciones_map.get(fecha_actual)
-                if excepcion and excepcion['tipo'] == 'cerrado':
-                    fecha_actual += timedelta(days=1)
-                    continue
-                
-                # Determinar horarios efectivos
-                if excepcion and excepcion['tipo'] == 'horario_especial':
-                    hora_inicio = excepcion['hora_inicio']
-                    hora_fin = excepcion['hora_fin']
-                else:
-                    hora_inicio = horario_base['hora_inicio']
-                    hora_fin = horario_base['hora_fin']
-                
-                # Generar slots de tiempo
-                slots = []
-                hora_actual = datetime.combine(fecha_actual, hora_inicio)
-                hora_final = datetime.combine(fecha_actual, hora_fin)
-                
-                while hora_actual + timedelta(minutes=duracion_minutos) <= hora_final:
-                    hora_fin_slot = hora_actual + timedelta(minutes=duracion_minutos)
-                    slots.append({
-                        #"id_disponibilidad": slot_id_global,
-                        "id_servicio": servicio_id,
-                        "fecha_inicio": hora_actual,
-                        "fecha_fin": hora_fin_slot,
-                        "disponible": True,
-                        "precio_adicional": 0,
-                        "observaciones": None,
-                        "created_at": datetime.now(),
-                        "updated_at": datetime.now()
-                    })
-                    hora_actual += timedelta(minutes=duracion_minutos)
-                    slot_id_global += 1
-                
-                # Verificar reservas existentes para esta fecha
-                reservas_fecha = reservas_map.get(fecha_actual, [])
-                for reserva in reservas_fecha:
-                    reserva_inicio = datetime.combine(fecha_actual, reserva['hora_inicio'])
-                    reserva_fin = datetime.combine(fecha_actual, reserva['hora_fin'])
-                    
-                    for slot in slots:
-                        slot_inicio = slot["fecha_inicio"]
-                        slot_fin = slot["fecha_fin"]
-                        
-                        # Verificar si hay solapamiento
-                        if (slot_inicio < reserva_fin and slot_fin > reserva_inicio):
-                            slot["disponible"] = False
-                
-                todos_horarios.extend(slots)
-                fecha_actual += timedelta(days=1)
-            
-            # Filtrar solo disponibles
-            horarios_disponibles = [h for h in todos_horarios if h["disponible"]]
-            
-            logger.info(f"✅ [GET /disponibilidades] Generados {len(horarios_disponibles)} horarios disponibles para servicio {servicio_id}")
+            horarios_disponibles = _generar_horarios_disponibles(
+                servicio_id,
+                fecha_inicio,
+                fecha_fin,
+                horarios_map,
+                excepciones_map,
+                reservas_map,
+                duracion_minutos
+            )
             
             return horarios_disponibles
             

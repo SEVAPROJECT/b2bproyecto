@@ -4,13 +4,63 @@ from app.schemas.reserva_servicio.reserva import ReservaIn, ReservaOut, ReservaE
 from app.api.v1.dependencies.auth_user import get_current_user
 from app.schemas.auth_user import SupabaseUser
 import logging
+import traceback
+import uuid
 from typing import Optional
+from datetime import datetime, time, timedelta, date
 from app.services.direct_db_service import direct_db_service
 from app.services.reserva_notification_service import reserva_notification_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reservas", tags=["reservas"])
+
+# Constantes para estados de reserva
+ESTADO_PENDIENTE = "pendiente"
+ESTADO_CONFIRMADA = "confirmada"
+ESTADO_CANCELADA = "cancelada"
+ESTADO_COMPLETADA = "completada"
+
+# Constantes para valores por defecto
+HORA_INICIO_DEFAULT = "09:00"
+
+# Constantes para formatos
+FORMATO_FECHA_DD_MM_YYYY = "%d/%m/%Y"
+
+# Constantes para SQL
+SQL_AND = " AND "
+
+# Constantes para mensajes de error
+MSG_SERVICIO_NO_ENCONTRADO = "Servicio no encontrado o no disponible."
+MSG_ID_SERVICIO_INVALIDO = "ID de servicio inválido"
+MSG_RESERVA_NO_ENCONTRADA = "Reserva no encontrada"
+MSG_NO_PERMISOS_CAMBIAR_ESTADO = "No tienes permisos para cambiar el estado de esta reserva"
+MSG_NO_PERMISOS_VER_HISTORIAL = "No tienes permisos para ver el historial de esta reserva"
+MSG_NO_AUTORIZADO_GESTIONAR = "No autorizado para gestionar esta reserva"
+MSG_NO_PERFIL_PROVEEDOR = "No tienes un perfil de proveedor verificado."
+MSG_ERROR_ACTUALIZAR_ESTADO = "Error al actualizar el estado de la reserva"
+MSG_ERROR_CANCELAR_RESERVA = "Error al cancelar la reserva"
+MSG_ERROR_CONFIRMAR_RESERVA = "Error al confirmar la reserva"
+MSG_ERROR_INTERNO_CREAR_RESERVA = "Error interno del servidor al crear reserva: {error}"
+MSG_ERROR_INTERNO_OBTENER_RESERVAS = "Error interno del servidor al obtener reservas: {error}"
+MSG_ERROR_INTERNO_OBTENER_RESERVAS_PROVEEDOR = "Error interno del servidor al obtener reservas del proveedor: {error}"
+MSG_ERROR_ACTUALIZAR_ESTADO_FORMAT = "Error al actualizar el estado de la reserva: {error}"
+MSG_ERROR_CANCELAR_RESERVA_FORMAT = "Error al cancelar la reserva: {error}"
+MSG_ERROR_CONFIRMAR_RESERVA_FORMAT = "Error al confirmar la reserva: {error}"
+MSG_ERROR_TEST = "Error en test: {error}"
+MSG_ERROR_DIAGNOSTICO = "Error en diagnóstico: {error}"
+MSG_ERROR_OBTENER_HISTORIAL = "Error al obtener historial: {error}"
+MSG_ESTADO_INVALIDO = "Estado inválido. Los estados válidos son: {estados}"
+MSG_RESERVA_YA_EN_ESTADO = "La reserva ya está en estado '{estado}'"
+MSG_SOLO_CANCELAR_PENDIENTE = "Solo se pueden cancelar reservas en estado 'pendiente'. Estado actual: '{estado}'"
+MSG_DEBE_INGRESAR_MOTIVO = "Debés ingresar un motivo para cancelar la reserva"
+MSG_NO_POSIBLE_ACCION_ESTADO = "No es posible realizar esta acción en el estado actual"
+
+# Constantes para mensajes de notificación
+MSG_NOTIF_APROBADO = "Tu reserva ha sido aprobada"
+MSG_NOTIF_RECHAZADO = "Tu reserva ha sido rechazada"
+MSG_NOTIF_CONCLUIDO = "Tu servicio ha sido completado"
+MSG_NOTIF_ESTADO_CAMBIADO = "El estado de tu reserva ha cambiado a {estado}"
 
 @router.get(
     "/mis-reservas-test",
@@ -22,15 +72,9 @@ async def obtener_mis_reservas_test(
     """
     Endpoint de prueba simplificado para diagnosticar problemas.
     """
-    logger.info(f"🔍 [GET /mis-reservas-test] ========== INICIO TEST ==========")
-    logger.info(f"🔍 [GET /mis-reservas-test] User ID: {current_user.id}")
-    logger.info(f"🔍 [GET /mis-reservas-test] User Email: {current_user.email}")
-    
     try:
         conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /mis-reservas-test] Conexión a BD obtenida exitosamente")
         
-        # Query mejorado para obtener datos reales
         simple_query = """
             SELECT 
                 r.id_reserva,
@@ -62,9 +106,7 @@ async def obtener_mis_reservas_test(
             LIMIT 5
         """
         
-        logger.info(f"🔍 [GET /mis-reservas-test] Ejecutando query simple...")
         result = await conn.fetch(simple_query, current_user.id)
-        logger.info(f"📊 [GET /mis-reservas-test] Resultados obtenidos: {len(result)}")
         
         reservas_list = []
         for row in result:
@@ -91,9 +133,6 @@ async def obtener_mis_reservas_test(
             }
             reservas_list.append(reserva_dict)
         
-        logger.info(f"✅ [GET /mis-reservas-test] Respuesta preparada exitosamente")
-        logger.info(f"🔍 [GET /mis-reservas-test] ========== FIN TEST ==========")
-        
         return {
             "reservas": reservas_list,
             "total": len(reservas_list),
@@ -101,16 +140,161 @@ async def obtener_mis_reservas_test(
         }
         
     except Exception as e:
-        logger.error(f"❌ [GET /mis-reservas-test] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /mis-reservas-test] Traceback: {traceback.format_exc()}")
+        logger.error(f"[GET /mis-reservas-test] Error: {str(e)}")
+        logger.error(f"[GET /mis-reservas-test] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error en test: {str(e)}"
+            detail=MSG_ERROR_TEST.format(error=str(e))
         )
     finally:
         if 'conn' in locals():
             await direct_db_service.pool.release(conn)
+
+# Funciones helper para crear_reserva
+async def verify_service_exists(conn, servicio_id: int) -> dict:
+    """Verifica que el servicio existe y está activo"""
+    servicio_query = """
+        SELECT s.id_servicio, s.id_perfil, s.estado, s.nombre
+        FROM servicio s
+        WHERE s.id_servicio = $1 AND s.estado = true
+    """
+    servicio_result = await conn.fetchrow(servicio_query, servicio_id)
+    
+    if not servicio_result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_SERVICIO_NO_ENCONTRADO
+        )
+    
+    return servicio_result
+
+def validate_and_convert_service_id(id_servicio) -> int:
+    """Valida y convierte el ID de servicio a entero"""
+    try:
+        return int(id_servicio)
+    except (ValueError, TypeError) as e:
+        logger.error(f"[POST /reservas] Error al convertir ID de servicio: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_ID_SERVICIO_INVALIDO
+        )
+
+def process_hora_inicio(hora_inicio_str: Optional[str]) -> time:
+    """Procesa la hora de inicio con fallback"""
+    if not hora_inicio_str:
+        hora_inicio_str = HORA_INICIO_DEFAULT
+    
+    try:
+        return datetime.strptime(hora_inicio_str, "%H:%M").time()
+    except ValueError:
+        return time(9, 0)  # Fallback a 9:00 AM
+
+def calculate_hora_fin(hora_inicio: time) -> time:
+    """Calcula la hora fin (1 hora después de la hora de inicio)"""
+    return (datetime.combine(date.today(), hora_inicio) + timedelta(hours=1)).time()
+
+async def insert_reserva(
+    conn,
+    servicio_id: int,
+    user_uuid: str,
+    reserva: ReservaIn,
+    hora_inicio: time,
+    hora_fin: time
+) -> dict:
+    """Inserta una nueva reserva en la base de datos"""
+    insert_query = """
+        INSERT INTO reserva (id_servicio, user_id, descripcion, observacion, fecha, hora_inicio, hora_fin, estado)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id_reserva, id_servicio, user_id, descripcion, observacion, fecha, hora_inicio, hora_fin, estado
+    """
+    
+    nueva_reserva = await conn.fetchrow(
+        insert_query,
+        servicio_id,
+        user_uuid,
+        reserva.descripcion,
+        reserva.observacion,
+        reserva.fecha,
+        hora_inicio,
+        hora_fin,
+        ESTADO_PENDIENTE
+    )
+    
+    logger.info(f"[POST /reservas] Reserva {nueva_reserva['id_reserva']} creada exitosamente")
+    return nueva_reserva
+
+async def send_reservation_notification(conn, reserva_id: int) -> None:
+    """Envía notificación por correo cuando se crea una reserva"""
+    try:
+        notif_query = """
+            SELECT
+                r.id_reserva,
+                s.nombre AS servicio_nombre,
+                r.fecha,
+                r.hora_inicio,
+                u_cliente.nombre_persona AS cliente_nombre,
+                au_cliente.email AS cliente_email,
+                u_prov.nombre_persona AS proveedor_nombre,
+                au_prov.email AS proveedor_email
+            FROM reserva r
+            JOIN servicio s ON r.id_servicio = s.id_servicio
+            JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+            JOIN public.users u_cliente ON r.user_id = u_cliente.id
+            JOIN auth.users au_cliente ON r.user_id = au_cliente.id
+            JOIN public.users u_prov ON pe.user_id = u_prov.id
+            JOIN auth.users au_prov ON pe.user_id = au_prov.id
+            WHERE r.id_reserva = $1
+        """
+        notif_data = await conn.fetchrow(notif_query, reserva_id)
+        
+        if notif_data:
+            fecha_formatted = notif_data['fecha'].strftime(FORMATO_FECHA_DD_MM_YYYY) if notif_data['fecha'] else ""
+            hora_formatted = str(notif_data['hora_inicio']) if notif_data['hora_inicio'] else ""
+            
+            reserva_notification_service.notify_reserva_creada(
+                reserva_id=notif_data['id_reserva'],
+                servicio_nombre=notif_data['servicio_nombre'],
+                fecha=fecha_formatted,
+                hora=hora_formatted,
+                cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+                cliente_email=notif_data['cliente_email'],
+                proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+                proveedor_email=notif_data['proveedor_email']
+            )
+    except Exception as notif_error:
+        logger.warning(f"[POST /reservas] Error al enviar notificación: {notif_error}")
+
+def build_reserva_response(nueva_reserva: dict) -> dict:
+    """Construye la respuesta de la reserva creada"""
+    try:
+        if isinstance(nueva_reserva['id_reserva'], int):
+            reserva_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(nueva_reserva['id_reserva']))
+        else:
+            reserva_uuid = nueva_reserva['id_reserva']
+        
+        if hasattr(nueva_reserva['fecha'], 'date'):
+            fecha_pura = nueva_reserva['fecha'].date()
+        else:
+            fecha_pura = nueva_reserva['fecha']
+        
+        return {
+            "id": reserva_uuid,
+            "id_servicio": nueva_reserva['id_servicio'],
+            "user_id": nueva_reserva['user_id'],
+            "descripcion": nueva_reserva['descripcion'],
+            "observacion": nueva_reserva['observacion'],
+            "fecha": fecha_pura,
+            "hora_inicio": str(nueva_reserva['hora_inicio']) if nueva_reserva['hora_inicio'] else None,
+            "hora_fin": str(nueva_reserva['hora_fin']) if nueva_reserva['hora_fin'] else None,
+            "estado": nueva_reserva['estado'],
+            "id_disponibilidad": None
+        }
+    except Exception as response_error:
+        logger.error(f"[POST /reservas] Error al construir respuesta: {response_error}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al construir respuesta: {str(response_error)}"
+        )
 
 @router.post(
     "/crear",
@@ -126,241 +310,42 @@ async def crear_reserva(
     Crea una nueva reserva de servicio usando direct_db_service.
     Requiere autenticación de usuario.
     """
-    logger.info(f"🔍 [POST /reservas] ========== INICIO CREAR RESERVA ==========")
-    logger.info(f"🔍 [POST /reservas] User ID: {current_user.id}")
-    logger.info(f"🔍 [POST /reservas] User email: {getattr(current_user, 'email', 'N/A')}")
-    logger.info(f"🔍 [POST /reservas] Datos completos de reserva: {reserva.dict()}")
-    logger.info(f"🔍 [POST /reservas] Tipo de id_servicio: {type(reserva.id_servicio)}")
-    logger.info(f"🔍 [POST /reservas] Valor de id_servicio: {reserva.id_servicio}")
-    logger.info(f"🔍 [POST /reservas] Fecha de reserva: {reserva.fecha}")
-    logger.info(f"🔍 [POST /reservas] Descripción: {reserva.descripcion}")
-    logger.info(f"🔍 [POST /reservas] Observación: {reserva.observacion}")
-    
     try:
-        #from app.services.direct_db_service import direct_db_service
-        
-        # Helper para obtener conexión
-        logger.info("🔍 [POST /reservas] Obteniendo conexión de direct_db_service...")
         conn = await direct_db_service.get_connection()
-        logger.info("✅ [POST /reservas] Conexión obtenida exitosamente")
         
         try:
-            # 1. Verificar que el servicio existe y está activo
-            logger.info(f"🔍 [POST /reservas] Verificando servicio {reserva.id_servicio}...")
-            logger.info(f"🔍 [POST /reservas] Query de verificación preparado")
-            servicio_query = """
-                SELECT s.id_servicio, s.id_perfil, s.estado, s.nombre
-                FROM servicio s
-                WHERE s.id_servicio = $1 AND s.estado = true
-            """
-            logger.info(f"🔍 [POST /reservas] Ejecutando query con parámetro: {reserva.id_servicio}")
-            servicio_result = await conn.fetchrow(servicio_query, reserva.id_servicio)
-            logger.info(f"🔍 [POST /reservas] Query ejecutado exitosamente")
-            logger.info(f"🔍 [POST /reservas] Servicio encontrado: {servicio_result}")
-            logger.info(f"🔍 [POST /reservas] Tipo de resultado: {type(servicio_result)}")
+            # Validar y convertir ID de servicio
+            servicio_id = validate_and_convert_service_id(reserva.id_servicio)
             
-            if not servicio_result:
-                logger.warning(f"❌ [POST /reservas] Servicio {reserva.id_servicio} no encontrado")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Servicio no encontrado o no disponible."
-                )
-            # 2. Crear nueva reserva usando direct_db_service
-            logger.info("🔍 [POST /reservas] Creando nueva reserva en base de datos...")
+            # Verificar que el servicio existe y está activo
+            await verify_service_exists(conn, servicio_id)
             
-            # Generar nuevo ID entero para la reserva
-            # Nota: Si id_reserva es auto-increment, no necesitamos generar un ID
-            # Pero si no es auto-increment, necesitamos obtener el siguiente ID
-            reserva_id = None  # Dejar que la base de datos genere el ID
+            # Procesar hora de inicio y calcular hora fin
+            hora_inicio = process_hora_inicio(reserva.hora_inicio)
+            hora_fin = calculate_hora_fin(hora_inicio)
             
-            # Convertir id_servicio si viene como string
-            logger.info(f"🔍 [POST /reservas] Convirtiendo id_servicio: {reserva.id_servicio} (tipo: {type(reserva.id_servicio)})")
-            try:
-                servicio_id = int(reserva.id_servicio)
-                logger.info(f"✅ [POST /reservas] ID convertido exitosamente: {servicio_id}")
-            except (ValueError, TypeError) as e:
-                logger.error(f"❌ [POST /reservas] Error al convertir ID de servicio: {e}")
-                logger.error(f"❌ [POST /reservas] ID de servicio inválido: {reserva.id_servicio}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="ID de servicio inválido"
-                )
-            
-            # Obtener horarios del frontend
-            from datetime import time, datetime, timedelta, date
-            
-            # Usar la hora enviada por el frontend o valores por defecto
-            if reserva.hora_inicio:
-                hora_inicio_str = reserva.hora_inicio
-                logger.info(f"🔍 [POST /reservas] Hora recibida del frontend: {hora_inicio_str}")
-            else:
-                hora_inicio_str = "09:00"  # 9:00 AM por defecto
-                logger.info(f"🔍 [POST /reservas] Usando hora por defecto: {hora_inicio_str}")
-            
-            # Convertir string a time object
-            try:
-                hora_inicio = datetime.strptime(hora_inicio_str, "%H:%M").time()
-            except ValueError:
-                hora_inicio = time(9, 0)  # Fallback a 9:00 AM
-                logger.warning(f"⚠️ [POST /reservas] Error al parsear hora {hora_inicio_str}, usando 9:00 AM")
-            
-            # Calcular hora fin (1 hora después)
-            hora_fin = (datetime.combine(date.today(), hora_inicio) + timedelta(hours=1)).time()
-            
-            logger.info(f"🔍 [POST /reservas] Horarios calculados: {hora_inicio} - {hora_fin}")
-            
-            # Preparar parámetros para la inserción
-            user_uuid = current_user.id  # Ya es UUID, no necesita conversión
-            logger.info(f"🔍 [POST /reservas] UUID del usuario: {user_uuid}")
-            logger.info(f"🔍 [POST /reservas] UUID de reserva generado: {reserva_id}")
-            
-            insert_query = """
-                INSERT INTO reserva (id_servicio, user_id, descripcion, observacion, fecha, hora_inicio, hora_fin, estado)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                RETURNING id_reserva, id_servicio, user_id, descripcion, observacion, fecha, hora_inicio, hora_fin, estado
-            """
-            logger.info(f"🔍 [POST /reservas] Query de inserción preparado")
-            logger.info(f"🔍 [POST /reservas] Parámetros de inserción:")
-            logger.info(f"  - id_servicio: {servicio_id}")
-            logger.info(f"  - user_id: {user_uuid}")
-            logger.info(f"  - descripcion: {reserva.descripcion}")
-            logger.info(f"  - observacion: {reserva.observacion}")
-            logger.info(f"  - fecha: {reserva.fecha}")
-            logger.info(f"  - hora_inicio: {hora_inicio}")
-            logger.info(f"  - hora_fin: {hora_fin}")
-            logger.info(f"  - estado: pendiente")
-            
-            logger.info(f"🔍 [POST /reservas] Ejecutando inserción...")
-            nueva_reserva = await conn.fetchrow(
-                insert_query,
-                servicio_id,       # $1 = id_servicio (int)
-                user_uuid,         # $2 = user_id (UUID)
-                reserva.descripcion,  # $3 = descripcion (string)
-                reserva.observacion,  # $4 = observacion (string)
-                reserva.fecha,        # $5 = fecha (date)
-                hora_inicio,         # $6 = hora_inicio (time)
-                hora_fin,            # $7 = hora_fin (time)
-                "pendiente"          # $8 = estado (string)
+            # Insertar reserva
+            nueva_reserva = await insert_reserva(
+                conn, servicio_id, current_user.id, reserva, hora_inicio, hora_fin
             )
-            logger.info(f"🔍 [POST /reservas] Inserción ejecutada")
-            logger.info(f"🔍 [POST /reservas] Reserva creada: {nueva_reserva}")
             
-            logger.info(f"✅ [POST /reservas] Reserva {nueva_reserva['id_reserva']} creada exitosamente")
+            # Enviar notificación por correo
+            await send_reservation_notification(conn, nueva_reserva['id_reserva'])
             
-            # 3. Enviar notificación por correo (1. Crear reserva - Pendiente)
-            try:
-                logger.info(f"📧 [POST /reservas] Obteniendo datos para notificación...")
-                # Obtener datos del cliente y proveedor para la notificación
-                # NOTA: El email está en auth.users, no en public.users
-                notif_query = """
-                    SELECT
-                        r.id_reserva,
-                        s.nombre AS servicio_nombre,
-                        r.fecha,
-                        r.hora_inicio,
-                        u_cliente.nombre_persona AS cliente_nombre,
-                        au_cliente.email AS cliente_email,
-                        u_prov.nombre_persona AS proveedor_nombre,
-                        au_prov.email AS proveedor_email
-                    FROM reserva r
-                    JOIN servicio s ON r.id_servicio = s.id_servicio
-                    JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                    JOIN public.users u_cliente ON r.user_id = u_cliente.id
-                    JOIN auth.users au_cliente ON r.user_id = au_cliente.id
-                    JOIN public.users u_prov ON pe.user_id = u_prov.id
-                    JOIN auth.users au_prov ON pe.user_id = au_prov.id
-                    WHERE r.id_reserva = $1
-                """
-                notif_data = await conn.fetchrow(notif_query, nueva_reserva['id_reserva'])
-                
-                if notif_data:
-                    # Formatear fecha y hora
-                    from datetime import datetime
-                    fecha_formatted = notif_data['fecha'].strftime("%d/%m/%Y") if notif_data['fecha'] else ""
-                    hora_formatted = str(notif_data['hora_inicio']) if notif_data['hora_inicio'] else ""
-                    
-                    # Enviar notificación
-                    reserva_notification_service.notify_reserva_creada(
-                        reserva_id=notif_data['id_reserva'],
-                        servicio_nombre=notif_data['servicio_nombre'],
-                        fecha=fecha_formatted,
-                        hora=hora_formatted,
-                        cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
-                        cliente_email=notif_data['cliente_email'],
-                        proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
-                        proveedor_email=notif_data['proveedor_email']
-                    )
-                    logger.info(f"✅ [POST /reservas] Notificación enviada exitosamente")
-                else:
-                    logger.warning(f"⚠️ [POST /reservas] No se pudieron obtener datos para notificación")
-            except Exception as notif_error:
-                # No fallar la creación de reserva si falla la notificación
-                logger.warning(f"⚠️ [POST /reservas] Error al enviar notificación: {notif_error}")
-            
-            # Convertir a formato de respuesta
-            logger.info(f"🔍 [POST /reservas] Preparando respuesta...")
-            try:
-                # Convertir id_reserva a UUID si es necesario
-                import uuid
-                if isinstance(nueva_reserva['id_reserva'], int):
-                    # Si id_reserva es un entero, generar un UUID basado en él
-                    reserva_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(nueva_reserva['id_reserva']))
-                else:
-                    reserva_uuid = nueva_reserva['id_reserva']
-                
-                # Convertir fecha a date puro (sin tiempo)
-                from datetime import date
-                if hasattr(nueva_reserva['fecha'], 'date'):
-                    fecha_pura = nueva_reserva['fecha'].date()
-                else:
-                    fecha_pura = nueva_reserva['fecha']
-                
-                respuesta = {
-                    "id": reserva_uuid,  # UUID correcto
-                    "id_servicio": nueva_reserva['id_servicio'],
-                    "user_id": nueva_reserva['user_id'],  # Campo requerido por ReservaOut schema
-                    "descripcion": nueva_reserva['descripcion'],
-                    "observacion": nueva_reserva['observacion'],
-                    "fecha": fecha_pura,  # Fecha sin tiempo
-                    "hora_inicio": str(nueva_reserva['hora_inicio']) if nueva_reserva['hora_inicio'] else None,
-                    "hora_fin": str(nueva_reserva['hora_fin']) if nueva_reserva['hora_fin'] else None,
-                    "estado": nueva_reserva['estado'],
-                    "id_disponibilidad": None  # Compatibilidad con schema anterior
-                }
-                logger.info(f"🔍 [POST /reservas] Respuesta preparada: {respuesta}")
-                logger.info(f"🔍 [POST /reservas] ========== FIN CREAR RESERVA EXITOSO ==========")
-                return respuesta
-            except Exception as response_error:
-                logger.error(f"❌ [POST /reservas] Error al construir respuesta: {response_error}")
-                logger.error(f"❌ [POST /reservas] Datos de nueva_reserva: {nueva_reserva}")
-                logger.error(f"❌ [POST /reservas] Tipo de nueva_reserva: {type(nueva_reserva)}")
-                if hasattr(nueva_reserva, 'keys'):
-                    logger.error(f"❌ [POST /reservas] Keys disponibles: {list(nueva_reserva.keys())}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Error al construir respuesta: {str(response_error)}"
-                )
+            # Construir y retornar respuesta
+            return build_reserva_response(nueva_reserva)
             
         finally:
-            logger.info(f"🔍 [POST /reservas] Liberando conexión...")
             await direct_db_service.pool.release(conn)
-            logger.info(f"🔍 [POST /reservas] Conexión liberada")
         
-    except HTTPException as he:
-        logger.error(f"❌ [POST /reservas] HTTPException capturada: {he.status_code} - {he.detail}")
-        logger.error(f"❌ [POST /reservas] ========== FIN CREAR RESERVA CON ERROR HTTP ==========")
+    except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [POST /reservas] ========== ERROR CRÍTICO EN CREAR RESERVA ==========")
-        logger.error(f"❌ [POST /reservas] Error crítico: {str(e)}")
-        logger.error(f"❌ [POST /reservas] Tipo de error: {type(e).__name__}")
-        logger.error(f"❌ [POST /reservas] Módulo del error: {getattr(e, '__module__', 'N/A')}")
-        import traceback
-        logger.error(f"❌ [POST /reservas] Traceback completo: {traceback.format_exc()}")
-        logger.error(f"❌ [POST /reservas] ========== FIN CREAR RESERVA CON ERROR ==========")
+        logger.error(f"[POST /reservas] Error al crear reserva: {str(e)}")
+        logger.error(f"[POST /reservas] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno del servidor al crear reserva: {str(e)}"
+            detail=MSG_ERROR_INTERNO_CREAR_RESERVA.format(error=str(e))
         )
 
 
@@ -383,13 +368,6 @@ async def obtener_mis_reservas_detalladas(
     """
     Endpoint optimizado para obtener las reservas del cliente autenticado con información detallada.
     """
-    logger.info(f"🔍 [GET /mis-reservas] ========== INICIO OBTENER MIS RESERVAS ==========")
-    logger.info(f"🔍 [GET /mis-reservas] User ID: {current_user.id}")
-    logger.info(f"🔍 [GET /mis-reservas] User Type: {type(current_user.id)}")
-    logger.info(f"🔍 [GET /mis-reservas] Filtros: search={search}, servicio={nombre_servicio}, empresa={nombre_empresa}, estado={estado}")
-    logger.info(f"🔍 [GET /mis-reservas] Paginación: limit={limit}, offset={offset}")
-    logger.info(f"🔍 [GET /mis-reservas] Parámetros recibidos: search={search}, nombre_servicio={nombre_servicio}, nombre_empresa={nombre_empresa}, fecha_desde={fecha_desde}, fecha_hasta={fecha_hasta}, estado={estado}, nombre_contacto={nombre_contacto}")
-    
     try:
         # Validaciones básicas de parámetros
         if limit is None or limit < 1:
@@ -399,11 +377,8 @@ async def obtener_mis_reservas_detalladas(
             
         if offset is None or offset < 0:
             offset = 0
-            
-        logger.info(f"🔍 [GET /mis-reservas] Parámetros validados: limit={limit}, offset={offset}")
         
         conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /mis-reservas] Conexión a BD obtenida exitosamente")
         
         try:
             base_query = """
@@ -446,8 +421,6 @@ async def obtener_mis_reservas_detalladas(
             where_conditions = []
             params = [current_user.id]
             param_count = 1
-            logger.info(f"🔍 [GET /mis-reservas] Parámetros iniciales: {params}")
-            logger.info(f"🔍 [GET /mis-reservas] Construyendo condiciones WHERE...")
             
             if search and search.strip():
                 param_count += 1
@@ -475,22 +448,16 @@ async def obtener_mis_reservas_detalladas(
                 param_count += 1
                 where_conditions.append(f"r.fecha >= ${param_count}")
                 params.append(fecha_desde)
-                logger.info(f"🔍 [GET /mis-reservas] Filtro fecha_desde: {fecha_desde}")
             
             if fecha_hasta:
                 param_count += 1
                 where_conditions.append(f"r.fecha <= ${param_count}")
                 params.append(fecha_hasta)
-                logger.info(f"🔍 [GET /mis-reservas] Filtro fecha_hasta: {fecha_hasta}")
             
             if estado and estado.strip():
                 param_count += 1
                 where_conditions.append(f"r.estado = ${param_count}")
                 params.append(estado.strip().lower())
-                logger.info(f"🔍 [GET /mis-reservas] Filtro estado aplicado: {estado.strip().lower()}")
-                logger.info(f"🔍 [GET /mis-reservas] Condición WHERE agregada: r.estado = ${param_count}")
-            else:
-                logger.info(f"🔍 [GET /mis-reservas] No se aplica filtro de estado (estado={estado})")
             
             if nombre_contacto and nombre_contacto.strip():
                 param_count += 1
@@ -498,10 +465,9 @@ async def obtener_mis_reservas_detalladas(
                 params.append(f"%{nombre_contacto.strip()}%")
             
             if where_conditions:
-                base_query += " AND " + " AND ".join(where_conditions)
-                logger.info(f"🔍 [GET /mis-reservas] Condiciones WHERE agregadas: {where_conditions}")
+                base_query += SQL_AND + SQL_AND.join(where_conditions)
             
-            count_query = f"""
+            count_query = """
                 SELECT COUNT(*) as total
                 FROM reserva r
                 INNER JOIN servicio s ON r.id_servicio = s.id_servicio
@@ -511,14 +477,10 @@ async def obtener_mis_reservas_detalladas(
             """
             
             if where_conditions:
-                count_query += " AND " + " AND ".join(where_conditions)
-                logger.info(f"🔍 [GET /mis-reservas] Count query con condiciones: {count_query}")
+                count_query += SQL_AND + SQL_AND.join(where_conditions)
             
-            logger.info(f"🔍 [GET /mis-reservas] Ejecutando conteo con query: {count_query}")
-            logger.info(f"🔍 [GET /mis-reservas] Parámetros para count: {params}")
             total_result = await conn.fetchrow(count_query, *params)
             total_count = total_result['total'] if total_result else 0
-            logger.info(f"📊 [GET /mis-reservas] Total de reservas encontradas: {total_count}")
             
             base_query += f"""
                 ORDER BY r.fecha DESC, r.created_at DESC
@@ -526,17 +488,11 @@ async def obtener_mis_reservas_detalladas(
             """
             params.extend([limit, offset])
             
-            logger.info(f"🔍 [GET /mis-reservas] Query principal final: {base_query}")
-            logger.info(f"🔍 [GET /mis-reservas] Parámetros finales: {params}")
-            logger.info(f"🔍 [GET /mis-reservas] Ejecutando query principal...")
-            
             reservas_result = await conn.fetch(base_query, *params)
-            logger.info(f"📊 [GET /mis-reservas] Reservas obtenidas: {len(reservas_result)}")
             
             reservas_list = []
             for row in reservas_result:
                 ya_calificado = row['ya_calificado_por_cliente']
-                logger.info(f"🔍 [GET /mis-reservas] Reserva {row['id_reserva']} - Estado: {row['estado']}, Ya calificado: {ya_calificado}")
                 
                 reserva_dict = {
                     "id_reserva": row['id_reserva'],
@@ -586,10 +542,6 @@ async def obtener_mis_reservas_detalladas(
                 "has_prev": offset > 0
             }
             
-            logger.info(f"✅ [GET /mis-reservas] Respuesta preparada exitosamente")
-            logger.info(f"📊 [GET /mis-reservas] Paginación: {pagination_info}")
-            logger.info(f"🔍 [GET /mis-reservas] ========== FIN OBTENER MIS RESERVAS ==========")
-            
             return {
                 "reservas": reservas_list,
                 "pagination": pagination_info
@@ -601,15 +553,214 @@ async def obtener_mis_reservas_detalladas(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [GET /mis-reservas] Error crítico: {str(e)}")
-        logger.error(f"❌ [GET /mis-reservas] Tipo de error: {type(e).__name__}")
-        import traceback
-        logger.error(f"❌ [GET /mis-reservas] Traceback: {traceback.format_exc()}")
+        logger.error(f"[GET /mis-reservas] Error: {str(e)}")
+        logger.error(f"[GET /mis-reservas] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno del servidor al obtener reservas: {str(e)}"
+            detail=MSG_ERROR_INTERNO_OBTENER_RESERVAS.format(error=str(e))
         )
 
+
+# Funciones helper para obtener_reservas_proveedor
+def validate_pagination_params(limit: Optional[int], offset: Optional[int]) -> tuple[int, int]:
+    """Valida y normaliza los parámetros de paginación"""
+    if limit is None or limit < 1:
+        limit = 20
+    if limit > 100:
+        limit = 100
+    
+    if offset is None or offset < 0:
+        offset = 0
+    
+    return limit, offset
+
+async def get_provider_profile(conn, user_id: str) -> dict:
+    """Obtiene el perfil de empresa del proveedor"""
+    perfil_query = """
+        SELECT id_perfil, nombre_fantasia, razon_social
+        FROM perfil_empresa 
+        WHERE user_id = $1 AND verificado = true
+    """
+    perfil_result = await conn.fetchrow(perfil_query, user_id)
+    
+    if not perfil_result:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=MSG_NO_PERFIL_PROVEEDOR
+        )
+    
+    return perfil_result
+
+def build_where_conditions(
+    search: Optional[str],
+    nombre_servicio: Optional[str],
+    nombre_cliente: Optional[str],
+    fecha_desde: Optional[str],
+    fecha_hasta: Optional[str],
+    estado: Optional[str]
+) -> tuple[list[str], list, int]:
+    """Construye las condiciones WHERE dinámicas y sus parámetros"""
+    where_conditions = []
+    params = []
+    param_count = 1  # Empezamos en 1 porque $1 es para proveedor_id
+    
+    if search and search.strip():
+        param_count += 1
+        where_conditions.append(f"""
+            (LOWER(s.nombre) LIKE LOWER(${param_count}) 
+            OR LOWER(u.nombre_persona) LIKE LOWER(${param_count})
+            OR LOWER(r.descripcion) LIKE LOWER(${param_count}))
+        """)
+        params.append(f"%{search.strip()}%")
+    
+    if nombre_servicio and nombre_servicio.strip():
+        param_count += 1
+        where_conditions.append(f"LOWER(s.nombre) LIKE LOWER(${param_count})")
+        params.append(f"%{nombre_servicio.strip()}%")
+    
+    if nombre_cliente and nombre_cliente.strip():
+        param_count += 1
+        where_conditions.append(f"LOWER(u.nombre_persona) LIKE LOWER(${param_count})")
+        params.append(f"%{nombre_cliente.strip()}%")
+    
+    if fecha_desde:
+        param_count += 1
+        where_conditions.append(f"r.fecha >= ${param_count}")
+        params.append(fecha_desde)
+    
+    if fecha_hasta:
+        param_count += 1
+        where_conditions.append(f"r.fecha <= ${param_count}")
+        params.append(fecha_hasta)
+    
+    if estado and estado.strip():
+        param_count += 1
+        where_conditions.append(f"r.estado = ${param_count}")
+        params.append(estado.strip().lower())
+    
+    return where_conditions, params, param_count
+
+def build_count_query(where_conditions: list[str]) -> str:
+    """Construye la query para contar el total de reservas"""
+    count_query = """
+        SELECT COUNT(*) as total
+        FROM reserva r
+        INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+        INNER JOIN users u ON r.user_id = u.id
+        WHERE s.id_perfil = $1
+    """
+    
+    if where_conditions:
+        count_query += SQL_AND + SQL_AND.join(where_conditions)
+    
+    return count_query
+
+def build_base_query(where_conditions: list[str], limit: int, offset: int, param_count: int) -> str:
+    """Construye la query base con ORDER BY y LIMIT"""
+    base_query = """
+        SELECT 
+            r.id_reserva,
+            r.id_servicio,
+            r.user_id as id_cliente,
+            r.descripcion,
+            r.observacion,
+            r.fecha,
+            r.hora_inicio,
+            r.hora_fin,
+            r.estado,
+            r.created_at,
+            s.nombre as nombre_servicio,
+            s.descripcion as descripcion_servicio,
+            s.precio as precio_servicio,
+            s.imagen as imagen_servicio,
+            s.id_perfil,
+            pe.nombre_fantasia as nombre_empresa,
+            pe.razon_social,
+            u.nombre_persona as nombre_cliente,
+            u.nombre_persona as nombre_contacto,
+            c.nombre as nombre_categoria,
+            CASE WHEN cal_proveedor.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_proveedor,
+            cal_cliente.puntaje as calificacion_cliente_puntaje,
+            cal_cliente.comentario as calificacion_cliente_comentario,
+            cal_cliente.satisfaccion_nps as calificacion_cliente_nps,
+            cal_proveedor.puntaje as calificacion_proveedor_puntaje,
+            cal_proveedor.comentario as calificacion_proveedor_comentario
+        FROM reserva r
+        INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+        INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+        INNER JOIN users u ON r.user_id = u.id
+        LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+        LEFT JOIN calificacion cal_cliente ON r.id_reserva = cal_cliente.id_reserva AND cal_cliente.rol_emisor = 'cliente'
+        LEFT JOIN calificacion cal_proveedor ON r.id_reserva = cal_proveedor.id_reserva AND cal_proveedor.rol_emisor = 'proveedor'
+        WHERE s.id_perfil = $1
+    """
+    
+    if where_conditions:
+        base_query += SQL_AND + SQL_AND.join(where_conditions)
+    
+    base_query += f"""
+        ORDER BY r.fecha DESC, r.created_at DESC
+        LIMIT ${param_count + 1} OFFSET ${param_count + 2}
+    """
+    
+    return base_query
+
+def process_reservas_results(reservas_result) -> list[dict]:
+    """Procesa los resultados de la query y los convierte a diccionarios"""
+    reservas_list = []
+    for row in reservas_result:
+        ya_calificado = row['ya_calificado_por_proveedor']
+        
+        reserva_dict = {
+            "id_reserva": row['id_reserva'],
+            "id_servicio": row['id_servicio'],
+            "id_cliente": row['id_cliente'],
+            "descripcion": row['descripcion'],
+            "observacion": row['observacion'],
+            "fecha": row['fecha'],
+            "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
+            "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
+            "estado": row['estado'],
+            "created_at": row['created_at'],
+            "nombre_servicio": row['nombre_servicio'],
+            "descripcion_servicio": row['descripcion_servicio'],
+            "precio_servicio": float(row['precio_servicio']),
+            "imagen_servicio": row['imagen_servicio'],
+            "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
+            "razon_social": row['razon_social'],
+            "id_perfil": row['id_perfil'],
+            "nombre_cliente": row['nombre_cliente'],
+            "nombre_contacto": row['nombre_contacto'],
+            "nombre_categoria": row['nombre_categoria'],
+            "ya_calificado_por_proveedor": ya_calificado,
+            "calificacion_cliente": {
+                "puntaje": row['calificacion_cliente_puntaje'],
+                "comentario": row['calificacion_cliente_comentario'],
+                "nps": row['calificacion_cliente_nps']
+            } if row['calificacion_cliente_puntaje'] else None,
+            "calificacion_proveedor": {
+                "puntaje": row['calificacion_proveedor_puntaje'],
+                "comentario": row['calificacion_proveedor_comentario']
+            } if row['calificacion_proveedor_puntaje'] else None
+        }
+        reservas_list.append(reserva_dict)
+    
+    return reservas_list
+
+def build_pagination_info(total_count: int, limit: int, offset: int) -> dict:
+    """Construye la información de paginación"""
+    total_pages = (total_count + limit - 1) // limit
+    current_page = (offset // limit) + 1
+    
+    return {
+        "total": total_count,
+        "page": current_page,
+        "limit": limit,
+        "offset": offset,
+        "total_pages": total_pages,
+        "has_next": offset + limit < total_count,
+        "has_prev": offset > 0
+    }
 
 @router.get(
     "/reservas-proveedor",
@@ -630,218 +781,40 @@ async def obtener_reservas_proveedor(
     Endpoint para proveedores: Obtiene las reservas solicitadas por clientes para los servicios del proveedor.
     Solo muestra reservas de servicios que pertenecen al proveedor autenticado.
     """
-    logger.info(f"🔍 [GET /reservas-proveedor] ========== INICIO RESERVAS PROVEEDOR ==========")
-    logger.info(f"🔍 [GET /reservas-proveedor] User ID: {current_user.id}")
-    logger.info(f"🔍 [GET /reservas-proveedor] Filtros: search={search}, servicio={nombre_servicio}, cliente={nombre_cliente}, estado={estado}")
-    logger.info(f"🔍 [GET /reservas-proveedor] Paginación: limit={limit}, offset={offset}")
-    
     try:
-        # Validaciones básicas de parámetros
-        if limit is None or limit < 1:
-            limit = 20
-        if limit > 100:
-            limit = 100
-            
-        if offset is None or offset < 0:
-            offset = 0
-            
-        logger.info(f"🔍 [GET /reservas-proveedor] Parámetros validados: limit={limit}, offset={offset}")
+        # Validar parámetros de paginación
+        limit, offset = validate_pagination_params(limit, offset)
         
         conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /reservas-proveedor] Conexión a BD obtenida exitosamente")
         
         try:
-            # Primero, obtener el perfil de empresa del proveedor
-            perfil_query = """
-                SELECT id_perfil, nombre_fantasia, razon_social
-                FROM perfil_empresa 
-                WHERE user_id = $1 AND verificado = true
-            """
-            perfil_result = await conn.fetchrow(perfil_query, current_user.id)
-            
-            if not perfil_result:
-                logger.warning(f"❌ [GET /reservas-proveedor] Proveedor no encontrado o no verificado: {current_user.id}")
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tienes un perfil de proveedor verificado."
-                )
-            
+            # Obtener perfil del proveedor
+            perfil_result = await get_provider_profile(conn, current_user.id)
             proveedor_id = perfil_result['id_perfil']
-            logger.info(f"✅ [GET /reservas-proveedor] Proveedor encontrado: {perfil_result['nombre_fantasia']} (ID: {proveedor_id})")
             
-            # Query principal para obtener reservas de los servicios del proveedor
-            base_query = """
-                SELECT 
-                    r.id_reserva,
-                    r.id_servicio,
-                    r.user_id as id_cliente,
-                    r.descripcion,
-                    r.observacion,
-                    r.fecha,
-                    r.hora_inicio,
-                    r.hora_fin,
-                    r.estado,
-                    r.created_at,
-                    s.nombre as nombre_servicio,
-                    s.descripcion as descripcion_servicio,
-                    s.precio as precio_servicio,
-                    s.imagen as imagen_servicio,
-                    s.id_perfil,
-                    pe.nombre_fantasia as nombre_empresa,
-                    pe.razon_social,
-                    u.nombre_persona as nombre_cliente,
-                    u.nombre_persona as nombre_contacto,
-                    c.nombre as nombre_categoria,
-                    CASE WHEN cal_proveedor.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_proveedor,
-                    cal_cliente.puntaje as calificacion_cliente_puntaje,
-                    cal_cliente.comentario as calificacion_cliente_comentario,
-                    cal_cliente.satisfaccion_nps as calificacion_cliente_nps,
-                    cal_proveedor.puntaje as calificacion_proveedor_puntaje,
-                    cal_proveedor.comentario as calificacion_proveedor_comentario
-                FROM reserva r
-                INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-                INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                INNER JOIN users u ON r.user_id = u.id
-                LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
-                LEFT JOIN calificacion cal_cliente ON r.id_reserva = cal_cliente.id_reserva AND cal_cliente.rol_emisor = 'cliente'
-                LEFT JOIN calificacion cal_proveedor ON r.id_reserva = cal_proveedor.id_reserva AND cal_proveedor.rol_emisor = 'proveedor'
-                WHERE s.id_perfil = $1
-            """
+            # Construir condiciones WHERE dinámicas
+            where_conditions, where_params, param_count = build_where_conditions(
+                search, nombre_servicio, nombre_cliente, fecha_desde, fecha_hasta, estado
+            )
             
-            where_conditions = []
-            params = [proveedor_id]
-            param_count = 1
-            logger.info(f"🔍 [GET /reservas-proveedor] Parámetros iniciales: {params}")
-            logger.info(f"🔍 [GET /reservas-proveedor] Construyendo condiciones WHERE...")
+            # Preparar parámetros completos (proveedor_id + condiciones WHERE)
+            params = [proveedor_id] + where_params
             
-            if search and search.strip():
-                param_count += 1
-                where_conditions.append(f"""
-                    (LOWER(s.nombre) LIKE LOWER(${param_count}) 
-                    OR LOWER(u.nombre_persona) LIKE LOWER(${param_count})
-                    OR LOWER(r.descripcion) LIKE LOWER(${param_count}))
-                """)
-                params.append(f"%{search.strip()}%")
-            
-            if nombre_servicio and nombre_servicio.strip():
-                param_count += 1
-                where_conditions.append(f"LOWER(s.nombre) LIKE LOWER(${param_count})")
-                params.append(f"%{nombre_servicio.strip()}%")
-            
-            if nombre_cliente and nombre_cliente.strip():
-                param_count += 1
-                where_conditions.append(f"LOWER(u.nombre_persona) LIKE LOWER(${param_count})")
-                params.append(f"%{nombre_cliente.strip()}%")
-            
-            if fecha_desde:
-                param_count += 1
-                where_conditions.append(f"r.fecha >= ${param_count}")
-                params.append(fecha_desde)
-                logger.info(f"🔍 [GET /reservas-proveedor] Filtro fecha_desde: {fecha_desde}")
-            
-            if fecha_hasta:
-                param_count += 1
-                where_conditions.append(f"r.fecha <= ${param_count}")
-                params.append(fecha_hasta)
-                logger.info(f"🔍 [GET /reservas-proveedor] Filtro fecha_hasta: {fecha_hasta}")
-            
-            if estado and estado.strip():
-                param_count += 1
-                where_conditions.append(f"r.estado = ${param_count}")
-                params.append(estado.strip().lower())
-            
-            if where_conditions:
-                base_query += " AND " + " AND ".join(where_conditions)
-                logger.info(f"🔍 [GET /reservas-proveedor] Condiciones WHERE agregadas: {where_conditions}")
-            
-            # Query para contar total
-            count_query = f"""
-                SELECT COUNT(*) as total
-                FROM reserva r
-                INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-                INNER JOIN users u ON r.user_id = u.id
-                WHERE s.id_perfil = $1
-            """
-            
-            if where_conditions:
-                count_query += " AND " + " AND ".join(where_conditions)
-                logger.info(f"🔍 [GET /reservas-proveedor] Count query con condiciones: {count_query}")
-            
-            logger.info(f"🔍 [GET /reservas-proveedor] Ejecutando conteo con query: {count_query}")
-            logger.info(f"🔍 [GET /reservas-proveedor] Parámetros para count: {params}")
+            # Construir y ejecutar query de conteo
+            count_query = build_count_query(where_conditions)
             total_result = await conn.fetchrow(count_query, *params)
             total_count = total_result['total'] if total_result else 0
-            logger.info(f"📊 [GET /reservas-proveedor] Total de reservas encontradas: {total_count}")
             
-            # Agregar ORDER BY y LIMIT al query principal
-            base_query += f"""
-                ORDER BY r.fecha DESC, r.created_at DESC
-                LIMIT ${param_count + 1} OFFSET ${param_count + 2}
-            """
+            # Construir y ejecutar query principal
+            base_query = build_base_query(where_conditions, limit, offset, param_count)
             params.extend([limit, offset])
-            
-            logger.info(f"🔍 [GET /reservas-proveedor] Query principal final: {base_query}")
-            logger.info(f"🔍 [GET /reservas-proveedor] Parámetros finales: {params}")
-            logger.info(f"🔍 [GET /reservas-proveedor] Ejecutando query principal...")
-            
             reservas_result = await conn.fetch(base_query, *params)
-            logger.info(f"📊 [GET /reservas-proveedor] Reservas obtenidas: {len(reservas_result)}")
             
-            reservas_list = []
-            for row in reservas_result:
-                ya_calificado = row['ya_calificado_por_proveedor']
-                logger.info(f"🔍 [GET /reservas-proveedor] Reserva {row['id_reserva']} - Estado: {row['estado']}, Ya calificado: {ya_calificado}")
-                
-                reserva_dict = {
-                    "id_reserva": row['id_reserva'],
-                    "id_servicio": row['id_servicio'],
-                    "id_cliente": row['id_cliente'],
-                    "descripcion": row['descripcion'],
-                    "observacion": row['observacion'],
-                    "fecha": row['fecha'],
-                    "hora_inicio": str(row['hora_inicio']) if row['hora_inicio'] else None,
-                    "hora_fin": str(row['hora_fin']) if row['hora_fin'] else None,
-                    "estado": row['estado'],
-                    "created_at": row['created_at'],
-                    "nombre_servicio": row['nombre_servicio'],
-                    "descripcion_servicio": row['descripcion_servicio'],
-                    "precio_servicio": float(row['precio_servicio']),
-                    "imagen_servicio": row['imagen_servicio'],
-                    "nombre_empresa": row['nombre_empresa'] or row['razon_social'],
-                    "razon_social": row['razon_social'],
-                    "id_perfil": row['id_perfil'],
-                    "nombre_cliente": row['nombre_cliente'],
-                    "nombre_contacto": row['nombre_contacto'],
-                    "nombre_categoria": row['nombre_categoria'],
-                    "ya_calificado_por_proveedor": ya_calificado,
-                    "calificacion_cliente": {
-                        "puntaje": row['calificacion_cliente_puntaje'],
-                        "comentario": row['calificacion_cliente_comentario'],
-                        "nps": row['calificacion_cliente_nps']
-                    } if row['calificacion_cliente_puntaje'] else None,
-                    "calificacion_proveedor": {
-                        "puntaje": row['calificacion_proveedor_puntaje'],
-                        "comentario": row['calificacion_proveedor_comentario']
-                    } if row['calificacion_proveedor_puntaje'] else None
-                }
-                reservas_list.append(reserva_dict)
+            # Procesar resultados
+            reservas_list = process_reservas_results(reservas_result)
             
-            total_pages = (total_count + limit - 1) // limit
-            current_page = (offset // limit) + 1
-            
-            pagination_info = {
-                "total": total_count,
-                "page": current_page,
-                "limit": limit,
-                "offset": offset,
-                "total_pages": total_pages,
-                "has_next": offset + limit < total_count,
-                "has_prev": offset > 0
-            }
-            
-            logger.info(f"✅ [GET /reservas-proveedor] Respuesta preparada exitosamente")
-            logger.info(f"📊 [GET /reservas-proveedor] Paginación: {pagination_info}")
-            logger.info(f"🔍 [GET /reservas-proveedor] ========== FIN RESERVAS PROVEEDOR ==========")
+            # Construir información de paginación
+            pagination_info = build_pagination_info(total_count, limit, offset)
             
             return {
                 "reservas": reservas_list,
@@ -859,15 +832,129 @@ async def obtener_reservas_proveedor(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [GET /reservas-proveedor] Error crítico: {str(e)}")
-        logger.error(f"❌ [GET /reservas-proveedor] Tipo de error: {type(e).__name__}")
-        import traceback
-        logger.error(f"❌ [GET /reservas-proveedor] Traceback: {traceback.format_exc()}")
+        logger.error(f"[GET /reservas-proveedor] Error: {str(e)}")
+        logger.error(f"[GET /reservas-proveedor] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno del servidor al obtener reservas del proveedor: {str(e)}"
+            detail=MSG_ERROR_INTERNO_OBTENER_RESERVAS_PROVEEDOR.format(error=str(e))
         )
 
+
+# Funciones helper para diagnostico_usuario
+async def get_provider_info(conn, user_id: str) -> Optional[dict]:
+    """Obtiene la información del proveedor si existe"""
+    proveedor_query = """
+        SELECT 
+            pe.id_perfil,
+            pe.nombre_fantasia,
+            pe.razon_social,
+            pe.verificado,
+            pe.estado
+        FROM perfil_empresa pe
+        WHERE pe.user_id = $1
+    """
+    return await conn.fetchrow(proveedor_query, user_id)
+
+async def get_client_reservations_count(conn, user_id: str) -> int:
+    """Obtiene el conteo de reservas como cliente"""
+    cliente_query = """
+        SELECT COUNT(*) as total_reservas
+        FROM reserva r
+        WHERE r.user_id = $1
+    """
+    cliente_result = await conn.fetchrow(cliente_query, user_id)
+    return cliente_result['total_reservas'] if cliente_result else 0
+
+async def get_provider_reservations_count(conn, id_perfil: int) -> int:
+    """Obtiene el conteo de reservas como proveedor"""
+    reservas_proveedor_query = """
+        SELECT COUNT(*) as total_reservas
+        FROM reserva r
+        INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+        WHERE s.id_perfil = $1
+    """
+    reservas_proveedor_result = await conn.fetchrow(reservas_proveedor_query, id_perfil)
+    return reservas_proveedor_result['total_reservas'] if reservas_proveedor_result else 0
+
+async def get_user_info(conn, user_id: str) -> Optional[dict]:
+    """Obtiene la información del usuario"""
+    usuario_query = """
+        SELECT 
+            u.nombre_persona,
+            u.nombre_empresa,
+            u.ruc,
+            u.estado
+        FROM users u
+        WHERE u.id = $1
+    """
+    return await conn.fetchrow(usuario_query, user_id)
+
+def build_provider_data(proveedor_result: Optional[dict]) -> Optional[dict]:
+    """Construye el diccionario de datos del proveedor"""
+    if not proveedor_result:
+        return None
+    
+    return {
+        "id_perfil": proveedor_result['id_perfil'],
+        "nombre_fantasia": proveedor_result['nombre_fantasia'],
+        "razon_social": proveedor_result['razon_social'],
+        "verificado": proveedor_result['verificado'],
+        "estado": proveedor_result['estado']
+    }
+
+def extract_user_data(usuario_result: Optional[dict]) -> dict:
+    """Extrae los datos del usuario de forma segura"""
+    return {
+        "nombre_persona": usuario_result['nombre_persona'] if usuario_result else None,
+        "nombre_empresa": usuario_result['nombre_empresa'] if usuario_result else None,
+        "ruc": usuario_result['ruc'] if usuario_result else None,
+        "estado": usuario_result['estado'] if usuario_result else None
+    }
+
+def recommend_endpoints(es_cliente: bool, es_proveedor: bool, proveedor_verificado: bool) -> list[str]:
+    """Recomienda endpoints basado en el tipo de usuario"""
+    endpoints = []
+    
+    if es_cliente:
+        endpoints.append("GET /api/v1/reservas/mis-reservas")
+    
+    if es_proveedor and proveedor_verificado:
+        endpoints.append("GET /api/v1/reservas/reservas-proveedor")
+    
+    if not endpoints:
+        endpoints.append("No hay endpoints disponibles - usuario sin reservas ni perfil de proveedor")
+    
+    return endpoints
+
+def build_diagnostico(
+    current_user: SupabaseUser,
+    usuario_data: dict,
+    es_proveedor: bool,
+    es_cliente: bool,
+    proveedor_data: Optional[dict],
+    total_reservas_cliente: int,
+    reservas_proveedor: int,
+    endpoints_recomendados: list[str]
+) -> dict:
+    """Construye el diccionario de diagnóstico completo"""
+    return {
+        "usuario": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "nombre_persona": usuario_data["nombre_persona"],
+            "nombre_empresa": usuario_data["nombre_empresa"],
+            "ruc": usuario_data["ruc"],
+            "estado": usuario_data["estado"]
+        },
+        "es_proveedor": es_proveedor,
+        "es_cliente": es_cliente,
+        "proveedor": proveedor_data,
+        "reservas": {
+            "como_cliente": total_reservas_cliente,
+            "como_proveedor": reservas_proveedor
+        },
+        "endpoints_recomendados": endpoints_recomendados
+    }
 
 @router.get(
     "/diagnostico-usuario",
@@ -879,110 +966,55 @@ async def diagnostico_usuario(
     """
     Endpoint de diagnóstico para verificar el tipo de usuario y sus datos.
     """
-    logger.info(f"🔍 [GET /diagnostico-usuario] ========== INICIO DIAGNÓSTICO ==========")
-    logger.info(f"🔍 [GET /diagnostico-usuario] User ID: {current_user.id}")
-    logger.info(f"🔍 [GET /diagnostico-usuario] User Email: {current_user.email}")
-    
     try:
         conn = await direct_db_service.get_connection()
-        logger.info(f"🔍 [GET /diagnostico-usuario] Conexión a BD obtenida exitosamente")
         
         try:
-            # 1. Verificar si es proveedor
-            proveedor_query = """
-                SELECT 
-                    pe.id_perfil,
-                    pe.nombre_fantasia,
-                    pe.razon_social,
-                    pe.verificado,
-                    pe.estado
-                FROM perfil_empresa pe
-                WHERE pe.user_id = $1
-            """
-            proveedor_result = await conn.fetchrow(proveedor_query, current_user.id)
+            # Obtener información del proveedor
+            proveedor_result = await get_provider_info(conn, current_user.id)
+            es_proveedor = proveedor_result is not None
             
-            # 2. Verificar si es cliente (tiene reservas)
-            cliente_query = """
-                SELECT COUNT(*) as total_reservas
-                FROM reserva r
-                WHERE r.user_id = $1
-            """
-            cliente_result = await conn.fetchrow(cliente_query, current_user.id)
+            # Obtener conteo de reservas como cliente
+            total_reservas_cliente = await get_client_reservations_count(conn, current_user.id)
+            es_cliente = total_reservas_cliente > 0
             
-            # 3. Si es proveedor, verificar reservas de sus servicios
+            # Obtener conteo de reservas como proveedor (si aplica)
             reservas_proveedor = 0
-            if proveedor_result:
-                reservas_proveedor_query = """
-                    SELECT COUNT(*) as total_reservas
-                    FROM reserva r
-                    INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-                    WHERE s.id_perfil = $1
-                """
-                reservas_proveedor_result = await conn.fetchrow(reservas_proveedor_query, proveedor_result['id_perfil'])
-                reservas_proveedor = reservas_proveedor_result['total_reservas'] if reservas_proveedor_result else 0
+            if es_proveedor:
+                reservas_proveedor = await get_provider_reservations_count(conn, proveedor_result['id_perfil'])
             
-            # 4. Obtener información del usuario
-            usuario_query = """
-                SELECT 
-                    u.nombre_persona,
-                    u.nombre_empresa,
-                    u.ruc,
-                    u.estado
-                FROM users u
-                WHERE u.id = $1
-            """
-            usuario_result = await conn.fetchrow(usuario_query, current_user.id)
+            # Obtener información del usuario
+            usuario_result = await get_user_info(conn, current_user.id)
+            usuario_data = extract_user_data(usuario_result)
             
-            diagnostico = {
-                "usuario": {
-                    "id": current_user.id,
-                    "email": current_user.email,
-                    "nombre_persona": usuario_result['nombre_persona'] if usuario_result else None,
-                    "nombre_empresa": usuario_result['nombre_empresa'] if usuario_result else None,
-                    "ruc": usuario_result['ruc'] if usuario_result else None,
-                    "estado": usuario_result['estado'] if usuario_result else None
-                },
-                "es_proveedor": proveedor_result is not None,
-                "es_cliente": cliente_result['total_reservas'] > 0 if cliente_result else False,
-                "proveedor": {
-                    "id_perfil": proveedor_result['id_perfil'] if proveedor_result else None,
-                    "nombre_fantasia": proveedor_result['nombre_fantasia'] if proveedor_result else None,
-                    "razon_social": proveedor_result['razon_social'] if proveedor_result else None,
-                    "verificado": proveedor_result['verificado'] if proveedor_result else None,
-                    "estado": proveedor_result['estado'] if proveedor_result else None
-                } if proveedor_result else None,
-                "reservas": {
-                    "como_cliente": cliente_result['total_reservas'] if cliente_result else 0,
-                    "como_proveedor": reservas_proveedor
-                },
-                "endpoints_recomendados": []
-            }
+            # Construir datos del proveedor
+            proveedor_data = build_provider_data(proveedor_result)
             
-            # 5. Recomendar endpoints
-            if diagnostico["es_cliente"]:
-                diagnostico["endpoints_recomendados"].append("GET /api/v1/reservas/mis-reservas")
+            # Recomendar endpoints
+            proveedor_verificado = proveedor_data['verificado'] if proveedor_data else False
+            endpoints_recomendados = recommend_endpoints(es_cliente, es_proveedor, proveedor_verificado)
             
-            if diagnostico["es_proveedor"] and diagnostico["proveedor"]["verificado"]:
-                diagnostico["endpoints_recomendados"].append("GET /api/v1/reservas/reservas-proveedor")
-            
-            if not diagnostico["endpoints_recomendados"]:
-                diagnostico["endpoints_recomendados"].append("No hay endpoints disponibles - usuario sin reservas ni perfil de proveedor")
-            
-            logger.info(f"✅ [GET /diagnostico-usuario] Diagnóstico completado")
-            logger.info(f"🔍 [GET /diagnostico-usuario] ========== FIN DIAGNÓSTICO ==========")
-            
-            return diagnostico
+            # Construir y retornar diagnóstico
+            return build_diagnostico(
+                current_user,
+                usuario_data,
+                es_proveedor,
+                es_cliente,
+                proveedor_data,
+                total_reservas_cliente,
+                reservas_proveedor,
+                endpoints_recomendados
+            )
             
         finally:
             await direct_db_service.pool.release(conn)
         
     except Exception as e:
-        logger.error(f"❌ [GET /diagnostico-usuario] Error: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /diagnostico-usuario] Traceback: {traceback.format_exc()}")
+        logger.error(f"[GET /diagnostico-usuario] Error: {str(e)}")
+        logger.error(f"[GET /diagnostico-usuario] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error en diagnóstico: {str(e)}"
+            detail=MSG_ERROR_DIAGNOSTICO.format(error=str(e))
         )
 
 
@@ -1006,20 +1038,20 @@ async def enviar_notificacion_cliente(conn, reserva_id: int, estado_anterior: st
         cliente_result = await conn.fetchrow(cliente_query, reserva_id)
         
         if not cliente_result:
-            logger.warning(f"⚠️ No se pudo obtener información del cliente para la reserva {reserva_id}")
+            logger.warning(f"No se pudo obtener información del cliente para la reserva {reserva_id}")
             return
         
         # Crear mensaje de notificación
         mensajes_estado = {
-            'aprobado': 'Tu reserva ha sido aprobada',
-            'rechazado': 'Tu reserva ha sido rechazada',
-            'concluido': 'Tu servicio ha sido completado'
+            'aprobado': MSG_NOTIF_APROBADO,
+            'rechazado': MSG_NOTIF_RECHAZADO,
+            'concluido': MSG_NOTIF_CONCLUIDO
         }
         
-        mensaje_principal = mensajes_estado.get(nuevo_estado, f'El estado de tu reserva ha cambiado a {nuevo_estado}')
+        mensaje_principal = mensajes_estado.get(nuevo_estado, MSG_NOTIF_ESTADO_CAMBIADO.format(estado=nuevo_estado))
         
         # Log de notificación (en producción se enviaría email/push)
-        logger.info(f"📧 NOTIFICACIÓN PARA CLIENTE:")
+        logger.info("NOTIFICACIÓN PARA CLIENTE:")
         logger.info(f"   Cliente: {cliente_result['nombre_persona']} (ID: {cliente_result['user_id']})")
         logger.info(f"   Servicio: {cliente_result['servicio_nombre']}")
         logger.info(f"   Empresa: {cliente_result['empresa_nombre']}")
@@ -1029,16 +1061,16 @@ async def enviar_notificacion_cliente(conn, reserva_id: int, estado_anterior: st
         if observacion:
             logger.info(f"   Observación: {observacion}")
         
-        # TODO: Aquí se puede agregar:
+        # - Aquí se puede agregar:
         # - Envío de email
         # - Push notification
         # - WebSocket notification
         # - SMS
         
-        logger.info(f"✅ Notificación registrada para cliente {cliente_result['user_id']}")
+        logger.info(f"Notificación registrada para cliente {cliente_result['user_id']}")
         
     except Exception as e:
-        logger.error(f"❌ Error al enviar notificación: {str(e)}")
+        logger.error(f"Error al enviar notificación: {str(e)}")
         raise
 
 
@@ -1071,10 +1103,10 @@ async def registrar_cambio_historial(conn, reserva_id: int, usuario_id: str, est
         
         await conn.execute(insert_query, reserva_id, usuario_id, estado_anterior, nuevo_estado, observacion)
         
-        logger.info(f"📝 Historial registrado: Reserva {reserva_id} - {estado_anterior} -> {nuevo_estado}")
+        logger.info(f"Historial registrado: Reserva {reserva_id} - {estado_anterior} -> {nuevo_estado}")
         
     except Exception as e:
-        logger.error(f"❌ Error al registrar historial: {str(e)}")
+        logger.error(f"Error al registrar historial: {str(e)}")
         raise
 
 
@@ -1089,8 +1121,6 @@ async def obtener_historial_reserva(
     """
     Obtiene el historial de cambios de estado de una reserva.
     """
-    logger.info(f"🔍 [GET /reservas/{reserva_id}/historial] ========== INICIO HISTORIAL ==========")
-    logger.info(f"🔍 [GET /reservas/{reserva_id}/historial] User ID: {current_user.id}")
     
     try:
         conn = await direct_db_service.pool.acquire()
@@ -1107,10 +1137,10 @@ async def obtener_historial_reserva(
         reserva_result = await conn.fetchrow(reserva_query, reserva_id)
         
         if not reserva_result:
-            logger.error(f"❌ [GET /reservas/{reserva_id}/historial] Reserva no encontrada")
+            logger.error(f"[GET /reservas/{reserva_id}/historial] Reserva no encontrada")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Reserva no encontrada"
+                detail=MSG_RESERVA_NO_ENCONTRADA
             )
         
         # Verificar permisos (cliente o proveedor)
@@ -1118,10 +1148,10 @@ async def obtener_historial_reserva(
         es_proveedor = str(reserva_result['proveedor_user_id']) == str(current_user.id)
         
         if not es_cliente and not es_proveedor:
-            logger.error(f"❌ [GET /reservas/{reserva_id}/historial] Usuario no tiene permisos")
+            logger.error(f"[GET /reservas/{reserva_id}/historial] Usuario no tiene permisos")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permisos para ver el historial de esta reserva"
+                detail=MSG_NO_PERMISOS_VER_HISTORIAL
             )
         
         # Obtener historial
@@ -1146,9 +1176,6 @@ async def obtener_historial_reserva(
                 "usuario_nombre": row['usuario_nombre']
             })
         
-        logger.info(f"✅ [GET /reservas/{reserva_id}/historial] Historial obtenido: {len(historial)} registros")
-        logger.info(f"🔍 [GET /reservas/{reserva_id}/historial] ========== FIN HISTORIAL ==========")
-        
         return {
             "reserva_id": reserva_id,
             "estado_actual": reserva_result['estado'],
@@ -1159,16 +1186,188 @@ async def obtener_historial_reserva(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [GET /reservas/{reserva_id}/historial] Error crítico: {str(e)}")
-        import traceback
-        logger.error(f"❌ [GET /reservas/{reserva_id}/historial] Traceback: {traceback.format_exc()}")
+        logger.error(f"[GET /reservas/{reserva_id}/historial] Error crítico: {str(e)}")
+        logger.error(f"[GET /reservas/{reserva_id}/historial] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al obtener historial: {str(e)}"
+            detail=MSG_ERROR_OBTENER_HISTORIAL.format(error=str(e))
         )
     finally:
         await direct_db_service.pool.release(conn)
 
+
+# Funciones helper para actualizar_estado_reserva
+async def get_reserva_with_provider(conn, reserva_id: int) -> dict:
+    """Obtiene la información de la reserva con el proveedor asociado"""
+    reserva_query = """
+        SELECT r.id_reserva, r.estado as estado_actual, r.id_servicio, s.id_perfil, pe.user_id as proveedor_user_id
+        FROM reserva r
+        INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+        INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+        WHERE r.id_reserva = $1
+    """
+    
+    reserva_result = await conn.fetchrow(reserva_query, reserva_id)
+    
+    if not reserva_result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_RESERVA_NO_ENCONTRADA
+        )
+    
+    return reserva_result
+
+def verify_provider_permissions(reserva_result: dict, current_user_id: str) -> None:
+    """Verifica que el usuario es el proveedor del servicio"""
+    if str(reserva_result['proveedor_user_id']) != str(current_user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=MSG_NO_PERMISOS_CAMBIAR_ESTADO
+        )
+
+def validate_estado_value(nuevo_estado: str) -> None:
+    """Valida que el nuevo estado sea válido"""
+    estados_validos = [ESTADO_PENDIENTE, ESTADO_CONFIRMADA, ESTADO_CANCELADA, ESTADO_COMPLETADA]
+    if nuevo_estado not in estados_validos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_ESTADO_INVALIDO.format(estados=', '.join(estados_validos))
+        )
+
+def validate_estado_not_same(estado_actual: str, nuevo_estado: str) -> None:
+    """Valida que el nuevo estado no sea el mismo que el actual"""
+    if estado_actual == nuevo_estado:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_RESERVA_YA_EN_ESTADO.format(estado=estado_actual)
+        )
+
+def validate_estado_transition(estado_actual: str, nuevo_estado: str) -> None:
+    """Valida que la transición de estado sea permitida"""
+    transiciones_validas = {
+        ESTADO_PENDIENTE: [ESTADO_CANCELADA, ESTADO_CONFIRMADA],
+        ESTADO_CONFIRMADA: [ESTADO_COMPLETADA],
+        ESTADO_CANCELADA: [],
+        ESTADO_COMPLETADA: []
+    }
+    
+    if nuevo_estado not in transiciones_validas.get(estado_actual, []):
+        transiciones_permitidas = transiciones_validas.get(estado_actual, [])
+        mensaje = f"Transición de estado inválida. Desde '{estado_actual}' solo se puede cambiar a: {', '.join(transiciones_permitidas) if transiciones_permitidas else 'ningún estado'}"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=mensaje
+        )
+
+async def update_reserva_estado(conn, reserva_id: int, nuevo_estado: str) -> dict:
+    """Actualiza el estado de la reserva"""
+    update_query = """
+        UPDATE reserva 
+        SET estado = $1
+        WHERE id_reserva = $2
+        RETURNING id_reserva, estado, fecha, hora_inicio, hora_fin
+    """
+    
+    updated_reserva = await conn.fetchrow(update_query, nuevo_estado, reserva_id)
+    
+    if not updated_reserva:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=MSG_ERROR_ACTUALIZAR_ESTADO
+        )
+    
+    return updated_reserva
+
+async def get_notification_data(conn, reserva_id: int) -> Optional[dict]:
+    """Obtiene los datos necesarios para enviar notificaciones"""
+    notif_query = """
+        SELECT
+            r.id_reserva,
+            s.nombre AS servicio_nombre,
+            r.fecha,
+            r.hora_inicio,
+            u_cliente.nombre_persona AS cliente_nombre,
+            au_cliente.email AS cliente_email,
+            u_prov.nombre_persona AS proveedor_nombre,
+            au_prov.email AS proveedor_email
+        FROM public.reserva r
+        JOIN public.servicio s ON r.id_servicio = s.id_servicio
+        JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
+        JOIN public.users u_cliente ON r.user_id = u_cliente.id
+        JOIN auth.users au_cliente ON r.user_id = au_cliente.id
+        JOIN public.users u_prov ON pe.user_id = u_prov.id
+        JOIN auth.users au_prov ON pe.user_id = au_prov.id
+        WHERE r.id_reserva = $1
+    """
+    return await conn.fetchrow(notif_query, reserva_id)
+
+def send_reservation_notification_by_estado(
+    nuevo_estado: str,
+    notif_data: dict,
+    fecha_formatted: str,
+    hora_formatted: str
+) -> None:
+    """Envía la notificación correspondiente según el nuevo estado"""
+    if nuevo_estado == ESTADO_CONFIRMADA:
+        reserva_notification_service.notify_reserva_confirmada(
+            reserva_id=notif_data['id_reserva'],
+            servicio_nombre=notif_data['servicio_nombre'],
+            fecha=fecha_formatted,
+            hora=hora_formatted,
+            cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+            cliente_email=notif_data['cliente_email'],
+            proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+            proveedor_email=notif_data['proveedor_email']
+        )
+    elif nuevo_estado == ESTADO_COMPLETADA:
+        reserva_notification_service.notify_reserva_completada(
+            reserva_id=notif_data['id_reserva'],
+            servicio_nombre=notif_data['servicio_nombre'],
+            fecha=fecha_formatted,
+            hora=hora_formatted,
+            cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+            cliente_email=notif_data['cliente_email'],
+            proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+            proveedor_email=notif_data['proveedor_email']
+        )
+
+async def handle_reservation_notification(
+    conn,
+    reserva_id: int,
+    nuevo_estado: str
+) -> None:
+    """Maneja el envío de notificaciones cuando cambia el estado"""
+    try:
+        if nuevo_estado in [ESTADO_CONFIRMADA, ESTADO_COMPLETADA]:
+            notif_data = await get_notification_data(conn, reserva_id)
+            
+            if notif_data:
+                fecha_formatted = notif_data['fecha'].strftime(FORMATO_FECHA_DD_MM_YYYY) if notif_data['fecha'] else ""
+                hora_formatted = str(notif_data['hora_inicio']) if notif_data['hora_inicio'] else ""
+                
+                send_reservation_notification_by_estado(
+                    nuevo_estado,
+                    notif_data,
+                    fecha_formatted,
+                    hora_formatted
+                )
+    except Exception as e:
+        logger.warning(f"[PUT /reservas/{reserva_id}/estado] Error al enviar notificación: {str(e)}")
+
+def build_reserva_estado_response(updated_reserva: dict, nuevo_estado: str, observacion: Optional[str]) -> dict:
+    """Construye la respuesta de la reserva actualizada"""
+    return {
+        "message": f"Estado de la reserva actualizado a '{nuevo_estado}' exitosamente",
+        "reserva": {
+            "id_reserva": updated_reserva['id_reserva'],
+            "estado": updated_reserva['estado'],
+            "fecha": updated_reserva['fecha'].isoformat() if updated_reserva['fecha'] else None,
+            "hora_inicio": str(updated_reserva['hora_inicio']) if updated_reserva['hora_inicio'] else None,
+            "hora_fin": str(updated_reserva['hora_fin']) if updated_reserva['hora_fin'] else None
+        },
+        "observacion": observacion,
+        "notificacion_enviada": True
+    }
 
 @router.put(
     "/{reserva_id}/estado",
@@ -1183,216 +1382,203 @@ async def actualizar_estado_reserva(
     Actualiza el estado de una reserva.
     Solo el proveedor del servicio puede cambiar el estado.
     """
-    logger.info(f"🔍 [PUT /reservas/{reserva_id}/estado] ========== INICIO ACTUALIZAR ESTADO ==========")
-    logger.info(f"🔍 [PUT /reservas/{reserva_id}/estado] User ID: {current_user.id}")
-    logger.info(f"🔍 [PUT /reservas/{reserva_id}/estado] Nuevo estado: {estado_update.nuevo_estado}")
-    
     try:
         conn = await direct_db_service.pool.acquire()
         
-        # 1. Verificar que la reserva existe y obtener información
-        reserva_query = """
-            SELECT r.id_reserva, r.estado as estado_actual, r.id_servicio, s.id_perfil, pe.user_id as proveedor_user_id
-            FROM reserva r
-            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-            WHERE r.id_reserva = $1
-        """
-        
-        reserva_result = await conn.fetchrow(reserva_query, reserva_id)
-        
-        if not reserva_result:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/estado] Reserva no encontrada")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Reserva no encontrada"
-            )
-        
-        logger.info(f"🔍 [PUT /reservas/{reserva_id}/estado] Reserva encontrada - Estado actual: {reserva_result['estado_actual']}")
-        logger.info(f"🔍 [PUT /reservas/{reserva_id}/estado] Proveedor del servicio: {reserva_result['proveedor_user_id']}")
-        
-        # 2. Verificar que el usuario es el proveedor del servicio
-        if str(reserva_result['proveedor_user_id']) != str(current_user.id):
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/estado] Usuario no es el proveedor del servicio")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permisos para cambiar el estado de esta reserva"
-            )
-        
-        # 3. Validar transiciones de estado
-        estado_actual = reserva_result['estado_actual']
-        nuevo_estado = estado_update.nuevo_estado.lower()
-        
-        # Validar que el nuevo estado sea válido
-        estados_validos = ['pendiente', 'confirmada', 'cancelada', 'completada']
-        if nuevo_estado not in estados_validos:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/estado] Estado inválido: {nuevo_estado}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Estado inválido. Los estados válidos son: {', '.join(estados_validos)}"
-            )
-        
-        # Validar que no sea el mismo estado
-        if estado_actual == nuevo_estado:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/estado] Mismo estado: {estado_actual}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"La reserva ya está en estado '{estado_actual}'"
-            )
-        
-        # Validar transiciones permitidas
-        transiciones_validas = {
-            'pendiente': ['cancelada', 'confirmada'],
-            'confirmada': ['completada'],
-            'cancelada': [],  # No se puede cambiar
-            'completada': []   # No se puede cambiar
-        }
-        
-        if nuevo_estado not in transiciones_validas.get(estado_actual, []):
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/estado] Transición inválida: {estado_actual} -> {nuevo_estado}")
-            transiciones_permitidas = transiciones_validas.get(estado_actual, [])
-            mensaje = f"Transición de estado inválida. Desde '{estado_actual}' solo se puede cambiar a: {', '.join(transiciones_permitidas) if transiciones_permitidas else 'ningún estado'}"
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=mensaje
-            )
-        
-        # Validaciones adicionales por estado
-        if nuevo_estado == 'rechazado' and not estado_update.observacion:
-            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/estado] Rechazo sin observación")
-            # No es obligatorio, pero es recomendado
-        
-        if nuevo_estado == 'concluido':
-            # Verificar que la fecha de la reserva no sea futura (opcional)
-            fecha_reserva = reserva_result.get('fecha')
-            if fecha_reserva:
-                from datetime import date
-                if fecha_reserva > date.today():
-                    logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/estado] Marcando como concluido antes de la fecha: {fecha_reserva}")
-                    # No bloqueamos, pero registramos la advertencia
-        
-        # 4. Actualizar el estado de la reserva
-        update_query = """
-            UPDATE reserva 
-            SET estado = $1
-            WHERE id_reserva = $2
-            RETURNING id_reserva, estado, fecha, hora_inicio, hora_fin
-        """
-        
-        updated_reserva = await conn.fetchrow(update_query, nuevo_estado, reserva_id)
-        
-        if not updated_reserva:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/estado] Error al actualizar la reserva")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al actualizar el estado de la reserva"
-            )
-        
-        # 5. Registrar cambio en historial
         try:
-            await registrar_cambio_historial(
-                conn,
-                reserva_id,
-                current_user.id,
-                estado_actual,
-                nuevo_estado,
-                estado_update.observacion
-            )
-        except Exception as e:
-            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/estado] Error al registrar historial: {str(e)}")
-        
-        # 6. Enviar notificación por correo (2. Confirmar o 3. Completar reserva)
-        try:
-            # Enviar notificación para estados "confirmada" o "completada"
-            if nuevo_estado in ['confirmada', 'completada']:
-                logger.info(f"📧 [PUT /reservas/{reserva_id}/estado] Obteniendo datos para notificación ({nuevo_estado})...")
-                notif_query = """
-                    SELECT
-                        r.id_reserva,
-                        s.nombre AS servicio_nombre,
-                        r.fecha,
-                        r.hora_inicio,
-                        u_cliente.nombre_persona AS cliente_nombre,
-                        au_cliente.email AS cliente_email,
-                        u_prov.nombre_persona AS proveedor_nombre,
-                        au_prov.email AS proveedor_email
-                    FROM public.reserva r
-                    JOIN public.servicio s ON r.id_servicio = s.id_servicio
-                    JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                    JOIN public.users u_cliente ON r.user_id = u_cliente.id
-                    JOIN auth.users au_cliente ON r.user_id = au_cliente.id
-                    JOIN public.users u_prov ON pe.user_id = u_prov.id
-                    JOIN auth.users au_prov ON pe.user_id = au_prov.id
-                    WHERE r.id_reserva = $1
-                """
-                notif_data = await conn.fetchrow(notif_query, reserva_id)
-                
-                if notif_data:
-                    from datetime import datetime
-                    fecha_formatted = notif_data['fecha'].strftime("%d/%m/%Y") if notif_data['fecha'] else ""
-                    hora_formatted = str(notif_data['hora_inicio']) if notif_data['hora_inicio'] else ""
-                    
-                    if nuevo_estado == 'confirmada':
-                        # Enviar notificación de confirmación
-                        reserva_notification_service.notify_reserva_confirmada(
-                            reserva_id=notif_data['id_reserva'],
-                            servicio_nombre=notif_data['servicio_nombre'],
-                            fecha=fecha_formatted,
-                            hora=hora_formatted,
-                            cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
-                            cliente_email=notif_data['cliente_email'],
-                            proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
-                            proveedor_email=notif_data['proveedor_email']
-                        )
-                        logger.info(f"✅ [PUT /reservas/{reserva_id}/estado] Notificación de confirmada enviada exitosamente")
-                    elif nuevo_estado == 'completada':
-                        # Enviar notificación de completada
-                        reserva_notification_service.notify_reserva_completada(
-                            reserva_id=notif_data['id_reserva'],
-                            servicio_nombre=notif_data['servicio_nombre'],
-                            fecha=fecha_formatted,
-                            hora=hora_formatted,
-                            cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
-                            cliente_email=notif_data['cliente_email'],
-                            proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
-                            proveedor_email=notif_data['proveedor_email']
-                        )
-                        logger.info(f"✅ [PUT /reservas/{reserva_id}/estado] Notificación de completada enviada exitosamente")
-                else:
-                    logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/estado] No se pudieron obtener datos para notificación")
-        except Exception as e:
-            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/estado] Error al enviar notificación: {str(e)}")
-        
-        logger.info(f"✅ [PUT /reservas/{reserva_id}/estado] Estado actualizado exitosamente")
-        logger.info(f"🔍 [PUT /reservas/{reserva_id}/estado] Nuevo estado: {updated_reserva['estado']}")
-        logger.info(f"🔍 [PUT /reservas/{reserva_id}/estado] ========== FIN ACTUALIZAR ESTADO ==========")
-        
-        return {
-            "message": f"Estado de la reserva actualizado a '{nuevo_estado}' exitosamente",
-            "reserva": {
-                "id_reserva": updated_reserva['id_reserva'],
-                "estado": updated_reserva['estado'],
-                "fecha": updated_reserva['fecha'].isoformat() if updated_reserva['fecha'] else None,
-                "hora_inicio": str(updated_reserva['hora_inicio']) if updated_reserva['hora_inicio'] else None,
-                "hora_fin": str(updated_reserva['hora_fin']) if updated_reserva['hora_fin'] else None
-            },
-            "observacion": estado_update.observacion,
-            "notificacion_enviada": True
-        }
+            # Obtener información de la reserva
+            reserva_result = await get_reserva_with_provider(conn, reserva_id)
+            
+            # Verificar permisos del proveedor
+            verify_provider_permissions(reserva_result, current_user.id)
+            
+            # Validar nuevo estado
+            estado_actual = reserva_result['estado_actual']
+            nuevo_estado = estado_update.nuevo_estado.lower()
+            
+            validate_estado_value(nuevo_estado)
+            validate_estado_not_same(estado_actual, nuevo_estado)
+            validate_estado_transition(estado_actual, nuevo_estado)
+            
+            # Actualizar estado de la reserva
+            updated_reserva = await update_reserva_estado(conn, reserva_id, nuevo_estado)
+            
+            # Registrar cambio en historial
+            try:
+                await registrar_cambio_historial(
+                    conn,
+                    reserva_id,
+                    current_user.id,
+                    estado_actual,
+                    nuevo_estado,
+                    estado_update.observacion
+                )
+            except Exception as e:
+                logger.warning(f"[PUT /reservas/{reserva_id}/estado] Error al registrar historial: {str(e)}")
+            
+            # Enviar notificación por correo
+            await handle_reservation_notification(conn, reserva_id, nuevo_estado)
+            
+            logger.info(f"[PUT /reservas/{reserva_id}/estado] Estado actualizado a '{nuevo_estado}'")
+            
+            # Construir y retornar respuesta
+            return build_reserva_estado_response(updated_reserva, nuevo_estado, estado_update.observacion)
+            
+        finally:
+            await direct_db_service.pool.release(conn)
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [PUT /reservas/{reserva_id}/estado] Error crítico: {str(e)}")
-        import traceback
-        logger.error(f"❌ [PUT /reservas/{reserva_id}/estado] Traceback: {traceback.format_exc()}")
+        logger.error(f"[PUT /reservas/{reserva_id}/estado] Error: {str(e)}")
+        logger.error(f"[PUT /reservas/{reserva_id}/estado] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al actualizar el estado de la reserva: {str(e)}"
+            detail=MSG_ERROR_ACTUALIZAR_ESTADO_FORMAT.format(error=str(e))
         )
-    finally:
-        await direct_db_service.pool.release(conn)
 
+
+# Funciones helper para cancelar_reserva
+async def get_reserva_with_cliente_and_proveedor(conn, reserva_id: int) -> dict:
+    """Obtiene la información de la reserva con cliente y proveedor"""
+    reserva_query = """
+        SELECT r.id_reserva, r.estado as estado_actual, r.id_servicio, r.user_id as cliente_user_id,
+               s.id_perfil, pe.user_id as proveedor_user_id
+        FROM reserva r
+        INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+        INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+        WHERE r.id_reserva = $1
+    """
+    
+    reserva_result = await conn.fetchrow(reserva_query, reserva_id)
+    
+    if not reserva_result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_RESERVA_NO_ENCONTRADA
+        )
+    
+    return reserva_result
+
+def verify_cancel_permissions(
+    reserva_result: dict,
+    current_user_id: str
+) -> None:
+    """Verifica que el usuario tiene permisos para cancelar la reserva"""
+    cliente_user_id = str(reserva_result['cliente_user_id'])
+    proveedor_user_id = str(reserva_result['proveedor_user_id'])
+    current_user_id_str = str(current_user_id)
+    
+    if current_user_id_str != cliente_user_id and current_user_id_str != proveedor_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=MSG_NO_AUTORIZADO_GESTIONAR
+        )
+
+def validate_reserva_estado_pendiente(estado_actual: str) -> None:
+    """Valida que la reserva esté en estado pendiente"""
+    if estado_actual != ESTADO_PENDIENTE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_SOLO_CANCELAR_PENDIENTE.format(estado=estado_actual)
+        )
+
+def validate_motivo_cancelacion(motivo: Optional[str]) -> None:
+    """Valida que el motivo de cancelación no esté vacío"""
+    if not motivo or not motivo.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_DEBE_INGRESAR_MOTIVO
+        )
+
+async def cancel_reserva_estado(conn, reserva_id: int) -> dict:
+    """Cancela la reserva actualizando su estado"""
+    update_query = """
+        UPDATE reserva 
+        SET estado = $2
+        WHERE id_reserva = $1
+        RETURNING id_reserva, estado, fecha, hora_inicio, hora_fin
+    """
+    
+    updated_reserva = await conn.fetchrow(update_query, reserva_id, ESTADO_CANCELADA)
+    
+    if not updated_reserva:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=MSG_ERROR_CANCELAR_RESERVA
+        )
+    
+    return updated_reserva
+
+async def send_cancellation_notification(
+    conn,
+    reserva_id: int,
+    motivo: str
+) -> None:
+    """Envía notificación por correo cuando se cancela una reserva"""
+    try:
+        notif_query = """
+            SELECT
+                r.id_reserva,
+                s.nombre AS servicio_nombre,
+                r.fecha,
+                r.hora_inicio,
+                u_cliente.nombre_persona AS cliente_nombre,
+                au_cliente.email AS cliente_email,
+                u_prov.nombre_persona AS proveedor_nombre,
+                au_prov.email AS proveedor_email
+            FROM reserva r
+            JOIN servicio s ON r.id_servicio = s.id_servicio
+            JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+            JOIN public.users u_cliente ON r.user_id = u_cliente.id
+            JOIN auth.users au_cliente ON r.user_id = au_cliente.id
+            JOIN public.users u_prov ON pe.user_id = u_prov.id
+            JOIN auth.users au_prov ON pe.user_id = au_prov.id
+            WHERE r.id_reserva = $1
+        """
+        notif_data = await conn.fetchrow(notif_query, reserva_id)
+        
+        if notif_data:
+            fecha_formatted = notif_data['fecha'].strftime(FORMATO_FECHA_DD_MM_YYYY) if notif_data['fecha'] else ""
+            hora_formatted = str(notif_data['hora_inicio']) if notif_data['hora_inicio'] else ""
+            
+            reserva_notification_service.notify_reserva_cancelada(
+                reserva_id=notif_data['id_reserva'],
+                servicio_nombre=notif_data['servicio_nombre'],
+                fecha=fecha_formatted,
+                hora=hora_formatted,
+                cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+                cliente_email=notif_data['cliente_email'],
+                proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+                proveedor_email=notif_data['proveedor_email'],
+                motivo=motivo
+            )
+    except Exception as e:
+        logger.warning(f"[PUT /reservas/{reserva_id}/cancelar] Error al enviar notificación: {str(e)}")
+
+def determine_cancelled_by(current_user_id: str, cliente_user_id: str) -> str:
+    """Determina quién canceló la reserva"""
+    return "cliente" if current_user_id == cliente_user_id else "proveedor"
+
+def build_cancelacion_response(
+    updated_reserva: dict,
+    motivo: str,
+    quien_cancelo: str
+) -> dict:
+    """Construye la respuesta de cancelación"""
+    return {
+        "message": "Reserva cancelada",
+        "reserva": {
+            "id_reserva": updated_reserva['id_reserva'],
+            "estado": updated_reserva['estado'],
+            "fecha": updated_reserva['fecha'].isoformat() if updated_reserva['fecha'] else None,
+            "hora_inicio": str(updated_reserva['hora_inicio']) if updated_reserva['hora_inicio'] else None,
+            "hora_fin": str(updated_reserva['hora_fin']) if updated_reserva['hora_fin'] else None
+        },
+        "motivo": motivo,
+        "cancelado_por": quien_cancelo,
+        "notificacion_enviada": True
+    }
 
 @router.put(
     "/{reserva_id}/cancelar",
@@ -1409,173 +1595,178 @@ async def cancelar_reserva(
     Solo se puede cancelar si el estado es 'pendiente'.
     El motivo de cancelación es obligatorio.
     """
-    logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] ========== INICIO CANCELAR RESERVA ==========")
-    logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] User ID: {current_user.id}")
-    logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] Motivo: {cancelacion_data.motivo}")
-    
     try:
         conn = await direct_db_service.pool.acquire()
         
-        # 1. Verificar que la reserva existe y obtener información
-        reserva_query = """
-            SELECT r.id_reserva, r.estado as estado_actual, r.id_servicio, r.user_id as cliente_user_id,
-                   s.id_perfil, pe.user_id as proveedor_user_id
-            FROM reserva r
-            INNER JOIN servicio s ON r.id_servicio = s.id_servicio
-            INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-            WHERE r.id_reserva = $1
-        """
-        
-        reserva_result = await conn.fetchrow(reserva_query, reserva_id)
-        
-        if not reserva_result:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Reserva no encontrada")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Reserva no encontrada"
-            )
-        
-        logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] Cliente: {reserva_result['cliente_user_id']}")
-        logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] Proveedor: {reserva_result['proveedor_user_id']}")
-        
-        # 2. Verificar que el usuario tiene permisos para cancelar
-        cliente_user_id = str(reserva_result['cliente_user_id'])
-        proveedor_user_id = str(reserva_result['proveedor_user_id'])
-        current_user_id = str(current_user.id)
-        
-        if current_user_id != cliente_user_id and current_user_id != proveedor_user_id:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Usuario no autorizado")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No autorizado para gestionar esta reserva"
-            )
-        
-        # 3. Verificar que la reserva está en estado pendiente
-        estado_actual = reserva_result['estado_actual']
-        if estado_actual != 'pendiente':
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Estado inválido: {estado_actual}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Solo se pueden cancelar reservas en estado 'pendiente'. Estado actual: '{estado_actual}'"
-            )
-        
-        # 4. Validar que el motivo no esté vacío
-        if not cancelacion_data.motivo or not cancelacion_data.motivo.strip():
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Motivo vacío")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Debés ingresar un motivo para cancelar la reserva"
-            )
-        
-        # 5. Actualizar el estado de la reserva
-        update_query = """
-            UPDATE reserva 
-            SET estado = 'cancelada'
-            WHERE id_reserva = $1
-            RETURNING id_reserva, estado, fecha, hora_inicio, hora_fin
-        """
-        
-        updated_reserva = await conn.fetchrow(update_query, reserva_id)
-        
-        if not updated_reserva:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Error al actualizar reserva")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al cancelar la reserva"
-            )
-        
-        # 6. Registrar en el historial
         try:
-            await registrar_cambio_historial(
-                conn,
-                reserva_id,
-                current_user.id,
-                estado_actual,
-                'cancelada',
-                cancelacion_data.motivo
-            )
-        except Exception as e:
-            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/cancelar] Error al registrar historial: {str(e)}")
-        
-        # 7. Enviar notificación por correo (4. Cancelación manual - Cancelada)
-        try:
-            logger.info(f"📧 [PUT /reservas/{reserva_id}/cancelar] Obteniendo datos para notificación...")
-            notif_query = """
-                SELECT
-                    r.id_reserva,
-                    s.nombre AS servicio_nombre,
-                    r.fecha,
-                    r.hora_inicio,
-                    u_cliente.nombre_persona AS cliente_nombre,
-                    au_cliente.email AS cliente_email,
-                    u_prov.nombre_persona AS proveedor_nombre,
-                    au_prov.email AS proveedor_email
-                FROM reserva r
-                JOIN servicio s ON r.id_servicio = s.id_servicio
-                JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                JOIN public.users u_cliente ON r.user_id = u_cliente.id
-                JOIN auth.users au_cliente ON r.user_id = au_cliente.id
-                JOIN public.users u_prov ON pe.user_id = u_prov.id
-                JOIN auth.users au_prov ON pe.user_id = au_prov.id
-                WHERE r.id_reserva = $1
-            """
-            notif_data = await conn.fetchrow(notif_query, reserva_id)
+            # Obtener información de la reserva
+            reserva_result = await get_reserva_with_cliente_and_proveedor(conn, reserva_id)
             
-            if notif_data:
-                from datetime import datetime
-                fecha_formatted = notif_data['fecha'].strftime("%d/%m/%Y") if notif_data['fecha'] else ""
-                hora_formatted = str(notif_data['hora_inicio']) if notif_data['hora_inicio'] else ""
-                
-                reserva_notification_service.notify_reserva_cancelada(
-                    reserva_id=notif_data['id_reserva'],
-                    servicio_nombre=notif_data['servicio_nombre'],
-                    fecha=fecha_formatted,
-                    hora=hora_formatted,
-                    cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
-                    cliente_email=notif_data['cliente_email'],
-                    proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
-                    proveedor_email=notif_data['proveedor_email'],
-                    motivo=cancelacion_data.motivo
+            # Verificar permisos para cancelar
+            verify_cancel_permissions(reserva_result, current_user.id)
+            
+            # Validar estado y motivo
+            estado_actual = reserva_result['estado_actual']
+            validate_reserva_estado_pendiente(estado_actual)
+            validate_motivo_cancelacion(cancelacion_data.motivo)
+            
+            # Cancelar la reserva
+            updated_reserva = await cancel_reserva_estado(conn, reserva_id)
+            
+            # Registrar en el historial
+            try:
+                await registrar_cambio_historial(
+                    conn,
+                    reserva_id,
+                    current_user.id,
+                    estado_actual,
+                    ESTADO_CANCELADA,
+                    cancelacion_data.motivo
                 )
-                logger.info(f"✅ [PUT /reservas/{reserva_id}/cancelar] Notificación enviada exitosamente")
-            else:
-                logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/cancelar] No se pudieron obtener datos para notificación")
-        except Exception as e:
-            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/cancelar] Error al enviar notificación: {str(e)}")
-        
-        # 8. Determinar quién canceló
-        quien_cancelo = "cliente" if current_user_id == cliente_user_id else "proveedor"
-        
-        logger.info(f"✅ [PUT /reservas/{reserva_id}/cancelar] Reserva cancelada por {quien_cancelo}")
-        logger.info(f"🔍 [PUT /reservas/{reserva_id}/cancelar] ========== FIN CANCELAR RESERVA ==========")
-        
-        return {
-            "message": "✅ Reserva cancelada",
-            "reserva": {
-                "id_reserva": updated_reserva['id_reserva'],
-                "estado": updated_reserva['estado'],
-                "fecha": updated_reserva['fecha'].isoformat() if updated_reserva['fecha'] else None,
-                "hora_inicio": str(updated_reserva['hora_inicio']) if updated_reserva['hora_inicio'] else None,
-                "hora_fin": str(updated_reserva['hora_fin']) if updated_reserva['hora_fin'] else None
-            },
-            "motivo": cancelacion_data.motivo,
-            "cancelado_por": quien_cancelo,
-            "notificacion_enviada": True
-        }
+            except Exception as e:
+                logger.warning(f"[PUT /reservas/{reserva_id}/cancelar] Error al registrar historial: {str(e)}")
+            
+            # Enviar notificación por correo
+            await send_cancellation_notification(conn, reserva_id, cancelacion_data.motivo)
+            
+            # Determinar quién canceló
+            current_user_id = str(current_user.id)
+            cliente_user_id = str(reserva_result['cliente_user_id'])
+            quien_cancelo = determine_cancelled_by(current_user_id, cliente_user_id)
+            
+            logger.info(f"[PUT /reservas/{reserva_id}/cancelar] Reserva cancelada por {quien_cancelo}")
+            
+            # Construir y retornar respuesta
+            return build_cancelacion_response(updated_reserva, cancelacion_data.motivo, quien_cancelo)
+            
+        finally:
+            await direct_db_service.pool.release(conn)
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Error crítico: {str(e)}")
-        import traceback
-        logger.error(f"❌ [PUT /reservas/{reserva_id}/cancelar] Traceback: {traceback.format_exc()}")
+        logger.error(f"[PUT /reservas/{reserva_id}/cancelar] Error: {str(e)}")
+        logger.error(f"[PUT /reservas/{reserva_id}/cancelar] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al cancelar la reserva: {str(e)}"
+            detail=MSG_ERROR_CANCELAR_RESERVA_FORMAT.format(error=str(e))
         )
     finally:
         await direct_db_service.pool.release(conn)
 
+
+# Funciones helper para confirmar_reserva
+async def get_reserva_basic_info(conn, reserva_id: int) -> dict:
+    """Obtiene la información básica de la reserva"""
+    reserva_query = """
+        SELECT r.id_reserva, r.estado as estado_actual, r.user_id as cliente_user_id
+        FROM reserva r
+        WHERE r.id_reserva = $1
+    """
+    
+    reserva_result = await conn.fetchrow(reserva_query, reserva_id)
+    
+    if not reserva_result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_RESERVA_NO_ENCONTRADA
+        )
+    
+    return reserva_result
+
+def verify_cliente_ownership(reserva_result: dict, current_user_id: str) -> None:
+    """Verifica que el usuario es el cliente dueño de la reserva"""
+    cliente_user_id = str(reserva_result['cliente_user_id'])
+    current_user_id_str = str(current_user_id)
+    
+    if current_user_id_str != cliente_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=MSG_NO_AUTORIZADO_GESTIONAR
+        )
+
+def validate_reserva_estado_for_confirmation(estado_actual: str) -> None:
+    """Valida que la reserva esté en estado pendiente para confirmar"""
+    if estado_actual != ESTADO_PENDIENTE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_NO_POSIBLE_ACCION_ESTADO
+        )
+
+async def confirm_reserva_estado(conn, reserva_id: int) -> dict:
+    """Confirma la reserva actualizando su estado"""
+    update_query = """
+        UPDATE reserva 
+        SET estado = $2
+        WHERE id_reserva = $1
+        RETURNING id_reserva, estado, fecha, hora_inicio, hora_fin
+    """
+    
+    updated_reserva = await conn.fetchrow(update_query, reserva_id, ESTADO_CONFIRMADA)
+    
+    if not updated_reserva:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=MSG_ERROR_CONFIRMAR_RESERVA
+        )
+    
+    return updated_reserva
+
+async def send_confirmation_notification(conn, reserva_id: int) -> None:
+    """Envía notificación por correo cuando se confirma una reserva"""
+    try:
+        notif_query = """
+            SELECT
+                r.id_reserva,
+                s.nombre AS servicio_nombre,
+                r.fecha,
+                r.hora_inicio,
+                u_cliente.nombre_persona AS cliente_nombre,
+                au_cliente.email AS cliente_email,
+                u_prov.nombre_persona AS proveedor_nombre,
+                au_prov.email AS proveedor_email
+            FROM public.reserva r
+            JOIN public.servicio s ON r.id_servicio = s.id_servicio
+            JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
+            JOIN public.users u_cliente ON r.user_id = u_cliente.id
+            JOIN auth.users au_cliente ON r.user_id = au_cliente.id
+            JOIN public.users u_prov ON pe.user_id = u_prov.id
+            JOIN auth.users au_prov ON pe.user_id = au_prov.id
+            WHERE r.id_reserva = $1
+        """
+        notif_data = await conn.fetchrow(notif_query, reserva_id)
+        
+        if notif_data:
+            fecha_formatted = notif_data['fecha'].strftime(FORMATO_FECHA_DD_MM_YYYY) if notif_data['fecha'] else ""
+            hora_formatted = str(notif_data['hora_inicio']) if notif_data['hora_inicio'] else ""
+            
+            reserva_notification_service.notify_reserva_confirmada(
+                reserva_id=notif_data['id_reserva'],
+                servicio_nombre=notif_data['servicio_nombre'],
+                fecha=fecha_formatted,
+                hora=hora_formatted,
+                cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+                cliente_email=notif_data['cliente_email'],
+                proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+                proveedor_email=notif_data['proveedor_email']
+            )
+    except Exception as e:
+        logger.warning(f"[PUT /reservas/{reserva_id}/confirmar] Error al enviar notificación: {str(e)}")
+
+def build_confirmacion_response(updated_reserva: dict) -> dict:
+    """Construye la respuesta de confirmación"""
+    return {
+        "message": "Reserva confirmada",
+        "reserva": {
+            "id_reserva": updated_reserva['id_reserva'],
+            "estado": updated_reserva['estado'],
+            "fecha": updated_reserva['fecha'].isoformat() if updated_reserva['fecha'] else None,
+            "hora_inicio": str(updated_reserva['hora_inicio']) if updated_reserva['hora_inicio'] else None,
+            "hora_fin": str(updated_reserva['hora_fin']) if updated_reserva['hora_fin'] else None
+        },
+        "confirmado_por": "cliente",
+        "notificacion_enviada": True
+    }
 
 @router.put(
     "/{reserva_id}/confirmar",
@@ -1590,150 +1781,55 @@ async def confirmar_reserva(
     Solo el cliente dueño de la reserva puede confirmarla.
     Solo se puede confirmar si el estado es 'pendiente'.
     """
-    logger.info(f"🔍 [PUT /reservas/{reserva_id}/confirmar] ========== INICIO CONFIRMAR RESERVA ==========")
-    logger.info(f"🔍 [PUT /reservas/{reserva_id}/confirmar] User ID: {current_user.id}")
-    
     try:
         conn = await direct_db_service.pool.acquire()
         
-        # 1. Verificar que la reserva existe y obtener información
-        reserva_query = """
-            SELECT r.id_reserva, r.estado as estado_actual, r.user_id as cliente_user_id
-            FROM reserva r
-            WHERE r.id_reserva = $1
-        """
-        
-        reserva_result = await conn.fetchrow(reserva_query, reserva_id)
-        
-        if not reserva_result:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Reserva no encontrada")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Reserva no encontrada"
-            )
-        
-        logger.info(f"🔍 [PUT /reservas/{reserva_id}/confirmar] Cliente: {reserva_result['cliente_user_id']}")
-        
-        # 2. Verificar que el usuario es el cliente dueño de la reserva
-        cliente_user_id = str(reserva_result['cliente_user_id'])
-        current_user_id = str(current_user.id)
-        
-        if current_user_id != cliente_user_id:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Usuario no autorizado")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No autorizado para gestionar esta reserva"
-            )
-        
-        # 3. Verificar que la reserva está en estado pendiente
-        estado_actual = reserva_result['estado_actual']
-        if estado_actual != 'pendiente':
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Estado inválido: {estado_actual}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No es posible realizar esta acción en el estado actual"
-            )
-        
-        # 4. Actualizar el estado de la reserva
-        update_query = """
-            UPDATE reserva 
-            SET estado = 'confirmada'
-            WHERE id_reserva = $1
-            RETURNING id_reserva, estado, fecha, hora_inicio, hora_fin
-        """
-        
-        updated_reserva = await conn.fetchrow(update_query, reserva_id)
-        
-        if not updated_reserva:
-            logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Error al actualizar reserva")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al confirmar la reserva"
-            )
-        
-        # 5. Registrar en el historial
         try:
-            await registrar_cambio_historial(
-                conn,
-                reserva_id,
-                current_user.id,
-                estado_actual,
-                'confirmada',
-                'Reserva confirmada por el cliente'
-            )
-        except Exception as e:
-            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/confirmar] Error al registrar historial: {str(e)}")
-        
-        # 6. Enviar notificación por correo (2. Confirmar reserva - Confirmada)
-        try:
-            logger.info(f"📧 [PUT /reservas/{reserva_id}/confirmar] Obteniendo datos para notificación...")
-            notif_query = """
-                SELECT
-                    r.id_reserva,
-                    s.nombre AS servicio_nombre,
-                    r.fecha,
-                    r.hora_inicio,
-                    u_cliente.nombre_persona AS cliente_nombre,
-                    au_cliente.email AS cliente_email,
-                    u_prov.nombre_persona AS proveedor_nombre,
-                    au_prov.email AS proveedor_email
-                FROM public.reserva r
-                JOIN public.servicio s ON r.id_servicio = s.id_servicio
-                JOIN public.perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                JOIN public.users u_cliente ON r.user_id = u_cliente.id
-                JOIN auth.users au_cliente ON r.user_id = au_cliente.id
-                JOIN public.users u_prov ON pe.user_id = u_prov.id
-                JOIN auth.users au_prov ON pe.user_id = au_prov.id
-                WHERE r.id_reserva = $1
-            """
-            notif_data = await conn.fetchrow(notif_query, reserva_id)
+            # Obtener información de la reserva
+            reserva_result = await get_reserva_basic_info(conn, reserva_id)
             
-            if notif_data:
-                from datetime import datetime
-                fecha_formatted = notif_data['fecha'].strftime("%d/%m/%Y") if notif_data['fecha'] else ""
-                hora_formatted = str(notif_data['hora_inicio']) if notif_data['hora_inicio'] else ""
-                
-                reserva_notification_service.notify_reserva_confirmada(
-                    reserva_id=notif_data['id_reserva'],
-                    servicio_nombre=notif_data['servicio_nombre'],
-                    fecha=fecha_formatted,
-                    hora=hora_formatted,
-                    cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
-                    cliente_email=notif_data['cliente_email'],
-                    proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
-                    proveedor_email=notif_data['proveedor_email']
+            # Verificar que el usuario es el cliente dueño
+            verify_cliente_ownership(reserva_result, current_user.id)
+            
+            # Validar estado para confirmación
+            estado_actual = reserva_result['estado_actual']
+            validate_reserva_estado_for_confirmation(estado_actual)
+            
+            # Confirmar la reserva
+            updated_reserva = await confirm_reserva_estado(conn, reserva_id)
+            
+            # Registrar en el historial
+            try:
+                await registrar_cambio_historial(
+                    conn,
+                    reserva_id,
+                    current_user.id,
+                    estado_actual,
+                    ESTADO_CONFIRMADA,
+                    'Reserva confirmada por el cliente'
                 )
-                logger.info(f"✅ [PUT /reservas/{reserva_id}/confirmar] Notificación enviada exitosamente")
-            else:
-                logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/confirmar] No se pudieron obtener datos para notificación")
-        except Exception as e:
-            logger.warning(f"⚠️ [PUT /reservas/{reserva_id}/confirmar] Error al enviar notificación: {str(e)}")
-        
-        logger.info(f"✅ [PUT /reservas/{reserva_id}/confirmar] Reserva confirmada por cliente")
-        logger.info(f"🔍 [PUT /reservas/{reserva_id}/confirmar] ========== FIN CONFIRMAR RESERVA ==========")
-        
-        return {
-            "message": "✅ Reserva confirmada",
-            "reserva": {
-                "id_reserva": updated_reserva['id_reserva'],
-                "estado": updated_reserva['estado'],
-                "fecha": updated_reserva['fecha'].isoformat() if updated_reserva['fecha'] else None,
-                "hora_inicio": str(updated_reserva['hora_inicio']) if updated_reserva['hora_inicio'] else None,
-                "hora_fin": str(updated_reserva['hora_fin']) if updated_reserva['hora_fin'] else None
-            },
-            "confirmado_por": "cliente",
-            "notificacion_enviada": True
-        }
+            except Exception as e:
+                logger.warning(f"[PUT /reservas/{reserva_id}/confirmar] Error al registrar historial: {str(e)}")
+            
+            # Enviar notificación por correo
+            await send_confirmation_notification(conn, reserva_id)
+            
+            logger.info(f"[PUT /reservas/{reserva_id}/confirmar] Reserva confirmada")
+            
+            # Construir y retornar respuesta
+            return build_confirmacion_response(updated_reserva)
+            
+        finally:
+            await direct_db_service.pool.release(conn)
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Error crítico: {str(e)}")
-        import traceback
-        logger.error(f"❌ [PUT /reservas/{reserva_id}/confirmar] Traceback: {traceback.format_exc()}")
+        logger.error(f"[PUT /reservas/{reserva_id}/confirmar] Error: {str(e)}")
+        logger.error(f"[PUT /reservas/{reserva_id}/confirmar] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al confirmar la reserva: {str(e)}"
+            detail=MSG_ERROR_CONFIRMAR_RESERVA_FORMAT.format(error=str(e))
         )
     finally:
         await direct_db_service.pool.release(conn)

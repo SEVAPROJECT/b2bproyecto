@@ -28,10 +28,10 @@ const CustomChart: React.FC<CustomChartProps> = ({ data, dataKey, chartType }) =
     return (
         <div className="h-64 w-full">
             <div className="h-full flex items-end justify-between space-x-2">
-                {chartData.map((item, index) => {
+                {chartData.map((item) => {
                     const height = (item.value / maxValue) * 100;
                     return (
-                        <div key={index} className="flex flex-col items-center flex-1">
+                        <div key={item.name} className="flex flex-col items-center flex-1">
                             <div 
                                 className={`w-full bg-primary-500 rounded-t ${
                                     chartType === 'line' ? 'h-1' : ''

@@ -1,7 +1,7 @@
 """
 Router para restablecimiento de contraseña usando Supabase Auth nativo
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 import logging
 from app.schemas.password_reset import (
     PasswordResetRequest,
@@ -13,6 +13,18 @@ from app.services.supabase_password_reset import supabase_password_reset_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/password-reset-native", tags=["Password Reset Native"])
+
+# Constantes para mensajes
+ERROR_INTERNO_SERVIDOR = "Error interno del servidor"
+MENSAJE_USUARIO_NO_ENCONTRADO = "Usuario no encontrado"
+MENSAJE_USUARIO_ENCONTRADO = "Usuario encontrado"
+MENSAJE_NO_CUENTA_EMAIL = "No se encontró una cuenta con este email"
+MENSAJE_CONTRASENAS_NO_COINCIDEN = "Las contraseñas no coinciden"
+MENSAJE_CONTRASENA_CAMBIADA = "Tu contraseña se cambió correctamente. Ahora podés iniciar sesión con tu nueva contraseña."
+
+# Constantes para claves de diccionario
+KEY_SUCCESS = "success"
+KEY_MESSAGE = "message"
 
 @router.post("/request", response_model=PasswordResetResponse)
 async def request_password_reset_native(request: PasswordResetRequest):
@@ -29,30 +41,30 @@ async def request_password_reset_native(request: PasswordResetRequest):
             logger.warning(f"⚠️ Intento de restablecimiento para email no registrado: {email}")
             return PasswordResetResponse(
                 success=False,
-                message="No se encontró una cuenta con este email"
+                message=MENSAJE_NO_CUENTA_EMAIL
             )
         
         # Enviar email de restablecimiento usando Supabase Auth nativo
         result = await supabase_password_reset_service.send_password_reset_email(email)
         
-        if result["success"]:
+        if result[KEY_SUCCESS]:
             logger.info(f"✅ Email de restablecimiento enviado a {email}")
             return PasswordResetResponse(
                 success=True,
-                message=result["message"]
+                message=result[KEY_MESSAGE]
             )
         else:
-            logger.error(f"❌ Error enviando email a {email}: {result['message']}")
+            logger.error(f"❌ Error enviando email a {email}: {result[KEY_MESSAGE]}")
             return PasswordResetResponse(
                 success=False,
-                message=result["message"]
+                message=result[KEY_MESSAGE]
             )
             
     except Exception as e:
         logger.error(f"❌ Error en request_password_reset_native: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Error interno del servidor"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ERROR_INTERNO_SERVIDOR
         )
 
 @router.post("/set-new-password", response_model=PasswordResetResponse)
@@ -68,7 +80,7 @@ async def set_new_password_native(request: PasswordResetNewPassword):
         if request.new_password != request.confirm_password:
             return PasswordResetResponse(
                 success=False,
-                message="Las contraseñas no coinciden"
+                message=MENSAJE_CONTRASENAS_NO_COINCIDEN
             )
         
         # Verificar que el usuario existe
@@ -77,30 +89,30 @@ async def set_new_password_native(request: PasswordResetNewPassword):
         if not user_exists:
             return PasswordResetResponse(
                 success=False,
-                message="Usuario no encontrado"
+                message=MENSAJE_USUARIO_NO_ENCONTRADO
             )
         
         # Actualizar contraseña
         result = await supabase_password_reset_service.update_user_password(email, new_password)
         
-        if result["success"]:
+        if result[KEY_SUCCESS]:
             logger.info(f"✅ Contraseña actualizada para {email}")
             return PasswordResetResponse(
                 success=True,
-                message="Tu contraseña se cambió correctamente. Ahora podés iniciar sesión con tu nueva contraseña."
+                message=MENSAJE_CONTRASENA_CAMBIADA
             )
         else:
-            logger.error(f"❌ Error actualizando contraseña para {email}: {result['message']}")
+            logger.error(f"❌ Error actualizando contraseña para {email}: {result[KEY_MESSAGE]}")
             return PasswordResetResponse(
                 success=False,
-                message=result["message"]
+                message=result[KEY_MESSAGE]
             )
             
     except Exception as e:
         logger.error(f"❌ Error en set_new_password_native: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Error interno del servidor"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ERROR_INTERNO_SERVIDOR
         )
 
 @router.get("/status/{email}")
@@ -116,12 +128,12 @@ async def get_reset_status_native(email: str):
         
         return {
             "user_exists": user_exists,
-            "message": "Usuario encontrado" if user_exists else "Usuario no encontrado"
+            "message": MENSAJE_USUARIO_ENCONTRADO if user_exists else MENSAJE_USUARIO_NO_ENCONTRADO
         }
             
     except Exception as e:
         logger.error(f"❌ Error en get_reset_status_native: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Error interno del servidor"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ERROR_INTERNO_SERVIDOR
         )

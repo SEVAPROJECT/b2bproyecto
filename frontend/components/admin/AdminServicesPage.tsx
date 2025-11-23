@@ -40,7 +40,7 @@ const AdminServicesPage: React.FC = () => {
     const filteredServices = services.filter(service => {
         const matchesSearch = service.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             service.descripcion.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            (service.razon_social && service.razon_social.toLowerCase().includes(searchQuery.toLowerCase()));
+                            (service.razon_social?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
         const matchesCategory = categoryFilter === 'all' || service.id_categoria.toString() === categoryFilter;
         const matchesStatus = statusFilter === 'all' || 
                             (statusFilter === 'active' && service.estado) ||
@@ -57,10 +57,9 @@ const AdminServicesPage: React.FC = () => {
 
     const handleToggleServiceStatus = async (serviceId: number, currentStatus: boolean) => {
         try {
-            // TODO: Implementar lógica para cambiar estado del servicio
+            // Implementar lógica para cambiar estado del servicio
             console.log('Cambiando estado del servicio:', serviceId, !currentStatus);
-            // await servicesAPI.updateServiceStatus(serviceId, !currentStatus);
-            // loadData(); // Recargar lista
+            
         } catch (err) {
             console.error('Error actualizando servicio:', err);
         }

@@ -18,7 +18,7 @@ class PerfilEmpresaIn(BaseModel):
     nombre_fantasia: str
     id_direccion: str
 
-class solicitudCompletaIn(BaseModel):
+class SolicitudCompletaIn(BaseModel):
     perfil_empresa : PerfilEmpresaIn
     comentario_solicitud : str
     documentos : List[DocumentoIn]

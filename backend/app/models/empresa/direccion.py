@@ -10,8 +10,6 @@ from app.models.empresa.departamento import Departamento
 from geoalchemy2 import Geometry
 from app.supabase.db.db_supabase import Base 
 from typing import TYPE_CHECKING
-#from app.models.empresa.perfil_empresa import PerfilEmpresa
-#from app.models.empresa.sucursal_empresa import SucursalEmpresa
 
 if TYPE_CHECKING:
     from app.models.empresa.perfil_empresa import PerfilEmpresa

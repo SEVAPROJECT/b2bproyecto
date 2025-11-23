@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.services.weaviate_service import weaviate_service
 from app.services.direct_db_service import direct_db_service
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/weaviate", tags=["weaviate-sync"])
@@ -145,9 +146,13 @@ async def sync_services_background():
 async def sync_service_to_weaviate(service):
     """Sincronizar un servicio individual con Weaviate"""
     try:
-        # Aquí implementarías la lógica de sincronización
-        # Por ahora, solo log
         logger.info(f"🔄 Sincronizando servicio: {service['nombre']}")
+        
+        # Ejecutar la indexación síncrona en un thread pool para que sea asíncrona
+        # Esto resuelve la advertencia de SonarQube sobre funciones async sin await
+        await asyncio.to_thread(weaviate_service._index_servicio, service)
+        
+        logger.info(f"✅ Servicio {service['nombre']} sincronizado exitosamente")
         return True
         
     except Exception as e:

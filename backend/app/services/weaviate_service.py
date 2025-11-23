@@ -6,58 +6,10 @@ import requests
 import logging
 import os
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from app.services.direct_db_service import direct_db_service
 
 logger = logging.getLogger(__name__)
-
-'''
-class WeaviateService:
-    def __init__(self):
-        """Inicializar el cliente de Weaviate con configuración para Ollama"""
-        self.client = None
-        self.class_name = "Servicios"
-        self._initialize_client()
-    
-    def _initialize_client(self):
-        """Inicializar la conexión con Weaviate v4 usando la nueva API"""
-        try:
-            # Configuración para Weaviate con Ollama local
-            weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8082")
-            weaviate_api_key = os.getenv("WEAVIATE_API_KEY")
-            
-            logger.info(f"🔗 Conectando a Weaviate en: {weaviate_url}")
-            logger.info("🤖 Configurado para usar Ollama local como proveedor de embeddings")
-            
-            # Usar la nueva API de Weaviate v4
-            if weaviate_api_key and weaviate_api_key.strip():
-                self.client = weaviate.connect_to_weaviate_cloud(
-                    cluster_url=weaviate_url,
-                    auth_credentials=weaviate.AuthApiKey(api_key=weaviate_api_key)
-                )
-                logger.info("🔑 Usando autenticación con API key")
-            else:
-                # Limpiar la URL para conexión local
-                clean_host = weaviate_url.replace("http://", "").replace("https://", "")
-                # Remover puerto duplicado si existe
-                if ":8082:8080" in clean_host:
-                    clean_host = clean_host.replace(":8082:8080", ":8082")
-                elif ":8080:8080" in clean_host:
-                    clean_host = clean_host.replace(":8080:8080", ":8080")
-                self.client = weaviate.connect_to_local(host=clean_host)
-                logger.info(f"🔓 Usando acceso local en: {clean_host}")
-            
-            # Verificar conexión
-            if self.client.is_ready():
-                logger.info("✅ Conexión a Weaviate establecida exitosamente")
-                self._setup_schema()
-            else:
-                logger.error("❌ No se pudo conectar a Weaviate")
-                
-        except Exception as e:
-            logger.error(f"❌ Error al inicializar Weaviate: {str(e)}")
-            self.client = None
- '''
  
 class WeaviateService:
     def __init__(self):
@@ -251,6 +203,115 @@ class WeaviateService:
         except Exception as e:
             logger.error(f"❌ Error al indexar servicio {servicio.get('id_servicio', 'unknown')}: {str(e)}")
     
+    def _build_search_request_params(self) -> dict:
+        """Construye los parámetros para la petición de búsqueda"""
+        return {
+            'class': self.class_name,
+            'limit': 100
+        }
+    
+    def _build_search_headers(self) -> dict:
+        """Construye los headers para la petición de búsqueda"""
+        headers = {}
+        if self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
+        return headers
+    
+    def _fetch_objects_from_weaviate(self) -> Optional[List[Dict[str, Any]]]:
+        """Obtiene objetos de Weaviate mediante HTTP"""
+        search_url = f"{self.base_url}/v1/objects"
+        params = self._build_search_request_params()
+        headers = self._build_search_headers()
+        
+        try:
+            response = requests.get(search_url, params=params, headers=headers, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('objects', [])
+            else:
+                logger.error(f"❌ Error en búsqueda: {response.status_code}")
+                return None
+        except Exception as e:
+            logger.error(f"❌ Error al obtener objetos de Weaviate: {str(e)}")
+            return None
+    
+    def _process_object_to_servicio(self, obj: Dict[str, Any]) -> Dict[str, Any]:
+        """Procesa un objeto de Weaviate y lo convierte en un diccionario de servicio"""
+        properties = obj.get('properties', {})
+        return {
+            "id_servicio": properties.get("id_servicio"),
+            "nombre": properties.get("nombre"),
+            "descripcion": properties.get("descripcion"),
+            "precio": properties.get("precio"),
+            "categoria": properties.get("categoria"),
+            "empresa": properties.get("empresa"),
+            "ubicacion": properties.get("ubicacion"),
+            "estado": properties.get("estado")
+        }
+    
+    def _process_objects_to_servicios(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Procesa todos los objetos y los convierte en servicios"""
+        servicios = []
+        for obj in objects:
+            servicio = self._process_object_to_servicio(obj)
+            servicios.append(servicio)
+        return servicios
+    
+    def _check_exact_match(self, query_lower: str, nombre: str, descripcion: str) -> bool:
+        """Verifica si hay un match exacto con la query"""
+        return query_lower in nombre or query_lower in descripcion
+    
+    def _check_semantic_match(self, palabras_relacionadas: List[str], nombre: str, descripcion: str) -> bool:
+        """Verifica si hay un match semántico con las palabras relacionadas"""
+        return any(palabra in nombre or palabra in descripcion for palabra in palabras_relacionadas)
+    
+    def _should_include_servicio(self, servicio: Dict[str, Any], query_lower: str, 
+                                  palabras_relacionadas: List[str], ids_vistos: set) -> Tuple[bool, str]:
+        """Determina si un servicio debe incluirse en los resultados y el tipo de match"""
+        nombre = servicio.get('nombre', '').lower()
+        descripcion = servicio.get('descripcion', '').lower()
+        id_servicio = servicio.get('id_servicio')
+        
+        match_exacto = self._check_exact_match(query_lower, nombre, descripcion)
+        match_semantico = self._check_semantic_match(palabras_relacionadas, nombre, descripcion)
+        
+        if not (match_exacto or match_semantico):
+            return False, ""
+        
+        if id_servicio in ids_vistos:
+            return False, ""
+        
+        tipo_match = "exacto" if match_exacto else "semántico"
+        return True, tipo_match
+    
+    def _apply_hybrid_search_filter(self, servicios: List[Dict[str, Any]], 
+                                     query: str, limit: int) -> List[Dict[str, Any]]:
+        """Aplica el filtro de búsqueda híbrida a los servicios"""
+        if not query or not query.strip():
+            return servicios
+        
+        query_lower = query.lower().strip()
+        palabras_relacionadas = self._get_palabras_relacionadas(query_lower)
+        logger.info(f"🔍 Palabras relacionadas para '{query_lower}': {palabras_relacionadas}")
+        
+        servicios_filtrados = []
+        ids_vistos = set()
+        
+        for servicio in servicios:
+            should_include, tipo_match = self._should_include_servicio(
+                servicio, query_lower, palabras_relacionadas, ids_vistos
+            )
+            
+            if should_include:
+                id_servicio = servicio.get('id_servicio')
+                servicios_filtrados.append(servicio)
+                ids_vistos.add(id_servicio)
+                logger.info(f"✅ Match {tipo_match}: {servicio.get('nombre')} (ID: {id_servicio})")
+        
+        servicios_limitados = servicios_filtrados[:limit]
+        logger.info(f"🔍 Búsqueda híbrida: {len(servicios_limitados)} resultados de {len(servicios)} servicios")
+        return servicios_limitados
+    
     def search_servicios(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Buscar servicios usando búsqueda híbrida (texto + semántica)"""
         if not self.connected:
@@ -260,74 +321,19 @@ class WeaviateService:
         try:
             logger.info(f"🔍 Búsqueda híbrida con query: '{query}' (texto + semántica)")
             
-            # Obtener todos los servicios
-            search_url = f"{self.base_url}/v1/objects"
-            params = {
-                'class': self.class_name,
-                'limit': 100
-            }
-            
-            headers = {}
-            if self.api_key:
-                headers['Authorization'] = f'Bearer {self.api_key}'
-            
-            response = requests.get(search_url, params=params, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                objects = data.get('objects', [])
-                
-                # Procesar todos los servicios
-                servicios = []
-                for obj in objects:
-                    properties = obj.get('properties', {})
-                    servicios.append({
-                        "id_servicio": properties.get("id_servicio"),
-                        "nombre": properties.get("nombre"),
-                        "descripcion": properties.get("descripcion"),
-                        "precio": properties.get("precio"),
-                        "categoria": properties.get("categoria"),
-                        "empresa": properties.get("empresa"),
-                        "ubicacion": properties.get("ubicacion"),
-                        "estado": properties.get("estado")
-                    })
-                
-                # Aplicar búsqueda híbrida
-                if query and query.strip():
-                    query_lower = query.lower().strip()
-                    servicios_filtrados = []
-                    ids_vistos = set()
-                    
-                    # Definir palabras clave relacionadas semánticamente
-                    palabras_relacionadas = self._get_palabras_relacionadas(query_lower)
-                    logger.info(f"🔍 Palabras relacionadas para '{query_lower}': {palabras_relacionadas}")
-                    
-                    for servicio in servicios:
-                        nombre = servicio.get('nombre', '').lower()
-                        descripcion = servicio.get('descripcion', '').lower()
-                        categoria = servicio.get('categoria', '').lower()
-                        empresa = servicio.get('empresa', '').lower()
-                        id_servicio = servicio.get('id_servicio')
-                        
-                        # Búsqueda híbrida: exacta + semántica
-                        match_exacto = query_lower in nombre or query_lower in descripcion
-                        match_semantico = any(palabra in nombre or palabra in descripcion for palabra in palabras_relacionadas)
-                        
-                        if match_exacto or match_semantico:
-                            if id_servicio not in ids_vistos:
-                                servicios_filtrados.append(servicio)
-                                ids_vistos.add(id_servicio)
-                                tipo_match = "exacto" if match_exacto else "semántico"
-                                logger.info(f"✅ Match {tipo_match}: {servicio.get('nombre')} (ID: {id_servicio})")
-                    
-                    servicios = servicios_filtrados[:limit]  # Limitar resultados
-                    logger.info(f"🔍 Búsqueda híbrida: {len(servicios)} resultados de {len(objects)} objetos")
-                
-                logger.info(f"📊 Resultados encontrados: {len(servicios)}")
-                return servicios
-            else:
-                logger.error(f"❌ Error en búsqueda: {response.status_code}")
+            # Obtener objetos de Weaviate
+            objects = self._fetch_objects_from_weaviate()
+            if objects is None:
                 return []
+            
+            # Procesar objetos a servicios
+            servicios = self._process_objects_to_servicios(objects)
+            
+            # Aplicar búsqueda híbrida si hay query
+            servicios = self._apply_hybrid_search_filter(servicios, query, limit)
+            
+            logger.info(f"📊 Resultados encontrados: {len(servicios)}")
+            return servicios
             
         except Exception as e:
             logger.error(f"❌ Error en búsqueda híbrida: {str(e)}")

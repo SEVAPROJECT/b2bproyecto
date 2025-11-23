@@ -1,69 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { 
     ClipboardDocumentListIcon, 
-    MagnifyingGlassIcon,
-    CalendarDaysIcon,
     FunnelIcon,
-    XMarkIcon,
     CheckCircleIcon,
     ClockIcon,
     XCircleIcon
 } from '../components/icons';
 import { useAuth } from '../contexts/AuthContext';
-import { buildApiUrl, getJsonHeaders } from '../config/api';
 import CalificacionModal from '../components/CalificacionModal';
-import { formatDateSpanishLong, formatDateToDDMMYYYY } from '../utils/dateUtils';
-
-// Tipos
-interface Calificacion {
-    puntaje: number;
-    comentario: string;
-    nps?: number;
-}
-
-interface Reserva {
-    id_reserva: number;
-    id_servicio: number;
-    id_usuario: string;
-    descripcion: string;
-    observacion: string | null;
-    fecha: string;
-    hora_inicio: string | null;
-    hora_fin: string | null;
-    estado: string;
-    created_at: string;
-    updated_at: string;
-    nombre_servicio: string;
-    descripcion_servicio: string;
-    precio_servicio: number;
-    imagen_servicio: string | null;
-    nombre_empresa: string;
-    razon_social: string;
-    id_perfil: number;
-    nombre_contacto: string;
-    email_contacto: string | null;
-    telefono_contacto: string | null;
-    nombre_categoria: string | null;
-    ya_calificado_por_cliente?: boolean;
-    ya_calificado_por_proveedor?: boolean;
-    calificacion_cliente?: Calificacion | null;
-    calificacion_proveedor?: Calificacion | null;
-}
-
-interface PaginationInfo {
-    total: number;
-    page: number;
-    limit: number;
-    offset: number;
-    total_pages: number;
-    has_next: boolean;
-    has_prev: boolean;
-}
-
-interface ReservasResponse {
-    reservas: Reserva[];
-    pagination: PaginationInfo;
-}
+import { formatDateSpanishLong } from '../utils/dateUtils';
+import { useReservations, Reserva } from '../hooks/useReservations';
 
 // Funciones auxiliares para formateo de tiempo
 const formatTime = (timeString: string | null): string => {
@@ -71,353 +17,101 @@ const formatTime = (timeString: string | null): string => {
     return timeString.substring(0, 5); // HH:MM
 };
 
+// Funciones helper para el modal
+const getModalTitle = (accion: string): string => {
+    if (accion === 'confirmada') return 'Confirmar Reserva';
+    if (accion === 'cancelada') return 'Cancelar Reserva';
+    if (accion === 'completada') return 'Marcar como Completada';
+    return 'Confirmar Acción';
+};
+
+const getModalLabelText = (accion: string): string => {
+    if (accion === 'cancelada') return 'Motivo de cancelación (obligatorio)';
+    if (accion === 'completada') return 'Observación (recomendado)';
+    return 'Observación (opcional)';
+};
+
+const getTextareaClasses = (accion: string, observacion: string): string => {
+    if (accion === 'cancelada' && !observacion.trim()) {
+        return 'w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 border-red-300 focus:ring-red-500';
+    }
+    if (accion === 'completada' && !observacion.trim()) {
+        return 'w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 border-yellow-300 focus:ring-yellow-500';
+    }
+    return 'w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 border-gray-300 focus:ring-blue-500';
+};
+
+const getTextareaPlaceholder = (accion: string): string => {
+    if (accion === 'cancelada') return 'Debés ingresar un motivo para cancelar la reserva...';
+    if (accion === 'completada') return 'Describe cómo se completó el servicio...';
+    return 'Agrega una observación sobre esta acción...';
+};
+
+const getButtonText = (accion: string): string => {
+    if (accion === 'confirmada') return 'Confirmar';
+    if (accion === 'cancelada') return 'Cancelar Reserva';
+    if (accion === 'completada') return 'Marcar como Completada';
+    return 'Confirmar';
+};
+
+const getButtonClasses = (accion: string): string => {
+    if (accion === 'cancelada') return 'px-4 py-2 text-white rounded-md bg-red-600 hover:bg-red-700';
+    if (accion === 'confirmada') return 'px-4 py-2 text-white rounded-md bg-green-600 hover:bg-green-700';
+    return 'px-4 py-2 text-white rounded-md bg-blue-600 hover:bg-blue-700';
+};
+
 // Componente principal
 const ReservationsPage: React.FC = () => {
     const { user } = useAuth();
-    const [reservas, setReservas] = useState<Reserva[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [pagination, setPagination] = useState<PaginationInfo>({
-        total: 0,
-        page: 1,
-        limit: 20,
-        offset: 0,
-        total_pages: 0,
-        has_next: false,
-        has_prev: false
-    });
-
-    // Estados de filtros
-    const [searchFilter, setSearchFilter] = useState('');
-    const [nombreServicio, setNombreServicio] = useState('');
-    const [nombreEmpresa, setNombreEmpresa] = useState('');
-    const [fechaDesde, setFechaDesde] = useState('');
-    const [fechaHasta, setFechaHasta] = useState('');
-    const [estadoFilter, setEstadoFilter] = useState('all');
-    
-    const [nombreContacto, setNombreContacto] = useState('');
-    const [showFilters, setShowFilters] = useState(false);
-
-    // Estados para las pestañas y funcionalidad de proveedor
-    const [activeTab, setActiveTab] = useState<'mis-reservas' | 'reservas-proveedor' | 'agenda'>('mis-reservas');
-    
-    // Debug: Log cuando cambia el estado del filtro
-    useEffect(() => {
-        console.log('🔍 Estado del filtro cambió a:', estadoFilter);
-        console.log('🔍 ActiveTab actual:', activeTab);
-    }, [estadoFilter, activeTab]);
-    
-    // Configurar pestaña inicial según el rol del usuario
-    useEffect(() => {
-        console.log('🔄 Configurando pestaña - user?.role:', user?.role, 'activeTab:', activeTab);
-        if (user?.role === 'provider' && activeTab === 'mis-reservas') {
-            console.log('🔄 Cambiando a pestaña proveedor');
-            setActiveTab('reservas-proveedor');
-        } else if (user?.role !== 'provider' && activeTab !== 'mis-reservas') {
-            console.log('🔄 Cambiando a pestaña mis-reservas');
-            setActiveTab('mis-reservas');
-        }
-    }, [user?.role, activeTab]);
-    const [showModal, setShowModal] = useState(false);
-    const [modalData, setModalData] = useState<{reservaId: number, accion: string, observacion: string} | null>(null);
-    const [accionLoading, setAccionLoading] = useState<number | null>(null);
-    const [mensajeExito, setMensajeExito] = useState<string | null>(null);
-    const [sincronizando, setSincronizando] = useState(false);
-    const [showCalificacionModal, setShowCalificacionModal] = useState(false);
-    const [calificacionReservaId, setCalificacionReservaId] = useState<number | null>(null);
-    const [calificacionLoading, setCalificacionLoading] = useState(false);
-
-    // Debug: Verificar que el componente se está cargando
-    console.log('🔍 ReservationsPage cargado - activeTab:', activeTab);
-
-    // Usar la configuración centralizada de API
-
-    // Cargar reservas
-    const loadReservas = useCallback(async (page: number = 1) => {
-        if (!user?.accessToken) return;
-
-        try {
-        setLoading(true);
-            setError(null);
-
-            // Construir query params
-            const params = new URLSearchParams();
-            params.append('limit', pagination.limit.toString());
-            params.append('offset', ((page - 1) * pagination.limit).toString());
-
-            if (searchFilter.trim()) params.append('search', searchFilter.trim());
-            if (nombreServicio.trim()) params.append('nombre_servicio', nombreServicio.trim());
-            if (nombreEmpresa.trim()) params.append('nombre_empresa', nombreEmpresa.trim());
-            if (fechaDesde) params.append('fecha_desde', fechaDesde);
-            if (fechaHasta) params.append('fecha_hasta', fechaHasta);
-            if (estadoFilter !== 'all') {
-                console.log('🔍 Agregando filtro de estado:', estadoFilter);
-                params.append('estado', estadoFilter);
-            } else {
-                console.log('🔍 No se agrega filtro de estado (es "all")');
-            }
-            if (nombreContacto.trim()) params.append('nombre_contacto', nombreContacto.trim());
-
-            // Determinar qué endpoint usar según la pestaña activa
-            let endpoint = '';
-            if (activeTab === 'mis-reservas') {
-                endpoint = '/reservas/mis-reservas';
-            } else if (activeTab === 'reservas-proveedor') {
-                endpoint = '/reservas/reservas-proveedor';
-            } else {
-                // Para agenda, no cargar reservas
-                setReservas([]);
-                setLoading(false);
-                return;
-            }
-
-            console.log('🔍 Cargando reservas con params:', params.toString());
-            console.log('🔍 Estado filter actual:', estadoFilter);
-            
-            const urlConParams = `${buildApiUrl(endpoint)}?${params.toString()}`;
-            console.log('🔍 URL completa:', urlConParams);
-
-            const response = await fetch(urlConParams, {
-                headers: getJsonHeaders(),
-            });
-
-            if (!response.ok) {
-                throw new Error('Error al cargar reservas');
-            }
-
-            const data = await response.json();
-            console.log('📊 Reservas cargadas:', data);
-
-            // Mapeo simplificado para el endpoint de prueba
-            const reservasData = data.reservas || data || [];
-            console.log('📊 Estados de reservas encontradas:', reservasData.map((r: any) => r.estado));
-            console.log('📊 Verificando campo ya_calificado_por_cliente:', reservasData.map((r: any) => ({
-                id: r.id_reserva,
-                ya_calificado_cliente: r.ya_calificado_por_cliente,
-                ya_calificado_proveedor: r.ya_calificado_por_proveedor
-            })));
-            
-            const reservasMapeadas = reservasData.map((reserva: any) => ({
-                id_reserva: reserva.id_reserva,
-                nombre_servicio: reserva.nombre_servicio || reserva.servicio?.nombre || 'Servicio sin nombre',
-                nombre_empresa: reserva.nombre_empresa || reserva.servicio?.empresa || 'Empresa sin nombre',
-                fecha: reserva.fecha,
-                estado: reserva.estado,
-                descripcion: reserva.descripcion,
-                observacion: reserva.observacion || '',
-                hora_inicio: reserva.hora_inicio,
-                hora_fin: reserva.hora_fin,
-                nombre_contacto: reserva.nombre_contacto || 'No especificado',
-                email_contacto: reserva.email_contacto || null,
-                precio_servicio: reserva.precio_servicio || reserva.servicio?.precio || 0,
-                imagen_servicio: reserva.imagen_servicio || reserva.servicio?.imagen,
-                nombre_categoria: reserva.nombre_categoria || reserva.servicio?.categoria || 'Sin categoría',
-                ya_calificado_por_cliente: reserva.ya_calificado_por_cliente || false,
-                ya_calificado_por_proveedor: reserva.ya_calificado_por_proveedor || false,
-                calificacion_cliente: reserva.calificacion_cliente,
-                calificacion_proveedor: reserva.calificacion_proveedor
-            }));
-
-            setReservas(reservasMapeadas);
-            setPagination({
-                total: data.total || reservasData.length,
-                page: 1,
-                limit: 20,
-                offset: 0,
-                total_pages: 1,
-                has_next: false,
-                has_prev: false
-            });
-            
-            console.log('📊 Reservas mapeadas después del filtro:', reservasMapeadas.length);
-            console.log('📊 Filtro aplicado:', estadoFilter);
-        } catch (error) {
-            console.error('Error al cargar reservas:', error);
-            setError('Error al cargar las reservas. Por favor, inténtalo de nuevo.');
-        } finally {
-            setLoading(false);
-        }
-    }, [user, searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, pagination.limit, activeTab]);
-
-    // Cargar al montar y cuando cambien filtros o pestaña
-    useEffect(() => {
-        console.log('🔄 useEffect ejecutado - estadoFilter:', estadoFilter);
-        console.log('🔄 useEffect ejecutado - activeTab:', activeTab);
-        console.log('🔄 useEffect ejecutado - searchFilter:', searchFilter);
-        loadReservas(1);
-    }, [searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, activeTab]);
-
-    // Limpiar filtros
-    const handleClearFilters = () => {
-        console.log('🧹 Limpiando filtros - estadoFilter será resetado a "all"');
-        setSearchFilter('');
-        setNombreServicio('');
-        setNombreEmpresa('');
-        setFechaDesde('');
-        setFechaHasta('');
-        setEstadoFilter('all');
-        setNombreContacto('');
-    };
-
-    // Funciones para cambio de estado de reservas
-    const actualizarEstadoReserva = async (reservaId: number, nuevoEstado: string, observacion?: string) => {
-        try {
-            if (!user) return;
-
-            setAccionLoading(reservaId);
-            setError(null);
-
-            // Usar endpoint específico para cancelación
-            const endpoint = nuevoEstado === 'cancelada' ? `/reservas/${reservaId}/cancelar` : `/reservas/${reservaId}/estado`;
-            const body = nuevoEstado === 'cancelada' 
-                ? { motivo: observacion || '' }
-                : { nuevo_estado: nuevoEstado, observacion: observacion || '' };
-
-            const response = await fetch(buildApiUrl(endpoint), {
-                method: 'PUT',
-                headers: getJsonHeaders(),
-                body: JSON.stringify(body)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Error al actualizar estado');
-            }
-
-            const result = await response.json();
-            console.log('Estado actualizado:', result);
-
-            // Mensaje específico para cancelación
-            if (nuevoEstado === 'cancelada') {
-                setMensajeExito('✅ Reserva cancelada - Los cambios se sincronizarán automáticamente');
-            } else {
-                setMensajeExito(`Reserva ${nuevoEstado} exitosamente`);
-            }
-            setTimeout(() => setMensajeExito(null), 5000);
-
-            // Refetch inmediato para sincronización
-            setSincronizando(true);
-            await loadReservas(1);
-            setSincronizando(false);
-            setShowModal(false);
-            setModalData(null);
-        } catch (err) {
-            setError('Error al actualizar el estado de la reserva');
-            console.error('Error:', err);
-        } finally {
-            setAccionLoading(null);
-        }
-    };
-
-    const handleAccionReserva = (reservaId: number, accion: string) => {
-        if (accionLoading === reservaId) {
-            return;
-        }
-        
-        setModalData({
-            reservaId,
-            accion,
-            observacion: ''
-        });
-        setShowModal(true);
-    };
-
-    const handleConfirmarReserva = async (reservaId: number) => {
-        if (accionLoading === reservaId) {
-            return;
-        }
-        
-        try {
-            setAccionLoading(reservaId);
-            setError(null);
-
-            const response = await fetch(buildApiUrl(`/reservas/${reservaId}/confirmar`), {
-                method: 'PUT',
-                headers: getJsonHeaders()
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Error al confirmar la reserva');
-            }
-
-            const result = await response.json();
-            console.log('Reserva confirmada:', result);
-
-            setMensajeExito('✅ Reserva confirmada');
-            setTimeout(() => setMensajeExito(null), 3000);
-
-            await loadReservas(1);
-        } catch (err) {
-            setError('Error al confirmar la reserva');
-            console.error('Error:', err);
-        } finally {
-            setAccionLoading(null);
-        }
-    };
-
-    // Funciones para calificación
-    const handleCalificar = (reservaId: number) => {
-        setCalificacionReservaId(reservaId);
-        setShowCalificacionModal(true);
-    };
-
-    const handleEnviarCalificacion = async (data: {puntaje: number, comentario: string, satisfaccion_nps?: number}) => {
-        if (!calificacionReservaId) return;
-
-        try {
-            setCalificacionLoading(true);
-            setError(null);
-
-            // Determinar el endpoint según la pestaña activa
-            const endpoint = activeTab === 'reservas-proveedor' 
-                ? `/calificacion/proveedor/${calificacionReservaId}`
-                : `/calificacion/cliente/${calificacionReservaId}`;
-
-            const response = await fetch(buildApiUrl(endpoint), {
-                method: 'POST',
-                headers: getJsonHeaders(),
-                body: JSON.stringify(data)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Error al enviar calificación');
-            }
-
-            setMensajeExito('✅ Calificación registrada con éxito');
-            setTimeout(() => setMensajeExito(null), 3000);
-
-            // Recargar datos para actualizar UI
-            await loadReservas(1);
-            setShowCalificacionModal(false);
-            setCalificacionReservaId(null);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Error al enviar calificación');
-            console.error('Error:', err);
-        } finally {
-            setCalificacionLoading(false);
-        }
-    };
-
-    const confirmarAccion = () => {
-        if (!modalData) return;
-        
-        if (modalData.accion === 'cancelada' && !modalData.observacion.trim()) {
-            setError('Debés ingresar un motivo para cancelar la reserva');
-            return;
-        }
-        
-        if (modalData.accion === 'completada' && !modalData.observacion.trim()) {
-            setError('Es recomendable agregar una observación al marcar como completada');
-            return;
-        }
-        
-        actualizarEstadoReserva(modalData.reservaId, modalData.accion, modalData.observacion);
-    };
+    const {
+        reservas,
+        loading,
+        error,
+        pagination,
+        searchFilter,
+        setSearchFilter,
+        nombreServicio,
+        setNombreServicio,
+        nombreEmpresa,
+        setNombreEmpresa,
+        fechaDesde,
+        setFechaDesde,
+        fechaHasta,
+        setFechaHasta,
+        estadoFilter,
+        setEstadoFilter,
+        nombreContacto,
+        setNombreContacto,
+        showFilters,
+        setShowFilters,
+        activeTab,
+        setActiveTab,
+        showModal,
+        setShowModal,
+        modalData,
+        setModalData,
+        accionLoading,
+        mensajeExito,
+        sincronizando,
+        showCalificacionModal,
+        setShowCalificacionModal,
+        calificacionReservaId,
+        setCalificacionReservaId,
+        calificacionLoading,
+        activeFiltersCount,
+        loadReservas,
+        handleClearFilters,
+        actualizarEstadoReserva,
+        handleAccionReserva,
+        handleConfirmarReserva,
+        handleCalificar,
+        handleEnviarCalificacion,
+        confirmarAccion,
+        setError
+    } = useReservations();
 
     // Badges de estado
-    const getEstadoBadge = (estado: string) => {
+    const getEstadoBadge = useCallback((estado: string) => {
         const badges: { [key: string]: { label: string; className: string; icon: React.ReactNode } } = {
             'pendiente': {
                 label: 'Pendiente',
@@ -453,20 +147,7 @@ const ReservationsPage: React.FC = () => {
                 {badge.label}
             </span>
         );
-    };
-
-    // Contar filtros activos
-    const activeFiltersCount = useMemo(() => {
-        let count = 0;
-        if (searchFilter.trim()) count++;
-        if (nombreServicio.trim()) count++;
-        if (nombreEmpresa.trim()) count++;
-        if (fechaDesde) count++;
-        if (fechaHasta) count++;
-        if (estadoFilter !== 'all') count++;
-        if (nombreContacto.trim()) count++;
-        return count;
-    }, [searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto]);
+    }, []);
 
     return (
         <div className="min-h-screen bg-gray-50 py-8">
@@ -661,10 +342,7 @@ const ReservationsPage: React.FC = () => {
                                 </label>
                                 <select
                                     value={estadoFilter}
-                                    onChange={(e) => {
-                                        console.log('🔍 Cambiando filtro de estado a:', e.target.value);
-                                        setEstadoFilter(e.target.value);
-                                    }}
+                                    onChange={(e) => setEstadoFilter(e.target.value)}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
                                     <option value="all">Todos los estados</option>
@@ -1133,34 +811,18 @@ const ReservationsPage: React.FC = () => {
                         <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
                             <div className="mt-3">
                                 <h3 className="text-lg font-medium text-gray-900 mb-4">
-                                    {modalData.accion === 'confirmada' ? 'Confirmar Reserva' : 
-                                     modalData.accion === 'cancelada' ? 'Cancelar Reserva' : 
-                                     modalData.accion === 'completada' ? 'Marcar como Completada' : 'Confirmar Acción'}
+                                    {getModalTitle(modalData.accion)}
                                 </h3>
                                 <div className="mb-4">
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        {modalData.accion === 'cancelada' ? 'Motivo de cancelación (obligatorio)' : 
-                                         modalData.accion === 'completada' ? 'Observación (recomendado)' : 
-                                         'Observación (opcional)'}:
+                                        {getModalLabelText(modalData.accion)}:
                                     </label>
                                     <textarea
                                         value={modalData.observacion}
                                         onChange={(e) => setModalData({...modalData, observacion: e.target.value})}
-                                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-                                            modalData.accion === 'cancelada' && !modalData.observacion.trim()
-                                                ? 'border-red-300 focus:ring-red-500'
-                                                : (modalData.accion === 'completada' && !modalData.observacion.trim())
-                                                ? 'border-yellow-300 focus:ring-yellow-500'
-                                                : 'border-gray-300 focus:ring-blue-500'
-                                        }`}
+                                        className={getTextareaClasses(modalData.accion, modalData.observacion)}
                                         rows={3}
-                                        placeholder={
-                                            modalData.accion === 'cancelada'
-                                                ? 'Debés ingresar un motivo para cancelar la reserva...'
-                                                : modalData.accion === 'completada'
-                                                ? 'Describe cómo se completó el servicio...'
-                                                : 'Agrega una observación sobre esta acción...'
-                                        }
+                                        placeholder={getTextareaPlaceholder(modalData.accion)}
                                     />
                                     {modalData.accion === 'cancelada' && !modalData.observacion.trim() && (
                                         <p className="mt-1 text-sm text-red-600">
@@ -1185,15 +847,9 @@ const ReservationsPage: React.FC = () => {
                                     </button>
                                     <button
                                         onClick={confirmarAccion}
-                                        className={`px-4 py-2 text-white rounded-md ${
-                                            modalData.accion === 'cancelada' ? 'bg-red-600 hover:bg-red-700' :
-                                            modalData.accion === 'confirmada' ? 'bg-green-600 hover:bg-green-700' :
-                                            'bg-blue-600 hover:bg-blue-700'
-                                        }`}
+                                        className={getButtonClasses(modalData.accion)}
                                     >
-                                        {modalData.accion === 'confirmada' ? 'Confirmar' : 
-                                         modalData.accion === 'cancelada' ? 'Cancelar Reserva' : 
-                                         modalData.accion === 'completada' ? 'Marcar como Completada' : 'Confirmar'}
+                                        {getButtonText(modalData.accion)}
                                     </button>
                                 </div>
                             </div>

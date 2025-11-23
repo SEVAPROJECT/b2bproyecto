@@ -1,541 +1,56 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React from 'react';
 import { UserCircleIcon, ExclamationCircleIcon } from '../icons';
-import OptimizedLoading from '../ui/OptimizedLoading';
-import { adminAPI } from '../../services/api';
 import { API_CONFIG, buildApiUrl } from '../../config/api';
-
-interface BackendUser {
-    id: string;
-    nombre_persona: string;
-    email: string;
-    rol_principal: string;
-    estado: string;
-    nombre_empresa?: string;
-    foto_perfil?: string;
-    fecha_creacion?: string;
-    fecha_actualizacion?: string;
-}
+import { useAdminUsers, BackendUser } from '../../hooks/useAdminUsers';
 
 const AdminUsersPage: React.FC = () => {
-    const [allUsers, setAllUsers] = useState<BackendUser[]>([]); // Todos los usuarios cargados
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [selectedUser, setSelectedUser] = useState<BackendUser | null>(null);
-    const [showEditModal, setShowEditModal] = useState(false);
-    const [availableRoles, setAvailableRoles] = useState<any[]>([]);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [searchEmpresa, setSearchEmpresa] = useState('');
-    const [filterRole, setFilterRole] = useState('all');
-    const [filterStatus, setFilterStatus] = useState('all');
-    const [currentPage, setCurrentPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [totalUsers, setTotalUsers] = useState(0);
-    const [userPermissions, setUserPermissions] = useState<any>({
-        is_admin: true,
-        can_edit_users: true,
-        can_edit_emails: true,
-        can_reset_passwords: true,
-        can_deactivate_users: true
-    });
-    const [isSearching, setIsSearching] = useState(false);
-    const [isUpdating, setIsUpdating] = useState(false);
-    const [notification, setNotification] = useState<{type: 'success' | 'error' | 'info', message: string} | null>(null);
-    const itemsPerPage = 12;
-    const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
-    const [resetPasswordData, setResetPasswordData] = useState<{user: BackendUser | null, newPassword: string | null}>({user: null, newPassword: null});
-    const [isResettingPassword, setIsResettingPassword] = useState(false);
-
-    // Función helper para mostrar notificaciones
-    const showNotification = useCallback((type: 'success' | 'error' | 'info', message: string, duration: number = 3000) => {
-        setNotification({ type, message });
-        setTimeout(() => setNotification(null), duration);
-    }, []);
-
-    // Función para verificar si hay operaciones en curso
-    const isOperationInProgress = useCallback(() => {
-        return isUpdating || isSearching;
-    }, [isUpdating, isSearching]);
-
-    useEffect(() => {
-        // Cargar datos iniciales con prioridad a permisos
-        const loadAllData = async () => {
-            try {
-                // Cargar permisos primero para asegurar que estén disponibles
-                await loadUserPermissions();
-
-                // Cargar usuarios primero (crítico)
-                await loadUsers();
-                
-                // Cargar roles después (opcional, no bloquea la UI)
-                loadRoles().catch(error => {
-                    console.warn('⚠️ Error cargando roles (no crítico):', error);
-                    // Los roles no son críticos para mostrar usuarios
-                });
-            } catch (error) {
-                console.error('Error cargando datos iniciales:', error);
-            }
-        };
-
-        loadAllData();
-    }, []);
-
-    // Debouncing para búsqueda de empresa (500ms)
-    // Efecto para búsqueda híbrida de nombre/email
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (searchQuery.length >= 3) {
-                searchInBackend(searchQuery, 'nombre');
-            } else if (searchQuery.length === 0 && searchEmpresa.length === 0) {
-                // Si se borra la búsqueda, usar filtros locales (no recargar desde backend)
-                // Los filtros locales ya manejan esto automáticamente
-            }
-        }, 500);
-
-        return () => clearTimeout(timer);
-    }, [searchQuery, searchEmpresa, currentPage]);
-
-    // Efecto para búsqueda híbrida de empresa
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (searchEmpresa.length >= 3) {
-                searchInBackend(searchEmpresa, 'empresa');
-            } else if (searchEmpresa.length === 0 && searchQuery.length === 0) {
-                // Si se borra la búsqueda, usar filtros locales (no recargar desde backend)
-                // Los filtros locales ya manejan esto automáticamente
-            }
-        }, 500);
-
-        return () => clearTimeout(timer);
-    }, [searchEmpresa, searchQuery, currentPage]);
-
-    const loadUsers = async (page: number = 1, searchEmpresaParam?: string, searchNombreParam?: string, retryCount: number = 0) => {
-        try {
-            // Prevenir llamadas múltiples simultáneas (excepto en carga inicial)
-            if (loading && retryCount === 0 && allUsers.length > 0) {
-                console.log('⚠️ Carga ya en progreso, saltando llamada duplicada');
-                return;
-            }
-            
-            setLoading(true);
-            setError(null);
-
-            console.log(`📊 Cargando usuarios optimizado... (intento ${retryCount + 1})`);
-
-            // Construir URL con parámetros de paginación y búsqueda
-            const urlParams = new URLSearchParams();
-            urlParams.append('page', page.toString());
-            urlParams.append('limit', '100'); // Cargar 100 usuarios por página
-            
-            if (searchEmpresaParam && searchEmpresaParam.trim()) {
-                urlParams.append('search_empresa', searchEmpresaParam.trim());
-            }
-            
-            if (searchNombreParam && searchNombreParam.trim()) {
-                urlParams.append('search_nombre', searchNombreParam.trim());
-            }
-
-            const url = buildApiUrl(`${API_CONFIG.ADMIN.USERS}?${urlParams.toString()}`);
-            
-            // Timeout de 10 segundos para usuarios
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de usuarios')), 10000)
-            );
-
-            const fetchPromise = fetch(url, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-            });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Usuarios cargados:', data.usuarios?.length || 0);
-                
-                setAllUsers(data.usuarios || []);
-                setTotalUsers(data.total || 0);
-                setTotalPages(data.total_pages || 1);
-                setCurrentPage(data.page || 1);
-            } else {
-                console.log('❌ Error en respuesta del servidor:', response.status);
-                
-                // Reintentar si es error 500 y no hemos intentado más de 2 veces
-                if (response.status === 500 && retryCount < 2) {
-                    console.log(`🔄 Reintentando carga de usuarios... (${retryCount + 1}/2)`);
-                    await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo
-                    return loadUsers(page, searchEmpresaParam, searchNombreParam, retryCount + 1);
-                }
-                
-                setError('Error al cargar usuarios. Verifica tu conexión.');
-                // Solo limpiar usuarios si no hay datos cargados (evitar perder datos existentes)
-                if (allUsers.length === 0) {
-                    setAllUsers([]);
-                }
-            }
-
-        } catch (error) {
-            console.error('❌ Error cargando usuarios:', error);
-            
-            // Reintentar si es timeout o Failed to fetch y no hemos intentado más de 2 veces
-            if (error instanceof Error && 
-                (error.message.includes('Timeout') || error.message.includes('Failed to fetch')) && 
-                retryCount < 2) {
-                console.log(`🔄 Reintentando por ${error.message.includes('Timeout') ? 'timeout' : 'conexión'}... (${retryCount + 1}/2)`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo
-                return loadUsers(page, searchEmpresaParam, searchNombreParam, retryCount + 1);
-            }
-            
-            setError('Error al cargar usuarios. Verifica tu conexión.');
-            // Solo limpiar usuarios si no hay datos cargados (evitar perder datos existentes)
-            if (allUsers.length === 0) {
-                setAllUsers([]);
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-
-    const loadRoles = async () => {
-        try {
-            console.log('📋 Cargando roles...');
-            
-            // Timeout más corto para roles (3 segundos)
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de roles')), 3000)
-            );
-
-            const fetchPromise = fetch(buildApiUrl(API_CONFIG.ADMIN.ROLES), {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-
-            if (response.ok) {
-                const data = await response.json();
-                setAvailableRoles(data.roles || []);
-                console.log('✅ Roles cargados:', data.roles?.length || 0);
-            } else {
-                console.warn('⚠️ Error en respuesta de roles:', response.status);
-                setAvailableRoles([]);
-            }
-        } catch (err: any) {
-            console.warn('⚠️ Error cargando roles (no crítico):', err.message);
-            // No bloquear la UI si los roles fallan
-            setAvailableRoles([]);
-        }
-    };
-
-    const loadUserPermissions = async () => {
-        try {
-            console.log('🔐 Cargando permisos de administrador...');
-
-            // Timeout de 5 segundos para permisos
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de permisos')), 5000)
-            );
-
-            const fetchPromise = fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/permissions`), {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Permisos obtenidos:', data.permissions);
-                setUserPermissions(data.permissions);
-            } else {
-                console.log('⚠️ API de permisos devolvió', response.status, '- usando permisos por defecto');
-                throw new Error(`API devolvió ${response.status}`);
-            }
-        } catch (err: any) {
-            console.warn('⚠️ Error cargando permisos (usando por defecto):', err.message);
-            // Asumir permisos de admin por defecto para usuarios con rol admin
-            console.log('✅ Asumiendo permisos de administrador por defecto');
-            setUserPermissions({
-                is_admin: true,
-                can_edit_users: true,
-                can_edit_emails: true,
-                can_reset_passwords: true,
-                can_deactivate_users: true
-            });
-        }
-    };
-
-    // Función para limpiar filtros
-    const clearFilters = useCallback(() => {
-        setSearchQuery('');
-        setSearchEmpresa('');
-        setFilterRole('all');
-        setFilterStatus('all');
-        setCurrentPage(1);
-        // Recargar usuarios sin filtros (sin parámetros de búsqueda)
-        loadUsers(1, '', '');
-        showNotification('info', 'Filtros limpiados');
-    }, [showNotification]);
-
-    const handleEditUser = useCallback((user: BackendUser) => {
-        if (isOperationInProgress()) {
-            showNotification('info', 'Espera a que termine la operación actual', 3000);
-            return;
-        }
-        setSelectedUser(user);
-        setShowEditModal(true);
-    }, [isOperationInProgress, showNotification]);
-
-    const handleResetPassword = useCallback((user: BackendUser) => {
-        if (isOperationInProgress()) {
-            showNotification('info', 'Espera a que termine la operación actual', 3000);
-            return;
-        }
-
-        // Verificar permisos de administrador
-        if (!userPermissions?.is_admin && !userPermissions?.can_reset_passwords) {
-            showNotification('error', 'No tienes permisos para restablecer contraseñas', 4000);
-            return;
-        }
+    const {
+        // Estados
+        allUsers,
+        loading,
+        error,
+        availableRoles,
+        userPermissions,
+        searchQuery,
+        searchEmpresa,
+        filterRole,
+        filterStatus,
+        currentPage,
+        setCurrentPage,
+        totalPages,
+        totalUsers,
+        notification,
+        isSearching,
+        isUpdating,
+        selectedUser,
+        showEditModal,
+        setShowEditModal,
+        showResetPasswordModal,
+        resetPasswordData,
+        isResettingPassword,
+        itemsPerPage,
         
-        setResetPasswordData({user, newPassword: null});
-        setShowResetPasswordModal(true);
-    }, [isOperationInProgress, showNotification, userPermissions]);
-
-    const executePasswordReset = async () => {
-        if (!resetPasswordData.user) return;
+        // Setters
+        setSearchQuery,
+        setSearchEmpresa,
+        setFilterRole,
+        setFilterStatus,
+        setSelectedUser,
         
-        try {
-            setIsResettingPassword(true);
-            const response = await fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/${resetPasswordData.user.id}/reset-password`), {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                setResetPasswordData(prev => ({...prev, newPassword: result.new_password}));
-                showNotification('success', `Contraseña restablecida exitosamente para ${resetPasswordData.user.nombre_persona}`, 5000);
-            } else {
-                throw new Error(result.detail || 'Error al restablecer la contraseña');
-            }
-        } catch (err: any) {
-            showNotification('error', `Error: ${err.message}`, 5000);
-        } finally {
-            setIsResettingPassword(false);
-        }
-    };
-
-    const closeResetPasswordModal = () => {
-        setShowResetPasswordModal(false);
-        setResetPasswordData({user: null, newPassword: null});
-    };
-
-    const handleDeactivateUser = async (userId: string): Promise<boolean> => {
-        // Encontrar el usuario para saber su estado actual
-        const user = allUsers.find(u => u.id === userId);
-        const isInactive = user?.estado === 'INACTIVO';
-
-        const confirmMessage = isInactive
-            ? '¿Estás seguro de que quieres reactivar este usuario?'
-            : '¿Estás seguro de que quieres desactivar este usuario?';
-
-        if (!confirm(confirmMessage)) {
-            return false;
-        }
-
-        try {
-            setIsUpdating(true);
-            const response = await fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/${userId}/toggle-status`), {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-
-                // Actualización optimista: cambiar estado del usuario localmente
-                const newEstado = isInactive ? 'ACTIVO' : 'INACTIVO';
-                const updatedUsers = allUsers.map((user: BackendUser) =>
-                    user.id === userId
-                        ? { ...user, estado: newEstado }
-                        : user
-                );
-                setAllUsers(updatedUsers);
-
-                const actionMessage = isInactive ? 'reactivado' : 'desactivado';
-                showNotification('success', result.message || `Usuario ${actionMessage} exitosamente`);
-
-                return true;
-            } else {
-                const error = await response.json();
-                throw new Error(error.detail || 'Error desactivando usuario');
-            }
-        } catch (err: any) {
-            showNotification('error', `Error: ${err.message}`, 5000);
-            return false;
-        } finally {
-            setIsUpdating(false);
-        }
-    };
-
-    const handleUpdateProfile = async (profileData: any) => {
-        try {
-            setIsUpdating(true);
-
-            // Validar permisos de email SOLO si se está intentando cambiar el email
-            const emailChanged = profileData.email !== selectedUser?.email;
-            if (emailChanged && !userPermissions?.can_edit_emails) {
-                showNotification('error', 'No tienes permisos para editar emails. Este campo es de solo lectura para administradores.', 5000);
-                return;
-            }
-
-            // Verificar que hay cambios reales antes de enviar
-            const hasNameChange = profileData.nombre_persona !== selectedUser?.nombre_persona;
-            const hasCompanyChange = profileData.nombre_empresa !== selectedUser?.nombre_empresa;
-            const hasEmailChange = emailChanged;
-
-            if (!hasNameChange && !hasCompanyChange && !hasEmailChange) {
-                showNotification('info', 'No se detectaron cambios en el perfil.');
-                return;
-            }
-
-            const response = await fetch(buildApiUrl(`${API_CONFIG.ADMIN.USERS}/${selectedUser?.id}/profile`), {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                },
-                body: JSON.stringify(profileData)
-            });
-
-            const responseData = await response.json();
-
-            if (response.ok) {
-                // Actualización optimista: actualizar el usuario localmente sin recargar
-                const updatedUsers = allUsers.map((user: BackendUser) =>
-                    user.id === selectedUser?.id
-                        ? {
-                            ...user,
-                            nombre_persona: profileData.nombre_persona,
-                            nombre_empresa: profileData.nombre_empresa,
-                            email: profileData.email
-                        }
-                        : user
-                );
-                setAllUsers(updatedUsers);
-
-                showNotification('success', 'Perfil actualizado exitosamente');
-                setShowEditModal(false);
-            } else {
-                // Manejar errores específicos
-                if (response.status === 401) {
-                    showNotification('error', 'Sesión expirada. Por favor, refresca la página e inicia sesión nuevamente.', 5000);
-                } else if (responseData.detail) {
-                    showNotification('error', `Error: ${responseData.detail}`, 5000);
-                } else {
-                    showNotification('error', 'Error actualizando perfil', 4000);
-                }
-            }
-        } catch (err: any) {
-            showNotification('error', `Error: ${err.message}`, 5000);
-        } finally {
-            setIsUpdating(false);
-        }
-    };
-
-    const getRoleBadgeColor = (role: string) => {
-        switch (role) {
-            case 'admin':
-                return 'bg-red-100 text-red-800';
-            case 'provider':
-                return 'bg-blue-100 text-blue-800';
-            case 'client':
-                return 'bg-green-100 text-green-800';
-            default:
-                return 'bg-gray-100 text-gray-800';
-        }
-    };
-
-    const getRoleDisplayName = (role: string) => {
-        switch (role) {
-            case 'admin':
-                return 'Administrador';
-            case 'provider':
-                return 'Proveedor';
-            case 'client':
-                return 'Cliente';
-            default:
-                return role;
-        }
-    };
-
-    // Búsqueda híbrida: local para búsquedas cortas, backend para búsquedas largas
-    const filteredUsers = useMemo(() => {
-        console.log('🔍 DEBUG: filteredUsers - allUsers.length:', allUsers.length);
-        console.log('🔍 DEBUG: filteredUsers - allUsers:', allUsers);
-        let filtered = [...allUsers];
-
-        // Filtro local por nombre/email (búsquedas cortas)
-        if (searchQuery.trim() && searchQuery.length < 3) {
-            const query = searchQuery.toLowerCase();
-            filtered = filtered.filter(user =>
-                user.nombre_persona.toLowerCase().includes(query) ||
-                user.email.toLowerCase().includes(query)
-            );
-        }
-
-        // Filtro local por empresa (búsquedas cortas)
-        if (searchEmpresa.trim() && searchEmpresa.length < 3) {
-            const query = searchEmpresa.toLowerCase();
-            filtered = filtered.filter(user =>
-                user.nombre_empresa?.toLowerCase().includes(query)
-            );
-        }
-
-        // Filtro por rol (siempre local)
-        if (filterRole !== 'all') {
-            filtered = filtered.filter(user =>
-                user.rol_principal === filterRole
-            );
-        }
-
-        // Filtro por estado (siempre local)
-        if (filterStatus !== 'all') {
-            filtered = filtered.filter(user => {
-                return user.estado === filterStatus;
-            });
-        }
-
-        console.log('🔍 DEBUG: filteredUsers - resultado final:', filtered.length);
-        return filtered;
-    }, [allUsers, searchQuery, searchEmpresa, filterRole, filterStatus]);
-
-    // Función para búsqueda en backend (búsquedas largas)
-    const searchInBackend = async (searchTerm: string, searchType: 'nombre' | 'empresa') => {
-        if (searchTerm.length >= 3) {
-            if (searchType === 'nombre') {
-                await loadUsers(1, undefined, searchTerm);
-            } else {
-                await loadUsers(1, searchTerm, undefined);
-            }
-        }
-    };
-
-    // Paginación - usar usuarios filtrados directamente
-    const paginatedUsers = useMemo(() => {
-        return filteredUsers;
-    }, [filteredUsers]);
-
-    // Usar totalPages del backend para paginación real
-    // const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+        // Funciones
+        loadUsers,
+        clearFilters,
+        handleEditUser,
+        handleResetPassword,
+        executePasswordReset,
+        closeResetPasswordModal,
+        handleDeactivateUser,
+        handleUpdateProfile,
+        getRoleBadgeColor,
+        getRoleDisplayName,
+        filteredUsers,
+        paginatedUsers
+    } = useAdminUsers();
 
     if (loading) {
         return (
@@ -654,6 +169,11 @@ const AdminUsersPage: React.FC = () => {
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
                                     Buscar Usuario
+                                    {isSearching && searchQuery.trim() && (
+                                        <span className="ml-2 text-xs text-blue-600 animate-pulse">
+                                            🔍 Buscando...
+                                        </span>
+                                    )}
                                 </label>
                                 <input
                                     type="text"
@@ -773,7 +293,17 @@ const AdminUsersPage: React.FC = () => {
                     </div>
 
                     {/* Lista de usuarios - Responsive */}
-                    <div className="bg-white rounded-xl shadow-md border border-slate-200/80 overflow-hidden">
+                    <div className="bg-white rounded-xl shadow-md border border-slate-200/80 overflow-hidden relative">
+                        {/* Overlay sutil de carga durante búsqueda */}
+                        {isSearching && (
+                            <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl">
+                                <div className="flex flex-col items-center gap-2">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                                    <span className="text-sm font-medium text-slate-700">Buscando usuarios...</span>
+                                </div>
+                            </div>
+                        )}
+                        
                         {/* Vista de tabla para desktop */}
                         <div className="hidden lg:block overflow-x-auto">
                             <table className="min-w-full divide-y divide-slate-200">

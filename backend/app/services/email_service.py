@@ -55,8 +55,11 @@ class EmailService:
                 try:
                     logger.info(f"📧 Enviando email de restablecimiento a {to_email}")
                     
-                    # Usar el método nativo de Supabase Auth para reset de contraseña
-                    response = self.supabase.auth.reset_password_email(to_email)
+                    # Usar el método nativo de Supabase Auth para reset de contraseña (ejecutar en thread separado)
+                    response = await asyncio.to_thread(
+                        self.supabase.auth.reset_password_email,
+                        to_email
+                    )
                     
                     if response:
                         logger.info(f"✅ Email de restablecimiento enviado a {to_email}")
@@ -80,7 +83,9 @@ class EmailService:
                 if text_content:
                     email_data["text"] = text_content
                 
-                response = self.supabase.functions.invoke(
+                # Ejecutar llamada síncrona en thread separado
+                response = await asyncio.to_thread(
+                    self.supabase.functions.invoke,
                     "send-email",
                     {
                         "body": email_data
@@ -254,7 +259,7 @@ class EmailService:
         """
         subject = "Contraseña actualizada exitosamente"
         
-        html_content = f"""
+        html_content = """
         <!DOCTYPE html>
         <html>
         <head>
@@ -332,7 +337,7 @@ class EmailService:
         </html>
         """
         
-        text_content = f"""
+        text_content = """
         Contraseña actualizada exitosamente - B2B Platform
         
         Hola,

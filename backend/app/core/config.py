@@ -6,7 +6,7 @@ import os
 # y carga las variables de entorno definidas en él
 try:
     load_dotenv()  # Lee .env
-except:
+except Exception:
     pass  # Si no hay .env, continuar sin él
 
 # Supabase Auth
@@ -41,8 +41,7 @@ print(f"🔐 Secret Key configurada: {'Sí' if AWS_SECRET_ACCESS_KEY else 'No'}"
 
 IDRIVE_BUCKET_NAME = os.getenv("IDRIVE_BUCKET_NAME")
 
-#Weaviate
-#WEAVIATE_URL = os.getenv("WEAVIATE_URL")
+
 #WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
 WEAVIATE_URL = os.getenv("WEAVIATE_URL")
 

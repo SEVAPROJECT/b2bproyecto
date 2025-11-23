@@ -14,7 +14,6 @@ const AdminCategoriesPage: React.FC = () => {
     const [newCategoryName, setNewCategoryName] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
-    const [updatingCategoryId, setUpdatingCategoryId] = useState<number | null>(null);
     const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
     const [editingCategoryName, setEditingCategoryName] = useState('');
 
@@ -96,9 +95,6 @@ const AdminCategoriesPage: React.FC = () => {
     };
 
     const handleToggleCategoryStatus = async (categoryId: number, currentStatus: boolean) => {
-        // Marcar que esta categoría está siendo actualizada
-        setUpdatingCategoryId(categoryId);
-
         // Optimistic update: cambiar el estado local inmediatamente
         const newStatus = !currentStatus;
         setCategories(prevCategories =>
@@ -120,7 +116,6 @@ const AdminCategoriesPage: React.FC = () => {
                             : cat
                     )
                 );
-                setUpdatingCategoryId(null);
                 return;
             }
 
@@ -143,9 +138,6 @@ const AdminCategoriesPage: React.FC = () => {
 
             setError(err.detail || 'Error al actualizar categoría');
             setTimeout(() => setError(null), 3000);
-        } finally {
-            // Quitar el indicador de carga
-            setUpdatingCategoryId(null);
         }
     };
 

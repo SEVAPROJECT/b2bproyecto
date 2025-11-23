@@ -27,6 +27,44 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/provider/services", tags=["provider-services"])
 
+# Constantes para mensajes de error
+MSG_PERFIL_EMPRESA_NO_ENCONTRADO = "Perfil de empresa no encontrado."
+MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_VER = "Servicio no encontrado o no tienes permisos para verlo."
+MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_EDITAR = "Servicio no encontrado o no tienes permisos para editarlo."
+MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_MODIFICAR = "Servicio no encontrado o no tienes permisos para modificarlo"
+MSG_TARIFA_NO_ENCONTRADA = "Tarifa no encontrada."
+MSG_PLANTILLA_SERVICIO_NO_ENCONTRADA = "Plantilla de servicio no encontrada"
+MSG_ERROR_INTERNO_SERVIDOR = "Error interno del servidor: {error}"
+MSG_ERROR_INTERNO_ACTUALIZAR_ESTADO = "Error interno del servidor al actualizar el estado del servicio"
+MSG_ERROR_INTERNO_CREAR_DESDE_PLANTILLA = "Error interno del servidor al crear el servicio desde plantilla"
+MSG_ERROR_FORMATO_FECHA = "Error en formato de fecha: {error}"
+MSG_ERROR_PROCESAR_IMAGEN = "Error al procesar la imagen: {error}"
+MSG_ERROR_ELIMINAR_IMAGEN = "Error al eliminar la imagen: {error}"
+MSG_SOLO_PERMITEN_ARCHIVOS_IMAGEN = "Solo se permiten archivos PNG, JPG y WEBP."
+MSG_ARCHIVO_SUPERA_TAMANO = "El archivo no puede superar los 5MB."
+MSG_ERROR_SUBIR_IMAGEN_STORAGE = "Error al subir la imagen a Supabase Storage."
+MSG_URL_IMAGEN_NO_VALIDA = "URL de imagen no válida para eliminación"
+MSG_ERROR_ELIMINAR_IMAGEN_BUCKET = "Error al eliminar la imagen del bucket"
+
+# Constantes para mensajes de éxito
+MSG_SERVICIO_ACTUALIZADO = "Servicio actualizado exitosamente."
+MSG_TARIFA_AGREGADA = "Tarifa agregada exitosamente."
+MSG_TARIFA_ELIMINADA = "Tarifa eliminada exitosamente."
+MSG_IMAGEN_SUBIDA = "Imagen subida exitosamente a Supabase Storage."
+MSG_IMAGEN_ELIMINADA = "Imagen eliminada exitosamente del bucket de Supabase Storage."
+MSG_SERVICIO_CREADO_DESDE_PLANTILLA = "Servicio creado exitosamente desde plantilla"
+MSG_SERVICIO_ACTIVADO = "Servicio activado exitosamente"
+MSG_SERVICIO_DESACTIVADO = "Servicio desactivado exitosamente"
+
+# Constantes para valores por defecto
+VALOR_DEFAULT_TIPO_TARIFA = "Tipo de tarifa"
+VALOR_DEFAULT_SIN_TIPO = "Sin tipo"
+TIPO_TARIFA_POR_HORA = "Por hora"
+TIPO_TARIFA_POR_DIA = "Por día"
+TIPO_TARIFA_POR_PROYECTO = "Por proyecto"
+TIPO_TARIFA_POR_SEMANA = "Por semana"
+TIPO_TARIFA_POR_MES = "Por mes"
+
 # Modelos Pydantic para las respuestas
 class ServicioCompleto(BaseModel):
     id_servicio: int
@@ -57,6 +95,84 @@ class TarifaResponse(BaseModel):
 
 # Usar TarifaServicioIn que ya existe
 
+# Funciones helper para get_provider_services
+async def get_provider_profile(db: AsyncSession, user_id: str) -> PerfilEmpresa:
+    """Obtiene el perfil de empresa del proveedor"""
+    perfil_result = await db.execute(
+        select(PerfilEmpresa).where(PerfilEmpresa.user_id == user_id)
+    )
+    perfil = perfil_result.scalars().first()
+    
+    if not perfil:
+        logger.warning(f"❌ Perfil no encontrado para usuario: {user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
+        )
+    
+    logger.info(f"✅ Perfil encontrado: {perfil.id_perfil}")
+    return perfil
+
+async def get_servicios_by_perfil(db: AsyncSession, id_perfil: int) -> List[ServicioModel]:
+    """Obtiene todos los servicios del proveedor con información relacionada"""
+    result = await db.execute(
+        select(ServicioModel)
+        .options(
+            joinedload(ServicioModel.categoria),
+            joinedload(ServicioModel.moneda)
+        )
+        .where(ServicioModel.id_perfil == id_perfil)
+    )
+    return result.scalars().all()
+
+async def get_tarifas_for_servicio(db: AsyncSession, id_servicio: int) -> List[TarifaServicio]:
+    """Obtiene todas las tarifas de un servicio"""
+    tarifas_result = await db.execute(
+        select(TarifaServicio)
+        .where(TarifaServicio.id_servicio == id_servicio)
+    )
+    return tarifas_result.scalars().all()
+
+def format_tarifa(tarifa: TarifaServicio) -> dict:
+    """Formatea una tarifa en el formato de respuesta"""
+    return {
+        "id_tarifa_servicio": tarifa.id_tarifa_servicio,
+        "monto": float(tarifa.monto),
+        "descripcion": tarifa.descripcion,
+        "fecha_inicio": tarifa.fecha_inicio.isoformat(),
+        "fecha_fin": tarifa.fecha_fin.isoformat() if tarifa.fecha_fin else None,
+        "id_tarifa": tarifa.id_tarifa,
+        "nombre_tipo_tarifa": VALOR_DEFAULT_TIPO_TARIFA  # Temporalmente simplificado
+    }
+
+async def format_servicio_completo(
+    db: AsyncSession,
+    servicio: ServicioModel
+) -> dict:
+    """Formatea un servicio con todas sus tarifas"""
+    # Obtener tarifas del servicio
+    tarifas_data = await get_tarifas_for_servicio(db, servicio.id_servicio)
+    
+    # Formatear tarifas
+    tarifas = [format_tarifa(tarifa) for tarifa in tarifas_data]
+    
+    return {
+        "id_servicio": servicio.id_servicio,
+        "nombre": servicio.nombre,
+        "descripcion": servicio.descripcion,
+        "precio": float(servicio.precio) if servicio.precio is not None else None,
+        "estado": servicio.estado,
+        "imagen": servicio.imagen,
+        "id_categoria": servicio.id_categoria,
+        "id_moneda": servicio.id_moneda,
+        "nombre_categoria": servicio.categoria.nombre if servicio.categoria else None,
+        "nombre_moneda": servicio.moneda.nombre if servicio.moneda else None,
+        "simbolo_moneda": servicio.moneda.simbolo if servicio.moneda else None,
+        "codigo_iso_moneda": servicio.moneda.codigo_iso_moneda if servicio.moneda else None,
+        "created_at": servicio.created_at.isoformat() if servicio.created_at else None,
+        "tarifas": tarifas
+    }
+
 @router.get("/", response_model=List[ServicioCompleto])
 async def get_provider_services(
     db: AsyncSession = Depends(get_async_db),
@@ -69,83 +185,27 @@ async def get_provider_services(
         logger.info(f"🔍 Obteniendo servicios para usuario: {current_user.email}")
         
         # Obtener el perfil del usuario
-        perfil_result = await db.execute(
-            select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
-        )
-        perfil = perfil_result.scalars().first()
-
-        if not perfil:
-            logger.warning(f"❌ Perfil no encontrado para usuario: {current_user.email}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de empresa no encontrado."
-            )
+        perfil = await get_provider_profile(db, current_user.id)
         
-        logger.info(f"✅ Perfil encontrado: {perfil.id_perfil}")
+        # Obtener servicios del proveedor
+        servicios = await get_servicios_by_perfil(db, perfil.id_perfil)
         
+        # Formatear servicios con sus tarifas
+        servicios_formateados = []
+        for servicio in servicios:
+            servicio_formateado = await format_servicio_completo(db, servicio)
+            servicios_formateados.append(servicio_formateado)
+        
+        return servicios_formateados
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error en get_provider_services: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno del servidor: {str(e)}"
+            detail=MSG_ERROR_INTERNO_SERVIDOR.format(error=str(e))
         )
-
-    # Obtener servicios del proveedor con información relacionada (simplificada para evitar errores de columna)
-    # QUITAR FILTRO DE ESTADO PARA MOSTRAR TODOS LOS SERVICIOS
-    result = await db.execute(
-        select(ServicioModel)
-        .options(
-            joinedload(ServicioModel.categoria),
-            joinedload(ServicioModel.moneda)
-        )
-        .where(ServicioModel.id_perfil == perfil.id_perfil)
-        # .where(Servicio.estado == True)  # QUITADO: Mostrar todos los servicios independientemente del estado
-    )
-
-    servicios = result.scalars().all()
-
-    # Obtener tarifas por separado para evitar problemas de JOIN
-    servicios_formateados = []
-    for servicio in servicios:
-        # Obtener tarifas del servicio por separado
-        tarifas_result = await db.execute(
-            select(TarifaServicio)
-            .where(TarifaServicio.id_servicio == servicio.id_servicio)
-        )
-        tarifas_data = tarifas_result.scalars().all()
-
-        # Formatear tarifas
-        tarifas = []
-        for tarifa in tarifas_data:
-            tarifas.append({
-                "id_tarifa_servicio": tarifa.id_tarifa_servicio,
-                "monto": float(tarifa.monto),
-                "descripcion": tarifa.descripcion,
-                "fecha_inicio": tarifa.fecha_inicio.isoformat(),
-                "fecha_fin": tarifa.fecha_fin.isoformat() if tarifa.fecha_fin else None,
-                "id_tarifa": tarifa.id_tarifa,
-                "nombre_tipo_tarifa": "Tipo de tarifa"  # Temporalmente simplificado
-            })
-
-        servicio_formateado = {
-            "id_servicio": servicio.id_servicio,
-            "nombre": servicio.nombre,
-            "descripcion": servicio.descripcion,
-            "precio": float(servicio.precio) if servicio.precio is not None else None,  # Manejar precios null
-            "estado": servicio.estado,  # Ya es bool | None según el modelo
-            "imagen": servicio.imagen,  # Ruta de la imagen representativa
-            "id_categoria": servicio.id_categoria,
-            "id_moneda": servicio.id_moneda,
-            "nombre_categoria": servicio.categoria.nombre if servicio.categoria else None,
-            "nombre_moneda": servicio.moneda.nombre if servicio.moneda else None,
-            "simbolo_moneda": servicio.moneda.simbolo if servicio.moneda else None,
-            "codigo_iso_moneda": servicio.moneda.codigo_iso_moneda if servicio.moneda else None,
-            "created_at": servicio.created_at.isoformat() if servicio.created_at else None,
-            "tarifas": tarifas
-        }
-        servicios_formateados.append(servicio_formateado)
-
-    return servicios_formateados
 
 @router.get("/{service_id}", response_model=ServicioCompleto)
 async def get_provider_service(
@@ -185,7 +245,7 @@ async def get_provider_service(
     if not servicio:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Servicio no encontrado o no tienes permisos para verlo."
+                detail=MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_VER
         )
 
     # Obtener tarifas del servicio
@@ -198,7 +258,7 @@ async def get_provider_service(
             "fecha_inicio": tarifa.fecha_inicio.isoformat(),
             "fecha_fin": tarifa.fecha_fin.isoformat() if tarifa.fecha_fin else None,
             "id_tarifa": tarifa.id_tarifa,
-            "nombre_tipo_tarifa": tarifa.tipo_tarifa_servicio.nombre if tarifa.tipo_tarifa_servicio else "Sin tipo"
+            "nombre_tipo_tarifa": tarifa.tipo_tarifa_servicio.nombre if tarifa.tipo_tarifa_servicio else VALOR_DEFAULT_SIN_TIPO
         })
 
     return {
@@ -216,6 +276,106 @@ async def get_provider_service(
         "tarifas": tarifas
     }
 
+# Funciones helper para update_provider_service
+async def get_servicio_by_id_and_perfil(
+    db: AsyncSession,
+    service_id: int,
+    id_perfil: int
+) -> ServicioModel:
+    """Obtiene un servicio específico del proveedor"""
+    result = await db.execute(
+        select(ServicioModel)
+        .where(ServicioModel.id_servicio == service_id)
+        .where(ServicioModel.id_perfil == id_perfil)
+    )
+    
+    servicio = result.scalars().first()
+    
+    if not servicio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_EDITAR
+        )
+    
+    return servicio
+
+def update_servicio_fields(servicio: ServicioModel, service_data: dict) -> None:
+    """Actualiza los campos del servicio con los datos proporcionados"""
+    if 'nombre' in service_data:
+        servicio.nombre = service_data['nombre']
+    if 'descripcion' in service_data:
+        servicio.descripcion = service_data['descripcion']
+    if 'precio' in service_data:
+        servicio.precio = service_data['precio']
+    if 'id_moneda' in service_data:
+        servicio.id_moneda = service_data['id_moneda']
+    if 'imagen' in service_data:
+        servicio.imagen = service_data['imagen']
+    if 'estado' in service_data:
+        servicio.estado = service_data['estado']
+
+def convert_fecha_field(fecha_value) -> Optional[date]:
+    """Convierte un valor de fecha a objeto date"""
+    if not fecha_value:
+        return None
+    
+    if isinstance(fecha_value, str):
+        return date.fromisoformat(fecha_value)
+    
+    return fecha_value
+
+def parse_tarifa_fechas(tarifa_data: dict) -> tuple[Optional[date], Optional[date]]:
+    """Convierte las fechas de una tarifa de string a objetos date"""
+    fecha_inicio = convert_fecha_field(tarifa_data.get('fecha_inicio'))
+    fecha_fin = convert_fecha_field(tarifa_data.get('fecha_fin'))
+    return fecha_inicio, fecha_fin
+
+async def create_tarifa_from_data(
+    db: AsyncSession,
+    tarifa_data: dict,
+    service_id: int
+) -> None:
+    """Crea una nueva tarifa desde los datos proporcionados"""
+    try:
+        fecha_inicio, fecha_fin = parse_tarifa_fechas(tarifa_data)
+        
+        nueva_tarifa = TarifaServicio(
+            monto=tarifa_data['monto'],
+            descripcion=tarifa_data['descripcion'],
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            id_servicio=service_id,
+            id_tarifa=tarifa_data['id_tarifa']
+        )
+        db.add(nueva_tarifa)
+        
+    except (ValueError, TypeError) as e:
+        logger.error(f"❌ Error al convertir fecha en tarifa: {e}")
+        logger.error(f"   Datos de tarifa: {tarifa_data}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_ERROR_FORMATO_FECHA.format(error=str(e))
+        )
+
+async def delete_existing_tarifas(db: AsyncSession, service_id: int) -> None:
+    """Elimina todas las tarifas existentes de un servicio"""
+    await db.execute(
+        TarifaServicio.__table__.delete().where(TarifaServicio.id_servicio == service_id)
+    )
+
+async def process_tarifas_update(
+    db: AsyncSession,
+    service_id: int,
+    tarifas_data: List[dict]
+) -> None:
+    """Procesa la actualización de tarifas: elimina las existentes y crea las nuevas"""
+    # Eliminar tarifas existentes
+    await delete_existing_tarifas(db, service_id)
+    
+    # Agregar nuevas tarifas
+    for tarifa_data in tarifas_data:
+        await create_tarifa_from_data(db, tarifa_data, service_id)
+
 @router.put("/{service_id}")
 async def update_provider_service(
     service_id: int,
@@ -227,97 +387,21 @@ async def update_provider_service(
     Actualiza un servicio del proveedor con toda su información.
     """
     # Obtener el perfil del usuario
-    perfil_result = await db.execute(
-        select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
-    )
-    perfil = perfil_result.scalars().first()
-
-    if not perfil:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Perfil de empresa no encontrado."
-        )
-
+    perfil = await get_provider_profile(db, current_user.id)
+    
     # Obtener el servicio específico
-    result = await db.execute(
-        select(ServicioModel)
-        .where(ServicioModel.id_servicio == service_id)
-        .where(ServicioModel.id_perfil == perfil.id_perfil)
-    )
-
-    servicio = result.scalars().first()
-
-    if not servicio:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Servicio no encontrado o no tienes permisos para editarlo."
-        )
-
+    servicio = await get_servicio_by_id_and_perfil(db, service_id, perfil.id_perfil)
+    
     # Actualizar los campos del servicio
-    if 'nombre' in service_data:
-        servicio.nombre = service_data['nombre']
-    if 'descripcion' in service_data:
-        servicio.descripcion = service_data['descripcion']
-    if 'precio' in service_data:
-        servicio.precio = service_data['precio']
-    if 'id_moneda' in service_data:
-        servicio.id_moneda = service_data['id_moneda']
-    if 'imagen' in service_data:
-        servicio.imagen = service_data['imagen']  # Actualizar ruta de la imagen
-    if 'estado' in service_data:
-        servicio.estado = service_data['estado']
-
+    update_servicio_fields(servicio, service_data)
+    
     # Gestionar tarifas si se incluyen
     if 'tarifas' in service_data:
-        # Eliminar tarifas existentes
-        await db.execute(
-            TarifaServicio.__table__.delete().where(TarifaServicio.id_servicio == service_id)
-        )
-
-        # Agregar nuevas tarifas
-        for tarifa_data in service_data['tarifas']:
-            # Convertir fechas de string a objetos date con manejo robusto de errores
-            from datetime import date
-
-            try:
-                fecha_inicio = None
-                fecha_fin = None
-
-                # Convertir fecha_inicio
-                if tarifa_data.get('fecha_inicio'):
-                    if isinstance(tarifa_data['fecha_inicio'], str):
-                        fecha_inicio = date.fromisoformat(tarifa_data['fecha_inicio'])
-                    else:
-                        fecha_inicio = tarifa_data['fecha_inicio']
-
-                # Convertir fecha_fin
-                if tarifa_data.get('fecha_fin'):
-                    if isinstance(tarifa_data['fecha_fin'], str):
-                        fecha_fin = date.fromisoformat(tarifa_data['fecha_fin'])
-                    else:
-                        fecha_fin = tarifa_data['fecha_fin']
-
-                nueva_tarifa = TarifaServicio(
-                    monto=tarifa_data['monto'],
-                    descripcion=tarifa_data['descripcion'],
-                    fecha_inicio=fecha_inicio,
-                    fecha_fin=fecha_fin,
-                    id_servicio=service_id,
-                    id_tarifa=tarifa_data['id_tarifa']
-                )
-                db.add(nueva_tarifa)
-
-            except (ValueError, TypeError) as e:
-                logger.error(f"❌ Error al convertir fecha en tarifa: {e}")
-                logger.error(f"   Datos de tarifa: {tarifa_data}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Error en formato de fecha: {str(e)}"
-                )
-
+        await process_tarifas_update(db, service_id, service_data['tarifas'])
+    
     await db.commit()
-
-    return {"message": "Servicio actualizado exitosamente."}
+    
+    return {"message": MSG_SERVICIO_ACTUALIZADO}
 
 @router.get("/options/monedas", response_model=List[dict])
 async def get_monedas_options(db: AsyncSession = Depends(get_async_db)):
@@ -359,11 +443,11 @@ async def get_tipos_tarifa_options(db: AsyncSession = Depends(get_async_db)):
 
             # Insertar tipos de tarifa por defecto
             default_tipos = [
-                {'nombre': 'Por hora', 'descripcion': 'Tarifa por hora de trabajo'},
-                {'nombre': 'Por día', 'descripcion': 'Tarifa por día de trabajo'},
-                {'nombre': 'Por proyecto', 'descripcion': 'Tarifa fija por proyecto'},
-                {'nombre': 'Por semana', 'descripcion': 'Tarifa por semana de trabajo'},
-                {'nombre': 'Por mes', 'descripcion': 'Tarifa por mes de trabajo'}
+                {'nombre': TIPO_TARIFA_POR_HORA, 'descripcion': 'Tarifa por hora de trabajo'},
+                {'nombre': TIPO_TARIFA_POR_DIA, 'descripcion': 'Tarifa por día de trabajo'},
+                {'nombre': TIPO_TARIFA_POR_PROYECTO, 'descripcion': 'Tarifa fija por proyecto'},
+                {'nombre': TIPO_TARIFA_POR_SEMANA, 'descripcion': 'Tarifa por semana de trabajo'},
+                {'nombre': TIPO_TARIFA_POR_MES, 'descripcion': 'Tarifa por mes de trabajo'}
             ]
 
             for tipo in default_tipos:
@@ -394,9 +478,9 @@ async def get_tipos_tarifa_options(db: AsyncSession = Depends(get_async_db)):
         print(f"❌ Error en get_tipos_tarifa_options: {e}")
         # Retornar tipos por defecto si hay error
         return [
-            {"id_tarifa": 1, "nombre": "Por hora"},
-            {"id_tarifa": 2, "nombre": "Por día"},
-            {"id_tarifa": 3, "nombre": "Por proyecto"}
+            {"id_tarifa": 1, "nombre": TIPO_TARIFA_POR_HORA},
+            {"id_tarifa": 2, "nombre": TIPO_TARIFA_POR_DIA},
+            {"id_tarifa": 3, "nombre": TIPO_TARIFA_POR_PROYECTO}
         ]
 
 @router.post("/{service_id}/tarifas")
@@ -433,7 +517,7 @@ async def add_tarifa_to_service(
     if not servicio:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Servicio no encontrado o no tienes permisos para editarlo."
+                detail=MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_EDITAR
         )
 
     # Crear nueva tarifa
@@ -450,7 +534,7 @@ async def add_tarifa_to_service(
     db.add(nueva_tarifa)
     await db.commit()
 
-    return {"message": "Tarifa agregada exitosamente."}
+    return {"message": MSG_TARIFA_AGREGADA}
 
 @router.delete("/{service_id}/tarifas/{tarifa_id}")
 async def remove_tarifa_from_service(
@@ -486,7 +570,7 @@ async def remove_tarifa_from_service(
     if not servicio:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Servicio no encontrado o no tienes permisos para editarlo."
+                detail=MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_EDITAR
         )
 
     # Eliminar la tarifa
@@ -499,12 +583,12 @@ async def remove_tarifa_from_service(
     if result.rowcount == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tarifa no encontrada."
+                detail=MSG_TARIFA_NO_ENCONTRADA
         )
 
     await db.commit()
 
-    return {"message": "Tarifa eliminada exitosamente."}
+    return {"message": MSG_TARIFA_ELIMINADA}
 
 # Directorio para almacenar imágenes subidas
 UPLOAD_DIRECTORY = "uploads/services"
@@ -525,7 +609,7 @@ async def upload_service_image(
     if file.content_type not in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Solo se permiten archivos PNG, JPG y WEBP."
+            detail=MSG_SOLO_PERMITEN_ARCHIVOS_IMAGEN
         )
 
     # Validar tamaño del archivo (5MB máximo)
@@ -535,7 +619,7 @@ async def upload_service_image(
     if file_size > 5 * 1024 * 1024:  # 5MB
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El archivo no puede superar los 5MB."
+            detail=MSG_ARCHIVO_SUPERA_TAMANO
         )
 
     # Usar Supabase Storage
@@ -552,21 +636,21 @@ async def upload_service_image(
         if success and public_url:
             logger.info(f"✅ Imagen subida exitosamente a Supabase Storage: {public_url}")
             return {
-                "message": "Imagen subida exitosamente a Supabase Storage.",
+                "message": MSG_IMAGEN_SUBIDA,
                 "image_path": public_url
             }
         else:
             logger.error("❌ Error subiendo imagen a Supabase Storage")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al subir la imagen a Supabase Storage."
+                detail=MSG_ERROR_SUBIR_IMAGEN_STORAGE
             )
             
     except Exception as e:
         logger.error(f"❌ Error en upload_service_image: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al procesar la imagen: {str(e)}"
+            detail=MSG_ERROR_PROCESAR_IMAGEN.format(error=str(e))
         )
 
 @router.delete("/delete-image")
@@ -584,7 +668,7 @@ async def delete_service_image(
         if not image_url or not image_url.startswith('https://') or 'supabase.co' not in image_url:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="URL de imagen no válida para eliminación"
+                detail=MSG_URL_IMAGEN_NO_VALIDA
             )
         
         # Extraer el nombre del archivo de la URL
@@ -597,14 +681,14 @@ async def delete_service_image(
         if success:
             logger.info(f"✅ Imagen eliminada exitosamente del bucket: {file_name}")
             return {
-                "message": "Imagen eliminada exitosamente del bucket de Supabase Storage.",
+                "message": MSG_IMAGEN_ELIMINADA,
                 "deleted_file": file_name
             }
         else:
             logger.error(f"❌ Error eliminando imagen del bucket: {file_name}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al eliminar la imagen del bucket"
+                detail=MSG_ERROR_ELIMINAR_IMAGEN_BUCKET
             )
             
     except HTTPException:
@@ -613,7 +697,7 @@ async def delete_service_image(
         logger.error(f"❌ Error en delete_service_image: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al eliminar la imagen: {str(e)}"
+            detail=MSG_ERROR_ELIMINAR_IMAGEN.format(error=str(e))
         )
 
 # Modelo para actualizar estado del servicio
@@ -639,7 +723,7 @@ async def update_service_status(
         if not perfil:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de empresa no encontrado"
+                detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
             )
 
         # Verificar que el servicio pertenece al proveedor
@@ -653,7 +737,7 @@ async def update_service_status(
         if not servicio:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Servicio no encontrado o no tienes permisos para modificarlo"
+                detail=MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_MODIFICAR
             )
 
         # Actualizar el estado del servicio
@@ -662,7 +746,7 @@ async def update_service_status(
         await db.refresh(servicio)
 
         return {
-            "message": f"Servicio {'activado' if status_data.estado else 'desactivado'} exitosamente",
+            "message": MSG_SERVICIO_ACTIVADO if status_data.estado else MSG_SERVICIO_DESACTIVADO,
             "servicio": {
                 "id_servicio": servicio.id_servicio,
                 "nombre": servicio.nombre,
@@ -677,7 +761,7 @@ async def update_service_status(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor al actualizar el estado del servicio"
+            detail=MSG_ERROR_INTERNO_ACTUALIZAR_ESTADO
         )
 
 
@@ -708,7 +792,7 @@ async def create_service_from_template(
         if not perfil:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de empresa no encontrado"
+                detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
             )
 
         # Obtener la plantilla del servicio
@@ -719,7 +803,7 @@ async def create_service_from_template(
         if not template:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Plantilla de servicio no encontrada"
+                detail=MSG_PLANTILLA_SERVICIO_NO_ENCONTRADA
             )
 
         # Crear nuevo servicio basado en la plantilla
@@ -739,7 +823,7 @@ async def create_service_from_template(
         await db.refresh(nuevo_servicio)
 
         return {
-            "message": "Servicio creado exitosamente desde plantilla",
+            "message": MSG_SERVICIO_CREADO_DESDE_PLANTILLA,
             "servicio": {
                 "id_servicio": nuevo_servicio.id_servicio,
                 "nombre": nuevo_servicio.nombre,
@@ -757,5 +841,5 @@ async def create_service_from_template(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor al crear el servicio desde plantilla"
+            detail=MSG_ERROR_INTERNO_CREAR_DESDE_PLANTILLA
         )

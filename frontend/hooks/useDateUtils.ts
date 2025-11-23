@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import {
   formatDateToDDMMYYYY,
   formatDateToYYYYMMDD,
-  formatDateSpanishLong,
   formatISODateToDDMMYYYY,
   parseLocalDate
 } from '../utils/dateUtils';
@@ -103,11 +102,11 @@ export const useDateUtils = () => {
         // Validar formato YYYY-MM-DD o ISO
         if (/^\d{4}-\d{2}-\d{2}/.test(date)) {
           const d = parseLocalDate(date.split('T')[0]);
-          return !isNaN(d.getTime());
+          return !Number.isNaN(d.getTime());
         }
         return false;
       }
-      return date instanceof Date && !isNaN(date.getTime());
+      return date instanceof Date && !Number.isNaN(date.getTime());
     }
   }), []);
 

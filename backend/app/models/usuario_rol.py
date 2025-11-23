@@ -6,8 +6,7 @@ from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.dialects.postgresql import UUID
 from app.supabase.db.db_supabase import Base
 from typing import TYPE_CHECKING
-#from app.models.rol  import RolModel
-#from app.models.perfil import UserModel
+
 
 # Importar modelos solo en tiempo de ejecución
 #con esto evitamos problemas de importación circular
@@ -37,8 +36,7 @@ class UsuarioRolModel(Base):
         "UserModel",
         back_populates="roles",
         primaryjoin="foreign(UsuarioRolModel.id_usuario) == UserModel.id"
-        #primaryjoin="UsuarioRolModel.id_usuario == foreign(UserModel.id)"
-        #remote_side="UserModel.id"
+       
     )
 
     rol: Mapped["RolModel"] = relationship(back_populates="usuarios_asociados")

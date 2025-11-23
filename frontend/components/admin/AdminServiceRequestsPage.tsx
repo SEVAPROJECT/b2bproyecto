@@ -1,11 +1,7 @@
-import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { CheckCircleIcon, ClockIcon, PencilIcon, XMarkIcon } from '../icons';
 import OptimizedLoading from '../ui/OptimizedLoading';
-import StandardFilters from '../ui/StandardFilters';
-import StandardStatistics from '../ui/StandardStatistics';
-import { useStandardFilters } from '../../hooks/useStandardFilters';
 import { serviceRequestsAPI, categoriesAPI } from '../../services/api';
-import { AuthContext } from '../../contexts/AuthContext';
 import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 // Función helper para ajustar fecha a zona horaria de Argentina (UTC-3)
@@ -41,6 +37,51 @@ const datesEqual = (date1: Date, date2: Date): boolean => {
     return d1.getTime() === d2.getTime();
 };
 
+// Función auxiliar para verificar si una fecha cumple con el filtro
+const matchesDateFilter = (requestDate: Date, dateFilter: string, customDate?: string): boolean => {
+    if (dateFilter === 'all') {
+        return true;
+    }
+
+    const now = new Date();
+
+    switch (dateFilter) {
+        case 'today':
+            return requestDate.toDateString() === now.toDateString();
+        case 'week':
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            return requestDate >= weekAgo;
+        case 'month':
+            return requestDate.getMonth() === now.getMonth() && requestDate.getFullYear() === now.getFullYear();
+        case 'year':
+            return requestDate.getFullYear() === now.getFullYear();
+        case 'custom':
+            if (customDate) {
+                const selectedDate = parseDateString(customDate);
+                return datesEqual(requestDate, selectedDate);
+            }
+            return true;
+        default:
+            return true;
+    }
+};
+
+// Función auxiliar para verificar si la categoría cumple con el filtro
+const matchesCategoryFilter = (idCategoria: number | undefined, categoryFilter: string): boolean => {
+    if (categoryFilter === 'all') {
+        return true;
+    }
+    return idCategoria?.toString() === categoryFilter;
+};
+
+// Función auxiliar para verificar si el estado cumple con el filtro
+const matchesStatusFilter = (estadoAprobacion: string | undefined, statusFilter: string): boolean => {
+    if (statusFilter === 'all') {
+        return true;
+    }
+    return estadoAprobacion === statusFilter;
+};
+
 // Función de filtrado de solicitudes optimizada con memoización
 const filterRequests = (requests: ServiceRequest[], filters: any) => {
     // Si no hay filtros activos, retornar todas las solicitudes
@@ -49,47 +90,12 @@ const filterRequests = (requests: ServiceRequest[], filters: any) => {
     }
 
     return requests.filter(request => {
-        // Filtro por fecha
-        if (filters.dateFilter !== 'all') {
-            const now = new Date();
-            const requestDate = new Date(request.created_at);
-
-            switch (filters.dateFilter) {
-                case 'today':
-                    if (requestDate.toDateString() !== now.toDateString()) return false;
-                    break;
-                case 'week':
-                    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                    if (requestDate < weekAgo) return false;
-                    break;
-                case 'month':
-                    if (requestDate.getMonth() !== now.getMonth() || requestDate.getFullYear() !== now.getFullYear()) return false;
-                    break;
-                case 'year':
-                    if (requestDate.getFullYear() !== now.getFullYear()) return false;
-                    break;
-                case 'custom':
-                    if (filters.customDate) {
-                        const selectedDate = parseDateString(filters.customDate);
-                        if (!datesEqual(requestDate, selectedDate)) {
-                            return false;
-                        }
-                    }
-                    break;
-            }
-        }
-
-        // Filtro por categoría
-        if (filters.categoryFilter !== 'all' && request.id_categoria?.toString() !== filters.categoryFilter) {
-            return false;
-        }
-
-        // Filtro por estado
-        if (filters.statusFilter !== 'all' && request.estado_aprobacion !== filters.statusFilter) {
-            return false;
-        }
-
-        return true;
+        const requestDate = new Date(request.created_at);
+        const matchesDate = matchesDateFilter(requestDate, filters.dateFilter, filters.customDate);
+        const matchesCategory = matchesCategoryFilter(request.id_categoria, filters.categoryFilter);
+        const matchesStatus = matchesStatusFilter(request.estado_aprobacion, filters.statusFilter);
+        
+        return matchesDate && matchesCategory && matchesStatus;
     });
 };
 
@@ -107,8 +113,18 @@ interface ServiceRequest {
     id_perfil?: number;
 }
 
+// Función auxiliar para obtener las clases CSS según el estado de aprobación
+const getEstadoAprobacionClasses = (estadoAprobacion: string | undefined): string => {
+    if (estadoAprobacion === 'pendiente') {
+        return 'bg-yellow-100 text-yellow-800';
+    }
+    if (estadoAprobacion === 'aprobada') {
+        return 'bg-green-100 text-green-800';
+    }
+    return 'bg-red-100 text-red-800';
+};
+
 const AdminServiceRequestsPage: React.FC = () => {
-    const { user } = useContext(AuthContext);
     const [requests, setRequests] = useState<ServiceRequest[]>([]);
     const [filteredRequests, setFilteredRequests] = useState<ServiceRequest[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
@@ -228,11 +244,11 @@ const AdminServiceRequestsPage: React.FC = () => {
             
             // Crear diccionario de emails por nombre de contacto (mismo método que usan los reportes)
             const emailsDict: {[key: string]: string} = {};
-            proveedores.forEach((proveedor: any) => {
+            for (const proveedor of proveedores) {
                 if (proveedor.nombre_contacto && proveedor.email_contacto && proveedor.email_contacto !== 'No disponible') {
                     emailsDict[proveedor.nombre_contacto] = proveedor.email_contacto;
                 }
-            });
+            }
             
             console.log('📧 Emails extraídos del reporte de proveedores:', Object.keys(emailsDict).length);
             
@@ -271,16 +287,6 @@ const AdminServiceRequestsPage: React.FC = () => {
         }
     }, []);
 
-    // Calcular estadísticas memoizadas
-    const statistics = useMemo(() => {
-        const total = filteredRequests.length;
-        const pending = filteredRequests.filter(r => r.estado_aprobacion === 'pendiente').length;
-        const approved = filteredRequests.filter(r => r.estado_aprobacion === 'aprobada').length;
-        const rejected = filteredRequests.filter(r => r.estado_aprobacion === 'rechazada').length;
-        
-        return { total, pending, approved, rejected };
-    }, [filteredRequests]);
-
     // Funciones de acción optimizadas
     const handleApprove = useCallback(async (requestId: number) => {
         try {
@@ -299,7 +305,9 @@ const AdminServiceRequestsPage: React.FC = () => {
             setSuccess('Solicitud aprobada exitosamente');
             setTimeout(() => setSuccess(null), 3000);
         } catch (error) {
+            console.error('Error al aprobar la solicitud:', error);
             setError('Error al aprobar la solicitud');
+            setTimeout(() => setError(null), 3000);
         }
     }, []);
 
@@ -328,7 +336,9 @@ const AdminServiceRequestsPage: React.FC = () => {
             setSuccess('Solicitud rechazada exitosamente');
             setTimeout(() => setSuccess(null), 3000);
         } catch (error) {
+            console.error('Error al rechazar la solicitud:', error);
             setError('Error al rechazar la solicitud');
+            setTimeout(() => setError(null), 3000);
         }
     }, []);
 
@@ -337,7 +347,7 @@ const AdminServiceRequestsPage: React.FC = () => {
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) return;
 
-            // TODO: Implementar updateRequest en la API
+            // Implementar updateRequest en la API
             console.log('Actualizando solicitud:', requestId, formData);
             
             // Actualizar estado local sin recargar
@@ -351,7 +361,9 @@ const AdminServiceRequestsPage: React.FC = () => {
             setSuccess('Solicitud actualizada exitosamente');
             setTimeout(() => setSuccess(null), 3000);
         } catch (error) {
+            console.error('Error al actualizar la solicitud:', error);
             setError('Error al actualizar la solicitud');
+            setTimeout(() => setError(null), 3000);
         }
     }, []);
 
@@ -507,11 +519,7 @@ const AdminServiceRequestsPage: React.FC = () => {
                                         <div className="flex-1 min-w-0">
                                                 <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-3 mb-2">
                                                     <h3 className="text-lg font-medium text-gray-900 break-words">{request.nombre_servicio}</h3>
-                                                    <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
-                                                        request.estado_aprobacion === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                                                        request.estado_aprobacion === 'aprobada' ? 'bg-green-100 text-green-800' :
-                                                        'bg-red-100 text-red-800'
-                                                    }`}>
+                                                    <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${getEstadoAprobacionClasses(request.estado_aprobacion)}`}>
                                                         {request.estado_aprobacion}
                                                     </span>
                                                 </div>

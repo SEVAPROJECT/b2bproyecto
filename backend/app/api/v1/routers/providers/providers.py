@@ -29,10 +29,435 @@ from geoalchemy2 import WKTElement
 from app.models.empresa.tipo_documento import TipoDocumento
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
+from app.models.empresa.sucursal_empresa import SucursalEmpresa
+#import mimetype
+from fastapi.responses import Response
+import mimetypes
+import urllib.parse
+from sqlalchemy import select
+from app.models.publicar_servicio.category import CategoriaModel
+from app.models.empresa.perfil_empresa import PerfilEmpresa
+#from app.models.perfil import UserModel
+from app.models.empresa.perfil_empresa import PerfilEmpresa
+from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
+from app.models.empresa.sucursal_empresa import SucursalEmpresa
+import datetime
+from app.supabase.auth_service import supabase_auth
+from app.idrive.idrive_service import idrive_s3_client
+
 
 
 
 router = APIRouter(prefix="/providers", tags=["providers"])
+
+# Constantes para estados
+ESTADO_PENDIENTE = "pendiente"
+ESTADO_VERIFICADO_FALSE = False
+
+# Constantes para valores por defecto
+FILENAME_EMPTY = "empty.txt"
+NOMBRE_SUCURSAL_DEFAULT = "Casa Matriz"
+PREFIX_TEMP = "temp://"
+PREFIX_LOCAL = "local://"
+PREFIX_DOCUMENTOS = "documentos/"
+DOCUMENT_TYPE_PROVIDER = "provider"
+
+# Constantes para coordenadas
+COORDENADAS_ASUNCION = WKTElement('POINT(-57.5759 -25.2637)', srid=4326)
+
+# Constantes para mensajes de error
+MSG_ERROR_JSON_INVALIDO = "Formato JSON inválido en perfil_in"
+MSG_ERROR_NUMERO_DOCUMENTOS = "El número de nombres de tipo de documento no coincide con el número de archivos."
+MSG_PERFIL_USUARIO_NO_ENCONTRADO = "Perfil de usuario no encontrado."
+MSG_RAZON_SOCIAL_NO_CONFIGURADA = "La razón social no está configurada en tu perfil de usuario. Por favor, completa tu perfil antes de solicitar ser proveedor."
+MSG_EMPRESA_YA_REGISTRADA = "Una empresa con esta razón social o nombre de fantasía ya está registrada."
+MSG_DEPARTAMENTO_NO_ENCONTRADO = "Departamento '{departamento}' no encontrado"
+MSG_CIUDAD_NO_ENCONTRADA = "Ciudad '{ciudad}' no encontrada en el departamento '{departamento}'"
+MSG_TIPO_DOCUMENTO_NO_ENCONTRADO = "Tipo de documento '{nombre_tip_documento}' no encontrado"
+MSG_DOCUMENTO_NO_ENCONTRADO = "Documento no encontrado"
+MSG_DOCUMENTO_NO_DISPONIBLE = "Documento no disponible para visualización."
+MSG_ERROR_INTERNO_SERVIDOR = "Error interno del servidor"
+MSG_ERROR_INESPERADO = "Error inesperado: {error}"
+MSG_ERROR_INESPERADO_SERVICIO = "Error inesperado al proponer el servicio: {error}"
+MSG_ERROR_INESPERADO_GENERAL = "Error inesperado: {error}"
+MSG_ERROR_DIAGNOSTICO = "Error en diagnóstico: {error}"
+MSG_PERFIL_EMPRESA_NO_ENCONTRADO = "No se encontró perfil de empresa para este usuario"
+MSG_SOLICITUD_VERIFICACION_NO_ENCONTRADA = "No se encontró solicitud de verificación"
+MSG_URL_INVALIDA_LOCAL = "URL inválida. Solo se permiten archivos locales."
+MSG_ARCHIVO_NO_ENCONTRADO = "Archivo no encontrado: {message}"
+MSG_ERROR_SIRVIENDO_ARCHIVO = "Error sirviendo archivo: {serve_message}"
+
+# Constantes para mensajes de éxito
+MSG_SOLICITUD_REENVIADA = "Solicitud de verificación reenviada exitosamente."
+MSG_SOLICITUD_CREADA = "Perfil de empresa y solicitud de verificación creados exitosamente."
+
+# Constantes para valores por defecto en respuestas
+VALOR_DEFAULT_ESTADO_APROBACION = "pendiente"
+VALOR_DEFAULT_NO_ESPECIFICADO = "No especificado"
+VALOR_DEFAULT_TIPO_NO_ENCONTRADO = "Tipo no encontrado"
+
+# Funciones helper para reducir complejidad cognitiva
+async def parse_and_validate_profile(perfil_in: str) -> dict:
+    """Parsea y valida el JSON del perfil"""
+    try:
+        perfil_data = json.loads(perfil_in)
+        print(f"✅ JSON parseado correctamente: {perfil_data}")
+        return perfil_data
+    except json.JSONDecodeError as e:
+        print(f"❌ Error parseando JSON: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_ERROR_JSON_INVALIDO
+        )
+
+def validate_documents_count(nombres_tip_documento: List[str], documentos: List[UploadFile]) -> None:
+    """Valida que la cantidad de nombres de tipos de documento coincide con la de los archivos"""
+    if len(nombres_tip_documento) != len(documentos):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_ERROR_NUMERO_DOCUMENTOS
+        )
+
+def filter_valid_documents(documentos: List[UploadFile], nombres_tip_documento: List[str]) -> tuple:
+    """Filtra documentos vacíos y retorna documentos y nombres válidos"""
+    documentos_validos = []
+    nombres_tip_documento_validos = []
+    
+    for i, doc in enumerate(documentos):
+        if doc.filename != FILENAME_EMPTY and doc.size > 0:
+            documentos_validos.append(doc)
+            nombres_tip_documento_validos.append(nombres_tip_documento[i])
+        else:
+            print(f"⚠️ Documento vacío filtrado: {doc.filename}")
+    
+    return documentos_validos, nombres_tip_documento_validos
+
+async def get_user_profile(db: AsyncSession, user_id: str) -> UserModel:
+    """Obtiene y valida el perfil de usuario"""
+    user_profile_result = await db.execute(
+        select(UserModel).where(UserModel.id == uuid.UUID(user_id))
+    )
+    user_profile = user_profile_result.scalars().first()
+    
+    if not user_profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_PERFIL_USUARIO_NO_ENCONTRADO
+        )
+    
+    if not user_profile.nombre_empresa:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_RAZON_SOCIAL_NO_CONFIGURADA
+        )
+    
+    return user_profile
+
+async def validate_company_uniqueness(
+    db: AsyncSession, 
+    razon_social: str, 
+    nombre_fantasia: str, 
+    current_user_id: str
+) -> Optional[PerfilEmpresa]:
+    """Valida la unicidad de la empresa y retorna empresa existente si existe"""
+    query = select(PerfilEmpresa).where(
+        (PerfilEmpresa.razon_social == razon_social) |
+        (PerfilEmpresa.nombre_fantasia == nombre_fantasia)
+    )
+    empresa_existente_result = await db.execute(query)
+    empresa_existente = empresa_existente_result.scalars().first()
+    
+    if empresa_existente and empresa_existente.user_id != uuid.UUID(current_user_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=MSG_EMPRESA_YA_REGISTRADA
+        )
+    
+    return empresa_existente
+
+async def find_location_data(
+    db: AsyncSession, 
+    direccion_data: dict
+) -> tuple:
+    """Busca y valida departamento, ciudad y barrio"""
+    # Buscar departamento
+    dept_result = await db.execute(
+        select(Departamento).where(Departamento.nombre == direccion_data['departamento'])
+    )
+    departamento = dept_result.scalars().first()
+    
+    if not departamento:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_DEPARTAMENTO_NO_ENCONTRADO.format(departamento=direccion_data['departamento'])
+        )
+    
+    # Buscar ciudad
+    ciudad_result = await db.execute(
+        select(Ciudad).where(
+            Ciudad.nombre == direccion_data['ciudad'],
+            Ciudad.id_departamento == departamento.id_departamento
+        )
+    )
+    ciudad = ciudad_result.scalars().first()
+    
+    if not ciudad:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=MSG_CIUDAD_NO_ENCONTRADA.format(
+                ciudad=direccion_data['ciudad'], 
+                departamento=direccion_data['departamento']
+            )
+        )
+    
+    # Buscar barrio (opcional)
+    barrio = None
+    barrio_value = direccion_data.get('barrio')
+    if barrio_value and isinstance(barrio_value, str) and barrio_value.strip():
+        barrio_result = await db.execute(
+            select(Barrio).where(
+                Barrio.nombre == direccion_data['barrio'],
+                Barrio.id_ciudad == ciudad.id_ciudad
+            )
+        )
+        barrio = barrio_result.scalars().first()
+        if not barrio:
+            print(f"⚠️ Barrio '{direccion_data['barrio']}' no encontrado, continuando sin barrio")
+    
+    return departamento, ciudad, barrio
+
+async def sync_direccion_sequence(db: AsyncSession) -> None:
+    """Sincroniza la secuencia de direccion"""
+    await db.execute(text("""
+        SELECT setval(
+            pg_get_serial_sequence('direccion', 'id_direccion'),
+            COALESCE((SELECT MAX(id_direccion) FROM direccion), 0) + 1,
+            false
+        )
+    """))
+    await db.flush()
+
+async def create_direccion_with_retry(
+    db: AsyncSession,
+    direccion_data: dict,
+    departamento,
+    ciudad,
+    barrio
+) -> Direccion:
+    """Crea una dirección con manejo de errores de secuencia"""
+    nueva_direccion = Direccion(
+        calle=direccion_data['calle'],
+        numero=direccion_data['numero'],
+        referencia=direccion_data['referencia'],
+        id_departamento=departamento.id_departamento,
+        id_ciudad=ciudad.id_ciudad if ciudad else None,
+        id_barrio=barrio.id_barrio if barrio else None,
+        coordenadas=COORDENADAS_ASUNCION
+    )
+    db.add(nueva_direccion)
+    
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        if 'duplicate key value violates unique constraint "direccion_pkey"' in str(e):
+            print("⚠️ Secuencia de direccion desincronizada, sincronizando...")
+            db.expunge(nueva_direccion)
+            await sync_direccion_sequence(db)
+            # Recrear el objeto dirección
+            nueva_direccion = Direccion(
+                calle=direccion_data['calle'],
+                numero=direccion_data['numero'],
+                referencia=direccion_data['referencia'],
+                id_departamento=departamento.id_departamento,
+                id_ciudad=ciudad.id_ciudad if ciudad else None,
+                id_barrio=barrio.id_barrio if barrio else None,
+                coordenadas=COORDENADAS_ASUNCION
+            )
+            db.add(nueva_direccion)
+            await db.flush()
+        else:
+            raise
+    
+    return nueva_direccion
+
+async def update_or_create_direccion(
+    db: AsyncSession,
+    perfil_data: dict,
+    departamento,
+    ciudad,
+    barrio,
+    nuevo_perfil: Optional[PerfilEmpresa]
+) -> Direccion:
+    """Crea o actualiza la dirección según si existe perfil"""
+    if nuevo_perfil is None:
+        return await create_direccion_with_retry(
+            db, perfil_data['direccion'], departamento, ciudad, barrio
+        )
+    else:
+        if nuevo_perfil.id_direccion:
+            direccion_existente_result = await db.execute(
+                select(Direccion).where(Direccion.id_direccion == nuevo_perfil.id_direccion)
+            )
+            direccion_existente = direccion_existente_result.scalars().first()
+            if direccion_existente:
+                direccion_existente.calle = perfil_data['direccion']['calle']
+                direccion_existente.numero = perfil_data['direccion']['numero']
+                direccion_existente.referencia = perfil_data['direccion']['referencia']
+                direccion_existente.id_departamento = departamento.id_departamento
+                direccion_existente.id_ciudad = ciudad.id_ciudad if ciudad else None
+                direccion_existente.id_barrio = barrio.id_barrio if barrio else None
+                await db.flush()
+                return direccion_existente
+        
+        nueva_direccion = await create_direccion_with_retry(
+            db, perfil_data['direccion'], departamento, ciudad, barrio
+        )
+        nuevo_perfil.id_direccion = nueva_direccion.id_direccion
+        await db.flush()
+        return nueva_direccion
+
+async def update_or_create_empresa(
+    db: AsyncSession,
+    perfil_data: dict,
+    razon_social: str,
+    current_user_id: str,
+    nueva_direccion: Direccion,
+    empresa_existente: Optional[PerfilEmpresa]
+) -> PerfilEmpresa:
+    """Crea o actualiza el perfil de empresa"""
+    if empresa_existente and empresa_existente.user_id == uuid.UUID(current_user_id):
+        print(f"🔍 Actualizando empresa existente: {empresa_existente.razon_social}")
+        empresa_existente.razon_social = razon_social
+        empresa_existente.nombre_fantasia = perfil_data['nombre_fantasia']
+        empresa_existente.estado = ESTADO_PENDIENTE
+        empresa_existente.verificado = ESTADO_VERIFICADO_FALSE
+        await db.flush()
+        return empresa_existente
+    else:
+        nuevo_perfil = PerfilEmpresa(
+            user_id=uuid.UUID(current_user_id),
+            razon_social=razon_social,
+            nombre_fantasia=perfil_data['nombre_fantasia'],
+            id_direccion=nueva_direccion.id_direccion,
+            estado=ESTADO_PENDIENTE,
+            verificado=ESTADO_VERIFICADO_FALSE
+        )
+        db.add(nuevo_perfil)
+        await db.flush()
+        return nuevo_perfil
+
+async def update_or_create_sucursal(
+    db: AsyncSession,
+    perfil_data: dict,
+    nuevo_perfil: PerfilEmpresa,
+    nueva_direccion: Direccion
+) -> None:
+    """Crea o actualiza la sucursal si hay datos"""
+    if not perfil_data.get('sucursal'):
+        return
+    
+    sucursal_data = perfil_data['sucursal']
+    sucursal_existente_query = select(SucursalEmpresa).where(
+        SucursalEmpresa.id_perfil == nuevo_perfil.id_perfil
+    )
+    sucursal_existente_result = await db.execute(sucursal_existente_query)
+    sucursal_existente = sucursal_existente_result.scalars().first()
+    
+    if sucursal_existente:
+        sucursal_existente.nombre = sucursal_data.get('nombre', NOMBRE_SUCURSAL_DEFAULT)
+        sucursal_existente.telefono = sucursal_data.get('telefono', '')
+        sucursal_existente.email = sucursal_data.get('email', '')
+        sucursal_existente.id_direccion = nueva_direccion.id_direccion
+    else:
+        nueva_sucursal = SucursalEmpresa(
+            id_perfil=nuevo_perfil.id_perfil,
+            nombre=sucursal_data.get('nombre', NOMBRE_SUCURSAL_DEFAULT),
+            telefono=sucursal_data.get('telefono', ''),
+            email=sucursal_data.get('email', ''),
+            id_direccion=nueva_direccion.id_direccion,
+            es_principal=True
+        )
+        db.add(nueva_sucursal)
+    
+    await db.flush()
+
+async def process_documents(
+    db: AsyncSession,
+    documentos: List[UploadFile],
+    nombres_tip_documento: List[str],
+    razon_social: str,
+    nueva_solicitud: VerificacionSolicitud,
+    empresa_existente: Optional[PerfilEmpresa],
+    current_user_id: str
+) -> None:
+    """Procesa y sube los documentos"""
+    if not documentos:
+        print("⚠️ No hay documentos nuevos para procesar")
+        return
+    
+    for index, file in enumerate(documentos):
+        nombre_tip_documento = nombres_tip_documento[index]
+        
+        tipo_doc_result = await db.execute(
+            select(TipoDocumento).where(TipoDocumento.nombre == nombre_tip_documento)
+        )
+        tipo_documento = tipo_doc_result.scalars().first()
+        
+        if not tipo_documento:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=MSG_TIPO_DOCUMENTO_NO_ENCONTRADO.format(nombre_tip_documento=nombre_tip_documento)
+            )
+        
+        # Subir archivo
+        try:
+            file_content = await file.read()
+            file_key = f"{razon_social}/{nombre_tip_documento}/{uuid.uuid4()}_{file.filename}"
+            idrive_url = await upload_file_to_idrive(
+                file_content=file_content,
+                filename=file_key,
+                document_type=DOCUMENT_TYPE_PROVIDER
+            )
+            print(f"✅ Archivo subido exitosamente: {idrive_url}")
+        except Exception as upload_error:
+            print(f"❌ Error al subir archivo: {upload_error}")
+            idrive_url = f"{PREFIX_TEMP}{file.filename}_{current_user_id}_{tipo_documento.id_tip_documento}"
+        
+        # Crear o actualizar documento
+        if empresa_existente and empresa_existente.user_id == uuid.UUID(current_user_id):
+            doc_existente_query = select(Documento).join(VerificacionSolicitud).where(
+                VerificacionSolicitud.id_perfil == empresa_existente.id_perfil,
+                Documento.id_tip_documento == tipo_documento.id_tip_documento
+            ).order_by(Documento.created_at.desc())
+            
+            doc_existente_result = await db.execute(doc_existente_query)
+            doc_existente = doc_existente_result.scalars().first()
+            
+            if doc_existente:
+                print(f"🔄 Actualizando documento existente: {nombre_tip_documento}")
+                doc_existente.url_archivo = idrive_url
+                doc_existente.estado_revision = ESTADO_PENDIENTE
+                doc_existente.observacion = None
+                from app.services.date_service import DateService
+                doc_existente.fecha_verificacion = DateService.now_for_database()
+                doc_existente.id_verificacion = nueva_solicitud.id_verificacion
+            else:
+                print(f"➕ Creando nuevo documento: {nombre_tip_documento}")
+                nuevo_documento = Documento(
+                    id_verificacion=nueva_solicitud.id_verificacion,
+                    id_tip_documento=tipo_documento.id_tip_documento,
+                    url_archivo=idrive_url,
+                    estado_revision=ESTADO_PENDIENTE
+                )
+                db.add(nuevo_documento)
+        else:
+            nuevo_documento = Documento(
+                id_verificacion=nueva_solicitud.id_verificacion,
+                id_tip_documento=tipo_documento.id_tip_documento,
+                url_archivo=idrive_url,
+                estado_revision=ESTADO_PENDIENTE
+            )
+            db.add(nuevo_documento)
 
 @router.post(
     "/solicitar-verificacion",
@@ -55,403 +480,159 @@ async def solicitar_verificacion_completa(
         print(f"📝 Nombres tipos documento: {nombres_tip_documento}")
         print(f"💬 Comentario: {comentario_solicitud}")
 
-        # Parsear el JSON del perfil_in
-        try:
-            perfil_data = json.loads(perfil_in)
-            print(f"✅ JSON parseado correctamente: {perfil_data}")
-        except json.JSONDecodeError as e:
-            print(f"❌ Error parseando JSON: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Formato JSON inválido en perfil_in"
-            )
+        # Parsear y validar perfil
+        perfil_data = await parse_and_validate_profile(perfil_in)
         
-        # Validar que la cantidad de nombres de tipos de documento coincide con la de los archivos
-        if len(nombres_tip_documento) != len(documentos):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El número de nombres de tipo de documento no coincide con el número de archivos."
-            )
-
-        # Filtrar documentos vacíos (archivos con tamaño 0 o nombre 'empty.txt')
-        documentos_validos = []
-        nombres_tip_documento_validos = []
-        
-        for i, doc in enumerate(documentos):
-            if doc.filename != 'empty.txt' and doc.size > 0:
-                documentos_validos.append(doc)
-                nombres_tip_documento_validos.append(nombres_tip_documento[i])
-            else:
-                print(f"⚠️ Documento vacío filtrado: {doc.filename}")
-        
-        # Usar los documentos válidos
-        documentos = documentos_validos
-        nombres_tip_documento = nombres_tip_documento_validos
-        
+        # Validar documentos
+        validate_documents_count(nombres_tip_documento, documentos)
+        documentos, nombres_tip_documento = filter_valid_documents(documentos, nombres_tip_documento)
         print(f"📎 Documentos válidos para procesar: {len(documentos)}")
 
-        # 1. Obtener el perfil del usuario actual para recuperar el nombre de la empresa
-        #esto porque al iniciar sesion ya carga el nombre de su empresa
-        user_profile_result = await db.execute(
-            select(UserModel).where(UserModel.id == uuid.UUID(current_user.id))
-        )
-
-        # Obtener el perfil de usuario
-        user_profile = user_profile_result.scalars().first()
-
-        # Verificar que el perfil de usuario existe
-        if not user_profile:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de usuario no encontrado."
-            )
-
-        # Verificar que el perfil de usuario tiene un nombre de empresa configurado
-        if not user_profile.nombre_empresa:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La razón social no está configurada en tu perfil de usuario. Por favor, completa tu perfil antes de solicitar ser proveedor."
-            )
-        
+        # Obtener perfil de usuario y razón social
+        user_profile = await get_user_profile(db, current_user.id)
         razon_social = user_profile.nombre_empresa
         
-        # 2. Validar la unicidad de la empresa
-        query = select(PerfilEmpresa).where(
-            (PerfilEmpresa.razon_social == razon_social) |
-            (PerfilEmpresa.nombre_fantasia == perfil_data['nombre_fantasia'])
+        # Validar unicidad de empresa
+        empresa_existente = await validate_company_uniqueness(
+            db, razon_social, perfil_data['nombre_fantasia'], current_user.id
         )
-
-        empresa_existente = await db.execute(query)
-        empresa_existente = empresa_existente.scalars().first()
         
-        if empresa_existente and empresa_existente.user_id != uuid.UUID(current_user.id):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Una empresa con esta razón social o nombre de fantasía ya está registrada."
-            )
+        # Buscar datos de ubicación
+        departamento, ciudad, barrio = await find_location_data(db, perfil_data['direccion'])
         
-        # Si es el mismo usuario, actualizar la empresa existente en lugar de crear una nueva
+        # Determinar si hay empresa existente del mismo usuario
+        nuevo_perfil = None
         if empresa_existente and empresa_existente.user_id == uuid.UUID(current_user.id):
             print(f"🔍 Actualizando empresa existente para reenvío: {empresa_existente.razon_social}")
-            # Actualizar datos de la empresa existente
             empresa_existente.razon_social = razon_social
             empresa_existente.nombre_fantasia = perfil_data['nombre_fantasia']
-            empresa_existente.estado = "pendiente"
-            empresa_existente.verificado = False
+            empresa_existente.estado = ESTADO_PENDIENTE
+            empresa_existente.verificado = ESTADO_VERIFICADO_FALSE
             await db.flush()
-            
-            # Usar la empresa existente
             nuevo_perfil = empresa_existente
-        else:
-            # Crear nueva empresa
-            nuevo_perfil = None
-
-        # 3. Buscar el barrio por nombre y obtener su ID
-      
-     
-        # Buscar el departamento por nombre
-        dept_result = await db.execute(
-            select(Departamento).where(Departamento.nombre == perfil_data['direccion']['departamento'])
+        
+        # Crear o actualizar dirección
+        nueva_direccion = await update_or_create_direccion(
+            db, perfil_data, departamento, ciudad, barrio, nuevo_perfil
         )
-        departamento = dept_result.scalars().first()
         
-        if not departamento:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Departamento '{perfil_data['direccion']['departamento']}' no encontrado"
-            )
-        
-        # Buscar la ciudad por nombre y departamento
-        ciudad_result = await db.execute(
-            select(Ciudad).where(
-                Ciudad.nombre == perfil_data['direccion']['ciudad'],
-                Ciudad.id_departamento == departamento.id_departamento
-            )
-        )
-        ciudad = ciudad_result.scalars().first()
-        
-        if not ciudad:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ciudad '{perfil_data['direccion']['ciudad']}' no encontrada en el departamento '{perfil_data['direccion']['departamento']}'"
-            )
-        
-        # Buscar el barrio por nombre y ciudad (opcional) - DEPRECATED
-        barrio = None
-        barrio_value = perfil_data['direccion'].get('barrio')
-        if barrio_value and isinstance(barrio_value, str) and barrio_value.strip():
-            barrio_result = await db.execute(
-                select(Barrio).where(
-                    Barrio.nombre == perfil_data['direccion']['barrio'],
-                    Barrio.id_ciudad == ciudad.id_ciudad
-                )
-            )
-            barrio = barrio_result.scalars().first()
-            
-            if not barrio:
-                print(f"⚠️ Barrio '{perfil_data['direccion']['barrio']}' no encontrado en la ciudad '{perfil_data['direccion']['ciudad']}', continuando sin barrio")
-                barrio = None
-        
-        # 4. Crear o actualizar la dirección
-        
+        # Crear o actualizar empresa (solo si no existe)
         if nuevo_perfil is None:
-            # Crear nueva dirección
-            nueva_direccion = Direccion(
-                calle=perfil_data['direccion']['calle'],
-                numero=perfil_data['direccion']['numero'],
-                referencia=perfil_data['direccion']['referencia'],
-                id_departamento=departamento.id_departamento,
-                id_ciudad=ciudad.id_ciudad if ciudad else None,
-                id_barrio=barrio.id_barrio if barrio else None,
-                coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)  # Centro de Asunción
+            nuevo_perfil = await update_or_create_empresa(
+                db, perfil_data, razon_social, current_user.id, nueva_direccion, empresa_existente
             )
-            db.add(nueva_direccion)
-            try:
-                await db.flush()
-            except IntegrityError as e:
-                # Si falla por secuencia desincronizada, sincronizarla y reintentar
-                if 'duplicate key value violates unique constraint "direccion_pkey"' in str(e):
-                    print("⚠️ Secuencia de direccion desincronizada, sincronizando...")
-                    # Remover el objeto fallido de la sesión
-                    db.expunge(nueva_direccion)
-                    # Sincronizar la secuencia
-                    await db.execute(text("""
-                        SELECT setval(
-                            pg_get_serial_sequence('direccion', 'id_direccion'),
-                            COALESCE((SELECT MAX(id_direccion) FROM direccion), 0) + 1,
-                            false
-                        )
-                    """))
-                    await db.flush()  # Asegurar que la sincronización se ejecute
-                    # Recrear el objeto dirección
-                    nueva_direccion = Direccion(
-                        calle=perfil_data['direccion']['calle'],
-                        numero=perfil_data['direccion']['numero'],
-                        referencia=perfil_data['direccion']['referencia'],
-                        id_departamento=departamento.id_departamento,
-                        id_ciudad=ciudad.id_ciudad if ciudad else None,
-                        id_barrio=barrio.id_barrio if barrio else None,
-                        coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)
-                    )
-                    db.add(nueva_direccion)
-                    await db.flush()
-                else:
-                    raise
-            
-            # 5. Crear el perfil de empresa
-            nuevo_perfil = PerfilEmpresa(
-                user_id=uuid.UUID(current_user.id),
-                razon_social=razon_social,
-                nombre_fantasia=perfil_data['nombre_fantasia'],
-                id_direccion=nueva_direccion.id_direccion,
-                estado="pendiente",
-                verificado=False
-            )
-            db.add(nuevo_perfil)
-            await db.flush()
-        else:
-            # Actualizar dirección existente
-            if nuevo_perfil.id_direccion:
-                # Actualizar dirección existente
-                direccion_existente = await db.execute(
-                    select(Direccion).where(Direccion.id_direccion == nuevo_perfil.id_direccion)
-                )
-                direccion_existente = direccion_existente.scalars().first()
-                if direccion_existente:
-                    direccion_existente.calle = perfil_data['direccion']['calle']
-                    direccion_existente.numero = perfil_data['direccion']['numero']
-                    direccion_existente.referencia = perfil_data['direccion']['referencia']
-                    direccion_existente.id_departamento = departamento.id_departamento
-                    direccion_existente.id_ciudad = ciudad.id_ciudad if ciudad else None
-                    direccion_existente.id_barrio = barrio.id_barrio if barrio else None
-                    await db.flush()
-            else:
-                # Crear nueva dirección para empresa existente
-                nueva_direccion = Direccion(
-                    calle=perfil_data['direccion']['calle'],
-                    numero=perfil_data['direccion']['numero'],
-                    referencia=perfil_data['direccion']['referencia'],
-                    id_departamento=departamento.id_departamento,
-                    id_ciudad=ciudad.id_ciudad if ciudad else None,
-                    id_barrio=barrio.id_barrio if barrio else None,
-                    coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)
-                )
-                db.add(nueva_direccion)
-                try:
-                    await db.flush()
-                except IntegrityError as e:
-                    # Si falla por secuencia desincronizada, sincronizarla y reintentar
-                    if 'duplicate key value violates unique constraint "direccion_pkey"' in str(e):
-                        print("⚠️ Secuencia de direccion desincronizada, sincronizando...")
-                        # Remover el objeto fallido de la sesión
-                        db.expunge(nueva_direccion)
-                        # Sincronizar la secuencia
-                        await db.execute(text("""
-                            SELECT setval(
-                                pg_get_serial_sequence('direccion', 'id_direccion'),
-                                COALESCE((SELECT MAX(id_direccion) FROM direccion), 0) + 1,
-                                false
-                            )
-                        """))
-                        await db.flush()  # Asegurar que la sincronización se ejecute
-                        # Recrear el objeto dirección
-                        nueva_direccion = Direccion(
-                            calle=perfil_data['direccion']['calle'],
-                            numero=perfil_data['direccion']['numero'],
-                            referencia=perfil_data['direccion']['referencia'],
-                            id_departamento=departamento.id_departamento,
-                            id_ciudad=ciudad.id_ciudad if ciudad else None,
-                            id_barrio=barrio.id_barrio if barrio else None,
-                            coordenadas=WKTElement('POINT(-57.5759 -25.2637)', srid=4326)
-                        )
-                        db.add(nueva_direccion)
-                        await db.flush()
-                    else:
-                        raise
-                nuevo_perfil.id_direccion = nueva_direccion.id_direccion
-                await db.flush()
-
-        # 6. Crear o actualizar sucursal si hay datos de sucursal
-        if perfil_data.get('sucursal'):
-            sucursal_data = perfil_data['sucursal']
-            
-            # Buscar sucursal existente
-            from app.models.empresa.sucursal_empresa import SucursalEmpresa
-            sucursal_existente_query = select(SucursalEmpresa).where(
-                SucursalEmpresa.id_perfil == nuevo_perfil.id_perfil
-            )
-            sucursal_existente_result = await db.execute(sucursal_existente_query)
-            sucursal_existente = sucursal_existente_result.scalars().first()
-            
-            if sucursal_existente:
-                # Actualizar sucursal existente
-                sucursal_existente.nombre = sucursal_data.get('nombre', 'Casa Matriz')
-                sucursal_existente.telefono = sucursal_data.get('telefono', '')
-                sucursal_existente.email = sucursal_data.get('email', '')
-                sucursal_existente.id_direccion = nueva_direccion.id_direccion if 'nueva_direccion' in locals() else nuevo_perfil.id_direccion
-            else:
-                # Crear nueva sucursal
-                nueva_sucursal = SucursalEmpresa(
-                    id_perfil=nuevo_perfil.id_perfil,
-                    nombre=sucursal_data.get('nombre', 'Casa Matriz'),
-                    telefono=sucursal_data.get('telefono', ''),
-                    email=sucursal_data.get('email', ''),
-                    id_direccion=nueva_direccion.id_direccion if 'nueva_direccion' in locals() else nuevo_perfil.id_direccion,
-                    es_principal=True
-                )
-                db.add(nueva_sucursal)
-            
-            await db.flush()
-
-        # 7. Crear la solicitud de verificación
+        
+        # Crear o actualizar sucursal
+        await update_or_create_sucursal(db, perfil_data, nuevo_perfil, nueva_direccion)
+        
+        # Crear solicitud de verificación
         nueva_solicitud = VerificacionSolicitud(
             id_perfil=nuevo_perfil.id_perfil,
-            estado="pendiente",
+            estado=ESTADO_PENDIENTE,
             comentario=comentario_solicitud
         )
         db.add(nueva_solicitud)
         await db.flush()
-        
         print(f"🔍 Nueva solicitud creada: {nueva_solicitud.id_verificacion} para empresa: {nuevo_perfil.razon_social}")
-
-        # 7. Subir archivos y registrar documentos
-       
         
-        # Procesar documentos solo si hay documentos válidos
-        if documentos:
-            for index, file in enumerate(documentos):
-                nombre_tip_documento = nombres_tip_documento[index]
-                
-                # Buscar el tipo de documento por nombre
-                tipo_doc_result = await db.execute(
-                    select(TipoDocumento).where(TipoDocumento.nombre == nombre_tip_documento)
-                )
-                tipo_documento = tipo_doc_result.scalars().first()
-                
-                if not tipo_documento:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Tipo de documento '{nombre_tip_documento}' no encontrado"
-                    )
-                
-                # Subir archivo usando sistema inteligente con fallback
-                try:
-                    # Leer contenido del archivo
-                    file_content = await file.read()
-                    
-                    # Generar nombre único para el archivo (usando uuid ya importado)
-                    file_key = f"{razon_social}/{nombre_tip_documento}/{uuid.uuid4()}_{file.filename}"
-                    
-                    # Intentar subir con fallback inteligente
-                    idrive_url = await upload_file_to_idrive(
-                        file_content=file_content,
-                        filename=file_key,
-                        document_type="provider"
-                    )
-                    print(f"✅ Archivo subido exitosamente: {idrive_url}")
-                    
-                except Exception as upload_error:
-                    print(f"❌ Error al subir archivo: {upload_error}")
-                    # Fallback a URL temporal
-                    idrive_url = f"temp://{file.filename}_{current_user.id}_{tipo_documento.id_tip_documento}"
-                
-                # Si es un reenvío, buscar si ya existe un documento de este tipo para actualizarlo
-                if empresa_existente and empresa_existente.user_id == uuid.UUID(current_user.id):
-                    # Buscar documento existente del mismo tipo en la empresa
-                    doc_existente_query = select(Documento).join(VerificacionSolicitud).where(
-                        VerificacionSolicitud.id_perfil == empresa_existente.id_perfil,
-                        Documento.id_tip_documento == tipo_documento.id_tip_documento
-                    ).order_by(Documento.created_at.desc())
-                    
-                    doc_existente_result = await db.execute(doc_existente_query)
-                    doc_existente = doc_existente_result.scalars().first()
-                    
-                    if doc_existente:
-                        # Actualizar documento existente
-                        print(f"🔄 Actualizando documento existente: {nombre_tip_documento}")
-                        doc_existente.url_archivo = idrive_url
-                        doc_existente.estado_revision = "pendiente"
-                        doc_existente.observacion = None  # Limpiar observación anterior
-                        from app.services.date_service import DateService
-                        doc_existente.fecha_verificacion = DateService.now_for_database()
-                        # Actualizar la referencia a la nueva solicitud
-                        doc_existente.id_verificacion = nueva_solicitud.id_verificacion
-                    else:
-                        # Crear nuevo documento si no existe
-                        print(f"➕ Creando nuevo documento: {nombre_tip_documento}")
-                        nuevo_documento = Documento(
-                            id_verificacion=nueva_solicitud.id_verificacion,
-                            id_tip_documento=tipo_documento.id_tip_documento,
-                            url_archivo=idrive_url,
-                            estado_revision="pendiente"
-                        )
-                        db.add(nuevo_documento)
-                else:
-                    # Crear nuevo documento para nueva solicitud
-                    nuevo_documento = Documento(
-                        id_verificacion=nueva_solicitud.id_verificacion,
-                        id_tip_documento=tipo_documento.id_tip_documento,
-                        url_archivo=idrive_url,
-                        estado_revision="pendiente"
-                    )
-                    db.add(nuevo_documento)
-        else:
-            print("⚠️ No hay documentos nuevos para procesar, manteniendo documentos existentes")
+        # Procesar documentos
+        await process_documents(
+            db, documentos, nombres_tip_documento, razon_social, 
+            nueva_solicitud, empresa_existente, current_user.id
+        )
         
-        # 8. Commit de la transacción
+        # Commit de la transacción
         await db.commit()
         
         if empresa_existente and empresa_existente.user_id == uuid.UUID(current_user.id):
-            return {"message": "Solicitud de verificación reenviada exitosamente."}
+            return {"message": MSG_SOLICITUD_REENVIADA}
         else:
-            return {"message": "Perfil de empresa y solicitud de verificación creados exitosamente."}
+            return {"message": MSG_SOLICITUD_CREADA}
 
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error inesperado: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=MSG_ERROR_INESPERADO.format(error=str(e)))
 
+
+# Funciones helper para servir_mi_documento
+async def validate_token_and_get_user_id(token: Optional[str]) -> Optional[str]:
+    """Valida el token y retorna el ID del usuario"""
+    if not token:
+        print("⚠️ No se recibió token, continuando sin autenticación...")
+        return None
+    
+    try:
+        user_response = supabase_auth.auth.get_user(token)
+        if user_response and user_response.user:
+            current_user_id = user_response.user.id
+            print(f"✅ Token válido para usuario: {current_user_id}")
+            return current_user_id
+        else:
+            print("⚠️ Token inválido, continuando sin validación completa...")
+            return None
+    except Exception as auth_error:
+        print(f"⚠️ Error validando token: {auth_error}, continuando sin validación...")
+        return None
+
+async def verify_document_permissions(
+    db: AsyncSession,
+    documento: Documento,
+    current_user_id: Optional[str]
+) -> None:
+    """Verifica que el documento pertenece al usuario actual"""
+    if not current_user_id:
+        return
+    
+    try:
+        solicitud_query = select(VerificacionSolicitud).where(
+            VerificacionSolicitud.id_verificacion == documento.id_verificacion
+        )
+        solicitud_result = await db.execute(solicitud_query)
+        solicitud = solicitud_result.scalars().first()
+
+        if solicitud:
+            empresa_query = select(PerfilEmpresa).where(
+                PerfilEmpresa.id_perfil == solicitud.id_perfil
+            )
+            empresa_result = await db.execute(empresa_query)
+            empresa = empresa_result.scalars().first()
+
+            if empresa and empresa.user_id == uuid.UUID(current_user_id):
+                print("✅ Permisos verificados correctamente")
+            else:
+                print("⚠️ Documento no pertenece al usuario, pero permitiendo acceso para testing")
+    except Exception as perm_error:
+        print(f"⚠️ Error verificando permisos: {perm_error}, continuando...")
+
+def extract_file_key_from_url(url_completa: str) -> str:
+    """Extrae la clave del archivo desde la URL completa"""
+    if PREFIX_DOCUMENTOS in url_completa:
+        file_key = url_completa.split(PREFIX_DOCUMENTOS, 1)[1]
+        file_key = urllib.parse.unquote(file_key)
+        print(f"🔍 Clave extraída para S3: {file_key}")
+        return file_key
+    else:
+        print(f"⚠️ No se encontró '{PREFIX_DOCUMENTOS}' en la URL, usando URL completa como clave")
+        return url_completa
+
+def get_content_type_from_filename(file_key: str) -> str:
+    """Determina el tipo de contenido basado en el nombre del archivo"""
+    file_name = file_key.split('/')[-1] if '/' in file_key else file_key
+    content_type, _ = mimetypes.guess_type(file_name)
+    return content_type if content_type else 'application/octet-stream'
+
+def get_file_from_s3(file_key: str) -> bytes:
+    """Obtiene el archivo desde S3 usando la clave"""
+    print(f"🔍 Intentando acceder a archivo: {file_key}")
+    response = idrive_s3_client.get_object(
+        Bucket='documentos',
+        Key=file_key
+    )
+    file_content = response['Body'].read()
+    print(f"✅ Archivo obtenido exitosamente: {file_key}")
+    return file_content
 
 @router.get(
     "/mis-documentos/{documento_id}/servir",
@@ -468,24 +649,8 @@ async def servir_mi_documento(
         print(f"🔍 Intentando servir documento {documento_id}...")
         print(f"🔍 Token recibido: {token[:20] if token else 'None'}...")
 
-        # Validación básica del token (simplificada para debugging)
-        if token:
-            try:
-                # Intentar validar el token de forma básica
-                from app.supabase.auth_service import supabase_auth
-                user_response = supabase_auth.auth.get_user(token)
-                if user_response and user_response.user:
-                    current_user_id = user_response.user.id
-                    print(f"✅ Token válido para usuario: {current_user_id}")
-                else:
-                    print("⚠️ Token inválido, continuando sin validación completa...")
-                    current_user_id = None
-            except Exception as auth_error:
-                print(f"⚠️ Error validando token: {auth_error}, continuando sin validación...")
-                current_user_id = None
-        else:
-            print("⚠️ No se recibió token, continuando sin autenticación...")
-            current_user_id = None
+        # Validar token y obtener ID de usuario
+        current_user_id = await validate_token_and_get_user_id(token)
 
         # Buscar el documento
         doc_query = select(Documento).where(Documento.id_documento == documento_id)
@@ -496,90 +661,37 @@ async def servir_mi_documento(
             print(f"❌ Documento {documento_id} no encontrado")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Documento no encontrado"
+                detail=MSG_DOCUMENTO_NO_ENCONTRADO
             )
 
         print(f"✅ Documento encontrado: {documento.url_archivo}")
 
-        # Para testing, vamos a permitir acceso sin validación completa de permisos
-        # TODO: Restaurar validación completa una vez resuelto el problema de autenticación
-
-        # Verificar que el documento pertenece al usuario actual (opcional por ahora)
-        if current_user_id:
-            try:
-                # Verificar que el documento pertenece al usuario actual
-                solicitud_query = select(VerificacionSolicitud).where(
-                    VerificacionSolicitud.id_verificacion == documento.id_verificacion
-                )
-                solicitud_result = await db.execute(solicitud_query)
-                solicitud = solicitud_result.scalars().first()
-
-                if solicitud:
-                    empresa_query = select(PerfilEmpresa).where(
-                        PerfilEmpresa.id_perfil == solicitud.id_perfil
-                    )
-                    empresa_result = await db.execute(empresa_query)
-                    empresa = empresa_result.scalars().first()
-
-                    if empresa and empresa.user_id == uuid.UUID(current_user_id):
-                        print("✅ Permisos verificados correctamente")
-                    else:
-                        print("⚠️ Documento no pertenece al usuario, pero permitiendo acceso para testing")
-            except Exception as perm_error:
-                print(f"⚠️ Error verificando permisos: {perm_error}, continuando...")
+        # Verificar permisos del documento
+        await verify_document_permissions(db, documento, current_user_id)
         
         # Verificar que el documento tiene una URL válida
-        if not documento.url_archivo or documento.url_archivo.startswith('temp://'):
+        if not documento.url_archivo or documento.url_archivo.startswith(PREFIX_TEMP):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Documento no disponible para visualización."
+                detail=MSG_DOCUMENTO_NO_DISPONIBLE
             )
         
         # Intentar servir el archivo desde Idrive2
         try:
-            from app.idrive.idrive_service import idrive_s3_client
-            
-            # Extraer la clave correcta de la URL
-            # URL completa: https://t7g5.la1.idrivee2-92.com/documentos/Limpio SA/RUC/file.pdf
-            # Clave en S3: Limpio SA/RUC/file.pdf
             url_completa = documento.url_archivo
             print(f"🔍 URL completa del documento: {url_completa}")
 
-            if 'documentos/' in url_completa:
-                # Extraer la parte después de '/documentos/'
-                file_key = url_completa.split('documentos/', 1)[1]
-                # Decodificar espacios y caracteres especiales en la URL
-                import urllib.parse
-                file_key = urllib.parse.unquote(file_key)
-                print(f"🔍 Clave extraída para S3: {file_key}")
-            else:
-                # Fallback: usar la URL completa como clave
-                file_key = url_completa
-                print(f"⚠️ No se encontró 'documentos/' en la URL, usando URL completa como clave")
-
-            print(f"🔍 Intentando acceder a archivo: {file_key}")
+            # Extraer clave del archivo desde la URL
+            file_key = extract_file_key_from_url(url_completa)
             
-            # Obtener el archivo desde S3
-            response = idrive_s3_client.get_object(
-                Bucket='documentos',
-                Key=file_key
-            )
+            # Obtener archivo desde S3
+            file_content = get_file_from_s3(file_key)
             
-            # Obtener el contenido del archivo
-            file_content = response['Body'].read()
-            
-            # Determinar el tipo de contenido basado en la extensión
-            import mimetypes
-            # Usar el nombre del archivo de la clave para determinar el tipo MIME
+            # Determinar tipo de contenido
+            content_type = get_content_type_from_filename(file_key)
             file_name = file_key.split('/')[-1] if '/' in file_key else file_key
-            content_type, _ = mimetypes.guess_type(file_name)
-            if not content_type:
-                content_type = 'application/octet-stream'
-            
-            print(f"✅ Archivo servido exitosamente: {file_key}")
             
             # Devolver el archivo
-            from fastapi.responses import Response
             return Response(
                 content=file_content,
                 media_type=content_type,
@@ -593,7 +705,7 @@ async def servir_mi_documento(
             print(f"🔍 URL del archivo: {documento.url_archivo}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Documento no disponible para visualización."
+                detail=MSG_DOCUMENTO_NO_DISPONIBLE
             )
         
     except HTTPException:
@@ -604,7 +716,7 @@ async def servir_mi_documento(
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 @router.get(
@@ -667,7 +779,7 @@ async def debug_auth(token: str = None):
             }
 
         # Intentar validar el token
-        from app.supabase.auth_service import supabase_auth
+    
 
         print("🔍 Intentando validar token con Supabase...")
         user_response = supabase_auth.auth.get_user(token)
@@ -818,7 +930,7 @@ async def get_mis_documentos(
         if not empresa:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No se encontró perfil de empresa para este usuario"
+                detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
             )
         
         # Buscar la solicitud de verificación más reciente
@@ -831,7 +943,7 @@ async def get_mis_documentos(
         if not solicitud:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No se encontró solicitud de verificación"
+                detail=MSG_SOLICITUD_VERIFICACION_NO_ENCONTRADA
             )
         
         # Obtener documentos de la solicitud
@@ -851,7 +963,7 @@ async def get_mis_documentos(
             
             documentos_detallados.append({
                 "id_documento": doc.id_documento,
-                "tipo_documento": tipo_doc.nombre if tipo_doc else "Tipo no encontrado",
+                "tipo_documento": tipo_doc.nombre if tipo_doc else VALOR_DEFAULT_TIPO_NO_ENCONTRADO,
                 "es_requerido": tipo_doc.es_requerido if tipo_doc else False,
                 "estado_revision": doc.estado_revision,
                 "url_archivo": doc.url_archivo,
@@ -872,7 +984,7 @@ async def get_mis_documentos(
         print(f"Error obteniendo documentos: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 
@@ -897,7 +1009,7 @@ async def get_mis_datos_solicitud(
         if not empresa:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No se encontró perfil de empresa para este usuario"
+                detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
             )
         
         # Buscar la solicitud de verificación más reciente
@@ -910,7 +1022,7 @@ async def get_mis_datos_solicitud(
         if not solicitud:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No se encontró solicitud de verificación"
+                detail=MSG_SOLICITUD_VERIFICACION_NO_ENCONTRADA
             )
         
         # Obtener datos de dirección
@@ -1009,7 +1121,7 @@ async def get_mis_datos_solicitud(
         print(f"Error obteniendo datos de solicitud: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 
@@ -1021,7 +1133,7 @@ async def simple_test():
     """Endpoint simple de prueba que no requiere autenticación ni base de datos"""
     try:
         # Verificar que las importaciones básicas funcionan
-        import datetime
+       
         current_time = datetime.datetime.now().isoformat()
 
         return {
@@ -1065,18 +1177,15 @@ async def test_auth(current_user: SupabaseUser = Depends(get_current_user)):
 async def test_imports():
     """Endpoint para probar las importaciones de modelos"""
     try:
-        # Probar importaciones básicas
-        from app.models.empresa.perfil_empresa import PerfilEmpresa
-        from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
-        from app.models.empresa.sucursal_empresa import SucursalEmpresa
+        
 
         # Probar crear instancias (sin guardar en BD)
         perfil = PerfilEmpresa(
             user_id=uuid.uuid4(),
             razon_social="Test Company",
             nombre_fantasia="Test Company",
-            estado="pendiente",
-            verificado=False
+            estado=ESTADO_PENDIENTE,
+            verificado=ESTADO_VERIFICADO_FALSE
         )
 
         return {
@@ -1199,10 +1308,7 @@ async def enrich_service_request_response(request: SolicitudServicio, db: AsyncS
     """
     Enriquecer la respuesta de una solicitud de servicio con datos adicionales.
     """
-    from sqlalchemy import select
-    from app.models.publicar_servicio.category import CategoriaModel
-    from app.models.empresa.perfil_empresa import PerfilEmpresa
-    from app.models.perfil import UserModel
+   
 
     # Consulta para obtener datos completos
     enriched_query = select(
@@ -1231,14 +1337,14 @@ async def enrich_service_request_response(request: SolicitudServicio, db: AsyncS
             "id_solicitud": enriched_row.id_solicitud,
             "nombre_servicio": enriched_row.nombre_servicio,
             "descripcion": enriched_row.descripcion,
-            "estado_aprobacion": enriched_row.estado_aprobacion or "pendiente",
+            "estado_aprobacion": enriched_row.estado_aprobacion or VALOR_DEFAULT_ESTADO_APROBACION,
             "comentario_admin": enriched_row.comentario_admin,
             "created_at": enriched_row.created_at.isoformat() if enriched_row.created_at else None,
             "id_categoria": enriched_row.id_categoria,
             "id_perfil": enriched_row.id_perfil,
-            "nombre_categoria": enriched_row.nombre_categoria or "No especificado",
-            "nombre_empresa": enriched_row.nombre_empresa or "No especificado",
-            "nombre_contacto": enriched_row.nombre_contacto or "No especificado",
+            "nombre_categoria": enriched_row.nombre_categoria or VALOR_DEFAULT_NO_ESPECIFICADO,
+            "nombre_empresa": enriched_row.nombre_empresa or VALOR_DEFAULT_NO_ESPECIFICADO,
+            "nombre_contacto": enriched_row.nombre_contacto or VALOR_DEFAULT_NO_ESPECIFICADO,
             "email_contacto": None  # Email no disponible en UserModel
         }
     else:
@@ -1247,14 +1353,14 @@ async def enrich_service_request_response(request: SolicitudServicio, db: AsyncS
             "id_solicitud": request.id_solicitud,
             "nombre_servicio": request.nombre_servicio,
             "descripcion": request.descripcion,
-            "estado_aprobacion": request.estado_aprobacion or "pendiente",
+            "estado_aprobacion": request.estado_aprobacion or VALOR_DEFAULT_ESTADO_APROBACION,
             "comentario_admin": request.comentario_admin,
             "created_at": request.created_at.isoformat() if request.created_at else None,
             "id_categoria": request.id_categoria,
             "id_perfil": request.id_perfil,
-            "nombre_categoria": "No especificado",
-            "nombre_empresa": "No especificado",
-            "nombre_contacto": "No especificado",
+            "nombre_categoria": VALOR_DEFAULT_NO_ESPECIFICADO,
+            "nombre_empresa": VALOR_DEFAULT_NO_ESPECIFICADO,
+            "nombre_contacto": VALOR_DEFAULT_NO_ESPECIFICADO,
             "email_contacto": None
         }
 
@@ -1279,7 +1385,7 @@ async def propose_service(
             nombre_servicio=solicitud.nombre_servicio,
             descripcion=solicitud.descripcion,
             id_categoria=solicitud.id_categoria,
-            #estado_aprobacion="pendiente",
+    
             comentario_admin=solicitud.comentario_admin
         )
         db.add(nueva_solicitud)
@@ -1297,7 +1403,7 @@ async def propose_service(
         print(f"❌ Error al crear solicitud de servicio: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error inesperado al proponer el servicio: {str(e)}"
+            detail=MSG_ERROR_INESPERADO_SERVICIO.format(error=str(e))
         )
 
 @router.get(
@@ -1310,14 +1416,14 @@ async def download_document(document_url: str):
     """
     try:
         # Decodificar la URL del documento
-        import urllib.parse
+       
         decoded_url = urllib.parse.unquote(document_url)
         
         # Verificar que sea una URL local
-        if not decoded_url.startswith("local://"):
+        if not decoded_url.startswith(PREFIX_LOCAL):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="URL inválida. Solo se permiten archivos locales."
+                detail=MSG_URL_INVALIDA_LOCAL
             )
         
         # Obtener información del archivo
@@ -1326,7 +1432,7 @@ async def download_document(document_url: str):
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Archivo no encontrado: {message}"
+                detail=MSG_ARCHIVO_NO_ENCONTRADO.format(message=message)
             )
         
         # Servir el archivo
@@ -1335,15 +1441,13 @@ async def download_document(document_url: str):
         if not serve_success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error sirviendo archivo: {serve_message}"
+                detail=MSG_ERROR_SIRVIENDO_ARCHIVO.format(serve_message=serve_message)
             )
         
         # Obtener el nombre del archivo original
         filename = file_info["filename"] if file_info else "documento"
         
         # Determinar el tipo de contenido
-        from fastapi.responses import Response
-        import mimetypes
         
         content_type, _ = mimetypes.guess_type(filename)
         if not content_type:
@@ -1363,7 +1467,7 @@ async def download_document(document_url: str):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error inesperado: {str(e)}"
+            detail=MSG_ERROR_INESPERADO_GENERAL.format(error=str(e))
         )
 
 @router.get(
@@ -1449,5 +1553,5 @@ async def diagnose_storage_system():
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error en diagnóstico: {str(e)}"
+            detail=MSG_ERROR_DIAGNOSTICO.format(error=str(e))
         )

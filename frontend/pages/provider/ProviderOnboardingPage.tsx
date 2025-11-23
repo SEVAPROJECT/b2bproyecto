@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../../components/ui';
-import { ClockIcon, CheckCircleIcon, ExclamationCircleIcon, SparklesIcon } from '../../components/icons';
+import { ClockIcon, CheckCircleIcon } from '../../components/icons';
 import { AddressSelector } from '../../components/AddressSelector';
 import { providersAPI, adminAPI } from '../../services/api';
 import { ProviderOnboardingData } from '../../types/provider';
 import { locationsAPI, Departamento, Ciudad, Barrio } from '../../services/locations';
-import { API_CONFIG, buildApiUrl } from '../../config/api';
+import { buildApiUrl } from '../../config/api';
 
 // Debug: verificar que providersAPI se importa correctamente
 console.log('🔍 providersAPI importado:', providersAPI);
@@ -174,7 +174,7 @@ const OnboardingProgressBar: React.FC<{ currentStep: number }> = ({ currentStep 
 };
 
 // Componentes de pasos del onboarding
-const Step1_CompanyData: React.FC<{data: ProviderOnboardingData, setData: React.Dispatch<React.SetStateAction<ProviderOnboardingData>>}> = ({data, setData}) => {
+const Step1CompanyData: React.FC<{data: ProviderOnboardingData, setData: React.Dispatch<React.SetStateAction<ProviderOnboardingData>>}> = ({data, setData}) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setData(prev => ({ ...prev, company: { ...prev.company, [e.target.name]: e.target.value }}));
     };
@@ -200,7 +200,7 @@ const Step1_CompanyData: React.FC<{data: ProviderOnboardingData, setData: React.
     );
 };
 
-const Step2_Address: React.FC<{data: ProviderOnboardingData, setData: React.Dispatch<React.SetStateAction<ProviderOnboardingData>>}> = ({data, setData}) => {
+const Step2Address: React.FC<{data: ProviderOnboardingData, setData: React.Dispatch<React.SetStateAction<ProviderOnboardingData>>}> = ({data, setData}) => {
     const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
     const [ciudades, setCiudades] = useState<Ciudad[]>([]);
     const [barrios, setBarrios] = useState<Barrio[]>([]);
@@ -238,7 +238,7 @@ const Step2_Address: React.FC<{data: ProviderOnboardingData, setData: React.Disp
         }));
 
         // Cargar ciudades cuando se selecciona un departamento
-        if (address.departamento && address.departamento.id_departamento) {
+        if (address.departamento?.id_departamento) {
             try {
                 const ciudadesData = await locationsAPI.getCiudadesPorDepartamento(address.departamento.id_departamento);
                 setCiudades(ciudadesData);
@@ -248,7 +248,7 @@ const Step2_Address: React.FC<{data: ProviderOnboardingData, setData: React.Disp
         }
 
         // Cargar barrios cuando se selecciona una ciudad
-        if (address.ciudad && address.ciudad.id_ciudad) {
+        if (address.ciudad?.id_ciudad) {
             try {
                 const barriosData = await locationsAPI.getBarriosPorCiudad(address.ciudad.id_ciudad);
                 setBarrios(barriosData);
@@ -362,7 +362,7 @@ const Step2_Address: React.FC<{data: ProviderOnboardingData, setData: React.Disp
     );
 };
 
-const Step3_Branch: React.FC<{data: ProviderOnboardingData, setData: React.Dispatch<React.SetStateAction<ProviderOnboardingData>>}> = ({data, setData}) => {
+const Step3Branch: React.FC<{data: ProviderOnboardingData, setData: React.Dispatch<React.SetStateAction<ProviderOnboardingData>>}> = ({data, setData}) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setData(prev => ({ ...prev, branch: { ...prev.branch, [e.target.name]: e.target.value }}));
     };
@@ -424,9 +424,8 @@ const Step3_Branch: React.FC<{data: ProviderOnboardingData, setData: React.Dispa
     );
 };
 
-const Step4_Documents: React.FC<{data: ProviderOnboardingData, setData: React.Dispatch<React.SetStateAction<ProviderOnboardingData>>}> = ({data, setData}) => {
+const Step4Documents: React.FC<{data: ProviderOnboardingData, setData: React.Dispatch<React.SetStateAction<ProviderOnboardingData>>}> = ({data, setData}) => {
     const [misDocumentos, setMisDocumentos] = useState<any[]>([]);
-    const [loadingDocumentos, setLoadingDocumentos] = useState(false);
     const { user } = useAuth();
 
     // Cargar documentos del proveedor
@@ -434,7 +433,6 @@ const Step4_Documents: React.FC<{data: ProviderOnboardingData, setData: React.Di
         const loadMisDocumentos = async () => {
             if (user?.accessToken) {
                 try {
-                    setLoadingDocumentos(true);
                     // Usar endpoint con información completa de sucursal
                     const documentosData = await adminAPI.getVerificacionDatos(user.accessToken);
                     console.log('📋 Datos completos para documentos:', documentosData);
@@ -449,8 +447,6 @@ const Step4_Documents: React.FC<{data: ProviderOnboardingData, setData: React.Di
                     setMisDocumentos(documentosTransformados);
                 } catch (error) {
                     console.log('No se pudieron cargar los documentos:', error);
-                } finally {
-                    setLoadingDocumentos(false);
                 }
             }
         };
@@ -480,20 +476,6 @@ const Step4_Documents: React.FC<{data: ProviderOnboardingData, setData: React.Di
         }));
     };
 
-    const handleVerDocumento = async (documentoId: number) => {
-        if (!user?.accessToken) return;
-
-        try {
-            const url = buildApiUrl(`/providers/mis-documentos/${documentoId}/servir`);
-            const authUrl = `${url}?token=${encodeURIComponent(user.accessToken)}`;
-            window.open(authUrl, '_blank');
-        } catch (error) {
-            console.error('Error abriendo documento:', error);
-            alert('Error al abrir el documento');
-        }
-    };
-
-    const allRequiredUploaded = Object.values(data.documents).filter((d) => !d.isOptional).every((d) => d.status === 'uploaded');
     const uploadedCount = Object.values(data.documents).filter((d) => d.status === 'uploaded' && !d.isOptional).length;
     const requiredCount = Object.values(data.documents).filter((d) => !d.isOptional).length;
     const progress = (uploadedCount / requiredCount) * 100;
@@ -612,13 +594,12 @@ const Step4_Documents: React.FC<{data: ProviderOnboardingData, setData: React.Di
                                                 } else {
                                                     // Fallback: intentar acceder directamente a la URL del documento
                                                     console.log('⚠️ Usando fallback para abrir documento:', doc.url);
-                                                    if (doc.url && doc.url.startsWith('http')) {
+                                                    if (doc.url?.startsWith('http')) {
                                                         window.open(doc.url, '_blank');
                                                     } else {
                                                         alert('Documento no disponible para visualización');
                                                     }
                                                 }
-                                                return;
                                             }}
                                             className="text-sm text-green-600 hover:text-green-800 underline"
                                         >
@@ -656,7 +637,27 @@ const Step4_Documents: React.FC<{data: ProviderOnboardingData, setData: React.Di
     );
 };
 
-const Step5_Review: React.FC<{data: ProviderOnboardingData}> = ({data}) => {
+const Step5Review: React.FC<{data: ProviderOnboardingData}> = ({data}) => {
+    const getDocumentStatusClasses = (status: string, isOptional: boolean): string => {
+        if (status === 'uploaded') {
+            return 'bg-green-100 text-green-800';
+        }
+        if (isOptional) {
+            return 'bg-blue-100 text-blue-800';
+        }
+        return 'bg-red-100 text-red-800';
+    };
+
+    const getDocumentStatusText = (status: string, isOptional: boolean): string => {
+        if (status === 'uploaded') {
+            return '✅ Subido';
+        }
+        if (isOptional) {
+            return '⚪ Opcional';
+        }
+        return '❌ Requerido';
+    };
+
     return (
         <div className="space-y-4">
             <div className="text-center mb-6">
@@ -680,7 +681,7 @@ const Step5_Review: React.FC<{data: ProviderOnboardingData}> = ({data}) => {
                 </div>
             </div>
             
-            {/* Dirección - Ocupa todo el ancho */}
+            {/* Dirección - Ocupa completamente el ancho */}
             <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                 <h3 className="font-medium text-slate-900 mb-2 text-sm">📍 Dirección</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-slate-700">
@@ -698,21 +699,15 @@ const Step5_Review: React.FC<{data: ProviderOnboardingData}> = ({data}) => {
                 )}
             </div>
             
-            {/* Documentos - Ocupa todo el ancho */}
+            {/* Documentos - Ocupa completamente el ancho */}
             <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                 <h3 className="font-medium text-slate-900 mb-3 text-sm">📄 Documentos</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {Object.entries(data.documents).map(([key, doc]) => (
                         <div key={key} className="flex items-center justify-between py-1 px-2 bg-white rounded border">
                             <span className="text-sm text-slate-700">{doc.name}</span>
-                            <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                                doc.status === 'uploaded' 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : doc.isOptional
-                                    ? 'bg-blue-100 text-blue-800'
-                                    : 'bg-red-100 text-red-800'
-                            }`}>
-                                {doc.status === 'uploaded' ? '✅ Subido' : doc.isOptional ? '⚪ Opcional' : '❌ Requerido'}
+                            <span className={`px-2 py-1 text-xs rounded-full font-medium ${getDocumentStatusClasses(doc.status, doc.isOptional)}`}>
+                                {getDocumentStatusText(doc.status, doc.isOptional)}
                             </span>
                         </div>
                     ))}
@@ -726,18 +721,54 @@ const Step5_Review: React.FC<{data: ProviderOnboardingData}> = ({data}) => {
 const ProviderOnboardingPage: React.FC = () => {
     const [step, setStep] = useState(1);
     const [data, setData] = useState<ProviderOnboardingData>(initialOnboardingData);
-    const [loadingData, setLoadingData] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const { user, providerStatus, providerApplication, submitProviderApplication, resubmitProviderApplication } = useAuth();
+    const { user, providerStatus, submitProviderApplication, resubmitProviderApplication } = useAuth();
     const navigate = useNavigate();
+
+    // Función helper para mapear documentos del backend
+    const mapDocumentsFromBackend = (documentos: any[], documentosMapeados: any): any => {
+        if (!documentos || !Array.isArray(documentos)) {
+            return documentosMapeados;
+        }
+
+        console.log('📄 Procesando documentos del backend (manual):', documentos.length);
+        
+        for (const doc of documentos) {
+            console.log('📄 Procesando documento individual (manual):', {
+                id: doc.id_documento,
+                tipo: doc.tipo_documento,
+                url: doc.url_archivo
+            });
+
+            const tipoDoc = doc.tipo_documento?.toLowerCase();
+            let docKey = '';
+
+            // Mapear tipos de documento a las claves del formulario
+            if (tipoDoc?.includes('constancia') && tipoDoc?.includes('ruc')) docKey = 'ruc';
+            else if (tipoDoc?.includes('cédula') && tipoDoc?.includes('MiPymes')) docKey = 'cedula';
+            else if (tipoDoc?.includes('certificado') && tipoDoc?.includes('cumplimiento') && tipoDoc?.includes('tributario')) docKey = 'certificado';
+            else if (tipoDoc?.includes('certificaciones') && tipoDoc?.includes('rubro')) docKey = 'certificados_rubro';
+
+            if (docKey && documentosMapeados[docKey]) {
+                documentosMapeados[docKey] = {
+                    ...documentosMapeados[docKey],
+                    status: 'uploaded',
+                    url: doc.url_archivo,
+                    rejectionReason: doc.observacion || undefined
+                };
+                console.log(`📄 Documento ${docKey} mapeado como subido:`, doc.url_archivo);
+            }
+        }
+
+        return documentosMapeados;
+    };
 
     // Cargar datos previos si es una solicitud rechazada - EXACTAMENTE COMO EN AppOriginal.tsx
     useEffect(() => {
         const loadRejectedData = async () => {
             if (providerStatus === 'rejected' && user?.accessToken) {
                 try {
-                    setLoadingData(true);
-                console.log('🔄 Cargando datos de solicitud rechazada...');
+                    console.log('🔄 Cargando datos de solicitud rechazada...');
                 
                 // Debug: Verificar sucursales
                 try {
@@ -817,42 +848,10 @@ const ProviderOnboardingPage: React.FC = () => {
                                 email: empresaData.email_contacto || empresaData.email || '',
                                 useFiscalAddress: true,
                             },
-                            documents: (() => {
-                                // Mapear documentos previamente subidos
-                                const documentosMapeados = { ...initialOnboardingData.documents };
-
-                            // Cargar documentos desde el backend
-                            if (datosRechazados.documentos && Array.isArray(datosRechazados.documentos)) {
-                                console.log('📄 Procesando documentos del backend (manual):', datosRechazados.documentos.length);
-                                datosRechazados.documentos.forEach((doc: any) => {
-                                    console.log('📄 Procesando documento individual (manual):', {
-                                        id: doc.id_documento,
-                                        tipo: doc.tipo_documento,
-                                        url: doc.url_archivo
-                                    });
-                                        const tipoDoc = doc.tipo_documento?.toLowerCase();
-                                        let docKey = '';
-
-                                        // Mapear tipos de documento a las claves del formulario
-                                        if (tipoDoc?.includes('constancia') && tipoDoc?.includes('ruc')) docKey = 'ruc';
-                                        else if (tipoDoc?.includes('cédula') && tipoDoc?.includes('MiPymes')) docKey = 'cedula';
-                                        else if (tipoDoc?.includes('certificado') && tipoDoc?.includes('cumplimiento') && tipoDoc?.includes('tributario')) docKey = 'certificado';
-                                        else if (tipoDoc?.includes('certificaciones') && tipoDoc?.includes('rubro')) docKey = 'certificados_rubro';
-
-                                        if (docKey && documentosMapeados[docKey]) {
-                                            documentosMapeados[docKey] = {
-                                                ...documentosMapeados[docKey],
-                                                status: 'uploaded',
-                                                url: doc.url_archivo,
-                                                rejectionReason: doc.observacion || undefined
-                                            };
-                                            console.log(`📄 Documento ${docKey} mapeado como subido:`, doc.url_archivo);
-                                        }
-                                    });
-                                }
-
-                                return documentosMapeados;
-                            })()
+                            documents: mapDocumentsFromBackend(
+                                datosRechazados.documentos,
+                                { ...initialOnboardingData.documents }
+                            )
                         };
 
                         console.log('📄 Documentos mapeados correctamente');
@@ -866,8 +865,6 @@ const ProviderOnboardingPage: React.FC = () => {
                     }
                 } catch (error) {
                     console.error('❌ Error cargando datos de solicitud rechazada:', error);
-                } finally {
-                    setLoadingData(false);
                 }
             }
         };
@@ -894,19 +891,28 @@ const ProviderOnboardingPage: React.FC = () => {
             }
             navigate('/dashboard');
         } catch (error) {
-            alert("Error al enviar la solicitud. Por favor, inténtalo nuevamente.");
+            console.error('Error al enviar la solicitud:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+            alert(`Error al enviar la solicitud: ${errorMessage}. Por favor, inténtalo nuevamente.`);
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    const getSubmitButtonText = (): string => {
+        if (providerStatus === 'rejected') {
+            return 'Reenviar solicitud corregida';
+        }
+        return 'Enviar a verificación';
+    };
+
     const renderStep = () => {
         switch (step) {
-            case 1: return <Step1_CompanyData data={data} setData={setData} />;
-            case 2: return <Step2_Address data={data} setData={setData} />;
-            case 3: return <Step3_Branch data={data} setData={setData} />;
-            case 4: return <Step4_Documents data={data} setData={setData} />;
-            case 5: return <Step5_Review data={data} />;
+            case 1: return <Step1CompanyData data={data} setData={setData} />;
+            case 2: return <Step2Address data={data} setData={setData} />;
+            case 3: return <Step3Branch data={data} setData={setData} />;
+            case 4: return <Step4Documents data={data} setData={setData} />;
+            case 5: return <Step5Review data={data} />;
             default: return null;
         }
     };
@@ -1017,7 +1023,7 @@ const ProviderOnboardingPage: React.FC = () => {
                                     Enviando solicitud...
                                 </div>
                             ) : (
-                                providerStatus === 'rejected' ? 'Reenviar solicitud corregida' : 'Enviar a verificación'
+                                getSubmitButtonText()
                             )}
                         </Button>}
                     </div>

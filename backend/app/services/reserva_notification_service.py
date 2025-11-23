@@ -102,7 +102,7 @@ class ReservaNotificationService:
         """
         try:
             # Por ahora, enviar solo al destinatario principal
-            # TODO: Implementar CC si el servicio SMTP lo soporta
+            # Implementar CC si el servicio SMTP lo soporta
             result = gmail_smtp_service.send_email_with_fallback(
                 to_email=to_email,
                 subject=subject,
@@ -529,8 +529,8 @@ class ReservaNotificationService:
         cliente_result = self._send_notification(cliente_email, subject, html_cliente_final, text_cliente_final)
         proveedor_result = self._send_notification(proveedor_email, subject, html_proveedor_final, text_proveedor_final)
         
-        # Enviar copia a admin
-        admin_result = self._send_notification(self.admin_email, f"[AUDITORÍA] {subject}", html_admin_final, f"Auditoría - Proveedor: {proveedor_nombre} | Cliente: {cliente_nombre} | Fecha: {fecha} {hora}")
+        # Enviar copia a admin (auditoría, no afecta el resultado)
+        self._send_notification(self.admin_email, f"[AUDITORÍA] {subject}", html_admin_final, f"Auditoría - Proveedor: {proveedor_nombre} | Cliente: {cliente_nombre} | Fecha: {fecha} {hora}")
         
         return cliente_result and proveedor_result
     

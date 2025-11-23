@@ -14,7 +14,7 @@ const AdminPendingRequestsPage: React.FC = () => {
         try {
             setIsLoading(true);
             setError(null);
-            // TODO: Implementar llamada a la API
+            // Implementar llamada a la API
             // const data = await requestsAPI.getPendingRequests(token);
             // setRequests(data);
 

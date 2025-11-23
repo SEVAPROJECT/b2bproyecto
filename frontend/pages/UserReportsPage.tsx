@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { DocumentArrowDownIcon, EyeIcon } from '../components/icons';
-import { API_CONFIG, buildApiUrl } from '../config/api';
+import { buildApiUrl } from '../config/api';
 
 interface ReporteData {
     total_calificaciones?: number;
@@ -18,7 +18,7 @@ const UserReportsPage: React.FC = () => {
 
     // Detectar si el usuario es proveedor o cliente
     useEffect(() => {
-        if (user && user.role) {
+        if (user?.role) {
             const userRole = user.role.toLowerCase();
             const provider = userRole === 'proveedor' || userRole === 'provider' || userRole === 'proveedores';
             setIsProvider(provider);
@@ -42,7 +42,7 @@ const UserReportsPage: React.FC = () => {
         if (looksLikeDate) {
             try {
                 const date = new Date(value);
-                if (!isNaN(date.getTime())) {
+                if (!Number.isNaN(date.getTime())) {
                     return date.toLocaleDateString('es-ES', {
                         day: '2-digit',
                         month: '2-digit',
@@ -69,16 +69,6 @@ const UserReportsPage: React.FC = () => {
         }
     };
 
-    const formatArgentinaDate = (dateString: string): string => {
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleDateString('es-AR', {
-                timeZone: 'America/Argentina/Buenos_Aires',
-            });
-        } catch (error) {
-            return dateString;
-        }
-    };
 
     // Función para generar fecha actual en ISO (la conversión a zona horaria se hace en formatArgentinaDateTime)
     const getCurrentDateISO = (): string => {
@@ -191,7 +181,7 @@ const UserReportsPage: React.FC = () => {
         }
         
         const reporte = reportes[reportType];
-        if (!reporte || !reporte.calificaciones || reporte.calificaciones.length === 0) return;
+        if (!reporte?.calificaciones || reporte.calificaciones.length === 0) return;
 
         const reportInfo = reportTypes.find(r => r.id === reportType);
         if (!reportInfo) return;
@@ -270,7 +260,7 @@ const UserReportsPage: React.FC = () => {
                         <thead>
                             <tr>
                                 ${Object.keys(reporte.calificaciones[0]).map(key => {
-                                    let headerName = key.replace(/_/g, ' ').toUpperCase();
+                                    let headerName = key.replaceAll('_', ' ').toUpperCase();
                                     if (key === 'fecha') headerName = 'FECHA';
                                     if (key === 'servicio') headerName = 'SERVICIO';
                                     if (key === 'proveedor_empresa') headerName = 'PROVEEDOR (EMPRESA)';
@@ -301,16 +291,19 @@ const UserReportsPage: React.FC = () => {
             </html>
         `;
 
-        const newWindow = window.open('', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+        const blob = new Blob([htmlContent], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const newWindow = window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
         if (newWindow) {
-            newWindow.document.write(htmlContent);
-            newWindow.document.close();
+            newWindow.addEventListener('load', () => {
+                URL.revokeObjectURL(url);
+            });
         }
     };
 
     const generatePDF = (reportType: string) => {
         const reporte = reportes[reportType];
-        if (!reporte || !reporte.calificaciones) return;
+        if (!reporte?.calificaciones) return;
 
         const reportInfo = reportTypes.find(r => r.id === reportType);
         if (!reportInfo) return;
@@ -337,7 +330,7 @@ const UserReportsPage: React.FC = () => {
                     <thead>
                         <tr>
                             ${Object.keys(reporte.calificaciones[0] || {}).map(key => {
-                                let headerName = key.replace(/_/g, ' ').toUpperCase();
+                                let headerName = key.replaceAll('_', ' ').toUpperCase();
                                 if (key === 'fecha') headerName = 'FECHA';
                                 if (key === 'servicio') headerName = 'SERVICIO';
                                 if (key === 'proveedor_empresa') headerName = 'PROVEEDOR (EMPRESA)';
@@ -363,71 +356,15 @@ const UserReportsPage: React.FC = () => {
             </html>
         `;
 
-        const printWindow = window.open('', '_blank');
+        const blob = new Blob([htmlContent], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const printWindow = window.open(url, '_blank');
         if (printWindow) {
-            printWindow.document.write(htmlContent);
-            printWindow.document.close();
-            printWindow.print();
+            printWindow.addEventListener('load', () => {
+                printWindow.print();
+                URL.revokeObjectURL(url);
+            });
         }
-    };
-
-    const renderReportData = (reportType: string) => {
-        const reporte = reportes[reportType];
-        if (!reporte || !reporte.calificaciones || reporte.calificaciones.length === 0) {
-            return <p className="text-gray-500">No hay calificaciones disponibles</p>;
-        }
-
-        const data = reporte.calificaciones.slice(0, 10);
-
-        return (
-            <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            {Object.keys(data[0]).map((key) => {
-                                let headerName = key.replace(/_/g, ' ');
-                                if (key === 'fecha') headerName = 'FECHA';
-                                if (key === 'servicio') headerName = 'SERVICIO';
-                                if (key === 'proveedor_empresa') headerName = 'PROVEEDOR (EMPRESA)';
-                                if (key === 'proveedor_persona') headerName = 'PROVEEDOR (PERSONA)';
-                                if (key === 'cliente_persona') headerName = 'CLIENTE (PERSONA)';
-                                if (key === 'cliente_empresa') headerName = 'CLIENTE (EMPRESA)';
-                                if (key === 'puntaje') headerName = 'PUNTAJE (1-5)';
-                                if (key === 'nps') headerName = 'NPS (1-10)';
-                                if (key === 'comentario') headerName = 'COMENTARIO';
-                                
-                                return (
-                                    <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        {headerName}
-                                    </th>
-                                );
-                            })}
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {data.map((item, index) => (
-                            <tr key={index}>
-                                {Object.entries(item).map(([key, value], valueIndex) => (
-                                    <td key={valueIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {formatValue(value, key)}
-                                    </td>
-                                ))}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-                {reporte.calificaciones.length > 10 && (
-                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p className="text-sm text-blue-800">
-                            <strong>Vista previa:</strong> Mostrando 10 de {reporte.calificaciones.length} registros.
-                        </p>
-                        <p className="text-sm text-blue-600 mt-1">
-                            💡 Haz clic en "Ver" para ver todos los datos en una nueva pestaña.
-                        </p>
-                    </div>
-                )}
-            </div>
-        );
     };
 
     return (

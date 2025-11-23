@@ -6,10 +6,9 @@ from uuid import UUID
 from sqlalchemy import BIGINT, BigInteger, Column, String, Boolean, DateTime, ForeignKey, text
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from app.supabase.db.db_supabase import Base # Importación de la base declarativa
+from app.supabase.db.db_supabase import Base
 from typing import TYPE_CHECKING
-#from app.models.empresa.perfil_empresa import PerfilEmpresa
-#from app.models.empresa.direccion import Direccion
+
 
 
 if TYPE_CHECKING:

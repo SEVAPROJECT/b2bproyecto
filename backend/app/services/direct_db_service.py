@@ -18,6 +18,9 @@ POOL_KEEPALIVE_COUNT = 3
 
 logger = logging.getLogger(__name__)
 
+# Constantes para roles
+ROL_CLIENTE = "Cliente"
+
 class DirectDBService:
     """Servicio de base de datos directo con asyncpg"""
     
@@ -148,9 +151,9 @@ class DirectDBService:
                     SELECT ur.id_usuario, r.nombre as role_name 
                     FROM usuario_rol ur 
                     JOIN rol r ON ur.id_rol = r.id 
-                    WHERE ur.id_usuario = $1 AND r.nombre = 'Cliente'
+                    WHERE ur.id_usuario = $1 AND r.nombre = $2
                     """,
-                    user_id
+                    user_id, ROL_CLIENTE
                 )
                 if result:
                     return dict(result)
@@ -184,9 +187,9 @@ class DirectDBService:
             conn = await self.get_connection()
             try:
                 # Obtener ID del rol 'Cliente'
-                cliente_role = await conn.fetchrow("SELECT id FROM rol WHERE nombre = 'Cliente'")
+                cliente_role = await conn.fetchrow("SELECT id FROM rol WHERE nombre = $1", ROL_CLIENTE)
                 if not cliente_role:
-                    raise Exception("Rol 'Cliente' no encontrado")
+                    raise ValueError(f"Rol '{ROL_CLIENTE}' no encontrado")
                 
                 # Asignar rol
                 await conn.execute("""
@@ -195,7 +198,7 @@ class DirectDBService:
                     ON CONFLICT (id_usuario, id_rol) DO NOTHING
                 """, user_id, cliente_role['id'])
                 
-                logger.info(f"✅ Rol 'Cliente' asignado manualmente para usuario: {user_id}")
+                logger.info(f"✅ Rol '{ROL_CLIENTE}' asignado manualmente para usuario: {user_id}")
             finally:
                 await self.pool.release(conn)
         except Exception as e:

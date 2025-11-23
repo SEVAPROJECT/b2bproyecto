@@ -2,10 +2,10 @@ import React, { useState, useEffect, useContext } from 'react';
 import { BuildingStorefrontIcon, PlusCircleIcon } from '../../components/icons';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, servicesAPI, serviceRequestsAPI } from '../../services/api';
-import { BackendCategory, BackendService, ServiceRequestIn } from '../../types';
+import { BackendCategory, BackendService } from '../../types';
 
 const ProviderExploreCategoriesPage: React.FC = () => {
-    const { user } = useContext(AuthContext);
+   
     const [categories, setCategories] = useState<BackendCategory[]>([]);
     const [selectedCategory, setSelectedCategory] = useState<BackendCategory | null>(null);
     const [services, setServices] = useState<BackendService[]>([]);
@@ -79,6 +79,59 @@ const ProviderExploreCategoriesPage: React.FC = () => {
         } finally {
             setSubmittingRequest(false);
         }
+    };
+
+    const renderServicesContent = () => {
+        if (loadingServices) {
+            return (
+                <div className="flex items-center justify-center py-8">
+                    <div className="text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                        <p className="mt-2 text-sm text-gray-600">Cargando servicios...</p>
+                    </div>
+                </div>
+            );
+        }
+        
+        if (services.length > 0) {
+            return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {services.map((service) => (
+                        <div key={service.id_servicio} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow duration-200">
+                            <h3 className="font-medium text-gray-900 mb-2">{service.nombre}</h3>
+                            <p className="text-sm text-gray-600 mb-3 line-clamp-2">{service.descripcion}</p>
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-semibold text-blue-600">
+                                    Gs. {service.precio.toLocaleString()}
+                                </span>
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                    service.estado ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                }`}>
+                                    {service.estado ? 'Disponible' : 'No disponible'}
+                                </span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+        
+        return (
+            <div className="text-center py-8">
+                <BuildingStorefrontIcon className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-medium text-gray-900">No hay servicios</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                    No hay servicios disponibles en esta categoría aún.
+                </p>
+                <button
+                    onClick={() => setShowRequestForm(true)}
+                    className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                >
+                    <PlusCircleIcon className="h-5 w-5 mr-2" />
+                    Solicitar Primer Servicio
+                </button>
+            </div>
+        );
     };
 
     if (loading) {
@@ -171,48 +224,7 @@ const ProviderExploreCategoriesPage: React.FC = () => {
                                         </button>
                                     </div>
 
-                                    {loadingServices ? (
-                                        <div className="flex items-center justify-center py-8">
-                                            <div className="text-center">
-                                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                                                <p className="mt-2 text-sm text-gray-600">Cargando servicios...</p>
-                                            </div>
-                                        </div>
-                                    ) : services.length > 0 ? (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {services.map((service) => (
-                                                <div key={service.id_servicio} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow duration-200">
-                                                    <h3 className="font-medium text-gray-900 mb-2">{service.nombre}</h3>
-                                                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{service.descripcion}</p>
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-sm font-semibold text-blue-600">
-                                                            Gs. {service.precio.toLocaleString()}
-                                                        </span>
-                                                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                                            service.estado ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                                        }`}>
-                                                            {service.estado ? 'Disponible' : 'No disponible'}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center py-8">
-                                            <BuildingStorefrontIcon className="mx-auto h-12 w-12 text-gray-400" />
-                                            <h3 className="mt-2 text-sm font-medium text-gray-900">No hay servicios</h3>
-                                            <p className="mt-1 text-sm text-gray-500">
-                                                No hay servicios disponibles en esta categoría aún.
-                                            </p>
-                                            <button
-                                                onClick={() => setShowRequestForm(true)}
-                                                className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
-                                            >
-                                                <PlusCircleIcon className="h-5 w-5 mr-2" />
-                                                Solicitar Primer Servicio
-                                            </button>
-                                        </div>
-                                    )}
+                                    {renderServicesContent()}
                                 </div>
                             </div>
                         ) : (

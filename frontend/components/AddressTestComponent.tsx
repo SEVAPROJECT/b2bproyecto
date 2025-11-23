@@ -22,6 +22,24 @@ export const AddressTestComponent: React.FC = () => {
     setSelectedAddress(address);
   };
 
+  const renderTestStatus = () => {
+    const { departamento, ciudad, barrio } = selectedAddress;
+    
+    if (departamento && ciudad && barrio) {
+      return <p className="text-green-600 font-semibold">✅ ¡Éxito! Todas las selecciones se mantienen correctamente.</p>;
+    }
+    
+    if (departamento && ciudad) {
+      return <p className="text-blue-600">🔄 En progreso: Falta seleccionar barrio.</p>;
+    }
+    
+    if (departamento) {
+      return <p className="text-blue-600">🔄 En progreso: Falta seleccionar ciudad.</p>;
+    }
+    
+    return <p className="text-gray-600">⏳ Esperando selección de departamento.</p>;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4">
@@ -67,15 +85,7 @@ export const AddressTestComponent: React.FC = () => {
               🔍 Estado de la Prueba:
             </h4>
             <div className="text-sm text-yellow-800">
-              {selectedAddress.departamento && selectedAddress.ciudad && selectedAddress.barrio ? (
-                <p className="text-green-600 font-semibold">✅ ¡Éxito! Todas las selecciones se mantienen correctamente.</p>
-              ) : selectedAddress.departamento && selectedAddress.ciudad ? (
-                <p className="text-blue-600">🔄 En progreso: Falta seleccionar barrio.</p>
-              ) : selectedAddress.departamento ? (
-                <p className="text-blue-600">🔄 En progreso: Falta seleccionar ciudad.</p>
-              ) : (
-                <p className="text-gray-600">⏳ Esperando selección de departamento.</p>
-              )}
+              {renderTestStatus()}
             </div>
           </div>
 

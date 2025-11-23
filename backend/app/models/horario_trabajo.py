@@ -20,7 +20,7 @@ class HorarioTrabajoModel(Base):
 
     id_horario: Mapped[int] = Column(BigInteger, primary_key=True)
     id_proveedor: Mapped[int] = Column(BigInteger, ForeignKey("perfil_empresa.id_perfil"), nullable=False)
-    dia_semana: Mapped[int] = Column(Integer, nullable=False)  # 0=Lunes, 6=Domingo
+    dia_semana: Mapped[int] = Column(Integer, nullable=False)
     hora_inicio: Mapped[time] = Column(Time, nullable=False)
     hora_fin: Mapped[time] = Column(Time, nullable=False)
     activo: Mapped[bool] = Column(Boolean, nullable=False, default=True)

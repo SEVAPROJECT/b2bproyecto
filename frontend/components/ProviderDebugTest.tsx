@@ -119,8 +119,8 @@ const ProviderDebugTest: React.FC = () => {
         <div className="mt-4">
           <h4 className="font-semibold mb-2">📋 Información de Debug:</h4>
           <div className="bg-gray-100 p-3 rounded max-h-60 overflow-y-auto">
-            {debugInfo.map((info, index) => (
-              <div key={index} className="text-sm font-mono mb-1">
+            {debugInfo.map((info) => (
+              <div key={info} className="text-sm font-mono mb-1">
                 {info}
               </div>
             ))}

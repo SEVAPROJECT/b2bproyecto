@@ -44,9 +44,9 @@ export const formatDateSpanishLong = (dateStr: string): string => {
     if (!dateStr) return '';
     
     const [yearStr, monthStr, dayStr] = dateStr.split('-');
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10);
-    const day = parseInt(dayStr, 10);
+    const year = Number.parseInt(yearStr, 10);
+    const month = Number.parseInt(monthStr, 10);
+    const day = Number.parseInt(dayStr, 10);
     
     // Crear fecha en hora local (no UTC) agregando 'T00:00:00' para forzar interpretación local
     const date = new Date(year, month - 1, day);
@@ -69,9 +69,9 @@ export const parseLocalDate = (dateStr: string): Date => {
     if (!dateStr) return new Date();
     
     const [yearStr, monthStr, dayStr] = dateStr.split('-');
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10) - 1; // Mes es 0-indexed en Date
-    const day = parseInt(dayStr, 10);
+    const year = Number.parseInt(yearStr, 10);
+    const month = Number.parseInt(monthStr, 10) - 1; // Mes es 0-indexed en Date
+    const day = Number.parseInt(dayStr, 10);
     
     return new Date(year, month, day);
 };

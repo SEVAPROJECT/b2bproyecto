@@ -1,8 +1,8 @@
 // @refresh reset
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import { AuthContextType, User, ProviderApplicationStatus, UserRole } from '../types/auth';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo, ReactNode } from 'react';
+import { AuthContextType, User, ProviderApplicationStatus, UserRole, ProviderStatus } from '../types/auth';
 import { ProviderOnboardingData } from '../types/provider';
-import { authAPI, providersAPI, adminAPI } from '../services/api';
+import { authAPI, providersAPI } from '../services/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -12,7 +12,7 @@ interface AuthProviderProps {
 
 const AuthProvider = ({ children }: AuthProviderProps) => {
     const [user, setUser] = useState<User | null>(null);
-    const [providerStatus, setProviderStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
+    const [providerStatus, setProviderStatus] = useState<ProviderStatus>('none');
     const [providerApplication, setProviderApplication] = useState<ProviderApplicationStatus>({
         status: 'none',
         documents: {}
@@ -21,41 +21,151 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
     const [error, setError] = useState<string | null>(null);
     const loadingUserRef = useRef(false); // Para evitar cargas duplicadas
 
-    // Verificar si hay un usuario logueado al cargar la app
-    useEffect(() => {
-    const loadUser = async () => {
-        console.log('🔍 loadUser ejecutándose...');
-        console.log('🔍 user:', user);
-        console.log('🔍 loadingUserRef.current:', loadingUserRef.current);
-        
-        // Protección: si ya hay un usuario cargado, no volver a cargar
+    // Función helper para validar condiciones previas antes de cargar usuario
+    const shouldLoadUser = (): boolean => {
         if (user) {
             console.log('🔍 Usuario ya cargado, saliendo');
-            return;
+            return false;
         }
-        
-        // Protección adicional: si ya se está cargando, no volver a cargar
         if (loadingUserRef.current) {
             console.log('🔍 Ya se está cargando, saliendo');
-            return;
+            return false;
         }
-        
-        // Verificar si hay token ANTES de establecer loading
+        return true;
+    };
+
+    // Función helper para obtener y validar el token de acceso
+    const getAccessToken = (): string | null => {
         const accessToken = localStorage.getItem('access_token');
         console.log('🔍 accessToken:', accessToken ? 'Presente' : 'No presente');
         if (!accessToken) {
-            // No hay token, resetear loading y salir
             console.log('🔍 No hay token, reseteando loading=false y saliendo');
             setIsLoading(false);
-            return;
+            return null;
+        }
+        return accessToken;
+    };
+
+    // Función helper para determinar el rol del usuario desde el perfil
+    const determineUserRole = (profile: any): UserRole => {
+        let userRole: UserRole = 'client';
+        
+        if (profile.roles && Array.isArray(profile.roles)) {
+            const rolesLower = new Set(profile.roles.map((role: string) => role.toLowerCase()));
+            console.log('🎭 Roles en minúsculas:', Array.from(rolesLower));
+            
+            if (rolesLower.has('admin') || rolesLower.has('administrador')) {
+                userRole = 'admin';
+                console.log('Usuario es ADMIN (verificado en backend)');
+            } else if (rolesLower.has('provider') || rolesLower.has('proveedor')) {
+                userRole = 'provider';
+                console.log('🏢 Usuario es PROVIDER (verificado en backend)');
+            } else {
+                console.log('👤 Usuario es CLIENT (verificado en backend)');
+            }
+        } else {
+            console.log('⚠️ No se encontraron roles en el perfil:', profile);
         }
         
-        console.log('🔍 Estableciendo loading=true y cargando usuario...');
-        loadingUserRef.current = true;
-        setIsLoading(true); // Solo establecer loading si hay token
+        return userRole;
+    };
+
+    // Función helper para obtener el estado de verificación del proveedor
+    const getProviderVerificationStatus = async (accessToken: string): Promise<{
+        status: ProviderStatus;
+        application: ProviderApplicationStatus;
+    }> => {
+        let providerStatus: ProviderStatus = 'none';
+        let providerApplication: ProviderApplicationStatus = { status: 'none', documents: {} };
+        
+        try {
+            const verificationStatus = await authAPI.getVerificacionEstado(accessToken);
+            console.log('📋 Estado de verificación al cargar:', verificationStatus);
+            
+            if (verificationStatus.estado) {
+                const estado = verificationStatus.estado as ProviderStatus;
+                providerStatus = estado;
+                providerApplication = {
+                    status: estado,
+                    submittedAt: verificationStatus.fecha_solicitud,
+                    reviewedAt: verificationStatus.fecha_revision,
+                    rejectionReason: verificationStatus.comentario,
+                    documents: {}
+                };
+            }
+        } catch (verificationError) {
+            console.log('⚠️ No se pudo obtener estado de verificación al cargar:', verificationError);
+        }
+        
+        return { status: providerStatus, application: providerApplication };
+    };
+
+    // Función helper para construir el objeto User desde el perfil
+    const buildUserFromProfile = (
+        profile: any,
+        accessToken: string,
+        userRole: UserRole,
+        providerStatus: ProviderStatus,
+        providerApplication: ProviderApplicationStatus
+    ): User => {
+        return {
+            id: profile.id || `user_${Date.now()}`,
+            name: profile.nombre_persona || profile.nombre || profile.first_name || profile.name || profile.email?.split('@')[0] || 'Usuario',
+            email: profile.email || profile.correo || 'usuario@email.com',
+            role: userRole,
+            companyName: profile.nombre_empresa || profile.razon_social || profile.company_name || 'Mi Empresa',
+            ruc: profile.ruc || null,
+            accessToken: accessToken,
+            createdAt: profile.created_at || new Date().toISOString(),
+            updatedAt: profile.updated_at || new Date().toISOString(),
+            providerStatus: providerStatus,
+            providerApplication: providerApplication,
+            foto_perfil: profile.foto_perfil || null
+        };
+    };
+
+    // Función helper para manejar errores al cargar usuario
+    const handleLoadUserError = (err: any) => {
+        console.error('❌ Error cargando usuario:', err);
+        console.error('❌ Tipo de error:', typeof err);
+        console.error('❌ Propiedades del error:', Object.keys(err));
+        console.error('❌ Status del error:', err.status);
+        console.error('❌ Message del error:', err.message);
+        console.error('❌ Detail del error:', err.detail);
+        
+        if (err.status === 401 || err.status === 403 || 
+            err.message?.includes('401') ||
+            err.message?.includes('403')) {
+            console.log('🔐 Error de autenticación, limpiando localStorage');
+            localStorage.removeItem('access_token');
+        } else if (err.message?.includes('Timeout')) {
+            console.log('⏰ Timeout de conexión, manteniendo sesión para reintento');
+        } else {
+            console.log('⚠️ Error de conexión, manteniendo sesión para reintento');
+        }
+    };
+
+    // Verificar si hay un usuario logueado al cargar la app
+    useEffect(() => {
+        const loadUser = async () => {
+            console.log('🔍 loadUser ejecutándose...');
+            console.log('🔍 user:', user);
+            console.log('🔍 loadingUserRef.current:', loadingUserRef.current);
+            
+            if (!shouldLoadUser()) {
+                return;
+            }
+            
+            const accessToken = getAccessToken();
+            if (!accessToken) {
+                return;
+            }
+            
+            console.log('🔍 Estableciendo loading=true y cargando usuario...');
+            loadingUserRef.current = true;
+            setIsLoading(true);
             
             try {
-
                 console.log('🔑 Token encontrado, obteniendo perfil...');
                 const profile = await authAPI.getProfile(accessToken);
                 console.log('👤 Perfil obtenido:', profile);
@@ -71,65 +181,17 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                 console.log('📸 Foto de perfil en perfil:', profile.foto_perfil);
                 console.log('🏢 RUC en perfil del backend:', profile.ruc);
 
-                // Validación robusta de roles como en Apporiginal.tsx
-                let userRole: UserRole = 'client';
-                
-                // Verificar si tiene rol de admin en el backend (solución para mayúsculas/minúsculas)
-                if (profile.roles && Array.isArray(profile.roles)) {
-                    const rolesLower = profile.roles.map((role: string) => role.toLowerCase());
-                    console.log('🎭 Roles en minúsculas:', rolesLower);
-                    
-                    if (rolesLower.includes('admin') || rolesLower.includes('administrador')) {
-                        userRole = 'admin';
-                        console.log('Usuario es ADMIN (verificado en backend)');
-                    } else if (rolesLower.includes('provider') || rolesLower.includes('proveedor')) {
-                        userRole = 'provider';
-                        console.log('🏢 Usuario es PROVIDER (verificado en backend)');
-                    } else {
-                        console.log('👤 Usuario es CLIENT (verificado en backend)');
-                    }
-                } else {
-                    console.log('⚠️ No se encontraron roles en el perfil:', profile);
-                }
-                
-                // Obtener el estado actual de la solicitud de verificación
-                let providerStatus: 'none' | 'pending' | 'approved' | 'rejected' = 'none';
-                let providerApplication: ProviderApplicationStatus = { status: 'none', documents: {} };
-                
-                try {
-                    const verificationStatus = await authAPI.getVerificacionEstado(accessToken);
-                    console.log('📋 Estado de verificación al cargar:', verificationStatus);
-                    
-                    if (verificationStatus.estado) {
-                        const estado = verificationStatus.estado as 'none' | 'pending' | 'approved' | 'rejected';
-                        providerStatus = estado;
-                        providerApplication = {
-                            status: estado,
-                            submittedAt: verificationStatus.fecha_solicitud,
-                            reviewedAt: verificationStatus.fecha_revision,
-                            rejectionReason: verificationStatus.comentario,
-                            documents: {}
-                        };
-                    }
-                } catch (verificationError) {
-                    console.log('⚠️ No se pudo obtener estado de verificación al cargar:', verificationError);
-                    // Usar valores por defecto si no se puede obtener el estado
-                }
+                const userRole = determineUserRole(profile);
+                const { status: providerStatus, application: providerApplication } = 
+                    await getProviderVerificationStatus(accessToken);
 
-                const newUser: User = {
-                    id: profile.id || `user_${Date.now()}`,
-                    name: profile.nombre_persona || profile.nombre || profile.first_name || profile.name || profile.email?.split('@')[0] || 'Usuario',
-                    email: profile.email || profile.correo || 'usuario@email.com',
-                    role: userRole,
-                    companyName: profile.nombre_empresa || profile.razon_social || profile.company_name || 'Mi Empresa',
-                    ruc: profile.ruc || null,
-                    accessToken: accessToken,
-                    createdAt: profile.created_at || new Date().toISOString(),
-                    updatedAt: profile.updated_at || new Date().toISOString(),
-                    providerStatus: providerStatus,
-                    providerApplication: providerApplication,
-                    foto_perfil: profile.foto_perfil || null
-                };
+                const newUser = buildUserFromProfile(
+                    profile,
+                    accessToken,
+                    userRole,
+                    providerStatus,
+                    providerApplication
+                );
                 
                 console.log('🏢 RUC mapeado en newUser:', newUser.ruc);
                 console.log('👤 Usuario completo creado:', newUser);
@@ -138,28 +200,11 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                 setProviderStatus(newUser.providerStatus);
                 setProviderApplication(newUser.providerApplication);
             } catch (err: any) {
-                console.error('❌ Error cargando usuario:', err);
-                console.error('❌ Tipo de error:', typeof err);
-                console.error('❌ Propiedades del error:', Object.keys(err));
-                console.error('❌ Status del error:', err.status);
-                console.error('❌ Message del error:', err.message);
-                console.error('❌ Detail del error:', err.detail);
-                
-                // Con autenticación híbrida, limpiar localStorage solo en errores de auth
-                if (err.status === 401 || err.status === 403 || 
-                    (err.message && err.message.includes('401')) ||
-                    (err.message && err.message.includes('403'))) {
-                    console.log('🔐 Error de autenticación, limpiando localStorage');
-                    localStorage.removeItem('access_token');
-                } else if (err.message && err.message.includes('Timeout')) {
-                    console.log('⏰ Timeout de conexión, manteniendo sesión para reintento');
-                } else {
-                    console.log('⚠️ Error de conexión, manteniendo sesión para reintento');
-                }
+                handleLoadUserError(err);
             } finally {
                 console.log('🔍 Finally: reseteando loading=false');
-                setIsLoading(false); // Resetear loading
-                loadingUserRef.current = false; // Resetear el flag de carga
+                setIsLoading(false);
+                loadingUserRef.current = false;
             }
         };
 
@@ -202,13 +247,13 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
             
             // Verificar si tiene rol de admin en el backend (solución para mayúsculas/minúsculas)
             if (profile.roles && Array.isArray(profile.roles)) {
-                const rolesLower = profile.roles.map((role: string) => role.toLowerCase());
-                console.log('🎭 Roles en minúsculas:', rolesLower);
+                const rolesLower = new Set(profile.roles.map((role: string) => role.toLowerCase()));
+                console.log('🎭 Roles en minúsculas:', Array.from(rolesLower));
                 
-                if (rolesLower.includes('admin') || rolesLower.includes('administrador')) {
+                if (rolesLower.has('admin') || rolesLower.has('administrador')) {
                     userRole = 'admin';
                     console.log('Usuario es ADMIN (verificado en backend)');
-                } else if (rolesLower.includes('provider') || rolesLower.includes('proveedor')) {
+                } else if (rolesLower.has('provider') || rolesLower.has('proveedor')) {
                     userRole = 'provider';
                     console.log('🏢 Usuario es PROVIDER (verificado en backend)');
                 } else {
@@ -468,16 +513,16 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
             // Usar la misma lógica que en loadUser
             let userRole: UserRole = 'client';
             if (profile.roles && Array.isArray(profile.roles)) {
-                const rolesLower = profile.roles.map((role: string) => role.toLowerCase());
-                if (rolesLower.includes('admin') || rolesLower.includes('administrador')) {
+                const rolesLower = new Set(profile.roles.map((role: string) => role.toLowerCase()));
+                if (rolesLower.has('admin') || rolesLower.has('administrador')) {
                     userRole = 'admin';
-                } else if (rolesLower.includes('provider') || rolesLower.includes('proveedor')) {
+                } else if (rolesLower.has('provider') || rolesLower.has('proveedor')) {
                     userRole = 'provider';
                 }
             }
 
             // Obtener el estado actual de la solicitud de verificación
-            let providerStatus: 'none' | 'pending' | 'approved' | 'rejected' = 'none';
+            let providerStatus: ProviderStatus = 'none';
             let providerApplication: ProviderApplicationStatus = { status: 'none', documents: {} };
             
             try {
@@ -485,7 +530,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                 console.log('📋 Estado de verificación:', verificationStatus);
                 
                 if (verificationStatus.estado) {
-                    const estado = verificationStatus.estado as 'none' | 'pending' | 'approved' | 'rejected';
+                    const estado = verificationStatus.estado as ProviderStatus;
                     providerStatus = estado;
                     providerApplication = {
                         status: estado,
@@ -542,7 +587,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
         }
     };
 
-    const updateProviderStatus = (status: 'none' | 'pending' | 'approved' | 'rejected') => {
+    const updateProviderStatus = (status: ProviderStatus) => {
         setProviderStatus(status);
     };
 
@@ -551,7 +596,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
     };
 
     const submitProviderApplication = async (data: ProviderOnboardingData) => {
-        if (user && user.role === 'client') {
+        if (user?.role === 'client') {
             setIsLoading(true);
             try {
                 const accessToken = localStorage.getItem('access_token');
@@ -572,12 +617,12 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                 };
 
                 // Procesar documentos subidos
-                Object.entries(data.documents).forEach(([key, doc]) => {
+                for (const [key, doc] of Object.entries(data.documents)) {
                     if (doc.status === 'uploaded' && doc.file) {
                         documentos.push(doc.file);
                         nombres_tip_documento.push(documentTypeMapping[key] || doc.name);
                     }
-                });
+                }
 
                 const perfil_in = {
                     nombre_fantasia: data.company.tradeName,
@@ -630,7 +675,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
     };
 
     const resubmitProviderApplication = async (data: ProviderOnboardingData) => {
-        if (user && user.role === 'client') {
+        if (user?.role === 'client') {
             setIsLoading(true);
             try {
                 const accessToken = localStorage.getItem('access_token');
@@ -651,7 +696,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                 };
 
                 // Procesar documentos subidos (nuevos y actualizados)
-                Object.entries(data.documents).forEach(([key, doc]) => {
+                for (const [key, doc] of Object.entries(data.documents)) {
                     if (doc.status === 'uploaded' && doc.file) {
                         // Documento nuevo o actualizado
                         documentos.push(doc.file);
@@ -661,7 +706,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                         // Documento existente que puede ser actualizado pero no se ha subido uno nuevo
                         console.log(`⚠️ Documento ${key} marcado como actualizable pero no se ha subido uno nuevo`);
                     }
-                });
+                }
 
                 // Si no hay documentos nuevos para enviar, enviar al menos un documento vacío para evitar error 422
                 if (documentos.length === 0) {
@@ -722,7 +767,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
         }
     };
 
-    const value: AuthContextType = {
+    const value: AuthContextType = useMemo(() => ({
         user,
         isAuthenticated: !!user,
         providerStatus,
@@ -738,7 +783,22 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
         updateProviderApplication,
         isLoading,
         error
-    };
+    }), [
+        user,
+        providerStatus,
+        providerApplication,
+        login,
+        register,
+        logout,
+        refreshToken,
+        reloadUserProfile,
+        submitProviderApplication,
+        resubmitProviderApplication,
+        updateProviderStatus,
+        updateProviderApplication,
+        isLoading,
+        error
+    ]);
     
     // Debug: verificar el estado del contexto
     console.log('🔍 AuthContext value actualizado:', {

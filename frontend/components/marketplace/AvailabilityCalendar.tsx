@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { buildApiUrl } from '../../config/api';
 
 interface Disponibilidad {
     id_disponibilidad: number;
@@ -23,13 +24,10 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
     selectedTime
 }) => {
     const { user } = useAuth();
-    const [disponibilidades, setDisponibilidades] = useState<Disponibilidad[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [availableDates, setAvailableDates] = useState<Set<string>>(new Set());
     const [availableTimes, setAvailableTimes] = useState<Map<string, string[]>>(new Map());
-
-    const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
 
     // Helper para convertir Date a string en formato YYYY-MM-DD sin cambio de zona horaria
     const formatDateToYYYYMMDD = (date: Date): string => {
@@ -53,10 +51,11 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                 setError(null);
                 
                 // Usar el endpoint correcto para disponibilidades disponibles
+                const apiUrl = buildApiUrl(`/disponibilidades/servicio/${serviceId}/disponibles`);
                 console.log(`🔍 Intentando cargar disponibilidades para servicio ${serviceId}`);
-                console.log(`🔗 URL: ${API_URL}/api/v1/disponibilidades/servicio/${serviceId}/disponibles`);
+                console.log(`🔗 URL: ${apiUrl}`);
                 
-                const response = await fetch(`${API_URL}/api/v1/disponibilidades/servicio/${serviceId}/disponibles`, {
+                const response = await fetch(apiUrl, {
                     headers: {
                         'Authorization': `Bearer ${user?.accessToken}`,
                         'Content-Type': 'application/json',
@@ -68,7 +67,6 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                     if (response.status === 404) {
                         // No hay disponibilidades configuradas para este servicio
                         console.log('ℹ️ No hay disponibilidades configuradas para este servicio');
-                        setDisponibilidades([]);
                         setAvailableDates(new Set());
                         setAvailableTimes(new Map());
                         return;
@@ -77,17 +75,15 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                 }
 
                 const data = await response.json();
-                setDisponibilidades(data);
                 
                 // Procesar fechas y horas disponibles
                 const dates = new Set<string>();
                 const timesMap = new Map<string, string[]>();
 
-                data.forEach((disp: Disponibilidad) => {
+                for (const disp of data) {
                     if (disp.disponible) {
                         // Parsear fecha como UTC para evitar cambios de zona horaria
                         const fechaInicio = new Date(disp.fecha_inicio + 'Z');
-                        const fechaFin = new Date(disp.fecha_fin + 'Z');
                         
                         // Agregar fecha (usar función local sin conversión UTC)
                         const fechaStr = formatDateToYYYYMMDD(fechaInicio);
@@ -98,9 +94,12 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                         if (!timesMap.has(fechaStr)) {
                             timesMap.set(fechaStr, []);
                         }
-                        timesMap.get(fechaStr)!.push(horaStr);
+                        const times = timesMap.get(fechaStr);
+                        if (times) {
+                            times.push(horaStr);
+                        }
                     }
-                });
+                }
 
                 setAvailableDates(dates);
                 setAvailableTimes(timesMap);
@@ -108,7 +107,6 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                 console.error('Error al cargar disponibilidades:', err);
                 setError(err instanceof Error ? err.message : 'Error desconocido');
                 // En caso de error, mostrar mensaje informativo
-                setDisponibilidades([]);
                 setAvailableDates(new Set());
                 setAvailableTimes(new Map());
             } finally {
@@ -119,7 +117,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
         if (serviceId && user) {
             loadDisponibilidades();
         }
-    }, [serviceId, API_URL, user]);
+    }, [serviceId, user]);
 
     // Generar opciones de fecha (próximos 30 días)
     const generateDateOptions = () => {

@@ -19,7 +19,7 @@ const AdminDashboardPage: React.FC = () => {
 
     useEffect(() => {
         // Solo ejecutar si el usuario es admin y no hemos cargado aún
-        if (!user || !user.accessToken || user.role !== 'admin' || hasLoadedRef.current) {
+        if (!user?.accessToken || user.role !== 'admin' || hasLoadedRef.current) {
             return;
         }
 
@@ -83,7 +83,7 @@ const AdminDashboardPage: React.FC = () => {
     if (!user || isLoading) {
         return (
             <OptimizedLoading 
-                message={!user ? 'Cargando información del usuario...' : 'Cargando dashboard...'}
+                message={user ? 'Cargando dashboard...' : 'Cargando información del usuario...'}
                 showProgress={false}
             />
         );

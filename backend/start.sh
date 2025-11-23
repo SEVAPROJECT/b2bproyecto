@@ -32,23 +32,23 @@ python -c "import sys; print(f'Python path: {sys.path}')"
 # Intentar importar la aplicación paso a paso
 echo "🔍 Verificando importación de FastAPI..."
 python -c "import fastapi; print('✅ FastAPI OK')" || {
-    echo "❌ Error con FastAPI"
+    echo "❌ Error con FastAPI" >&2
     exit 1
 }
 
 echo "🔍 Verificando importación de Uvicorn..."
 python -c "import uvicorn; print('✅ Uvicorn OK')" || {
-    echo "❌ Error con Uvicorn"
+    echo "❌ Error con Uvicorn" >&2
     exit 1
 }
 
 echo "🔍 Verificando importación de la aplicación..."
 python -c "from app.main import app; print('✅ App importada OK')" || {
-    echo "❌ Error al importar la aplicación"
-    echo "🔍 Listando archivos en app/"
-    ls -la app/
-    echo "🔍 Listando archivos en app/main.py"
-    ls -la app/main.py || echo "main.py no encontrado"
+    echo "❌ Error al importar la aplicación" >&2
+    echo "🔍 Listando archivos en app/" >&2
+    ls -la app/ >&2
+    echo "🔍 Listando archivos en app/main.py" >&2
+    ls -la app/main.py >&2 || echo "main.py no encontrado" >&2
     exit 1
 }
 

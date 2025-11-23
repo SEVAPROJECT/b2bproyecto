@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import { servicesAPI } from '../services/api';
 import { BackendService } from '../types';
 import { MainLayout } from '../components/layouts';
@@ -8,7 +7,6 @@ import { StarIcon, MapPinIcon, ClockIcon, UserCircleIcon } from '../components/i
 
 const ServiceDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
-    const { user } = useAuth();
     const navigate = useNavigate();
     const [service, setService] = useState<BackendService | null>(null);
     const [loading, setLoading] = useState(true);
@@ -31,7 +29,11 @@ const ServiceDetailPage: React.FC = () => {
 
             // Obtener todos los servicios con información del proveedor y filtrar por ID
             const allServices = await servicesAPI.getServicesWithProviders(token);
-            const serviceData = allServices.find(service => service.id_servicio === parseInt(id!));
+            if (!id) {
+                setError('ID de servicio no válido');
+                return;
+            }
+            const serviceData = allServices.find(service => service.id_servicio === Number.parseInt(id));
             
             if (!serviceData) {
                 setError('Servicio no encontrado');

@@ -1,7 +1,7 @@
 """
 Router para restablecimiento de contraseña directo (sin SMTP)
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 import logging
 from app.schemas.password_reset import (
     PasswordResetRequest,
@@ -15,6 +15,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/password-reset-direct", tags=["Password Reset Direct"])
 
+# Constantes para mensajes de error
+ERROR_INTERNO_SERVIDOR = "Error interno del servidor"
+MENSAJE_NO_CODIGO_ACTIVO = "No hay código activo"
+MENSAJE_VERIFICAR_CODIGO_PRIMERO = "Debes verificar el código primero"
+MENSAJE_CONTRASENA_CAMBIADA = "Tu contraseña se cambió correctamente. Ahora podés iniciar sesión con tu nueva contraseña."
+
+# Constantes para claves de diccionario
+KEY_HAS_ACTIVE_CODE = "has_active_code"
+KEY_MESSAGE = "message"
+KEY_IS_VERIFIED = "is_verified"
+KEY_ATTEMPTS = "attempts"
+KEY_MAX_ATTEMPTS = "max_attempts"
+KEY_EXPIRES_AT = "expires_at"
+KEY_SUCCESS = "success"
+KEY_VERIFIED = "verified"
+
 @router.post("/request", response_model=PasswordResetResponse)
 async def request_password_reset_direct(request: PasswordResetRequest):
     """
@@ -26,25 +42,25 @@ async def request_password_reset_direct(request: PasswordResetRequest):
         # Generar y devolver código directamente
         result = await direct_password_reset_service.send_reset_code(email)
         
-        if result["success"]:
+        if result[KEY_SUCCESS]:
             logger.info(f"✅ Código de restablecimiento generado para {email}")
             return PasswordResetResponse(
                 success=True,
-                message=result["message"],
+                message=result[KEY_MESSAGE],
                 expires_in_seconds=result.get("expires_in_seconds")
             )
         else:
-            logger.error(f"❌ Error generando código para {email}: {result['message']}")
+            logger.error(f"❌ Error generando código para {email}: {result[KEY_MESSAGE]}")
             return PasswordResetResponse(
                 success=False,
-                message=result["message"]
+                message=result[KEY_MESSAGE]
             )
             
     except Exception as e:
         logger.error(f"❌ Error en request_password_reset_direct: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Error interno del servidor"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ERROR_INTERNO_SERVIDOR
         )
 
 @router.post("/verify-code", response_model=PasswordResetResponse)
@@ -54,22 +70,21 @@ async def verify_reset_code_direct(request: PasswordResetCodeVerify):
     """
     try:
         email = request.email.lower().strip()
-        code = request.code.strip()
         
         # Verificar código
-        result = direct_password_reset_service.verify_reset_code(email, code)
+        result = direct_password_reset_service.verify_reset_code(email, request.code.strip())
         
-        if result["success"]:
+        if result[KEY_SUCCESS]:
             logger.info(f"✅ Código verificado correctamente para {email}")
             return PasswordResetResponse(
                 success=True,
-                message=result["message"]
+                message=result[KEY_MESSAGE]
             )
         else:
-            logger.warning(f"⚠️ Código incorrecto para {email}: {result['message']}")
+            logger.warning(f"⚠️ Código incorrecto para {email}: {result[KEY_MESSAGE]}")
             return PasswordResetResponse(
                 success=False,
-                message=result["message"],
+                message=result[KEY_MESSAGE],
                 remaining_attempts=result.get("remaining_attempts"),
                 expired=result.get("expired"),
                 max_attempts_reached=result.get("max_attempts_reached")
@@ -78,8 +93,8 @@ async def verify_reset_code_direct(request: PasswordResetCodeVerify):
     except Exception as e:
         logger.error(f"❌ Error en verify_reset_code_direct: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Error interno del servidor"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ERROR_INTERNO_SERVIDOR
         )
 
 @router.post("/set-new-password", response_model=PasswordResetResponse)
@@ -89,7 +104,6 @@ async def set_new_password_direct(request: PasswordResetNewPassword):
     """
     try:
         email = request.email.lower().strip()
-        code = request.code.strip() if request.code else None
         new_password = request.new_password
         
         # Verificar que el código esté verificado
@@ -97,30 +111,30 @@ async def set_new_password_direct(request: PasswordResetNewPassword):
             logger.warning(f"⚠️ Intento de cambiar contraseña sin código verificado para {email}")
             return PasswordResetResponse(
                 success=False,
-                message="Debes verificar el código primero"
+                message=MENSAJE_VERIFICAR_CODIGO_PRIMERO
             )
         
         # Actualizar contraseña
         result = await direct_password_reset_service.update_user_password(email, new_password)
         
-        if result["success"]:
+        if result[KEY_SUCCESS]:
             logger.info(f"✅ Contraseña actualizada exitosamente para {email}")
             return PasswordResetResponse(
                 success=True,
-                message="Tu contraseña se cambió correctamente. Ahora podés iniciar sesión con tu nueva contraseña."
+                message=MENSAJE_CONTRASENA_CAMBIADA
             )
         else:
-            logger.error(f"❌ Error actualizando contraseña para {email}: {result['message']}")
+            logger.error(f"❌ Error actualizando contraseña para {email}: {result[KEY_MESSAGE]}")
             return PasswordResetResponse(
                 success=False,
-                message=result["message"]
+                message=result[KEY_MESSAGE]
             )
             
     except Exception as e:
         logger.error(f"❌ Error en set_new_password_direct: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Error interno del servidor"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ERROR_INTERNO_SERVIDOR
         )
 
 @router.get("/status/{email}")
@@ -137,29 +151,29 @@ async def get_reset_status_direct(email: str):
             
             # Verificar expiración
             from datetime import datetime
-            if datetime.now() > reset_data["expires_at"]:
+            if datetime.now() > reset_data[KEY_EXPIRES_AT]:
                 direct_password_reset_service.clear_reset_code(email)
                 return {
-                    "has_active_code": False,
-                    "message": "No hay código activo"
+                    KEY_HAS_ACTIVE_CODE: False,
+                    KEY_MESSAGE: MENSAJE_NO_CODIGO_ACTIVO
                 }
             
             return {
-                "has_active_code": True,
-                "is_verified": reset_data.get("verified", False),
-                "attempts": reset_data["attempts"],
-                "max_attempts": reset_data["max_attempts"],
-                "expires_at": reset_data["expires_at"].isoformat()
+                KEY_HAS_ACTIVE_CODE: True,
+                KEY_IS_VERIFIED: reset_data.get(KEY_VERIFIED, False),
+                KEY_ATTEMPTS: reset_data[KEY_ATTEMPTS],
+                KEY_MAX_ATTEMPTS: reset_data[KEY_MAX_ATTEMPTS],
+                KEY_EXPIRES_AT: reset_data[KEY_EXPIRES_AT].isoformat()
             }
         else:
             return {
-                "has_active_code": False,
-                "message": "No hay código activo"
+                KEY_HAS_ACTIVE_CODE: False,
+                KEY_MESSAGE: MENSAJE_NO_CODIGO_ACTIVO
             }
             
     except Exception as e:
         logger.error(f"❌ Error en get_reset_status_direct: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Error interno del servidor"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ERROR_INTERNO_SERVIDOR
         )

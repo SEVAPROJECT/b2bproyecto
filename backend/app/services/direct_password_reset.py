@@ -217,8 +217,10 @@ class DirectPasswordResetService:
             if not self.supabase:
                 return False
             
-            # Buscar usuario por email
-            users_response = self.supabase.auth.admin.list_users()
+            # Buscar usuario por email (ejecutar llamada síncrona en thread separado)
+            users_response = await asyncio.to_thread(
+                self.supabase.auth.admin.list_users
+            )
             
             for user in users_response:
                 if user.email and user.email.lower() == email.lower():
@@ -241,8 +243,10 @@ class DirectPasswordResetService:
                     "message": "Servicio no configurado"
                 }
             
-            # Buscar usuario por email
-            users_response = self.supabase.auth.admin.list_users()
+            # Buscar usuario por email (ejecutar llamada síncrona en thread separado)
+            users_response = await asyncio.to_thread(
+                self.supabase.auth.admin.list_users
+            )
             user_id = None
             
             for user in users_response:
@@ -256,8 +260,9 @@ class DirectPasswordResetService:
                     "message": "Usuario no encontrado"
                 }
             
-            # Actualizar contraseña
-            update_result = self.supabase.auth.admin.update_user_by_id(
+            # Actualizar contraseña (ejecutar llamada síncrona en thread separado)
+            update_result = await asyncio.to_thread(
+                self.supabase.auth.admin.update_user_by_id,
                 user_id,
                 {"password": new_password}
             )

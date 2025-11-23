@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../components/layouts';
 import Button from '../../components/ui/Button';
 import { EyeIcon, EyeSlashIcon } from '../../components/icons';
-import { API_CONFIG, buildApiUrl } from '../../config/api';
+import { buildApiUrl } from '../../config/api';
 
 // Tipos para el flujo de restablecimiento
 type ResetStep = 'email' | 'code' | 'new-password' | 'success';
@@ -60,7 +60,7 @@ const ResetPasswordPage: React.FC = () => {
         const hasUpperCase = /[A-Z]/.test(password);
         const hasLowerCase = /[a-z]/.test(password);
         const hasNumber = /\d/.test(password);
-        const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+        const hasSpecialChar = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>\/?]/.test(password);
         
         return {
             isValid: hasMinLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar,
@@ -78,10 +78,6 @@ const ResetPasswordPage: React.FC = () => {
 
     const clearError = () => {
         updateState({ error: '' });
-    };
-
-    const clearSuccess = () => {
-        updateState({ success: '' });
     };
 
     // Paso 1: Solicitar código
@@ -114,7 +110,7 @@ const ResetPasswordPage: React.FC = () => {
                     error: data.message || 'Error enviando el código'
                 });
             }
-        } catch (error) {
+        } catch (_error_) {
             updateState({
                 loading: false,
                 error: 'Error de conexión. Inténtalo nuevamente.'
@@ -169,7 +165,7 @@ const ResetPasswordPage: React.FC = () => {
                     remainingAttempts: data.remaining_attempts || 0
                 });
             }
-        } catch (error) {
+        } catch (_error_) {
             updateState({
                 loading: false,
                 error: 'Error de conexión. Inténtalo nuevamente.'
@@ -232,7 +228,7 @@ const ResetPasswordPage: React.FC = () => {
                     error: data.message || 'Error actualizando la contraseña'
                 });
             }
-        } catch (error) {
+        } catch (_error_) {
             updateState({
                 loading: false,
                 error: 'Error de conexión. Inténtalo nuevamente.'
@@ -270,7 +266,7 @@ const ResetPasswordPage: React.FC = () => {
                     error: data.message || 'Error enviando el código'
                 });
             }
-        } catch (error) {
+        } catch (_error_) {
             updateState({
                 loading: false,
                 error: 'Error de conexión. Inténtalo nuevamente.'
@@ -387,7 +383,7 @@ const ResetPasswordPage: React.FC = () => {
                                     className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-slate-300 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm text-center text-2xl tracking-widest"
                                     placeholder="1234"
                                     value={state.code}
-                                    onChange={(e) => updateState({ code: e.target.value.replace(/\D/g, '') })}
+                                    onChange={(e) => updateState({ code: e.target.value.replaceAll(/\D/g, '') })}
                                 />
                                 <p className="mt-2 text-sm text-slate-500">
                                     Código de 4 dígitos enviado a {state.email}

@@ -12,7 +12,14 @@ const API_BASE_URL = API_CONFIG.BASE_URL;
 
 // Log para debugging
 console.log('🔗 API Base URL:', API_CONFIG.BASE_URL);
-console.log('🌍 Environment:', window.location.hostname);
+console.log('🌍 Environment:', (globalThis as Window).location?.hostname || 'unknown');
+
+// Función helper para crear errores con formato esperado
+const createApiError = (message: string): Error & { detail: string } => {
+    const error = new Error(message) as Error & { detail: string };
+    error.detail = message;
+    return error;
+};
 
 // Función helper para manejar errores de la API
 const handleApiError = async (response: Response): Promise<AuthError> => {
@@ -53,7 +60,7 @@ export const authAPI = {
         } catch (error) {
             console.error('❌ Error en signUp:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -80,7 +87,7 @@ export const authAPI = {
         } catch (error) {
             console.error('❌ Error en signIn:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -105,7 +112,7 @@ export const authAPI = {
             return await response.json();
         } catch (error) {
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -127,7 +134,7 @@ export const authAPI = {
             }
         } catch (error) {
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -156,7 +163,7 @@ export const authAPI = {
             return await response.json();
         } catch (error) {
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -183,7 +190,7 @@ export const authAPI = {
         } catch (error) {
             console.error('❌ Error en resetPassword:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -212,7 +219,7 @@ export const authAPI = {
         } catch (error) {
             console.error('❌ Error en getVerificacionEstado:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -265,7 +272,7 @@ export const MOCK_SERVICES: Service[] = [
         providerId: 'p3',
         providerName: 'WebDev Masters',
         providerLogoUrl: 'https://picsum.photos/seed/p3/40/40',
-        rating: 5.0,
+        rating: 5,
         reviewCount: 22,
         imageUrl: 'https://picsum.photos/seed/s3/400/250',
         createdAt: '2023-05-20',
@@ -467,7 +474,7 @@ export const providersAPI = {
         } catch (error) {
             console.error('❌ Error en submitProviderApplication:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -507,7 +514,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getAllUsers:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -544,7 +551,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getAllSolicitudesVerificacion:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -581,7 +588,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getAllSolicitudesServicios:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -618,7 +625,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getAllSolicitudesServiciosModificado:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -657,7 +664,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getSolicitudesPendientes:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -686,7 +693,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getDetalleSolicitud:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -716,7 +723,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en aprobarSolicitud:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -748,7 +755,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en rechazarSolicitud:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -777,7 +784,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getDocumentosSolicitud:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -806,7 +813,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getVerificacionDatos:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -835,7 +842,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en descargarDocumento:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -864,7 +871,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en verDocumento:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -890,7 +897,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getReporteUsuariosActivos:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -915,7 +922,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getReporteProveedoresVerificados:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -940,7 +947,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getReporteSolicitudesProveedores:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -965,7 +972,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getReporteCategorias:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -990,7 +997,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getReporteServicios:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1019,7 +1026,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getMisDocumentos:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1048,7 +1055,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getMisDatosSolicitud:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1077,7 +1084,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en testDatos:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1106,7 +1113,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en selfDeactivateUser:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1135,7 +1142,7 @@ export const adminAPI = {
         } catch (error) {
             console.error('❌ Error en getDashboardStats:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1171,7 +1178,7 @@ export const categoriesAPI = {
         } catch (error) {
             console.error('❌ Error en getCategories:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1198,7 +1205,7 @@ export const categoriesAPI = {
         } catch (error) {
             console.error('❌ Error en createCategory:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1225,11 +1232,71 @@ export const categoriesAPI = {
         } catch (error) {
             console.error('❌ Error en updateCategory:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
     }
+};
+
+// Funciones helper para getFilteredServices
+// Construir headers con autenticación
+const buildAuthHeaders = (accessToken?: string): Record<string, string> => {
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+    };
+    if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    return headers;
+};
+
+// Construir parámetros de filtros
+const buildFilterParams = (
+    limit: number,
+    offset: number,
+    filters?: {
+        currency?: string;
+        min_price?: number;
+        max_price?: number;
+        category_id?: number;
+        department?: string;
+        city?: string;
+        search?: string;
+        min_rating?: number;
+        date_from?: string;
+        date_to?: string;
+    }
+): URLSearchParams => {
+    const params = new URLSearchParams({
+        limit: limit.toString(),
+        offset: offset.toString()
+    });
+
+    if (!filters) {
+        return params;
+    }
+
+    if (filters.currency) params.append('currency', filters.currency);
+    if (filters.min_price !== undefined) params.append('min_price', filters.min_price.toString());
+    if (filters.max_price !== undefined) params.append('max_price', filters.max_price.toString());
+    if (filters.category_id) params.append('category_id', filters.category_id.toString());
+    if (filters.department) params.append('department', filters.department);
+    if (filters.city) params.append('city', filters.city);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.min_rating !== undefined && filters.min_rating > 0) params.append('min_rating', filters.min_rating.toString());
+    if (filters.date_from) params.append('date_from', filters.date_from);
+    if (filters.date_to) params.append('date_to', filters.date_to);
+
+    return params;
+};
+
+// Realizar petición de servicios filtrados
+const performFilteredServicesRequest = async (headers: Record<string, string>, params: URLSearchParams): Promise<Response> => {
+    return fetch(`${buildApiUrl(API_CONFIG.SERVICES.UNIFIED)}?${params}`, {
+        method: 'GET',
+        headers,
+    });
 };
 
 // APIs para gestión de servicios
@@ -1258,7 +1325,7 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en getServices:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1319,7 +1386,7 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en getServicesWithProviders:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1338,6 +1405,9 @@ export const servicesAPI = {
             department?: string;
             city?: string;
             search?: string;
+            min_rating?: number;
+            date_from?: string;
+            date_to?: string;
         }
     ): Promise<{
         services: BackendService[];
@@ -1351,33 +1421,9 @@ export const servicesAPI = {
         filters_applied: any;
     }> {
         try {
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-            };
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-
-            const params = new URLSearchParams({
-                limit: limit.toString(),
-                offset: offset.toString()
-            });
-
-            // Agregar filtros si están presentes
-            if (filters) {
-                if (filters.currency) params.append('currency', filters.currency);
-                if (filters.min_price !== undefined) params.append('min_price', filters.min_price.toString());
-                if (filters.max_price !== undefined) params.append('max_price', filters.max_price.toString());
-                if (filters.category_id) params.append('category_id', filters.category_id.toString());
-                if (filters.department) params.append('department', filters.department);
-                if (filters.city) params.append('city', filters.city);
-                if (filters.search) params.append('search', filters.search);
-            }
-
-            const response = await fetch(`${buildApiUrl(API_CONFIG.SERVICES.UNIFIED)}?${params}`, {
-                method: 'GET',
-                headers,
-            });
+            const headers = buildAuthHeaders(accessToken);
+            const params = buildFilterParams(limit, offset, filters);
+            const response = await performFilteredServicesRequest(headers, params);
 
             if (!response.ok) {
                 const error = await handleApiError(response);
@@ -1388,7 +1434,7 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en getFilteredServices:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1419,7 +1465,7 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en getServicesByCategory:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1446,7 +1492,7 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en createService:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1473,7 +1519,7 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en updateService:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1500,7 +1546,7 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en updateServiceStatus:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1525,7 +1571,7 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en getServiceTemplates:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1550,7 +1596,7 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en getServiceTemplatesByCategory:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1583,11 +1629,127 @@ export const servicesAPI = {
         } catch (error) {
             console.error('❌ Error en getAllServicesByCategory:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
     }
+};
+
+// Funciones helper para getAllServiceRequests
+// Intentar obtener solicitudes desde endpoint modificado
+const tryModifiedEndpoint = async (accessToken: string): Promise<ServiceRequest[] | null> => {
+    try {
+        console.log('🔗 Usando adminAPI.getAllSolicitudesServiciosModificado...');
+        const result = await adminAPI.getAllSolicitudesServiciosModificado(accessToken);
+        
+        if (Array.isArray(result) && result.length > 0) {
+            logServiceRequestsFound(result, 'endpoint modificado');
+            return result;
+        }
+        
+        console.log('⚠️ Endpoint modificado devolvió array vacío, probando adminAPI original...');
+        return null;
+    } catch (modifiedError) {
+        console.log('⚠️ Endpoint modificado falló, probando adminAPI original:', modifiedError);
+        return null;
+    }
+};
+
+// Intentar obtener solicitudes desde adminAPI original
+const tryOriginalAdminAPI = async (accessToken: string): Promise<ServiceRequest[] | null> => {
+    try {
+        console.log('🔗 Usando adminAPI.getAllSolicitudesServicios...');
+        const result = await adminAPI.getAllSolicitudesServicios(accessToken);
+        
+        if (Array.isArray(result) && result.length > 0) {
+            logServiceRequestsFound(result, 'adminAPI');
+            return result;
+        }
+        
+        console.log('⚠️ adminAPI devolvió array vacío, probando fallbacks...');
+        return null;
+    } catch (adminError) {
+        console.log('⚠️ adminAPI falló, probando fallbacks:', adminError);
+        return null;
+    }
+};
+
+// Loggear información de solicitudes encontradas
+const logServiceRequestsFound = (result: ServiceRequest[], source: string): void => {
+    console.log('🔍 Primera solicitud encontrada:', result[0]);
+    console.log('🔍 Estados encontrados:', [...new Set(result.map(r => r.estado_aprobacion))]);
+    console.log(`📊 Total de solicitudes desde ${source}:`, result.length);
+};
+
+// Procesar respuesta de un endpoint
+const processEndpointResponse = async (endpoint: string, response: Response): Promise<ServiceRequest[] | null> => {
+    const result = await response.json();
+    console.log(`✅ Solicitudes obtenidas desde ${endpoint}:`, result);
+    console.log('📊 Total de solicitudes:', result?.length || 0);
+    
+    if (Array.isArray(result)) {
+        if (result.length > 0) {
+            logServiceRequestsFound(result, endpoint);
+            if (result.length > 1) {
+                console.log('🎯 ¡Encontrado endpoint con múltiples solicitudes! Usando este endpoint.');
+                return result;
+            }
+        } else {
+            console.log('⚠️ Endpoint devolvió array vacío');
+        }
+        return result;
+    }
+    
+    return null;
+};
+
+// Intentar obtener solicitudes desde endpoints de fallback
+const tryFallbackEndpoints = async (accessToken: string): Promise<ServiceRequest[] | null> => {
+    const endpoints = [
+        '/admin/service-requests/todas',
+        '/admin/service-requests',
+        '/service-requests/?all=true&admin=true&limit=100',
+        '/service-requests/?all=true',
+        '/service-requests/?status=all',
+        '/service-requests/?include_all=true',
+        '/service-requests/all',
+        '/service-requests/?limit=100',
+        '/service-requests/?offset=0&limit=100',
+        '/service-requests/?admin=true',
+        '/service-requests/?user_role=admin',
+        '/service-requests/'
+    ];
+    
+    for (const endpoint of endpoints) {
+        try {
+            console.log(`🔗 Probando endpoint: ${endpoint}`);
+            
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            console.log(`📡 Estado de respuesta ${endpoint}:`, response.status, response.statusText);
+
+            if (response.ok) {
+                const result = await processEndpointResponse(endpoint, response);
+                if (result) {
+                    return result;
+                }
+            } else {
+                console.log(`❌ Endpoint ${endpoint} falló con status:`, response.status);
+            }
+        } catch (endpointError) {
+            console.log(`⚠️ Error en endpoint ${endpoint}:`, endpointError);
+            continue;
+        }
+    }
+    
+    return null;
 };
 
 // APIs para gestión de solicitudes de servicios
@@ -1612,7 +1774,7 @@ export const serviceRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en getPendingRequests:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1623,106 +1785,22 @@ export const serviceRequestsAPI = {
         try {
             console.log('🔍 Intentando obtener todas las solicitudes de servicios para administrador...');
             
-            // NUEVO: Usar endpoint modificado como primera opción
-            try {
-                console.log('🔗 Usando adminAPI.getAllSolicitudesServiciosModificado...');
-                const result = await adminAPI.getAllSolicitudesServiciosModificado(accessToken);
-                
-                if (Array.isArray(result) && result.length > 0) {
-                    console.log('🔍 Primera solicitud encontrada:', result[0]);
-                    console.log('🔍 Estados encontrados:', [...new Set(result.map(r => r.estado_aprobacion))]);
-                    console.log('📊 Total de solicitudes desde endpoint modificado:', result.length);
-                    return result;
-                } else {
-                    console.log('⚠️ Endpoint modificado devolvió array vacío, probando adminAPI original...');
-                }
-            } catch (modifiedError) {
-                console.log('⚠️ Endpoint modificado falló, probando adminAPI original:', modifiedError);
+            // Intentar endpoint modificado
+            const modifiedResult = await tryModifiedEndpoint(accessToken);
+            if (modifiedResult) {
+                return modifiedResult;
             }
 
-            // Usar la función específica de adminAPI (similar a verificaciones)
-            try {
-                console.log('🔗 Usando adminAPI.getAllSolicitudesServicios...');
-                const result = await adminAPI.getAllSolicitudesServicios(accessToken);
-                
-                if (Array.isArray(result) && result.length > 0) {
-                    console.log('🔍 Primera solicitud encontrada:', result[0]);
-                    console.log('🔍 Estados encontrados:', [...new Set(result.map(r => r.estado_aprobacion))]);
-                    console.log('📊 Total de solicitudes desde adminAPI:', result.length);
-                    return result;
-                } else {
-                    console.log('⚠️ adminAPI devolvió array vacío, probando fallbacks...');
-                }
-            } catch (adminError) {
-                console.log('⚠️ adminAPI falló, probando fallbacks:', adminError);
+            // Intentar adminAPI original
+            const adminResult = await tryOriginalAdminAPI(accessToken);
+            if (adminResult) {
+                return adminResult;
             }
             
-            // Fallback: Lista de endpoints a probar
-            const endpoints = [
-                '/admin/service-requests/todas',     // Similar a verificaciones/todas
-                '/admin/service-requests',           // Endpoint específico de admin
-                '/service-requests/?all=true&admin=true&limit=100', // NUEVO: Endpoint modificado
-                '/service-requests/?all=true',       // Con parámetro para todas
-                '/service-requests/?status=all',     // Con parámetro de estado
-                '/service-requests/?include_all=true', // Variación del parámetro
-                '/service-requests/all',             // Endpoint directo
-                '/service-requests/?limit=100',      // Con límite alto
-                '/service-requests/?offset=0&limit=100', // Con offset y límite
-                '/service-requests/?admin=true',     // Parámetro específico para admin
-                '/service-requests/?user_role=admin', // Parámetro de rol
-                '/service-requests/'                 // Endpoint original
-            ];
-            
-            for (const endpoint of endpoints) {
-                try {
-                    console.log(`🔗 Probando endpoint: ${endpoint}`);
-                    
-                    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${accessToken}`,
-                            'Content-Type': 'application/json',
-                        },
-                    });
-
-                    console.log(`📡 Estado de respuesta ${endpoint}:`, response.status, response.statusText);
-
-                    if (response.ok) {
-                        const result = await response.json();
-                        console.log(`✅ Solicitudes obtenidas desde ${endpoint}:`, result);
-                        console.log('📊 Total de solicitudes:', result?.length || 0);
-                        console.log('📊 Tipo de resultado:', typeof result);
-                        console.log('📊 Es array:', Array.isArray(result));
-                        console.log('📊 Longitud del resultado:', result?.length);
-                        console.log('📊 Contenido completo del resultado:', JSON.stringify(result, null, 2));
-                        console.log('🔍 DIAGNÓSTICO: El endpoint devuelve solo 1 solicitud de las 10 que tienes en la base de datos.');
-                        console.log('💡 SOLUCIÓN: Necesitas modificar el backend para que el parámetro all=true traiga todas las solicitudes.');
-                        
-                        if (Array.isArray(result)) {
-                            // Log detallado del contenido
-                            if (result.length > 0) {
-                                console.log('🔍 Primera solicitud encontrada:', result[0]);
-                                console.log('🔍 Estados encontrados:', [...new Set(result.map(r => r.estado_aprobacion))]);
-                                console.log('🔍 Estado de la primera solicitud:', result[0].estado_aprobacion);
-                                console.log('🔍 Todas las solicitudes con sus estados:', result.map(r => ({ id: r.id_solicitud, estado: r.estado_aprobacion })));
-                                
-                                // Si encontramos más de 1 solicitud, usar este endpoint
-                                if (result.length > 1) {
-                                    console.log('🎯 ¡Encontrado endpoint con múltiples solicitudes! Usando este endpoint.');
-                                    return result;
-                                }
-                            } else {
-                                console.log('⚠️ Endpoint devolvió array vacío');
-                            }
-                            return result;
-                        }
-                    } else {
-                        console.log(`❌ Endpoint ${endpoint} falló con status:`, response.status);
-                    }
-                } catch (endpointError) {
-                    console.log(`⚠️ Error en endpoint ${endpoint}:`, endpointError);
-                    continue;
-                }
+            // Intentar endpoints de fallback
+            const fallbackResult = await tryFallbackEndpoints(accessToken);
+            if (fallbackResult) {
+                return fallbackResult;
             }
             
             // Si ningún endpoint devuelve datos, retornar array vacío
@@ -1757,7 +1835,7 @@ export const serviceRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en approveRequest:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1788,7 +1866,7 @@ export const serviceRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en rejectRequest:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1815,7 +1893,7 @@ export const serviceRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en proposeService:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1841,7 +1919,7 @@ export const serviceRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en getMyServiceRequests:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1913,7 +1991,7 @@ export const providerServicesAPI = {
         } catch (error) {
             console.error('❌ Error en getProviderService:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1940,7 +2018,7 @@ export const providerServicesAPI = {
         } catch (error) {
             console.error('❌ Error en updateProviderService:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1966,7 +2044,7 @@ export const providerServicesAPI = {
         } catch (error) {
             console.error('❌ Error en getCurrencies:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -1992,7 +2070,7 @@ export const providerServicesAPI = {
         } catch (error) {
             console.error('❌ Error en getRateTypes:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2019,7 +2097,7 @@ export const providerServicesAPI = {
         } catch (error) {
             console.error('❌ Error en addTarifaToService:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2045,7 +2123,7 @@ export const providerServicesAPI = {
         } catch (error) {
             console.error('❌ Error en removeTarifaFromService:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2072,7 +2150,7 @@ export const providerServicesAPI = {
         } catch (error) {
             console.error('❌ Error en updateServiceStatus:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2099,7 +2177,7 @@ export const providerServicesAPI = {
         } catch (error) {
             console.error('❌ Error en createServiceFromTemplate:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2132,7 +2210,7 @@ export const additionalAPI = {
         } catch (error) {
             console.error('❌ Error en getCurrencies:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2162,7 +2240,7 @@ export const additionalAPI = {
         } catch (error) {
             console.error('❌ Error en getRateTypes:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2192,7 +2270,7 @@ export const categoryRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en createCategoryRequest:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2218,7 +2296,7 @@ export const categoryRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en getMyCategoryRequests:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2246,7 +2324,7 @@ export const categoryRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en getAllCategoryRequests:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2275,7 +2353,7 @@ export const categoryRequestsAPI = {
         } catch (error) {
             console.error('❌ Error obteniendo user_id por id_perfil:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2302,7 +2380,7 @@ export const categoryRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en approveCategoryRequest:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2329,7 +2407,7 @@ export const categoryRequestsAPI = {
         } catch (error) {
             console.error('❌ Error en rejectCategoryRequest:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2359,7 +2437,7 @@ export const profileAPI = {
         } catch (error) {
             console.error('❌ Error en updateProfile:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }
@@ -2388,7 +2466,7 @@ export const profileAPI = {
         } catch (error) {
             console.error('❌ Error en uploadProfilePhoto:', error);
             if (error instanceof Error) {
-                throw { detail: error.message };
+                throw createApiError(error.message);
             }
             throw error;
         }

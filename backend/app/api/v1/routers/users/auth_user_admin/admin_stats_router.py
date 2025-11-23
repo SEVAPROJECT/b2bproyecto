@@ -2,8 +2,7 @@
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-#from app.db.database import get_async_db
+from sqlalchemy import select, func 
 from app.api.v1.dependencies.database_supabase import get_async_db
 from app.api.v1.dependencies.auth_user import get_admin_user, get_current_user
 from app.models.perfil import UserModel
@@ -12,7 +11,7 @@ from app.models.servicio.service import ServicioModel
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
 from app.schemas.user import UserProfileAndRolesOut
-#from app.core.redis_config import redis_cache, cache_key
+
 
 
 router = APIRouter(prefix="/admin/stats", tags=["admin-stats"])
@@ -220,7 +219,7 @@ async def get_dashboard_stats(
         query_time = (end_time - start_time) * 1000
         print(f"⏱️ Tiempo total de consultas: {query_time:.2f}ms")
         print(f"📊 Resultados: usuarios={total_users}, categorías={total_categories}, servicios={total_services}")
-        print(f"💾 Datos guardados en cache Redis por 5 minutos")
+        print("💾 Datos guardados en cache Redis por 5 minutos")
         
         return response_data
         
@@ -244,7 +243,7 @@ async def clear_dashboard_cache(
         deleted_keys = await redis_cache.clear_pattern("dashboard:*")
         
         return {
-            "message": f"Cache limpiado exitosamente",
+            "message": "Cache limpiado exitosamente",
             "deleted_keys": deleted_keys,
             "cleared_by": admin_user.name
         }

@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-    ClipboardDocumentListIcon, 
+    
     PlusCircleIcon, 
     BuildingStorefrontIcon, 
-    MagnifyingGlassIcon,
     ClockIcon
 } from '../../components/icons';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, serviceRequestsAPI, categoryRequestsAPI } from '../../services/api';
+import { ServiceRequest, CategoryRequest } from '../../types';
 
 // Función helper para ajustar fecha a zona horaria de Argentina (UTC-3)
 const adjustToArgentinaTime = (date: Date): Date => {
@@ -26,7 +26,7 @@ const formatArgentinaDate = (dateString: string): string => {
         return dateString;
     }
 };
-import { ServiceRequest, CategoryRequest } from '../../types';
+
 
 // Tipo unificado para manejar ambos tipos de solicitudes
 type UnifiedRequest = (ServiceRequest & { tipo: 'servicio' }) | (CategoryRequest & { tipo: 'categoria' });
@@ -78,77 +78,96 @@ const getRequestTypeIcon = (request: UnifiedRequest): string => {
     return request.tipo === 'servicio' ? '🛠️' : '📂';
 };
 
-// Función de filtrado de solicitudes (igual que pantalla de administración)
+// Funciones helper para reducir complejidad cognitiva
+const matchesDateFilter = (requestDate: Date, dateFilter: string, customDate?: string): boolean => {
+    if (dateFilter === 'all') {
+        return true;
+    }
+
+    const now = new Date();
+
+    switch (dateFilter) {
+        case 'today':
+            return requestDate.toDateString() === now.toDateString();
+        case 'week': {
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            return requestDate >= weekAgo;
+        }
+        case 'month':
+            return requestDate.getMonth() === now.getMonth() && requestDate.getFullYear() === now.getFullYear();
+        case 'year':
+            return requestDate.getFullYear() === now.getFullYear();
+        case 'custom': {
+            if (customDate) {
+                const selectedDate = parseDateString(customDate);
+                return datesEqual(requestDate, selectedDate);
+            }
+            return true;
+        }
+        default:
+            return true;
+    }
+};
+
+const matchesCategoryFilter = (requestCategory: number | undefined, categoryFilter: string): boolean => {
+    if (categoryFilter === 'all') {
+        return true;
+    }
+    return requestCategory?.toString() === categoryFilter;
+};
+
+const matchesStatusFilter = (estadoAprobacion: string, statusFilter: string): boolean => {
+    if (statusFilter === 'all') {
+        return true;
+    }
+    return estadoAprobacion === statusFilter;
+};
+
+const matchesTypeFilter = (tipo: string, typeFilter: string): boolean => {
+    if (typeFilter === 'all') {
+        return true;
+    }
+    return tipo === typeFilter;
+};
+
+const matchesSearchFilter = (request: UnifiedRequest, searchFilter: string): boolean => {
+    if (!searchFilter || searchFilter.trim() === '') {
+        return true;
+    }
+    
+    const searchTerm = searchFilter.toLowerCase().trim();
+    const requestName = getRequestName(request)?.toLowerCase() || '';
+    const requestDescription = request.descripcion?.toLowerCase() || '';
+    
+    return requestName.includes(searchTerm) || requestDescription.includes(searchTerm);
+};
+
+// Función de filtrado de solicitudes (refactorizada para reducir complejidad cognitiva)
 const filterRequests = (requests: UnifiedRequest[], filters: any) => {
     return requests.filter(request => {
-        // Filtro por fecha
-        if (filters.dateFilter !== 'all') {
-            const now = new Date();
-            const requestDate = new Date(request.created_at);
-
-            switch (filters.dateFilter) {
-                case 'today':
-                    if (requestDate.toDateString() !== now.toDateString()) return false;
-                    break;
-                case 'week':
-                    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                    if (requestDate < weekAgo) return false;
-                    break;
-                case 'month':
-                    if (requestDate.getMonth() !== now.getMonth() || requestDate.getFullYear() !== now.getFullYear()) return false;
-                    break;
-                case 'year':
-                    if (requestDate.getFullYear() !== now.getFullYear()) return false;
-                    break;
-                case 'custom':
-                    if (filters.customDate) {
-                        const selectedDate = parseDateString(filters.customDate);
-                        if (!datesEqual(requestDate, selectedDate)) {
-                            return false;
-                        }
-                    }
-                    break;
-            }
-        }
-
-        // Filtro por categoría (igual que en pantalla de administración)
-        if (filters.categoryFilter !== 'all' && request.id_categoria?.toString() !== filters.categoryFilter) {
+        const requestDate = new Date(request.created_at);
+        
+        const matchesDate = matchesDateFilter(requestDate, filters.dateFilter, filters.customDate);
+        const matchesCategory = matchesCategoryFilter(request.id_categoria, filters.categoryFilter);
+        const matchesStatus = matchesStatusFilter(request.estado_aprobacion, filters.statusFilter);
+        const matchesType = matchesTypeFilter(request.tipo, filters.typeFilter);
+        const matchesSearch = matchesSearchFilter(request, filters.searchFilter);
+        
+        if (!matchesCategory) {
             console.log('🚫 Filtro categoría rechaza:', {
                 requestId: request.id_solicitud,
                 requestCategory: request.id_categoria,
                 filterCategory: filters.categoryFilter,
                 requestName: getRequestName(request)
             });
-            return false;
         }
-
-        // Filtro por estado
-        if (filters.statusFilter !== 'all' && request.estado_aprobacion !== filters.statusFilter) {
-            return false;
-        }
-
-        // Filtro por tipo de solicitud
-        if (filters.typeFilter !== 'all' && request.tipo !== filters.typeFilter) {
-            return false;
-        }
-
-        // Filtro por búsqueda de texto
-        if (filters.searchFilter && filters.searchFilter.trim() !== '') {
-            const searchTerm = filters.searchFilter.toLowerCase().trim();
-            const requestName = getRequestName(request)?.toLowerCase() || '';
-            const requestDescription = request.descripcion?.toLowerCase() || '';
-            
-            if (!requestName.includes(searchTerm) && !requestDescription.includes(searchTerm)) {
-                return false;
-            }
-        }
-
-        return true;
+        
+        return matchesDate && matchesCategory && matchesStatus && matchesType && matchesSearch;
     });
 };
 
 const ProviderMyRequestsPage: React.FC = () => {
-    const { user } = useContext(AuthContext);
+    
     const [requests, setRequests] = useState<UnifiedRequest[]>([]);
     const [filteredRequests, setFilteredRequests] = useState<UnifiedRequest[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
@@ -307,6 +326,153 @@ const ProviderMyRequestsPage: React.FC = () => {
         }
     };
 
+    const renderRequestsContent = () => {
+        if (filteredRequests.length > 0) {
+            return (
+                <div className="divide-y divide-gray-200">
+                    {filteredRequests.map((request) => {
+                        // Detectar si es una solicitud temporal (optimista)
+                        const isOptimistic = request.id > 1000000000000; // IDs temporales son timestamps
+                        
+                        return (
+                        <div key={request.id_solicitud} className={`p-4 hover:bg-gray-50 transition-colors duration-200 ${isOptimistic ? 'bg-blue-50 border-l-4 border-blue-400' : ''}`}>
+                            <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                                {/* Icono del tipo de solicitud */}
+                                <div className="flex-shrink-0 mx-auto sm:mx-0">
+                                    <div className={`h-16 w-16 rounded-lg border flex items-center justify-center ${isOptimistic ? 'bg-blue-100 border-blue-200' : 'bg-gray-100 border-gray-200'}`}>
+                                        {isOptimistic ? (
+                                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                                        ) : (
+                                            <span className="text-2xl">{getRequestTypeIcon(request)}</span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Información principal */}
+                                <div className="flex-1 min-w-0 text-center sm:text-left">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+                                                <h3 className="text-lg font-semibold text-gray-900 break-words">{getRequestName(request)}</h3>
+                                                <div className="flex flex-wrap justify-center sm:justify-start gap-2">
+                                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                        {getRequestTypeLabel(request)}
+                                                    </span>
+                                                    {isOptimistic && (
+                                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                            Enviando...
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <p className="text-sm text-gray-600 mt-1 break-words">{request.descripcion}</p>
+                                        </div>
+                                        <div className="flex justify-center sm:justify-end">
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(request.estado_aprobacion)}`}>
+                                                {getStatusText(request.estado_aprobacion)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Información compacta - responsive */}
+                                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6 text-sm">
+                                    {/* Categoría - Solo para servicios */}
+                                    {request.tipo === 'servicio' && (
+                                        <div className="text-center">
+                                            <p className="text-xs font-medium text-gray-500 mb-1">📂 Categoría</p>
+                                            <p className="font-semibold text-blue-600 break-words">
+                                                {request.nombre_categoria || 'No especificado'}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Empresa */}
+                                    <div className="text-center">
+                                        <p className="text-xs font-medium text-gray-500 mb-1">🏢 Empresa</p>
+                                        <p className="font-semibold text-gray-600 break-words">
+                                            {request.nombre_empresa || 'No especificado'}
+                                        </p>
+                                    </div>
+
+                                    {/* Fecha */}
+                                    <div className="text-center">
+                                        <p className="text-xs font-medium text-gray-500 mb-1">📅 Fecha</p>
+                                        <p className="font-semibold text-gray-600">
+                                            {formatArgentinaDate(request.created_at)}
+                                        </p>
+                                    </div>
+
+                                    {/* Estado */}
+                                    <div className="text-center">
+                                        <p className="text-xs font-medium text-gray-500 mb-1">📊 Estado</p>
+                                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(request.estado_aprobacion)}`}>
+                                            {getStatusText(request.estado_aprobacion)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Mostrar comentario del admin si fue rechazada */}
+                            {request.estado_aprobacion === 'rechazada' && (
+                                <div className="mt-3 pt-3 border-t border-gray-100">
+                                    <div className="bg-red-50 border-l-4 border-red-400 rounded-r-md p-3">
+                                        <div className="flex items-start">
+                                            <div className="flex-shrink-0">
+                                                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                                </svg>
+                                            </div>
+                                            <div className="ml-3">
+                                                <h4 className="text-sm font-medium text-red-800 mb-1">Motivo del rechazo</h4>
+                                                <p className="text-sm text-red-700">
+                                                    {request.comentario_admin?.trim() || "Sin motivo especificado"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+        
+        if (requests.length === 0) {
+            return (
+                <div className="text-center py-12">
+                    <PlusCircleIcon className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No has enviado solicitudes</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                        Explora las categorías disponibles para solicitar nuevos servicios.
+                    </p>
+                    <Link
+                        to="/dashboard/explore-categories"
+                        className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                    >
+                        <BuildingStorefrontIcon className="h-5 w-5 mr-2" />
+                        Explorar Categorías
+                    </Link>
+                </div>
+            );
+        }
+        
+        return (
+            <div className="text-center py-12">
+                <ClockIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No hay solicitudes</h3>
+                <p className="text-gray-500">No se encontraron solicitudes que coincidan con los filtros aplicados.</p>
+                <button
+                    onClick={resetFilters}
+                    className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                >
+                    🔄 Limpiar Filtros
+                </button>
+            </div>
+        );
+    };
 
     const handleCreateRequest = async () => {
         if (!newServiceName.trim() || !newServiceDescription.trim()) {
@@ -600,145 +766,7 @@ const ProviderMyRequestsPage: React.FC = () => {
                         });
                         return null;
                     })()}
-                    {filteredRequests.length > 0 ? (
-                        <div className="divide-y divide-gray-200">
-                            {filteredRequests.map((request) => {
-                                // Detectar si es una solicitud temporal (optimista)
-                                const isOptimistic = request.id > 1000000000000; // IDs temporales son timestamps
-                                
-                                return (
-                                <div key={request.id_solicitud} className={`p-4 hover:bg-gray-50 transition-colors duration-200 ${isOptimistic ? 'bg-blue-50 border-l-4 border-blue-400' : ''}`}>
-                                    <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
-                                        {/* Icono del tipo de solicitud */}
-                                        <div className="flex-shrink-0 mx-auto sm:mx-0">
-                                            <div className={`h-16 w-16 rounded-lg border flex items-center justify-center ${isOptimistic ? 'bg-blue-100 border-blue-200' : 'bg-gray-100 border-gray-200'}`}>
-                                                {isOptimistic ? (
-                                                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                                                ) : (
-                                                    <span className="text-2xl">{getRequestTypeIcon(request)}</span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Información principal */}
-                                        <div className="flex-1 min-w-0 text-center sm:text-left">
-                                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-                                                        <h3 className="text-lg font-semibold text-gray-900 break-words">{getRequestName(request)}</h3>
-                                                        <div className="flex flex-wrap justify-center sm:justify-start gap-2">
-                                                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                                {getRequestTypeLabel(request)}
-                                                            </span>
-                                                            {isOptimistic && (
-                                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                                                    Enviando...
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-sm text-gray-600 mt-1 break-words">{request.descripcion}</p>
-                                                </div>
-                                                <div className="flex justify-center sm:justify-end">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(request.estado_aprobacion)}`}>
-                                                        {getStatusText(request.estado_aprobacion)}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Información compacta - responsive */}
-                                        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6 text-sm">
-                                            {/* Categoría - Solo para servicios */}
-                                            {request.tipo === 'servicio' && (
-                                                <div className="text-center">
-                                                    <p className="text-xs font-medium text-gray-500 mb-1">📂 Categoría</p>
-                                                    <p className="font-semibold text-blue-600 break-words">
-                                                        {request.nombre_categoria || 'No especificado'}
-                                                    </p>
-                                                </div>
-                                            )}
-
-                                            {/* Empresa */}
-                                            <div className="text-center">
-                                                <p className="text-xs font-medium text-gray-500 mb-1">🏢 Empresa</p>
-                                                <p className="font-semibold text-gray-600 break-words">
-                                                    {request.nombre_empresa || 'No especificado'}
-                                                </p>
-                                            </div>
-
-                                            {/* Fecha */}
-                                            <div className="text-center">
-                                                <p className="text-xs font-medium text-gray-500 mb-1">📅 Fecha</p>
-                                                <p className="font-semibold text-gray-600">
-                                                    {formatArgentinaDate(request.created_at)}
-                                                </p>
-                                            </div>
-
-                                            {/* Estado */}
-                                            <div className="text-center">
-                                                <p className="text-xs font-medium text-gray-500 mb-1">📊 Estado</p>
-                                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(request.estado_aprobacion)}`}>
-                                                    {getStatusText(request.estado_aprobacion)}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Mostrar comentario del admin si fue rechazada */}
-                                    {request.estado_aprobacion === 'rechazada' && (
-                                        <div className="mt-3 pt-3 border-t border-gray-100">
-                                            <div className="bg-red-50 border-l-4 border-red-400 rounded-r-md p-3">
-                                                <div className="flex items-start">
-                                                    <div className="flex-shrink-0">
-                                                        <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                                        </svg>
-                                                    </div>
-                                                    <div className="ml-3">
-                                                        <h4 className="text-sm font-medium text-red-800 mb-1">Motivo del rechazo</h4>
-                                                        <p className="text-sm text-red-700">
-                                                            {request.comentario_admin && request.comentario_admin.trim()
-                                                                ? request.comentario_admin
-                                                                : "Sin motivo especificado"}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                                );
-                            })}
-                        </div>
-                    ) : requests.length === 0 ? (
-                        <div className="text-center py-12">
-                            <PlusCircleIcon className="mx-auto h-12 w-12 text-gray-400" />
-                            <h3 className="mt-2 text-sm font-medium text-gray-900">No has enviado solicitudes</h3>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Explora las categorías disponibles para solicitar nuevos servicios.
-                            </p>
-                            <Link
-                                to="/dashboard/explore-categories"
-                                className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-                            >
-                                <BuildingStorefrontIcon className="h-5 w-5 mr-2" />
-                                Explorar Categorías
-                            </Link>
-                        </div>
-                    ) : (
-                        <div className="text-center py-12">
-                            <ClockIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                            <h3 className="text-lg font-medium text-gray-900 mb-2">No hay solicitudes</h3>
-                            <p className="text-gray-500">No se encontraron solicitudes que coincidan con los filtros aplicados.</p>
-                            <button
-                                onClick={resetFilters}
-                                className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-                            >
-                                🔄 Limpiar Filtros
-                            </button>
-                        </div>
-                    )}
+                    {renderRequestsContent()}
                 </div>
             </div>
 

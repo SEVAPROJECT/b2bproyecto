@@ -12,12 +12,9 @@ import {
     UsersIcon,
     BriefcaseIcon,
     FolderIcon,
-    ClipboardDocumentListIcon,
-    ClipboardDocumentIcon,
     MagnifyingGlassIcon,
     CheckCircleIcon,
     PlusCircleIcon,
-    SparklesIcon,
     WrenchScrewdriverIcon,
     ClockIcon,
     ExclamationCircleIcon
@@ -35,7 +32,7 @@ const Bars3Icon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
-    const { user, logout, providerStatus, providerApplication } = useAuth();
+    const { user, logout, providerStatus } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -57,30 +54,55 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         return location.pathname === path;
     };
 
-    const navigation = user?.role === 'admin' ? [
-        { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
-        { name: 'Marketplace', href: '/dashboard/marketplace', icon: MagnifyingGlassIcon },
-        { name: 'Solicitudes Pendientes', href: '/dashboard/verifications', icon: CheckCircleIcon },
-        { name: 'Solicitudes de Servicios', href: '/dashboard/service-requests', icon: PlusCircleIcon },
-        { name: 'Solicitudes de Categorías', href: '/dashboard/category-requests', icon: FolderIcon },
-        { name: 'Categorías', href: '/dashboard/categories', icon: BuildingStorefrontIcon },
-        { name: 'Usuarios', href: '/dashboard/users', icon: UsersIcon },
-        { name: 'Reportes', href: '/dashboard/reports', icon: ChartBarIcon },
-    ] : user?.role === 'provider' ? [
-        { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
-        { name: 'Marketplace', href: '/dashboard/marketplace', icon: MagnifyingGlassIcon },
-        { name: 'Explorar Categorías', href: '/dashboard/explore-categories', icon: BuildingStorefrontIcon },
-        { name: 'Mis Solicitudes', href: '/dashboard/my-requests', icon: PlusCircleIcon },
-        { name: 'Mis Servicios', href: '/dashboard/my-services', icon: BriefcaseIcon },
-        { name: 'Mi Agenda', href: '/dashboard/agenda', icon: CalendarDaysIcon },
-        { name: 'Mis Reservas', href: '/dashboard/reservations', icon: CalendarDaysIcon },
-        { name: 'Mis Reportes', href: '/dashboard/my-reports', icon: ChartBarIcon },
-    ] : [
-        { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
-        { name: 'Marketplace', href: '/dashboard/marketplace', icon: MagnifyingGlassIcon },
-        { name: 'Mis Reservas', href: '/dashboard/reservations', icon: CalendarDaysIcon },
-        { name: 'Mis Reportes', href: '/dashboard/my-reports', icon: ChartBarIcon },
-    ];
+    // Función auxiliar para obtener las clases CSS del enlace según su estado
+    const getLinkClasses = (isDisabled: boolean, isActiveLink: boolean): string => {
+        if (isDisabled) {
+            return 'text-slate-400 cursor-not-allowed bg-blue-50';
+        }
+        if (isActiveLink) {
+            return 'bg-primary-100 text-primary-700';
+        }
+        return 'text-slate-600 hover:bg-slate-100 hover:text-slate-900';
+    };
+
+    // Función auxiliar para obtener la navegación según el rol del usuario
+    const getNavigationByRole = (): Array<{ name: string; href: string; icon: React.ComponentType<{ className?: string }> }> => {
+        if (user?.role === 'admin') {
+            return [
+                { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
+                { name: 'Marketplace', href: '/dashboard/marketplace', icon: MagnifyingGlassIcon },
+                { name: 'Solicitudes Pendientes', href: '/dashboard/verifications', icon: CheckCircleIcon },
+                { name: 'Solicitudes de Servicios', href: '/dashboard/service-requests', icon: PlusCircleIcon },
+                { name: 'Solicitudes de Categorías', href: '/dashboard/category-requests', icon: FolderIcon },
+                { name: 'Categorías', href: '/dashboard/categories', icon: BuildingStorefrontIcon },
+                { name: 'Usuarios', href: '/dashboard/users', icon: UsersIcon },
+                { name: 'Reportes', href: '/dashboard/reports', icon: ChartBarIcon },
+            ];
+        }
+        
+        if (user?.role === 'provider') {
+            return [
+                { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
+                { name: 'Marketplace', href: '/dashboard/marketplace', icon: MagnifyingGlassIcon },
+                { name: 'Explorar Categorías', href: '/dashboard/explore-categories', icon: BuildingStorefrontIcon },
+                { name: 'Mis Solicitudes', href: '/dashboard/my-requests', icon: PlusCircleIcon },
+                { name: 'Mis Servicios', href: '/dashboard/my-services', icon: BriefcaseIcon },
+                { name: 'Mi Agenda', href: '/dashboard/agenda', icon: CalendarDaysIcon },
+                { name: 'Mis Reservas', href: '/dashboard/reservations', icon: CalendarDaysIcon },
+                { name: 'Mis Reportes', href: '/dashboard/my-reports', icon: ChartBarIcon },
+            ];
+        }
+        
+        // Rol por defecto (cliente)
+        return [
+            { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
+            { name: 'Marketplace', href: '/dashboard/marketplace', icon: MagnifyingGlassIcon },
+            { name: 'Mis Reservas', href: '/dashboard/reservations', icon: CalendarDaysIcon },
+            { name: 'Mis Reportes', href: '/dashboard/my-reports', icon: ChartBarIcon },
+        ];
+    };
+
+    const navigation = getNavigationByRole();
 
     // Agregar "Mi Perfil" al final para todos los roles
     const clientNavigation = [...navigation];
@@ -116,17 +138,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                         {clientNavigation.map((item) => {
                             const Icon = item.icon;
                             const isDisabled = item.href === '#';
+                            const isActiveLink = isActive(item.href);
+                            const linkClasses = getLinkClasses(isDisabled, isActiveLink);
                             return (
                                 <Link
                                     key={item.name}
                                     to={item.href}
-                                    className={`flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
-                                        isDisabled
-                                            ? 'text-slate-400 cursor-not-allowed bg-blue-50'
-                                            : isActive(item.href)
-                                            ? 'bg-primary-100 text-primary-700'
-                                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                                    }`}
+                                    className={`flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${linkClasses}`}
                                     onClick={isDisabled ? (e) => e.preventDefault() : closeSidebar}
                                 >
                                     <Icon className="w-5 h-5" />
@@ -226,8 +244,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             {/* Overlay para móviles */}
             {isSidebarOpen && (
                 <div 
+                    role="button"
+                    tabIndex={0}
                     className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
                     onClick={closeSidebar}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            closeSidebar();
+                        }
+                    }}
+                    aria-label="Cerrar menú lateral"
                 />
             )}
         </div>

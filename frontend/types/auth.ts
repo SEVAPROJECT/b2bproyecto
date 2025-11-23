@@ -1,6 +1,4 @@
-import { ProviderApplicationStatus } from './provider';
-
-export type { ProviderApplicationStatus };
+export type { ProviderApplicationStatus } from './provider';
 
 export interface User {
     id: number;
@@ -13,7 +11,7 @@ export interface User {
     address?: string;
     createdAt: string;
     updatedAt: string;
-    providerStatus?: 'none' | 'pending' | 'approved' | 'rejected';
+    providerStatus?: ProviderStatus;
     providerApplication?: ProviderApplicationStatus;
     accessToken?: string;
     foto_perfil?: string;
@@ -21,10 +19,12 @@ export interface User {
 
 export type UserRole = 'client' | 'provider' | 'admin';
 
+export type ProviderStatus = 'none' | 'pending' | 'approved' | 'rejected';
+
 export interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
-    providerStatus: 'none' | 'pending' | 'approved' | 'rejected';
+    providerStatus: ProviderStatus;
     providerApplication: ProviderApplicationStatus;
     login: (email: string, password: string) => Promise<void>;
     register: (data: { companyName: string; name: string; email: string; password: string; ruc?: string }) => Promise<void>;
@@ -33,7 +33,7 @@ export interface AuthContextType {
     reloadUserProfile: () => Promise<void>;
     submitProviderApplication: (data: any) => Promise<void>;
     resubmitProviderApplication: (data: any) => Promise<void>;
-    updateProviderStatus: (status: 'none' | 'pending' | 'approved' | 'rejected') => void;
+    updateProviderStatus: (status: ProviderStatus) => void;
     updateProviderApplication: (application: ProviderApplicationStatus) => void;
     isLoading: boolean;
     error: string | null;

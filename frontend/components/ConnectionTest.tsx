@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { API_CONFIG, buildApiUrl } from '../config/api';
+import { API_CONFIG } from '../config/api';
 
 const ConnectionTest: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);

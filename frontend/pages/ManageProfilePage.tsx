@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { UserCircleIcon, PencilIcon, CameraIcon, XMarkIcon, ExclamationTriangleIcon } from '../components/icons';
 import { profileAPI, adminAPI } from '../services/api';
-import { API_CONFIG, buildApiUrl } from '../config/api';
+import { API_CONFIG } from '../config/api';
 
 const ManageProfilePage: React.FC = () => {
     const { user, reloadUserProfile, logout } = useAuth();
@@ -100,9 +100,80 @@ const ManageProfilePage: React.FC = () => {
         }
     };
 
-    const handleSave = async () => {
+    // Función helper para validar el token de acceso
+    const validateAccessToken = (): boolean => {
         if (!user?.accessToken) {
             setError('No se encontró el token de acceso');
+            return false;
+        }
+        return true;
+    };
+
+    // Función helper para eliminar la foto anterior de Supabase Storage
+    const deletePreviousPhoto = async (photoUrl: string, accessToken: string): Promise<void> => {
+        if (!photoUrl.startsWith('https://') || !photoUrl.includes('supabase.co')) {
+            return;
+        }
+
+        try {
+            const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
+            const deleteResponse = await fetch(`${apiBaseUrl}/api/v1/auth/delete-profile-photo?image_url=${encodeURIComponent(photoUrl)}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            });
+
+            if (deleteResponse.ok) {
+                console.log('✅ Foto de perfil anterior eliminada del bucket de Supabase Storage');
+            } else {
+                console.warn('⚠️ No se pudo eliminar la foto anterior del bucket, pero se continuará con la subida');
+            }
+        } catch (deleteError) {
+            console.warn('⚠️ Error eliminando foto anterior:', deleteError);
+            // Continuar con la subida aunque falle la eliminación
+        }
+    };
+
+    // Función helper para subir la nueva imagen de perfil
+    const uploadProfileImage = async (image: File, accessToken: string): Promise<string> => {
+        setIsUploadingImage(true);
+        try {
+            // Eliminar foto anterior si existe
+            if (user?.foto_perfil) {
+                await deletePreviousPhoto(user.foto_perfil, accessToken);
+            }
+
+            const uploadResult = await profileAPI.uploadProfilePhoto(image, accessToken);
+            return uploadResult.image_path;
+        } catch (uploadError: any) {
+            throw new Error(uploadError.detail || 'Error al subir la imagen');
+        } finally {
+            setIsUploadingImage(false);
+        }
+    };
+
+    // Función helper para manejar el éxito de la actualización
+    const handleUpdateSuccess = async () => {
+        setSuccess('Perfil actualizado exitosamente');
+        setIsEditing(false);
+        setSelectedImage(null);
+        setImagePreview(null);
+        
+        // Recargar el perfil del usuario
+        await reloadUserProfile();
+        
+        setTimeout(() => setSuccess(null), 3000);
+    };
+
+    // Función helper para manejar errores
+    const handleUpdateError = (err: any) => {
+        setError(err.detail || err.message || 'Error al actualizar el perfil');
+        setTimeout(() => setError(null), 5000);
+    };
+
+    const handleSave = async () => {
+        if (!validateAccessToken()) {
             return;
         }
 
@@ -116,59 +187,20 @@ const ManageProfilePage: React.FC = () => {
             };
 
             // Si hay una imagen seleccionada, subirla primero
-            if (selectedImage) {
-                setIsUploadingImage(true);
-                try {
-                    // Eliminar foto anterior si existe y es de Supabase Storage
-                    if (user?.foto_perfil && user.foto_perfil.startsWith('https://') && user.foto_perfil.includes('supabase.co')) {
-                        try {
-                            const apiBaseUrl = API_CONFIG.BASE_URL.replace('/api/v1', '');
-                            const deleteResponse = await fetch(`${apiBaseUrl}/api/v1/auth/delete-profile-photo?image_url=${encodeURIComponent(user.foto_perfil)}`, {
-                                method: 'DELETE',
-                                headers: {
-                                    'Authorization': `Bearer ${user.accessToken}`
-                                }
-                            });
-
-                            if (deleteResponse.ok) {
-                                console.log('✅ Foto de perfil anterior eliminada del bucket de Supabase Storage');
-                            } else {
-                                console.warn('⚠️ No se pudo eliminar la foto anterior del bucket, pero se continuará con la subida');
-                            }
-                        } catch (deleteError) {
-                            console.warn('⚠️ Error eliminando foto anterior:', deleteError);
-                            // Continuar con la subida aunque falle la eliminación
-                        }
-                    }
-
-                    const uploadResult = await profileAPI.uploadProfilePhoto(selectedImage, user.accessToken);
-                    profileData.foto_perfil = uploadResult.image_path;
-                } catch (uploadError: any) {
-                    throw new Error(uploadError.detail || 'Error al subir la imagen');
-                } finally {
-                    setIsUploadingImage(false);
-                }
+            if (selectedImage && user?.accessToken) {
+                profileData.foto_perfil = await uploadProfileImage(selectedImage, user.accessToken);
             }
 
             // Actualizar el perfil
             const result = await profileAPI.updateProfile(profileData, user.accessToken);
             
             if (result.success) {
-                setSuccess('Perfil actualizado exitosamente');
-                setIsEditing(false);
-                setSelectedImage(null);
-                setImagePreview(null);
-                
-                // Recargar el perfil del usuario
-                await reloadUserProfile();
-                
-                setTimeout(() => setSuccess(null), 3000);
+                await handleUpdateSuccess();
             } else {
                 throw new Error(result.mensaje || 'Error al actualizar el perfil');
             }
         } catch (err: any) {
-            setError(err.detail || err.message || 'Error al actualizar el perfil');
-            setTimeout(() => setError(null), 5000);
+            handleUpdateError(err);
         } finally {
             setIsLoading(false);
         }

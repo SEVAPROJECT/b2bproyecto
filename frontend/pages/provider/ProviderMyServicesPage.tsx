@@ -11,13 +11,13 @@ import {
     UploadCloudIcon,
     CalendarDaysIcon
 } from '../../components/icons';
-import { API_CONFIG, buildApiUrl } from '../../config/api';
+import { API_CONFIG } from '../../config/api';
 import { AuthContext } from '../../contexts/AuthContext';
 import { categoriesAPI, providerServicesAPI, servicesAPI, categoryRequestsAPI, serviceRequestsAPI } from '../../services/api';
 
 // Funciones auxiliares
 const formatNumber = (num: number): string => {
-    if (isNaN(num) || num === null || num === undefined) return '0';
+    if (Number.isNaN(num) || num === null || num === undefined) return '0';
     return num.toLocaleString('es-PY', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 2
@@ -27,13 +27,13 @@ const formatNumber = (num: number): string => {
 // Función para formatear precio con puntos de mil mientras se escribe
 const formatPriceInput = (value: string): string => {
     // Remover todos los caracteres no numéricos excepto punto y coma
-    const cleanValue = value.replace(/[^\d.,]/g, '');
+    const cleanValue = value.replaceAll(/[^\d.,]/g, '');
     
     // Si está vacío, retornar vacío
     if (!cleanValue) return '';
     
     // Si el valor ya tiene puntos, removerlos todos y reformatear
-    const numericOnly = cleanValue.replace(/\./g, '');
+    const numericOnly = cleanValue.replaceAll(/\./g, '');
     
     // Separar parte entera y decimal
     const parts = numericOnly.split(',');
@@ -42,7 +42,7 @@ const formatPriceInput = (value: string): string => {
     
     // Formatear la parte entera con puntos de mil usando una función más simple
     const formatWithDots = (num: string): string => {
-        return num.replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.');
+        return num.replaceAll(/(\d)(?=(\d{3})+(?!\d))/g, '$1.');
     };
     
     const formattedInteger = formatWithDots(integerPart);
@@ -60,18 +60,18 @@ const parsePriceInput = (formattedValue: string): number => {
     if (!formattedValue) return 0;
     
     // Remover todos los puntos de mil (separadores de miles)
-    const withoutThousandsSeparators = formattedValue.replace(/\.(?=\d{3})/g, '');
+    const withoutThousandsSeparators = formattedValue.replaceAll(/\.(?=\d{3})/g, '');
     
     // Parsear el número resultante
-    const parsed = parseFloat(withoutThousandsSeparators);
-    return isNaN(parsed) ? 0 : parsed;
+    const parsed = Number.parseFloat(withoutThousandsSeparators);
+    return Number.isNaN(parsed) ? 0 : parsed;
 };
 
 const getTariffsSummary = (tarifas: any[], rateTypes: any[] = []): string => {
     if (!tarifas || tarifas.length === 0) return 'Sin tarifas';
     
     const tariffTexts = tarifas.map(tarifa => {
-        const monto = formatNumber(parseFloat(tarifa.monto?.toString().replace(',', '.') || '0') || 0);
+        const monto = formatNumber(Number.parseFloat(tarifa.monto?.toString().replace(',', '.') || '0') || 0);
         const descripcion = tarifa.descripcion || 'Sin descripción';
         const tipoTarifa = rateTypes.find(rt => rt.id_tarifa === tarifa.id_tarifa)?.nombre || 'Sin tipo';
         return `${monto} ₲ (${tipoTarifa}) - ${descripcion}`;
@@ -80,67 +80,83 @@ const getTariffsSummary = (tarifas: any[], rateTypes: any[] = []): string => {
     return tariffTexts.join(', ');
 };
 
-// Función de filtrado de servicios
-const filterServices = (services: any[], filters: any) => {
-    return services.filter(service => {
-        // Filtro por categoría
-        if (filters.categoryFilter !== 'all' && service.id_categoria?.toString() !== filters.categoryFilter) {
+// Funciones helper para reducir complejidad cognitiva
+const matchesCategoryFilter = (serviceCategory: number | undefined, categoryFilter: string): boolean => {
+    if (categoryFilter === 'all') {
+        return true;
+    }
+    return serviceCategory?.toString() === categoryFilter;
+};
+
+const matchesNameFilter = (serviceName: string | undefined, nameFilter: string | undefined): boolean => {
+    const nameFilterStr = nameFilter?.toString().trim() || '';
+    if (nameFilterStr === '') {
+        return true;
+    }
+
+    const searchTerm = nameFilterStr.toLowerCase();
+    const serviceNameLower = serviceName?.toLowerCase() || '';
+
+    // Búsqueda por palabras completas o inicio de palabras
+    const searchWords = searchTerm.split(' ').filter(word => word.length > 0);
+    const nameWords = serviceNameLower.split(' ').filter(word => word.length > 0);
+
+    // Verificar si todas las palabras de búsqueda están presentes
+    return searchWords.every(searchWord =>
+        nameWords.some(nameWord => nameWord.startsWith(searchWord))
+    );
+};
+
+const matchesPriceFilter = (servicePrice: number | undefined, minPrice: string | undefined, maxPrice: string | undefined): boolean => {
+    const minPriceStr = minPrice?.toString().trim() || '';
+    const maxPriceStr = maxPrice?.toString().trim() || '';
+
+    const minPriceValue = minPriceStr === '' ? null : parsePriceInput(minPriceStr);
+    const maxPriceValue = maxPriceStr === '' ? null : parsePriceInput(maxPriceStr);
+
+    const hasMinPriceFilter = minPriceValue !== null && minPriceValue > 0;
+    const hasMaxPriceFilter = maxPriceValue !== null && maxPriceValue > 0;
+
+    if (hasMinPriceFilter || hasMaxPriceFilter) {
+        const price = servicePrice || 0;
+
+        if (hasMinPriceFilter && price < minPriceValue) {
             return false;
         }
-
-        // Filtro por nombre con autocompletado inteligente
-        const nameFilterStr = filters.nameFilter?.toString().trim() || '';
-        if (nameFilterStr !== '') {
-            const searchTerm = nameFilterStr.toLowerCase();
-            const serviceName = service.nombre?.toLowerCase() || '';
-
-            // Búsqueda por palabras completas o inicio de palabras
-            const searchWords = searchTerm.split(' ').filter(word => word.length > 0);
-            const nameWords = serviceName.split(' ').filter(word => word.length > 0);
-
-            // Verificar si todas las palabras de búsqueda están presentes
-            const matches = searchWords.every(searchWord =>
-                nameWords.some(nameWord => nameWord.startsWith(searchWord))
-            );
-
-            if (!matches) {
-                return false;
-            }
+        if (hasMaxPriceFilter && price > maxPriceValue) {
+            return false;
         }
+    }
 
-        // Filtro por precio
-        const minPriceStr = filters.minPrice?.toString().trim() || '';
-        const maxPriceStr = filters.maxPrice?.toString().trim() || '';
+    return true;
+};
 
-        const minPriceValue = minPriceStr !== '' ? parsePriceInput(minPriceStr) : null;
-        const maxPriceValue = maxPriceStr !== '' ? parsePriceInput(maxPriceStr) : null;
-
-        const hasMinPriceFilter = minPriceValue !== null && minPriceValue > 0;
-        const hasMaxPriceFilter = maxPriceValue !== null && maxPriceValue > 0;
-
-        if (hasMinPriceFilter || hasMaxPriceFilter) {
-            const price = service.precio || 0;
-
-            if (hasMinPriceFilter && price < minPriceValue) {
-                return false;
-            }
-            if (hasMaxPriceFilter && price > maxPriceValue) {
-                return false;
-            }
-        }
-
-        // Filtro por estado
-        if (filters.statusFilter !== 'all') {
-            const isActive = service.estado === true;
-            if (filters.statusFilter === 'active' && !isActive) {
-                return false;
-            }
-            if (filters.statusFilter === 'inactive' && isActive) {
-                return false;
-            }
-        }
-
+const matchesStatusFilter = (serviceEstado: boolean | undefined, statusFilter: string): boolean => {
+    if (statusFilter === 'all') {
         return true;
+    }
+    
+    const isActive = serviceEstado === true;
+    
+    if (statusFilter === 'active' && !isActive) {
+        return false;
+    }
+    if (statusFilter === 'inactive' && isActive) {
+        return false;
+    }
+    
+    return true;
+};
+
+// Función de filtrado de servicios (refactorizada para reducir complejidad cognitiva)
+const filterServices = (services: any[], filters: any) => {
+    return services.filter(service => {
+        const matchesCategory = matchesCategoryFilter(service.id_categoria, filters.categoryFilter);
+        const matchesName = matchesNameFilter(service.nombre, filters.nameFilter);
+        const matchesPrice = matchesPriceFilter(service.precio, filters.minPrice, filters.maxPrice);
+        const matchesStatus = matchesStatusFilter(service.estado, filters.statusFilter);
+        
+        return matchesCategory && matchesName && matchesPrice && matchesStatus;
     });
 };
 
@@ -154,7 +170,7 @@ const ProviderMyServicesPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
-    const [editingService, setEditingService] = useState<any | null>(null);
+    const [editingService, setEditingService] = useState<any>(null);
     const [showEditModal, setShowEditModal] = useState(false);
 
     // Estados de filtros
@@ -184,7 +200,7 @@ const ProviderMyServicesPage: React.FC = () => {
     // Estados para plantillas
     const [showTemplateModal, setShowTemplateModal] = useState(false);
     const [templates, setTemplates] = useState<any[]>([]);
-    const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
+    const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
     const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
     const [templateForm, setTemplateForm] = useState({
         nombre: '',
@@ -269,7 +285,8 @@ const ProviderMyServicesPage: React.FC = () => {
             imagen: service.imagen || '',
             tarifas: (service.tarifas || []).map(tarifa => ({
                 ...tarifa,
-                monto: tarifa.monto ? formatPriceInput(tarifa.monto.toString()) : ''
+                monto: tarifa.monto ? formatPriceInput(tarifa.monto.toString()) : '',
+                tempId: tarifa.tempId || `tarifa-${Date.now()}-${Math.random()}`
             }))
         });
 
@@ -407,7 +424,7 @@ const ProviderMyServicesPage: React.FC = () => {
     const handleRemoveImage = async () => {
         try {
             // Si hay una imagen actual en el servicio, eliminarla del bucket
-            if (editForm.imagen && editForm.imagen.startsWith('https://') && editForm.imagen.includes('supabase.co')) {
+            if (editForm.imagen?.startsWith('https://') && editForm.imagen?.includes('supabase.co')) {
                 const accessToken = localStorage.getItem('access_token');
                 if (accessToken) {
                     try {
@@ -460,7 +477,7 @@ const ProviderMyServicesPage: React.FC = () => {
 
             await providerServicesAPI.updateProviderService(editingService.id_servicio, serviceData, accessToken);
 
-            // Actualizar solo el servicio específico en la lista sin recargar todo
+            // Actualizar solo el servicio específico en la lista sin recargar totalmente
             const updatedService = {
                 ...editingService,
                 ...serviceData
@@ -490,7 +507,8 @@ const ProviderMyServicesPage: React.FC = () => {
             descripcion: '',
             fecha_inicio: new Date().toISOString().split('T')[0],
             fecha_fin: null,
-            id_tarifa: rateTypes[0]?.id_tarifa || 0
+            id_tarifa: rateTypes[0]?.id_tarifa || 0,
+            tempId: `temp-${Date.now()}-${Math.random()}`
         };
 
         setEditForm(prev => ({
@@ -693,6 +711,171 @@ const ProviderMyServicesPage: React.FC = () => {
         }
     };
 
+    const renderServicesContent = () => {
+        if (filteredServices.length > 0) {
+            return (
+                <div className="divide-y divide-gray-200">
+                    {filteredServices.map((service) => (
+                        <div key={service.id_servicio} className="p-4 hover:bg-gray-50 transition-colors duration-200">
+                            <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                                {/* Imagen del servicio */}
+                                <div className="flex-shrink-0 mx-auto sm:mx-0">
+                                    {service.imagen ? (
+                                        <img
+                                            src={service.imagen.startsWith('http') ? service.imagen : `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
+                                            alt={service.nombre}
+                                            className="h-16 w-16 object-cover rounded-lg border border-gray-200"
+                                            onError={(e) => {
+                                                console.log('❌ Error cargando imagen en vista de servicios:', (e.target as HTMLImageElement).src);
+                                                const target = e.target as HTMLImageElement;
+                                                target.style.display = 'none';
+                                                const parent = target.parentElement;
+                                                if (parent) {
+                                                    parent.innerHTML = `
+                                                        <div class="h-16 w-16 bg-gradient-to-br from-primary-100 to-primary-200 rounded-lg border border-gray-200 flex items-center justify-center">
+                                                            <svg class="h-6 w-6 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                                            </svg>
+                                                        </div>
+                                                    `;
+                                                }
+                                            }}
+                                        />
+                                    ) : (
+                                        <div className="h-16 w-16 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                                            <BriefcaseIcon className="h-6 w-6 text-gray-400" />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Información principal */}
+                                <div className="flex-1 min-w-0 text-center sm:text-left">
+                                    <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
+                                    <p className="text-sm text-gray-600 mt-1 break-words">{service.descripcion}</p>
+                                </div>
+
+                                {/* Información compacta - responsive */}
+                                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6 text-sm">
+                                    {/* Precio */}
+                                    <div className="text-center">
+                                        <p className="text-xs font-medium text-gray-500 mb-1">💰 Precio</p>
+                                        <p className="font-semibold text-green-600">
+                                            {formatNumber(service.precio || 0)} ₲
+                                        </p>
+                                    </div>
+
+                                    {/* Categoría */}
+                                    <div className="text-center">
+                                        <p className="text-xs font-medium text-gray-500 mb-1">📂 Categoría</p>
+                                        <p className="font-semibold text-blue-600 break-words">
+                                            {categories.find(c => c.id_categoria === service.id_categoria)?.nombre || 'No especificado'}
+                                        </p>
+                                    </div>
+
+                                    {/* Estado */}
+                                    <div className="text-center">
+                                        <p className="text-xs font-medium text-gray-500 mb-1">📊 Estado</p>
+                                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                            service.estado 
+                                                ? 'bg-green-100 text-green-800' 
+                                                : 'bg-red-100 text-red-800'
+                                        }`}>
+                                            {service.estado ? 'Activo' : 'Inactivo'}
+                                        </span>
+                                    </div>
+
+                                    {/* Tarifas */}
+                                    <div className="text-center">
+                                        <p className="text-xs font-medium text-gray-500 mb-1">📋 Tarifas</p>
+                                        <p className="font-semibold text-orange-600">
+                                            {service.tarifas?.length || 0}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Botones de acción - responsive */}
+                                <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 mt-4 sm:mt-0">
+                                    <button
+                                        onClick={() => handleToggleServiceStatus(service.id_servicio, service.estado)}
+                                        className={`w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border shadow-sm text-sm font-medium rounded-md transition-colors ${
+                                            service.estado
+                                                ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500'
+                                                : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
+                                        }`}
+                                    >
+                                        {service.estado ? (
+                                            <>
+                                                <XMarkIcon className="h-4 w-4 mr-1" />
+                                                <span className="hidden sm:inline">Desactivar</span>
+                                                <span className="sm:hidden">Desactivar</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <PlusIcon className="h-4 w-4 mr-1" />
+                                                <span className="hidden sm:inline">Activar</span>
+                                                <span className="sm:hidden">Activar</span>
+                                            </>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => handleEditService(service)}
+                                        className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                                    >
+                                        <PencilIcon className="h-4 w-4 mr-1" />
+                                        <span className="hidden sm:inline">Editar</span>
+                                        <span className="sm:hidden">Editar</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Resumen de tarifas (expandible) */}
+                            {service.tarifas && service.tarifas.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-100">
+                                    <div className="space-y-2">
+                                        <p className="text-xs font-medium text-gray-500">📋 Detalle de tarifas:</p>
+                                        <div className="bg-gray-50 rounded-md p-2">
+                                            <p className="text-xs text-gray-700 leading-relaxed">
+                                                {getTariffsSummary(service.tarifas, rateTypes)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+        
+        if (services.length === 0) {
+            return (
+                <div className="text-center py-12">
+                    <BriefcaseIcon className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No tienes servicios</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                        Solicita nuevos servicios para comenzar a ofrecerlos.
+                    </p>
+                </div>
+            );
+        }
+        
+        return (
+            <div className="text-center py-12">
+                <MagnifyingGlassIcon className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-medium text-gray-900">No hay servicios que coincidan con los filtros</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                    Prueba ajustando los filtros para ver más resultados.
+                </p>
+                <button
+                    onClick={resetFilters}
+                    className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                >
+                    🔄 Limpiar Filtros
+                </button>
+            </div>
+        );
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -848,169 +1031,9 @@ const ProviderMyServicesPage: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Success Messages */}
-                {/* {success && (
-                    <div className="mb-4 bg-green-50 border border-green-200 rounded-md p-4">
-                        <div className="text-sm text-green-700">{success}</div>
-                    </div>
-                )} */}
-
                 {/* Services List */}
                 <div className="bg-white shadow overflow-hidden sm:rounded-md">
-                    {filteredServices.length > 0 ? (
-                        <div className="divide-y divide-gray-200">
-                            {filteredServices.map((service) => (
-                                <div key={service.id_servicio} className="p-4 hover:bg-gray-50 transition-colors duration-200">
-                                    <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
-                                        {/* Imagen del servicio */}
-                                        <div className="flex-shrink-0 mx-auto sm:mx-0">
-                                            {service.imagen ? (
-                                                <img
-                                                    src={service.imagen.startsWith('http') ? service.imagen : `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
-                                                    alt={service.nombre}
-                                                    className="h-16 w-16 object-cover rounded-lg border border-gray-200"
-                                                    onError={(e) => {
-                                                        console.log('❌ Error cargando imagen en vista de servicios:', (e.target as HTMLImageElement).src);
-                                                        const target = e.target as HTMLImageElement;
-                                                        target.style.display = 'none';
-                                                        const parent = target.parentElement;
-                                                        if (parent) {
-                                                            parent.innerHTML = `
-                                                                <div class="h-16 w-16 bg-gradient-to-br from-primary-100 to-primary-200 rounded-lg border border-gray-200 flex items-center justify-center">
-                                                                    <svg class="h-6 w-6 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                                                                    </svg>
-                                                                </div>
-                                                            `;
-                                                        }
-                                                    }}
-                                                />
-                                            ) : (
-                                                <div className="h-16 w-16 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
-                                                    <BriefcaseIcon className="h-6 w-6 text-gray-400" />
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Información principal */}
-                                        <div className="flex-1 min-w-0 text-center sm:text-left">
-                                            <h3 className="text-lg font-semibold text-gray-900 break-words">{service.nombre}</h3>
-                                            <p className="text-sm text-gray-600 mt-1 break-words">{service.descripcion}</p>
-                                        </div>
-
-                                        {/* Información compacta - responsive */}
-                                        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6 text-sm">
-                                            {/* Precio */}
-                                            <div className="text-center">
-                                                <p className="text-xs font-medium text-gray-500 mb-1">💰 Precio</p>
-                                                <p className="font-semibold text-green-600">
-                                                    {formatNumber(service.precio || 0)} ₲
-                                                </p>
-                                            </div>
-
-                                            {/* Categoría */}
-                                            <div className="text-center">
-                                                <p className="text-xs font-medium text-gray-500 mb-1">📂 Categoría</p>
-                                                <p className="font-semibold text-blue-600 break-words">
-                                                    {categories.find(c => c.id_categoria === service.id_categoria)?.nombre || 'No especificado'}
-                                                </p>
-                                            </div>
-
-                                            {/* Estado */}
-                                            <div className="text-center">
-                                                <p className="text-xs font-medium text-gray-500 mb-1">📊 Estado</p>
-                                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                                    service.estado 
-                                                        ? 'bg-green-100 text-green-800' 
-                                                        : 'bg-red-100 text-red-800'
-                                                }`}>
-                                                    {service.estado ? 'Activo' : 'Inactivo'}
-                                                </span>
-                                            </div>
-
-                                            {/* Tarifas */}
-                                            <div className="text-center">
-                                                <p className="text-xs font-medium text-gray-500 mb-1">📋 Tarifas</p>
-                                                <p className="font-semibold text-orange-600">
-                                                    {service.tarifas?.length || 0}
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        {/* Botones de acción - responsive */}
-                                        <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 mt-4 sm:mt-0">
-                                            <button
-                                                onClick={() => handleToggleServiceStatus(service.id_servicio, service.estado)}
-                                                className={`w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border shadow-sm text-sm font-medium rounded-md transition-colors ${
-                                                    service.estado
-                                                        ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500'
-                                                        : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
-                                                }`}
-                                            >
-                                                {service.estado ? (
-                                                    <>
-                                                        <XMarkIcon className="h-4 w-4 mr-1" />
-                                                        <span className="hidden sm:inline">Desactivar</span>
-                                                        <span className="sm:hidden">Desactivar</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <PlusIcon className="h-4 w-4 mr-1" />
-                                                        <span className="hidden sm:inline">Activar</span>
-                                                        <span className="sm:hidden">Activar</span>
-                                                    </>
-                                                )}
-                                            </button>
-                                            <button
-                                                onClick={() => handleEditService(service)}
-                                                className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-                                            >
-                                                <PencilIcon className="h-4 w-4 mr-1" />
-                                                <span className="hidden sm:inline">Editar</span>
-                                                <span className="sm:hidden">Editar</span>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Resumen de tarifas (expandible) */}
-                                    {service.tarifas && service.tarifas.length > 0 && (
-                                        <div className="mt-3 pt-3 border-t border-gray-100">
-                                            <div className="space-y-2">
-                                                <p className="text-xs font-medium text-gray-500">📋 Detalle de tarifas:</p>
-                                                <div className="bg-gray-50 rounded-md p-2">
-                                                    <p className="text-xs text-gray-700 leading-relaxed">
-                                                        {getTariffsSummary(service.tarifas, rateTypes)}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    ) : services.length === 0 ? (
-                        <div className="text-center py-12">
-                            <BriefcaseIcon className="mx-auto h-12 w-12 text-gray-400" />
-                            <h3 className="mt-2 text-sm font-medium text-gray-900">No tienes servicios</h3>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Solicita nuevos servicios para comenzar a ofrecerlos.
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="text-center py-12">
-                            <MagnifyingGlassIcon className="mx-auto h-12 w-12 text-gray-400" />
-                            <h3 className="mt-2 text-sm font-medium text-gray-900">No hay servicios que coincidan con los filtros</h3>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Prueba ajustando los filtros para ver más resultados.
-                            </p>
-                            <button
-                                onClick={resetFilters}
-                                className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-                            >
-                                🔄 Limpiar Filtros
-                            </button>
-                        </div>
-                    )}
+                    {renderServicesContent()}
                 </div>
             </div>
 
@@ -1108,7 +1131,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                         </label>
                                         <select
                                             value={editForm.id_moneda}
-                                            onChange={(e) => setEditForm(prev => ({ ...prev, id_moneda: parseInt(e.target.value) }))}
+                                            onChange={(e) => setEditForm(prev => ({ ...prev, id_moneda: Number.parseInt(e.target.value) }))}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
                                         >
                                             {currencies.map((currency) => (
@@ -1202,7 +1225,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                     </div>
 
                                     {editForm.tarifas.map((tarifa, index) => (
-                                        <div key={index} className="border border-gray-200 rounded-lg p-3 mb-3">
+                                        <div key={tarifa.tempId || `tarifa-${index}`} className="border border-gray-200 rounded-lg p-3 mb-3">
                                             <div className="flex items-center justify-between mb-2">
                                                 <span className="text-sm font-medium text-gray-700">Tarifa {index + 1}</span>
                                                 <button
@@ -1248,7 +1271,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                                     </label>
                                                     <select
                                                         value={tarifa.id_tarifa}
-                                                        onChange={(e) => updateTarifa(index, 'id_tarifa', parseInt(e.target.value))}
+                                                        onChange={(e) => updateTarifa(index, 'id_tarifa', Number.parseInt(e.target.value))}
                                                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                                                     >
                                                         {rateTypes.map((rateType) => (
@@ -1299,7 +1322,49 @@ const ProviderMyServicesPage: React.FC = () => {
                                 </button>
                             </div>
 
-                            {!showNewServiceRequest ? (
+                            {showNewServiceRequest ? (
+                                /* Formulario de Solicitud de Nuevo Servicio */
+                                <div className="space-y-4">
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                        <h4 className="text-md font-medium text-blue-900 mb-2">Solicitar Nuevo Servicio</h4>
+                                        <p className="text-sm text-blue-700">
+                                            Categoría: <strong>{categories.find(c => c.id_categoria === selectedCategory)?.nombre}</strong>
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Nombre del Servicio *
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={newServiceRequest.nombre}
+                                            onChange={(e) => setNewServiceRequest(prev => ({ ...prev, nombre: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="Ingresa el nombre del servicio que deseas"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Descripción del Servicio *
+                                        </label>
+                                        <textarea
+                                            value={newServiceRequest.descripcion}
+                                            onChange={(e) => setNewServiceRequest(prev => ({ ...prev, descripcion: e.target.value }))}
+                                            rows={4}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="Describe detalladamente el servicio que necesitas"
+                                        />
+                                    </div>
+
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                        <p className="text-sm text-yellow-800">
+                                            <strong>Nota:</strong> Tu solicitud será revisada por el administrador. Una vez aprobada, podrás crear servicios basados en esta solicitud.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
                                 <div className="space-y-6">
                                     {/* Paso 1: Selección de Categoría */}
                                     <div>
@@ -1329,7 +1394,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                                     2. Todos los Servicios en "{categories.find(c => c.id_categoria === selectedCategory)?.nombre}"
                                                 </h4>
                                                 <span className="text-sm text-gray-500">
-                                                    {templates.length} servicio{templates.length !== 1 ? 's' : ''} encontrado{templates.length !== 1 ? 's' : ''}
+                                                    {templates.length} servicio{templates.length === 1 ? '' : 's'} encontrado{templates.length === 1 ? '' : 's'}
                                                 </span>
                                             </div>
                                             
@@ -1346,7 +1411,16 @@ const ProviderMyServicesPage: React.FC = () => {
                                                         {templates.map((template) => (
                                                             <div
                                                                 key={template.id_servicio}
+                                                                role="button"
+                                                                tabIndex={0}
+                                                                aria-label={`Seleccionar plantilla ${template.nombre}`}
                                                                 onClick={() => handleSelectTemplate(template)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter' || e.key === ' ') {
+                                                                        e.preventDefault();
+                                                                        handleSelectTemplate(template);
+                                                                    }
+                                                                }}
                                                                 className={`p-3 border rounded-lg cursor-pointer transition-colors ${
                                                                     selectedTemplate?.id_servicio === template.id_servicio
                                                                         ? 'border-green-500 bg-green-50'
@@ -1420,7 +1494,7 @@ const ProviderMyServicesPage: React.FC = () => {
                                                                     </label>
                                                                     <select
                                                                         value={templateForm.id_moneda}
-                                                                        onChange={(e) => setTemplateForm(prev => ({ ...prev, id_moneda: parseInt(e.target.value) }))}
+                                                                        onChange={(e) => setTemplateForm(prev => ({ ...prev, id_moneda: Number.parseInt(e.target.value) }))}
                                                                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                                                                     >
                                                                         <option value="">Selecciona una moneda</option>
@@ -1482,48 +1556,6 @@ const ProviderMyServicesPage: React.FC = () => {
                                             )}
                                         </div>
                                     )}
-                                </div>
-                            ) : (
-                                /* Formulario de Solicitud de Nuevo Servicio */
-                                <div className="space-y-4">
-                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                        <h4 className="text-md font-medium text-blue-900 mb-2">Solicitar Nuevo Servicio</h4>
-                                        <p className="text-sm text-blue-700">
-                                            Categoría: <strong>{categories.find(c => c.id_categoria === selectedCategory)?.nombre}</strong>
-                                        </p>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Nombre del Servicio *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={newServiceRequest.nombre}
-                                            onChange={(e) => setNewServiceRequest(prev => ({ ...prev, nombre: e.target.value }))}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="Ingresa el nombre del servicio que deseas"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Descripción del Servicio *
-                                        </label>
-                                        <textarea
-                                            value={newServiceRequest.descripcion}
-                                            onChange={(e) => setNewServiceRequest(prev => ({ ...prev, descripcion: e.target.value }))}
-                                            rows={4}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="Describe detalladamente el servicio que necesitas"
-                                        />
-                                    </div>
-
-                                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                                        <p className="text-sm text-yellow-800">
-                                            <strong>Nota:</strong> Tu solicitud será revisada por el administrador. Una vez aprobada, podrás crear servicios basados en esta solicitud.
-                                        </p>
-                                    </div>
                                 </div>
                             )}
 

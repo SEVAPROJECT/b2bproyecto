@@ -29,10 +29,10 @@ export const throttle = <T extends (...args: any[]) => any>(
 
 // Función para memoizar resultados de API
 export class ReportCache {
-    private cache = new Map<string, { data: any; timestamp: number }>();
+    private readonly cache = new Map<string, { data: unknown; timestamp: number }>();
     private readonly TTL = 5 * 60 * 1000; // 5 minutos
 
-    get(key: string): any | null {
+    get(key: string): unknown | null {
         const item = this.cache.get(key);
         if (!item) return null;
         
@@ -44,7 +44,7 @@ export class ReportCache {
         return item.data;
     }
 
-    set(key: string, data: any): void {
+    set(key: string, data: unknown): void {
         this.cache.set(key, {
             data,
             timestamp: Date.now()
@@ -59,8 +59,8 @@ export class ReportCache {
 // Función para optimizar procesamiento de datos grandes
 export const processLargeDataset = <T>(
     data: T[],
-    batchSize: number = 100,
-    processor: (batch: T[]) => void
+    processor: (batch: T[]) => void,
+    batchSize: number = 100
 ): Promise<void> => {
     return new Promise((resolve) => {
         let index = 0;
@@ -85,12 +85,12 @@ export const processLargeDataset = <T>(
 export const optimizeFilters = (filters: any): any => {
     const optimized: any = {};
     
-    Object.keys(filters).forEach(key => {
+    for (const key of Object.keys(filters)) {
         const value = filters[key];
         if (value !== null && value !== undefined && value !== '') {
             optimized[key] = value;
         }
-    });
+    }
     
     return optimized;
 };

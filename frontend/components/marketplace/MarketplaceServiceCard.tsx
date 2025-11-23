@@ -14,12 +14,11 @@ interface MarketplaceServiceCardProps {
 }
 
 const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ service, category, onViewProviders, onReservar, isAuthenticated: propIsAuthenticated }) => {
-    const { user, isAuthenticated: contextIsAuthenticated } = useAuth();
-    const isAuthenticated = propIsAuthenticated !== undefined ? propIsAuthenticated : contextIsAuthenticated;
+    const { isAuthenticated: contextIsAuthenticated } = useAuth();
+    const isAuthenticated = propIsAuthenticated ?? contextIsAuthenticated;
     
     // Debug: verificar autenticación (comentado para evitar spam)
     // console.log('🔐 Auth debug:', {
-    //     user: user,
     //     contextIsAuthenticated: contextIsAuthenticated,
     //     propIsAuthenticated: propIsAuthenticated,
     //     finalIsAuthenticated: isAuthenticated
@@ -48,56 +47,62 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
         return `${baseUrl}${imagePath}`;
     };
 
-    const formatPriceProfessional = (price: number, service: BackendService) => {
-        // Usar la lógica de mapeo de moneda de la versión original
-        let serviceCurrency = null;
-
+    // Función helper para obtener la moneda del servicio
+    const getServiceCurrency = (service: BackendService): string => {
         // Primero intentar mapear por ID de moneda (más confiable)
         if (service.id_moneda) {
             switch (service.id_moneda) {
-                case 1: // Guaraní
-                    serviceCurrency = 'GS';
-                    break;
-                case 2: // Dólar
-                    serviceCurrency = 'USD';
-                    break;
-                case 3: // Real
-                    serviceCurrency = 'BRL';
-                    break;
-                case 4: // Peso Argentino
-                    serviceCurrency = 'ARS';
-                    break;
-                case 8: // Peso Argentino (otro ID)
-                    serviceCurrency = 'ARS';
-                    break;
+                case 1:
+                    return 'GS';
+                case 2:
+                    return 'USD';
+                case 3:
+                    return 'BRL';
+                case 4:
+                case 8:
+                    return 'ARS';
                 default:
-                    serviceCurrency = 'GS'; // Fallback a Guaraní
+                    return 'GS';
             }
         }
 
-        // Si no hay ID de moneda, usar código ISO limpio como fallback
-        if (!serviceCurrency && (service as any).codigo_iso_moneda) {
-            serviceCurrency = (service as any).codigo_iso_moneda.trim();
+        // Si no hay ID de moneda, intentar usar código ISO si está disponible
+        // Nota: codigo_iso_moneda puede no estar en el tipo BackendService
+        const serviceWithIso = service as BackendService & { codigo_iso_moneda?: string };
+        if (serviceWithIso.codigo_iso_moneda) {
+            return serviceWithIso.codigo_iso_moneda.trim();
         }
 
         // Si aún no hay moneda, asumir Guaraní
-        if (!serviceCurrency) {
-            serviceCurrency = 'GS';
-        }
+        return 'GS';
+    };
 
-        const currencySymbol = serviceCurrency === 'USD' ? '$' :
-                              serviceCurrency === 'BRL' ? 'R$' :
-                              serviceCurrency === 'ARS' ? '$' : '₲';
+    // Función helper para obtener el símbolo de la moneda
+    const getCurrencySymbol = (currency: string): string => {
+        if (currency === 'USD') return '$';
+        if (currency === 'BRL') return 'R$';
+        if (currency === 'ARS') return '$';
+        return '₲';
+    };
 
-        if (serviceCurrency === 'USD') {
-            return `${currencySymbol} ${price.toLocaleString('en-US')}`;
-        } else if (serviceCurrency === 'BRL') {
-            return `${currencySymbol} ${price.toLocaleString('pt-BR')}`;
-        } else if (serviceCurrency === 'ARS') {
-            return `${currencySymbol} ${price.toLocaleString('es-AR')}`;
-        } else {
-            return `${currencySymbol} ${price.toLocaleString('es-PY')}`;
+    // Función helper para formatear el precio según la moneda
+    const formatPriceByCurrency = (price: number, currency: string): string => {
+        const symbol = getCurrencySymbol(currency);
+        if (currency === 'USD') {
+            return `${symbol} ${price.toLocaleString('en-US')}`;
         }
+        if (currency === 'BRL') {
+            return `${symbol} ${price.toLocaleString('pt-BR')}`;
+        }
+        if (currency === 'ARS') {
+            return `${symbol} ${price.toLocaleString('es-AR')}`;
+        }
+        return `${symbol} ${price.toLocaleString('es-PY')}`;
+    };
+
+    const formatPriceProfessional = (price: number, service: BackendService) => {
+        const serviceCurrency = getServiceCurrency(service);
+        return formatPriceByCurrency(price, serviceCurrency);
     };
 
     const getTimeAgo = (dateString: string) => {
@@ -125,9 +130,9 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
         <div className="service-card-uniform bg-white rounded-xl shadow-md border border-slate-200/80 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 h-full flex flex-col">
             {/* Imagen del servicio - altura fija para uniformidad */}
             <div className="h-40 bg-gradient-to-br from-primary-100 to-primary-200 relative overflow-hidden flex-shrink-0">
-                {(service as any).imagen ? (
+                {service.imagen ? (
                     <img
-                        src={getImageUrl((service as any).imagen)}
+                        src={getImageUrl(service.imagen)}
                         alt={`Imagen de ${service.nombre}`}
                         className="w-full h-full object-cover"
                         onError={(e) => {
@@ -178,22 +183,22 @@ const MarketplaceServiceCard: React.FC<MarketplaceServiceCardProps> = memo(({ se
                             <BuildingStorefrontIcon className="w-3 h-3 text-primary-600" />
                         </div>
                         <p className="text-sm font-medium text-slate-700 truncate">
-                            {(service as any).razon_social || (service as any).nombre_empresa || (service as any).nombre_proveedor || 'Empresa verificada'}
+                            {service.razon_social || 'Empresa verificada'}
                         </p>
                     </div>
                     
                     {/* Ubicación - línea compacta */}
                     <div className="flex items-center gap-1 text-xs text-slate-500">
-                        {(service as any).departamento && (
-                            <span className="truncate">🗺️ {(service as any).departamento}</span>
+                        {service.departamento && (
+                            <span className="truncate">🗺️ {service.departamento}</span>
                         )}
-                        {(service as any).ciudad && (service as any).departamento && (
+                        {service.ciudad && service.departamento && (
                             <span>•</span>
                         )}
-                        {(service as any).ciudad && (
-                            <span className="truncate">📍 {(service as any).ciudad}</span>
+                        {service.ciudad && (
+                            <span className="truncate">📍 {service.ciudad}</span>
                         )}
-                        {!(service as any).departamento && !(service as any).ciudad && (
+                        {!service.departamento && !service.ciudad && (
                             <span className="text-slate-400">Ubicación no especificada</span>
                         )}
                     </div>

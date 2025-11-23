@@ -1,14 +1,14 @@
 // frontend/components/horario/HorarioTrabajoManager.tsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { buildApiUrl } from '../../config/api';
 import { 
   ClockIcon, 
   CalendarDaysIcon, 
   PlusIcon, 
   TrashIcon, 
   PencilIcon,
-  CheckIcon,
-  XMarkIcon
+  CheckIcon
 } from '../icons';
 
 interface HorarioTrabajo {
@@ -44,7 +44,6 @@ const HorarioTrabajoManager: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [showExcepcionForm, setShowExcepcionForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingExcepcionId, setEditingExcepcionId] = useState<number | null>(null);
 
   // Estados para el formulario de horario
   const [formData, setFormData] = useState({
@@ -63,8 +62,6 @@ const HorarioTrabajoManager: React.FC = () => {
     motivo: ''
   });
 
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-production-249d.up.railway.app';
-
   useEffect(() => {
     loadHorarios();
     loadExcepciones();
@@ -72,7 +69,7 @@ const HorarioTrabajoManager: React.FC = () => {
 
   const loadHorarios = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/horario-trabajo/`, {
+      const response = await fetch(buildApiUrl('/horario-trabajo/'), {
         headers: {
           'Authorization': `Bearer ${user?.accessToken}`,
           'Content-Type': 'application/json',
@@ -94,7 +91,7 @@ const HorarioTrabajoManager: React.FC = () => {
 
   const loadExcepciones = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/horario-trabajo/excepciones`, {
+      const response = await fetch(buildApiUrl('/horario-trabajo/excepciones'), {
         headers: {
           'Authorization': `Bearer ${user?.accessToken}`,
           'Content-Type': 'application/json',
@@ -115,8 +112,8 @@ const HorarioTrabajoManager: React.FC = () => {
     
     try {
       const url = editingId 
-        ? `${API_URL}/api/v1/horario-trabajo/${editingId}`
-        : `${API_URL}/api/v1/horario-trabajo/`;
+        ? buildApiUrl(`/horario-trabajo/${editingId}`)
+        : buildApiUrl('/horario-trabajo/');
       
       const method = editingId ? 'PUT' : 'POST';
       
@@ -147,7 +144,7 @@ const HorarioTrabajoManager: React.FC = () => {
     e.preventDefault();
     
     try {
-      const response = await fetch(`${API_URL}/api/v1/horario-trabajo/excepciones`, {
+      const response = await fetch(buildApiUrl('/horario-trabajo/excepciones'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user?.accessToken}`,
@@ -190,7 +187,7 @@ const HorarioTrabajoManager: React.FC = () => {
     if (!confirm('¿Estás seguro de que quieres eliminar este horario?')) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/horario-trabajo/${id}`, {
+      const response = await fetch(buildApiUrl(`/horario-trabajo/${id}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${user?.accessToken}`,
@@ -231,7 +228,7 @@ const HorarioTrabajoManager: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/horario-trabajo/configuracion-completa`, {
+      const response = await fetch(buildApiUrl('/horario-trabajo/configuracion-completa'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user?.accessToken}`,
@@ -300,12 +297,12 @@ const HorarioTrabajoManager: React.FC = () => {
                 </label>
                 <select
                   value={formData.dia_semana}
-                  onChange={(e) => setFormData({ ...formData, dia_semana: parseInt(e.target.value) })}
+                  onChange={(e) => setFormData({ ...formData, dia_semana: Number.parseInt(e.target.value) })}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
                 >
                   {DIAS_SEMANA.map((dia, index) => (
-                    <option key={index} value={index}>
+                    <option key={dia} value={index}>
                       {dia}
                     </option>
                   ))}

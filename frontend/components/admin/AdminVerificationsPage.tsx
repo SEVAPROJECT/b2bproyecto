@@ -59,52 +59,108 @@ const AdminVerificationsPage: React.FC = () => {
         });
     }, []);
 
+    // Funciones auxiliares para filtrado por fecha
+    const matchesDateFilter = useCallback((requestDate: Date, dateFilter: string, customDate?: string): boolean => {
+        if (dateFilter === 'all') {
+            return true;
+        }
+
+        const now = new Date();
+        
+        switch (dateFilter) {
+            case 'today':
+                return requestDate.toDateString() === now.toDateString();
+            case 'week': {
+                const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                return requestDate >= weekAgo;
+            }
+            case 'month': {
+                const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                return requestDate >= monthAgo;
+            }
+            case 'year': {
+                const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+                return requestDate >= yearAgo;
+            }
+            case 'custom':
+                if (customDate) {
+                    const customDateObj = new Date(customDate);
+                    return requestDate.toDateString() === customDateObj.toDateString();
+                }
+                return true;
+            default:
+                return true;
+        }
+    }, []);
+
+    const matchesCompanyFilter = useCallback((nombreEmpresa: string, companyFilter: string): boolean => {
+        if (companyFilter === 'all') {
+            return true;
+        }
+        return nombreEmpresa === companyFilter;
+    }, []);
+
+    const matchesStatusFilter = useCallback((estadoAprobacion: string, statusFilter: string): boolean => {
+        if (statusFilter === 'all') {
+            return true;
+        }
+        return estadoAprobacion === statusFilter;
+    }, []);
+
+    // Funciones auxiliares para obtener clases CSS y texto del estado
+    const getEstadoClasses = useCallback((estado: string): string => {
+        if (estado === 'aprobada') {
+            return 'bg-green-100 text-green-800';
+        }
+        if (estado === 'rechazada') {
+            return 'bg-red-100 text-red-800';
+        }
+        return 'bg-yellow-100 text-yellow-800';
+    }, []);
+
+    const getEstadoText = useCallback((estado: string): string => {
+        if (estado === 'aprobada') {
+            return 'Aprobada';
+        }
+        if (estado === 'rechazada') {
+            return 'Rechazada';
+        }
+        return 'Pendiente';
+    }, []);
+
+    // Funciones auxiliares para estado de empresa
+    const getEstadoEmpresaClasses = useCallback((estadoEmpresa: string): string => {
+        if (estadoEmpresa === 'verificado') {
+            return 'bg-green-100 text-green-800';
+        }
+        if (estadoEmpresa === 'pendiente') {
+            return 'bg-yellow-100 text-yellow-800';
+        }
+        return 'bg-red-100 text-red-800';
+    }, []);
+
+    // Funciones auxiliares para verificado (booleano)
+    const getVerificadoClasses = useCallback((verificado: boolean): string => {
+        return verificado ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+    }, []);
+
+    const getVerificadoText = useCallback((verificado: boolean): string => {
+        return verificado ? 'Sí' : 'No';
+    }, []);
+
     // Función para filtrar solicitudes
     const filterRequests = useCallback((requests: any[]) => {
         return requests.filter(request => {
-            // Filtro por fecha
-            if (filters.dateFilter !== 'all') {
-                const requestDate = new Date(request.created_at || request.fecha_solicitud);
-                const now = new Date();
-                
-                switch (filters.dateFilter) {
-                    case 'today':
-                        if (requestDate.toDateString() !== now.toDateString()) return false;
-                        break;
-                    case 'week':
-                        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                        if (requestDate < weekAgo) return false;
-                        break;
-                    case 'month':
-                        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                        if (requestDate < monthAgo) return false;
-                        break;
-                    case 'year':
-                        const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-                        if (requestDate < yearAgo) return false;
-                        break;
-                    case 'custom':
-                        if (filters.customDate) {
-                            const customDate = new Date(filters.customDate);
-                            if (requestDate.toDateString() !== customDate.toDateString()) return false;
-                        }
-                        break;
-                }
-            }
+            const requestDate = new Date(request.created_at || request.fecha_solicitud);
+            const matchesDate = matchesDateFilter(requestDate, filters.dateFilter, filters.customDate);
+            const matchesCompany = matchesCompanyFilter(request.nombre_empresa || '', filters.companyFilter);
+            // El backend devuelve 'estado', no 'estado_aprobacion'
+            const estadoAprobacion = request.estado_aprobacion || request.estado || '';
+            const matchesStatus = matchesStatusFilter(estadoAprobacion, filters.statusFilter);
 
-            // Filtro por empresa
-            if (filters.companyFilter !== 'all') {
-                if (request.nombre_empresa !== filters.companyFilter) return false;
-            }
-
-            // Filtro por estado
-            if (filters.statusFilter !== 'all') {
-                if (request.estado_aprobacion !== filters.statusFilter) return false;
-            }
-
-            return true;
+            return matchesDate && matchesCompany && matchesStatus;
         });
-    }, [filters]);
+    }, [filters, matchesDateFilter, matchesCompanyFilter, matchesStatusFilter]);
 
     // Solicitudes filtradas
     const filteredRequests = useMemo(() => {
@@ -115,9 +171,10 @@ const AdminVerificationsPage: React.FC = () => {
     const statistics = useMemo(() => {
         const total = solicitudes.length;
         const filtered = filteredRequests.length;
-        const pending = solicitudes.filter(r => r.estado_aprobacion === 'pendiente').length;
-        const approved = solicitudes.filter(r => r.estado_aprobacion === 'aprobada').length;
-        const rejected = solicitudes.filter(r => r.estado_aprobacion === 'rechazada').length;
+        // El backend devuelve 'estado', no 'estado_aprobacion'
+        const pending = solicitudes.filter(r => (r.estado_aprobacion || r.estado) === 'pendiente').length;
+        const approved = solicitudes.filter(r => (r.estado_aprobacion || r.estado) === 'aprobada').length;
+        const rejected = solicitudes.filter(r => (r.estado_aprobacion || r.estado) === 'rechazada').length;
 
         return { total, filtered, pending, approved, rejected };
     }, [solicitudes, filteredRequests]);
@@ -190,7 +247,7 @@ const AdminVerificationsPage: React.FC = () => {
     }, [user?.accessToken, user?.role]);
 
     // Aprobar solicitud con actualización optimista
-    const handleAprobar = async (solicitud: any) => {
+    const handleAprobar = useCallback(async (solicitud: any) => {
         if (!user?.accessToken) return;
 
         if (!solicitud.id_verificacion) {
@@ -229,10 +286,10 @@ const AdminVerificationsPage: React.FC = () => {
         } finally {
             setProcessingAction(null);
         }
-    };
+    }, [user?.accessToken, loadSolicitudes, showNotification]);
 
     // Rechazar solicitud con actualización optimista
-    const handleRechazar = async (solicitud: any) => {
+    const handleRechazar = useCallback(async (solicitud: any) => {
         if (!user?.accessToken) {
             showNotification('error', 'Error de autenticación. Por favor, inicia sesión nuevamente.');
             return;
@@ -277,16 +334,16 @@ const AdminVerificationsPage: React.FC = () => {
         } finally {
             setProcessingAction(null);
         }
-    };
+    }, [user?.accessToken, rejectComment, loadSolicitudes]);
 
     // Abrir modal de rechazo
-    const openRejectModal = (solicitud: any) => {
+    const openRejectModal = useCallback((solicitud: any) => {
         setSelectedSolicitud(solicitud);
         setShowRejectModal(true);
-    };
+    }, []);
 
     // Abrir modal de detalles
-    const openDetailModal = (solicitud: any) => {
+    const openDetailModal = useCallback((solicitud: any) => {
         console.log('🔍 Solicitud seleccionada:', solicitud);
         console.log('🔍 Campos disponibles:', Object.keys(solicitud));
         console.log('📧 Email encontrado:', solicitud.email_contacto);
@@ -295,7 +352,48 @@ const AdminVerificationsPage: React.FC = () => {
         console.log('⚠️ NOTA: Los objetos usuario y empresa son undefined - revisar estructura del backend');
         setSelectedSolicitud(solicitud);
         setShowDetailModal(true);
-    };
+    }, []);
+
+    // Componente de notificación
+    const NotificationComponent = useMemo(() => {
+        if (!notification) return null;
+        
+        return (
+            <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-md ${
+                notification.type === 'success' 
+                    ? 'bg-green-100 border border-green-400 text-green-700' 
+                    : 'bg-red-100 border border-red-400 text-red-700'
+            }`}>
+                <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                        {notification.type === 'success' ? (
+                            <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                        ) : (
+                            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                        )}
+                    </div>
+                    <div className="ml-3">
+                        <p className="text-sm font-medium">{notification.message}</p>
+                    </div>
+                    <div className="ml-auto pl-3">
+                        <button
+                            onClick={() => setNotification(null)}
+                            className="inline-flex rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                        >
+                            <span className="sr-only">Cerrar</span>
+                            <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }, [notification]);
 
     if (isLoading) {
         return (
@@ -309,41 +407,7 @@ const AdminVerificationsPage: React.FC = () => {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Notificaciones */}
-            {notification && (
-                <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-md ${
-                    notification.type === 'success' 
-                        ? 'bg-green-100 border border-green-400 text-green-700' 
-                        : 'bg-red-100 border border-red-400 text-red-700'
-                }`}>
-                    <div className="flex items-center">
-                        <div className="flex-shrink-0">
-                            {notification.type === 'success' ? (
-                                <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                </svg>
-                            ) : (
-                                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                </svg>
-                            )}
-                        </div>
-                        <div className="ml-3">
-                            <p className="text-sm font-medium">{notification.message}</p>
-                        </div>
-                        <div className="ml-auto pl-3">
-                            <button
-                                onClick={() => setNotification(null)}
-                                className="inline-flex rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-offset-2"
-                            >
-                                <span className="sr-only">Cerrar</span>
-                                <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {NotificationComponent}
 
             {/* Header */}
             <div className="bg-white shadow">
@@ -495,43 +559,43 @@ const AdminVerificationsPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="mt-4 flex items-center justify-between">
-                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                        solicitud.estado_aprobacion === 'aprobada'
-                                            ? 'bg-green-100 text-green-800'
-                                            : solicitud.estado_aprobacion === 'rechazada'
-                                            ? 'bg-red-100 text-red-800'
-                                            : 'bg-yellow-100 text-yellow-800'
-                                    }`}>
-                                        {solicitud.estado_aprobacion === 'aprobada' ? 'Aprobada' :
-                                         solicitud.estado_aprobacion === 'rechazada' ? 'Rechazada' : 'Pendiente'}
-                                    </span>
-                                    <div className="flex items-center space-x-3">
-                                        {solicitud.estado_aprobacion === 'pendiente' && (
+                                    {(() => {
+                                        const estado = solicitud.estado_aprobacion || solicitud.estado || 'pendiente';
+                                        return (
                                             <>
-                                                <button
-                                                    onClick={() => handleAprobar(solicitud)}
-                                                    disabled={processingAction === solicitud.id_verificacion}
-                                                    className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
-                                                >
-                                                    <CheckCircleIcon className="h-4 w-4 mr-1" />
-                                                    Aprobar
-                                                </button>
-                                                <button
-                                                    onClick={() => openRejectModal(solicitud)}
-                                                    disabled={processingAction === solicitud.id_verificacion}
-                                                    className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400"
-                                                >
-                                                    Rechazar
-                                                </button>
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEstadoClasses(estado)}`}>
+                                                    {getEstadoText(estado)}
+                                                </span>
+                                                <div className="flex items-center space-x-3">
+                                                    {estado === 'pendiente' && (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleAprobar(solicitud)}
+                                                                disabled={processingAction === solicitud.id_verificacion}
+                                                                className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
+                                                            >
+                                                                <CheckCircleIcon className="h-4 w-4 mr-1" />
+                                                                Aprobar
+                                                            </button>
+                                                            <button
+                                                                onClick={() => openRejectModal(solicitud)}
+                                                                disabled={processingAction === solicitud.id_verificacion}
+                                                                className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400"
+                                                            >
+                                                                Rechazar
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    <button
+                                                        onClick={() => openDetailModal(solicitud)}
+                                                        className="text-blue-600 hover:text-blue-500 text-sm font-medium"
+                                                    >
+                                                        Ver detalles →
+                                                    </button>
+                                                </div>
                                             </>
-                                        )}
-                                        <button
-                                            onClick={() => openDetailModal(solicitud)}
-                                            className="text-blue-600 hover:text-blue-500 text-sm font-medium"
-                                        >
-                                            Ver detalles →
-                                        </button>
-                                    </div>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>
@@ -590,9 +654,7 @@ const AdminVerificationsPage: React.FC = () => {
                                     <div>
                                         <span className="text-sm font-medium text-slate-600">Estado de Empresa:</span>
                                         <span className={`px-2 py-1 font-semibold text-xs rounded-full ${
-                                            selectedSolicitud.estado_empresa === 'verificado' ? 'bg-green-100 text-green-800' :
-                                            selectedSolicitud.estado_empresa === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                                            'bg-red-100 text-red-800'
+                                            getEstadoEmpresaClasses(selectedSolicitud.estado_empresa || '')
                                         }`}>
                                             {selectedSolicitud.estado_empresa || 'No disponible'}
                                         </span>
@@ -600,9 +662,9 @@ const AdminVerificationsPage: React.FC = () => {
                                     <div>
                                         <span className="text-sm font-medium text-slate-600">Verificado:</span>
                                         <span className={`px-2 py-1 font-semibold text-xs rounded-full ${
-                                            selectedSolicitud.verificado ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                            getVerificadoClasses(selectedSolicitud.verificado || false)
                                         }`}>
-                                            {selectedSolicitud.verificado ? 'Sí' : 'No'}
+                                            {getVerificadoText(selectedSolicitud.verificado || false)}
                                         </span>
                                     </div>
                                 </div>
@@ -643,14 +705,14 @@ const AdminVerificationsPage: React.FC = () => {
                                     </div>
                                     <div>
                                         <span className="text-sm font-medium text-slate-600">Estado:</span>
-                                        <span className={`px-2 py-1 font-semibold text-xs rounded-full ${
-                                            selectedSolicitud.estado_aprobacion === 'aprobada' ? 'bg-green-100 text-green-800' :
-                                            selectedSolicitud.estado_aprobacion === 'rechazada' ? 'bg-red-100 text-red-800' :
-                                            'bg-yellow-100 text-yellow-800'
-                                        }`}>
-                                            {selectedSolicitud.estado_aprobacion === 'aprobada' ? 'Aprobada' :
-                                             selectedSolicitud.estado_aprobacion === 'rechazada' ? 'Rechazada' : 'Pendiente'}
-                                        </span>
+                                        {(() => {
+                                            const estado = selectedSolicitud.estado_aprobacion || selectedSolicitud.estado || 'pendiente';
+                                            return (
+                                                <span className={`px-2 py-1 font-semibold text-xs rounded-full ${getEstadoClasses(estado)}`}>
+                                                    {getEstadoText(estado)}
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
                                     {selectedSolicitud.fecha_inicio && (
                                         <div>
@@ -722,15 +784,16 @@ const AdminVerificationsPage: React.FC = () => {
                                                                         
                                                                         console.log('✅ Documento abierto desde backend');
                                                                     }
-                                                                } catch (error) {
+                                                                } catch (error: any) {
                                                                     console.error('❌ Error abriendo documento:', error);
-                                                                    if (error.message && error.message.includes('temporal')) {
+                                                                    const errorMessage = error?.message || '';
+                                                                    if (errorMessage.includes('temporal')) {
                                                                         alert('Este documento es temporal y no está disponible para visualización.');
-                                                                    } else if (error.message && error.message.includes('URL')) {
+                                                                    } else if (errorMessage.includes('URL')) {
                                                                         alert('La URL del documento no es válida.');
-                                                                    } else if (error.message && error.message.includes('403') || error.message.includes('Forbidden')) {
+                                                                    } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
                                                                         alert('No se puede acceder al documento. Posiblemente requiere permisos especiales.');
-                                                                    } else if (error.message && error.message.includes('autenticación')) {
+                                                                    } else if (errorMessage.includes('autenticación')) {
                                                                         alert('Error de autenticación al acceder al documento.');
                                                                     } else {
                                                                         alert('Error al abrir el documento. Intenta descargarlo.');
@@ -764,20 +827,21 @@ const AdminVerificationsPage: React.FC = () => {
                                                                         
                                                                         // Limpiar después de un delay
                                                                         setTimeout(() => {
-                                                                            document.body.removeChild(link);
+                                                                            link.remove();
                                                                         }, 100);
                                                                         
                                                                         console.log('✅ Documento descargado desde backend');
                                                                     }
-                                                                } catch (error) {
+                                                                } catch (error: any) {
                                                                     console.error('❌ Error descargando documento:', error);
-                                                                    if (error.message && error.message.includes('temporal')) {
+                                                                    const errorMessage = error?.message || '';
+                                                                    if (errorMessage.includes('temporal')) {
                                                                         alert('Este documento es temporal y no está disponible para descarga.');
-                                                                    } else if (error.message && error.message.includes('URL')) {
+                                                                    } else if (errorMessage.includes('URL')) {
                                                                         alert('La URL del documento no es válida.');
-                                                                    } else if (error.message && error.message.includes('403') || error.message.includes('Forbidden')) {
+                                                                    } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
                                                                         alert('No se puede acceder al documento. Posiblemente requiere permisos especiales.');
-                                                                    } else if (error.message && error.message.includes('autenticación')) {
+                                                                    } else if (errorMessage.includes('autenticación')) {
                                                                         alert('Error de autenticación al acceder al documento.');
                                                                     } else {
                                                                         alert('Error al descargar el documento. Verifica que el archivo esté disponible.');

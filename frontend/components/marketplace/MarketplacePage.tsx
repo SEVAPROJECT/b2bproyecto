@@ -5,6 +5,8 @@ import ServiceReservationModal from './ServiceReservationModal';
 import { BackendService, BackendCategory } from '../../types';
 import { categoriesAPI, servicesAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { buildBackendFilters, filterServices } from '../../utils/marketplaceFilters';
+import { buildApiUrl } from '../../config/api';
 
 const MarketplacePage: React.FC = () => {
     const { isAuthenticated, user } = useAuth();
@@ -26,6 +28,8 @@ const MarketplacePage: React.FC = () => {
     const [usingMockData, setUsingMockData] = useState(false);
     const [dataVersion, setDataVersion] = useState(Date.now()); // Para forzar recarga
     const dataLoadedRef = useRef(false); // Para evitar cargas duplicadas
+    const reloadFilteredDataRef = useRef<((page?: number, showFullLoading?: boolean) => Promise<void>) | null>(null);
+    const getBackendFiltersRef = useRef<(() => Record<string, any>) | null>(null);
     
     // Estados para paginación del backend
     const [totalServices, setTotalServices] = useState<number>(0);
@@ -63,117 +67,36 @@ const MarketplacePage: React.FC = () => {
     const [isAISearching, setIsAISearching] = useState(false);
 
 
-    // Función para construir filtros del backend
-    const buildBackendFilters = useCallback(() => {
-        const filters: any = {};
-        
-        console.log('🔍 buildBackendFilters ejecutándose con:', {
-            currencyFilter,
-            priceRange,
-            categoryFilter,
-            departmentFilter,
-            cityFilter,
-            searchQuery,
-            dateFilter,
-            ratingFilter
-        });
-        
-        // Filtro por moneda (si está seleccionada)
-        if (currencyFilter !== 'all') {
-            filters.currency = currencyFilter;
-            console.log('💰 Agregando filtro de moneda:', currencyFilter);
+    // Función para construir filtros del backend (usando helper)
+    const getBackendFilters = useCallback(() => {
+        try {
+            return buildBackendFilters({
+                currencyFilter,
+                priceRange,
+                categoryFilter,
+                departmentFilter,
+                cityFilter,
+                searchQuery,
+                dateFilter,
+                ratingFilter,
+                customDateRange
+            });
+        } catch (error) {
+            console.error('❌ Error construyendo filtros del backend:', error);
+            // Retornar objeto vacío en caso de error
+            return {};
         }
-        
-        // Filtro por precio (solo si el usuario ha cambiado el rango desde el inicial)
-        const isPriceFilterActive = priceRange[0] > 0 || priceRange[1] < 1000000000;
-        if (isPriceFilterActive) {
-            if (priceRange[0] > 0) {
-                filters.min_price = priceRange[0];
-                console.log('💰 Agregando precio mínimo:', priceRange[0]);
-            }
-            if (priceRange[1] < 1000000000) {
-                filters.max_price = priceRange[1];
-                console.log('💰 Agregando precio máximo:', priceRange[1]);
-            }
-        }
-        
-        // Filtro por categoría
-        if (categoryFilter !== 'all') {
-            filters.category_id = parseInt(categoryFilter);
-            console.log('📂 Agregando filtro de categoría:', categoryFilter);
-        }
-        
-        // Filtro por departamento
-        if (departmentFilter !== 'all') {
-            filters.department = departmentFilter;
-            console.log('🏢 Agregando filtro de departamento:', departmentFilter);
-        }
-        
-        // Filtro por ciudad
-        if (cityFilter !== 'all') {
-            filters.city = cityFilter;
-            console.log('🏙️ Agregando filtro de ciudad:', cityFilter);
-        }
-        
-        // Filtro por búsqueda
-        if (searchQuery.trim()) {
-            filters.search = searchQuery.trim();
-            console.log('🔍 Agregando filtro de búsqueda:', searchQuery);
-        }
-        
-        // Filtro por fecha (si está seleccionado)
-        if (dateFilter !== 'all') {
-            const today = new Date();
-            let dateFrom: string | undefined;
-            let dateTo: string | undefined;
-            
-            switch (dateFilter) {
-                case 'today':
-                    dateFrom = today.toISOString().split('T')[0];
-                    dateTo = today.toISOString().split('T')[0];
-                    break;
-                case 'week':
-                    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-                    dateFrom = weekAgo.toISOString().split('T')[0];
-                    dateTo = today.toISOString().split('T')[0];
-                    break;
-                case 'month':
-                    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    dateFrom = monthAgo.toISOString().split('T')[0];
-                    dateTo = today.toISOString().split('T')[0];
-                    break;
-                case 'custom':
-                    if (customDateRange.start && customDateRange.end) {
-                        dateFrom = customDateRange.start;
-                        dateTo = customDateRange.end;
-                    }
-                    break;
-            }
-            
-            if (dateFrom) {
-                filters.date_from = dateFrom;
-                console.log('📅 Agregando filtro de fecha desde:', dateFrom);
-            }
-            if (dateTo) {
-                filters.date_to = dateTo;
-                console.log('📅 Agregando filtro de fecha hasta:', dateTo);
-            }
-        }
-        
-        // Filtro por calificación (si está seleccionada)
-        if (ratingFilter > 0) {
-            filters.min_rating = ratingFilter;
-            console.log('⭐ Agregando filtro de calificación mínima:', ratingFilter);
-        }
-        
-        console.log('🔍 Filtros construidos:', filters);
-        console.log('🔍 ¿Filtro de precio activo?', isPriceFilterActive);
-        return filters;
     }, [currencyFilter, priceRange, categoryFilter, departmentFilter, cityFilter, searchQuery, dateFilter, ratingFilter, customDateRange]);
 
+    // Mantener referencia actualizada de getBackendFilters
+    useEffect(() => {
+        getBackendFiltersRef.current = getBackendFilters;
+    }, [getBackendFilters]);
+
     // Cargar datos iniciales con paginación del backend
-    const loadInitialData = useCallback(async () => {
-        console.log('🚀 Iniciando loadInitialData...');
+    const loadInitialData = useCallback(async (page?: number) => {
+        const pageToUse = page ?? currentPage;
+        console.log('🚀 Iniciando loadInitialData...', { page: pageToUse });
         // Removido: if (dataLoadedRef.current) return; // Evitar cargas duplicadas
         
         try {
@@ -185,15 +108,15 @@ const MarketplacePage: React.FC = () => {
             try {
                 console.log('Intentando cargar datos reales de la API con paginación...');
                 
-                // Calcular offset basado en la página actual
-                const offset = (currentPage - 1) * itemsPerPage;
+                // Calcular offset basado en la página a usar
+                const offset = (pageToUse - 1) * itemsPerPage;
                 
                 // Obtener token de autenticación si está disponible
                 const accessToken = user?.accessToken || localStorage.getItem('access_token');
                 console.log(`🔄 Carga inicial con offset ${offset}, limit ${itemsPerPage}`);
                 
                 // Construir filtros del backend
-                const filters = buildBackendFilters();
+                const filters = getBackendFiltersRef.current ? getBackendFiltersRef.current() : {};
                 console.log('🔍 Filtros del backend:', filters);
                 
                 // Usar el nuevo endpoint filtrado que maneja filtros del lado del servidor
@@ -216,6 +139,10 @@ const MarketplacePage: React.FC = () => {
                 setServices(filteredResponse.services);
                 setCategories(categoriesData);
                 setUsingMockData(false);
+                // Actualizar currentPage si se proporcionó un valor específico
+                if (page !== undefined) {
+                    setCurrentPage(page);
+                }
                 
                 console.log('✅ Datos filtrados del servidor aplicados correctamente');
             } catch (apiError) {
@@ -236,8 +163,55 @@ const MarketplacePage: React.FC = () => {
             dataLoadedRef.current = true;
             console.log('✅ loadInitialData completado');
         }
-    }, [buildBackendFilters, currentPage, itemsPerPage, user]); // Agregar dependencias necesarias
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPage, itemsPerPage, user]); // No incluir getBackendFilters para evitar bucles
 
+    // Función optimizada para recargar solo los datos filtrados (sin loading completo)
+    const reloadFilteredData = useCallback(async (page?: number, showFullLoading: boolean = false) => {
+        const pageToUse = page ?? currentPage;
+        console.log('🔄 Recargando datos filtrados...', { page: pageToUse, showFullLoading });
+        
+        try {
+            // Usar loading completo solo si se especifica, sino usar loading de filtros
+            if (showFullLoading) {
+                setIsLoading(true);
+            } else {
+                setIsLoadingFilters(true);
+            }
+            
+            const offset = (pageToUse - 1) * itemsPerPage;
+            const accessToken = user?.accessToken || localStorage.getItem('access_token');
+            const filters = getBackendFiltersRef.current ? getBackendFiltersRef.current() : {};
+            
+            console.log(`🔄 Recarga filtrada con offset ${offset}, limit ${itemsPerPage}`);
+            
+            const filteredResponse = await servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters);
+            
+            setServices(filteredResponse.services);
+            setTotalServices(filteredResponse.pagination.total);
+            // Actualizar currentPage si se proporcionó un valor específico
+            if (page !== undefined) {
+                setCurrentPage(page);
+            }
+            console.log(`📄 Datos filtrados recargados: ${filteredResponse.services.length} servicios, total: ${filteredResponse.pagination.total}`);
+            
+        } catch (error) {
+            console.error('❌ Error recargando datos filtrados:', error);
+            setError('Error aplicando filtros. Inténtalo de nuevo.');
+        } finally {
+            if (showFullLoading) {
+                setIsLoading(false);
+            } else {
+                setIsLoadingFilters(false);
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPage, itemsPerPage, user]); // No incluir getBackendFilters para evitar bucles
+
+    // Mantener referencia actualizada de reloadFilteredData
+    useEffect(() => {
+        reloadFilteredDataRef.current = reloadFilteredData;
+    }, [reloadFilteredData]);
 
     // Función para cargar una página específica (optimizada)
     const loadPage = useCallback(async (page: number) => {
@@ -249,96 +223,72 @@ const MarketplacePage: React.FC = () => {
             return;
         }
         
+        // Usar reloadFilteredData con la página específica y loading de página
+        setIsLoadingPage(true);
         try {
-            // Solo mostrar loading en los botones, no en toda la interfaz
-            setIsLoadingPage(true);
-            const offset = (page - 1) * itemsPerPage;
-            
-            // Obtener token de autenticación si está disponible
-            const accessToken = user?.accessToken || localStorage.getItem('access_token');
-            console.log(`🔄 Cargando página ${page} con offset ${offset}, limit ${itemsPerPage}`);
-            
-            // Construir filtros para la página
-            const filters = buildBackendFilters();
-            console.log('🔍 Filtros para página:', filters);
-            
-            // Usar el nuevo endpoint filtrado para cargar la página
-            const filteredResponse = await servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters);
-            
-            // Actualizar servicios y página de forma atómica
-            setServices(filteredResponse.services);
-            setCurrentPage(filteredResponse.pagination.page);
-            setTotalServices(filteredResponse.pagination.total);
-            console.log(`📄 Página ${page} cargada: ${filteredResponse.services.length} servicios, total: ${filteredResponse.pagination.total}`);
+            await reloadFilteredData(page, false);
         } catch (error) {
             console.error('❌ Error cargando página:', error);
             setError('Error cargando la página. Inténtalo de nuevo.');
         } finally {
-            // Reducir el tiempo de loading para que sea menos notorio
             setTimeout(() => setIsLoadingPage(false), 100);
         }
-    }, [itemsPerPage, user, buildBackendFilters, currentPage]);
+    }, [currentPage, reloadFilteredData]);
 
     useEffect(() => {
         console.log('🎯 useEffect ejecutándose - llamando loadInitialData');
-        loadInitialData();
+        // Usar una función async inmediata para manejar el error
+        (async () => {
+            try {
+                await loadInitialData();
+            } catch (error) {
+                console.error('❌ Error en loadInitialData desde useEffect:', error);
+                setError('Error al cargar los datos iniciales. Por favor, intentá nuevamente.');
+                setIsLoading(false);
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Solo ejecutar una vez al montar
 
-    // Función optimizada para recargar solo los datos filtrados (sin resetear página)
-    const reloadFilteredData = useCallback(async () => {
-        console.log('🔄 Recargando datos filtrados (sin resetear página)...');
-        
-        try {
-            setIsLoadingFilters(true); // Loading específico para filtros
-            const offset = (currentPage - 1) * itemsPerPage;
-            const accessToken = user?.accessToken || localStorage.getItem('access_token');
-            const filters = buildBackendFilters();
-            
-            console.log(`🔄 Recarga filtrada con offset ${offset}, limit ${itemsPerPage}`);
-            
-            const filteredResponse = await servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters);
-            
-            setServices(filteredResponse.services);
-            setTotalServices(filteredResponse.pagination.total);
-            // NO resetear currentPage - mantener la página actual
-            console.log(`📄 Datos filtrados recargados: ${filteredResponse.services.length} servicios, total: ${filteredResponse.pagination.total}`);
-            
-        } catch (error) {
-            console.error('❌ Error recargando datos filtrados:', error);
-            setError('Error aplicando filtros. Inténtalo de nuevo.');
-        } finally {
-            setIsLoadingFilters(false);
-        }
-    }, [currentPage, itemsPerPage, user, buildBackendFilters]);
-
     // Recargar datos cuando cambien los filtros (con debounce inteligente)
+    // NOTA: No incluir reloadFilteredData en dependencias para evitar bucles con paginación
     useEffect(() => {
-        // Solo recargar si hay filtros activos
-        const hasActiveFilters = currencyFilter !== 'all' || 
-                                priceRange[0] > 0 || 
-                                priceRange[1] < 1000000000 ||
-                                categoryFilter !== 'all' ||
-                                departmentFilter !== 'all' ||
-                                cityFilter !== 'all' ||
-                                searchQuery.trim() !== '' ||
-                                dateFilter !== 'all' ||
-                                ratingFilter > 0;
-        
-        if (hasActiveFilters) {
-            console.log('🔄 Filtros activos detectados, aplicando debounce inteligente...');
-            
-            // Debounce inteligente: más corto para filtros inmediatos, más largo para slider
-            const isSliderChange = priceRange[0] > 0 || priceRange[1] < 1000000000;
-            const debounceTime = isSliderChange ? 500 : 100; // 500ms para slider, 100ms para otros filtros
-            
-            const timeoutId = setTimeout(() => {
-                console.log(`🔄 Ejecutando recarga filtrada después de ${debounceTime}ms...`);
-                reloadFilteredData();
-            }, debounceTime);
-            
-            return () => clearTimeout(timeoutId);
+        // No ejecutar en el montaje inicial - solo cuando cambian los filtros después de la carga inicial
+        if (!dataLoadedRef.current) {
+            console.log('⏭️ Saltando recarga de filtros en montaje inicial');
+            return;
         }
-    }, [currencyFilter, priceRange, categoryFilter, departmentFilter, cityFilter, searchQuery, dateFilter, ratingFilter, reloadFilteredData]);
+        
+        // Verificar que reloadFilteredDataRef esté disponible
+        if (!reloadFilteredDataRef.current) {
+            console.log('⏭️ reloadFilteredDataRef no está disponible aún, saltando...');
+            return;
+        }
+        
+        console.log('🔄 Filtros cambiaron, recargando datos...');
+        
+        // Debounce inteligente: más corto para filtros inmediatos, más largo para slider
+        const isSliderChange = priceRange[0] > 0 || priceRange[1] < 1000000000;
+        const debounceTime = isSliderChange ? 500 : 100; // 500ms para slider, 100ms para otros filtros
+        
+        const timeoutId = setTimeout(() => {
+            console.log(`🔄 Ejecutando recarga después de ${debounceTime}ms...`);
+            
+            // Siempre usar reloadFilteredData para evitar recargar toda la página
+            // Pasar showFullLoading=false para usar solo el loading de filtros (más sutil)
+            // Resetear a página 1 cuando cambian los filtros
+            console.log('🔄 Recargando datos desde página 1 (sin loading completo)...');
+            const reloadFn = reloadFilteredDataRef.current;
+            if (reloadFn) {
+                reloadFn(1, false).catch((error) => {
+                    console.error('❌ Error en reloadFilteredData desde useEffect:', error);
+                });
+            }
+        }, debounceTime);
+        
+        return () => clearTimeout(timeoutId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currencyFilter, priceRange, categoryFilter, departmentFilter, cityFilter, searchQuery, dateFilter, ratingFilter]);
 
     // Aplicar filtros automáticamente cuando cambien
     // TEMPORALMENTE DESHABILITADO PARA EVITAR BUCLE INFINITO
@@ -380,16 +330,11 @@ const MarketplacePage: React.FC = () => {
         setError(null);
 
         try {
-            // Detectar entorno para la URL de la API
-            const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-                ? 'http://localhost:8000' 
-                : 'https://backend-production-249d.up.railway.app';
-
             console.log('🤖 Iniciando búsqueda con IA:', searchQuery);
-            console.log('🔗 API_URL:', API_URL);
 
-            // Llamar al endpoint correcto de búsqueda de Weaviate
-            const response = await fetch(`${API_URL}/api/v1/weaviate/search-public?query=${encodeURIComponent(searchQuery)}&limit=10`, {
+            // Llamar al endpoint correcto de búsqueda de Weaviate usando buildApiUrl
+            const weaviateSearchUrl = buildApiUrl('/weaviate/search-public');
+            const response = await fetch(`${weaviateSearchUrl}?query=${encodeURIComponent(searchQuery)}&limit=10`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -501,247 +446,71 @@ const MarketplacePage: React.FC = () => {
         console.log('Reserva creada exitosamente');
     }, []);
 
-    // Filtrar servicios
+    // Función helper para obtener el nombre de la moneda
+    const getCurrencyName = useCallback((currency: string): string => {
+        if (currency === 'GS') return 'Guaraníes';
+        if (currency === 'USD') return 'Dólares';
+        if (currency === 'BRL') return 'Reales';
+        return 'Pesos';
+    }, []);
+
+    // Función helper para formatear el precio según la moneda
+    const formatPriceByCurrency = useCallback((price: number, currency: string): string => {
+        if (currency === 'GS') {
+            return `₲ ${price.toLocaleString('es-PY')}`;
+        }
+        if (currency === 'USD') {
+            return `$ ${price.toLocaleString('en-US')}`;
+        }
+        if (currency === 'BRL') {
+            return `R$ ${price.toLocaleString('pt-BR')}`;
+        }
+        return `$ ${price.toLocaleString('es-AR')}`;
+    }, []);
+
+    // Función helper para obtener el símbolo de la moneda
+    const getCurrencySymbol = useCallback((currency: string): string => {
+        if (currency === 'GS') return '₲';
+        if (currency === 'USD') return '$';
+        if (currency === 'BRL') return 'R$';
+        return '$';
+    }, []);
+
+    // Función helper para obtener el precio máximo formateado según la moneda
+    const getMaxPriceFormatted = useCallback((currency: string): string => {
+        if (currency === 'GS') return '₲ 1.000.000.000';
+        if (currency === 'USD') return '$ 1,000,000,000';
+        if (currency === 'BRL') return 'R$ 1.000.000.000';
+        return '$ 1.000.000.000';
+    }, []);
+
+    // Filtrar servicios (usando función helper)
     const filteredServices = useMemo(() => {
-        console.log('🔍 filteredServices useMemo ejecutándose');
-        console.log('📊 Estado actual:', {
-            servicesLength: services.length,
-            totalServices: totalServices,
-            itemsPerPage: itemsPerPage
-        });
-        
-        // TEMPORAL: Aplicar filtros locales para que funcionen los filtros de precio
-        // TODO: Implementar filtros del backend para mantener paginación
-        console.log('🔄 Aplicando filtros locales (temporal)');
-        console.log('📊 Servicios del backend:', services.length, 'Total disponible:', totalServices);
-        
-        // Eliminar duplicados basándose en el ID del servicio
-        const uniqueServices = services.filter((service, index, self) => 
-            index === self.findIndex(s => s.id_servicio === service.id_servicio)
-        );
-        
-        let filtered = [...uniqueServices];
-        console.log('🔍 Aplicando filtros locales - Servicios iniciales:', services.length, 'Únicos:', uniqueServices.length);
-        console.log('🎯 Filtros activos:', {
-            currencyFilter,
-            departmentFilter,
-            cityFilter,
-            priceFilter,
-            categoryFilter
-        });
-
-        // Filtro por precio válido (excluir solo servicios sin precio, permitir precio 0)
-        const beforePriceFilter = filtered.length;
-        filtered = filtered.filter(service => {
-            const price = service.precio;
-            const hasValidPrice = price !== null && price !== undefined;
+        try {
+            console.log('🔍 filteredServices useMemo ejecutándose');
+            console.log('📊 Estado actual:', {
+                servicesLength: services.length,
+                totalServices: totalServices,
+                itemsPerPage: itemsPerPage
+            });
             
-            if (!hasValidPrice) {
-                console.log(`❌ Servicio "${service.nombre}" excluido por precio inválido:`, {
-                    precio: price,
-                    tipo: typeof price,
-                    es_null: price === null,
-                    es_undefined: price === undefined
-                });
-            }
-            
-            return hasValidPrice;
-        });
-        console.log(`💰 Filtro precio válido: ${beforePriceFilter} → ${filtered.length} servicios (excluidos ${beforePriceFilter - filtered.length} sin precio válido)`);
-
-        // Filtro por búsqueda
-        if (searchQuery.trim()) {
-            const query = searchQuery.toLowerCase();
-            const beforeSearch = filtered.length;
-            filtered = filtered.filter(service =>
-                service.nombre.toLowerCase().includes(query) ||
-                service.descripcion.toLowerCase().includes(query) ||
-                (service.razon_social && service.razon_social.toLowerCase().includes(query))
-            );
-            console.log(`🔎 Búsqueda "${searchQuery}": ${beforeSearch} → ${filtered.length} servicios`);
-        }
-
-        // Filtro por categoría
-        if (categoryFilter !== 'all') {
-            filtered = filtered.filter(service => 
-                service.id_categoria.toString() === categoryFilter
-            );
-        }
-
-        // Filtro por calificación
-        if (ratingFilter > 0) {
-            // TODO: Implementar filtro por calificación real
-            filtered = filtered.filter(service => true); // Placeholder
-        }
-
-        // Filtro por departamento y ciudad
-        if (departmentFilter !== 'all') {
-            const beforeDept = filtered.length;
-            filtered = filtered.filter(service => {
-                const serviceDept = service.departamento || '';
-                const matches = serviceDept === departmentFilter;
-                console.log(`🏛️ Servicio "${service.nombre}" - Departamento: "${serviceDept}" (filtrando: "${departmentFilter}") - Match: ${matches}`);
-                return matches;
+            // Usar función helper para filtrar servicios
+            return filterServices(services, {
+                currencyFilter,
+                priceRange,
+                categoryFilter,
+                departmentFilter,
+                cityFilter,
+                searchQuery,
+                dateFilter,
+                ratingFilter,
+                customDateRange
             });
-            console.log(`🏛️ Filtro departamento "${departmentFilter}": ${beforeDept} → ${filtered.length} servicios`);
+        } catch (error) {
+            console.error('❌ Error en filteredServices:', error);
+            // En caso de error, retornar servicios sin filtrar
+            return services;
         }
-
-        // Filtro por ciudad (solo si hay departamento seleccionado)
-        if (cityFilter !== 'all' && departmentFilter !== 'all') {
-            const beforeCity = filtered.length;
-            filtered = filtered.filter(service => {
-                const serviceCity = service.ciudad || '';
-                const matches = serviceCity === cityFilter;
-                console.log(`🏙️ Servicio "${service.nombre}" - Ciudad: "${serviceCity}" (filtrando: "${cityFilter}") - Match: ${matches}`);
-                return matches;
-            });
-            console.log(`🏙️ Filtro ciudad "${cityFilter}": ${beforeCity} → ${filtered.length} servicios`);
-        }
-
-        // Filtro por moneda
-        if (currencyFilter !== 'all') {
-            console.log('🔍 Filtrando por moneda:', currencyFilter);
-            console.log('📊 Servicios antes del filtro de moneda:', filtered.length);
-            console.log('💰 Ejemplos de monedas en servicios:', filtered.slice(0, 3).map(s => ({
-                nombre: s.nombre,
-                codigo_iso_moneda: s.codigo_iso_moneda,
-                simbolo_moneda: s.simbolo_moneda,
-                id_moneda: s.id_moneda,
-                precio: s.precio
-            })));
-
-            const beforeCurrency = filtered.length;
-            filtered = filtered.filter(service => {
-                // Priorizar el mapeo por ID de moneda sobre el código ISO (más confiable)
-                let serviceCurrency = null;
-
-                console.log(`🔍 Procesando servicio "${service.nombre}":`, {
-                    original_codigo_iso: `"${service.codigo_iso_moneda}"`,
-                    id_moneda: service.id_moneda
-                });
-
-                // Primero intentar mapear por ID de moneda (más confiable)
-                if (service.id_moneda) {
-                    switch (service.id_moneda) {
-                        case 1: // Guaraní
-                            serviceCurrency = 'GS';
-                            break;
-                        case 2: // Dólar
-                            serviceCurrency = 'USD';
-                            break;
-                        case 3: // Real
-                            serviceCurrency = 'BRL';
-                            break;
-                        case 4: // Peso Argentino
-                            serviceCurrency = 'ARS';
-                            break;
-                        case 8: // Peso Argentino (otro ID)
-                            serviceCurrency = 'ARS';
-                            break;
-                        default:
-                            serviceCurrency = 'GS'; // Fallback a Guaraní
-                    }
-                    console.log(`🔄 Mapeo por ID aplicado: ${service.id_moneda} → ${serviceCurrency}`);
-                }
-
-                // Si no hay ID de moneda, usar código ISO limpio como fallback
-                if (!serviceCurrency && service.codigo_iso_moneda) {
-                    serviceCurrency = service.codigo_iso_moneda.trim();
-                    console.log(`🔄 Fallback a código ISO limpio: "${service.codigo_iso_moneda}" → "${serviceCurrency}"`);
-                }
-
-                // Si aún no hay moneda, asumir Guaraní
-                if (!serviceCurrency) {
-                    serviceCurrency = 'GS';
-                    console.log(`🔄 Fallback final: null → GS`);
-                }
-
-                const matches = serviceCurrency === currencyFilter;
-
-                if (!matches) {
-                    console.log(`❌ Servicio "${service.nombre}" no coincide:`, {
-                        service_moneda: serviceCurrency,
-                        filtro_moneda: currencyFilter,
-                        original_codigo_iso: service.codigo_iso_moneda,
-                        id_moneda: service.id_moneda,
-                        precio: service.precio,
-                        mapeo_aplicado: service.id_moneda ? 'por_id' : 'codigo_iso_limpio'
-                    });
-                } else {
-                    console.log(`✅ Servicio "${service.nombre}" coincide:`, {
-                        service_moneda: serviceCurrency,
-                        filtro_moneda: currencyFilter,
-                        id_moneda: service.id_moneda,
-                        mapeo_aplicado: service.id_moneda ? 'por_id' : 'codigo_iso_limpio'
-                    });
-                }
-
-                return matches;
-            });
-
-            console.log('📊 Servicios después del filtro de moneda:', filtered.length);
-        }
-
-        // Filtro por precio (aplicar siempre)
-        const beforePrice = filtered.length;
-        console.log(`💰 Aplicando filtro de precio: rango ${priceRange[0]} - ${priceRange[1]}, servicios antes: ${beforePrice}`);
-        filtered = filtered.filter(service => {
-            const price = service.precio || 0;
-            // Si el rango máximo es 0, no mostrar ningún servicio (filtro activo)
-            if (priceRange[1] === 0) {
-                console.log(`💰 Servicio "${service.nombre}" - Precio: ${price}, Rango máximo es 0, excluido`);
-                return false;
-            }
-            const matches = price >= priceRange[0] && price <= priceRange[1];
-            console.log(`💰 Servicio "${service.nombre}" - Precio: ${price}, Rango: ${priceRange[0]}-${priceRange[1]}, Match: ${matches}`);
-            return matches;
-        });
-        console.log(`💰 Filtro precio por rango: ${priceRange[0]} - ${priceRange[1]}: ${beforePrice} → ${filtered.length} servicios`);
-
-        // Filtro por fecha
-        if (dateFilter !== 'all') {
-            const now = new Date();
-            filtered = filtered.filter(service => {
-                const serviceDate = new Date(service.created_at);
-                const diffInMs = now.getTime() - serviceDate.getTime();
-                const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-                
-                switch (dateFilter) {
-                    case 'recent':
-                        return true; // No filtrar por fecha, solo ordenar
-                    case 'oldest':
-                        return true; // No filtrar, solo cambiar orden
-                    case '7days':
-                        return diffInDays <= 7;
-                    case '30days':
-                        return diffInDays <= 30;
-                    case '12months':
-                        return diffInDays <= 365;
-                    case 'custom':
-                        if (customDateRange.start && customDateRange.end) {
-                            const startDate = new Date(customDateRange.start);
-                            const endDate = new Date(customDateRange.end);
-                            return serviceDate >= startDate && serviceDate <= endDate;
-                        }
-                        return true;
-                    default:
-                        return true;
-                }
-            });
-        }
-
-        // Ordenar por fecha
-        filtered.sort((a, b) => {
-            const dateA = new Date(a.created_at).getTime();
-            const dateB = new Date(b.created_at).getTime();
-            if (dateFilter === 'oldest') {
-                return dateA - dateB; // Más antiguos primero
-            } else {
-                return dateB - dateA; // Más recientes primero (por defecto)
-            }
-        });
-
-        return filtered;
     }, [services, searchQuery, categoryFilter, ratingFilter, departmentFilter, cityFilter, currencyFilter, priceRange, dateFilter, customDateRange]);
 
     // Paginación
@@ -1022,7 +791,7 @@ const MarketplacePage: React.FC = () => {
                                 <label className="block text-xs font-medium text-slate-700">Calificación</label>
                                 <select
                                     value={ratingFilter}
-                                    onChange={(e) => setRatingFilter(parseInt(e.target.value))}
+                                    onChange={(e) => setRatingFilter(Number.parseInt(e.target.value))}
                                     className="w-full px-2 py-1.5 border border-slate-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors text-xs"
                                 >
                                     <option value={0}>Cualquiera</option>
@@ -1098,22 +867,15 @@ const MarketplacePage: React.FC = () => {
                     </div>
 
                     {/* Rango de precios - más compacto */}
-                    {currencyFilter !== 'all' ? (
+                    {currencyFilter === 'all' ? null : (
                         <div className="mt-3 p-3 sm:p-4 bg-primary-50 rounded-lg border border-primary-200">
                             <div className="space-y-3">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                     <label className="block text-xs sm:text-sm font-medium text-slate-700">
-                                        Precio en {currencyFilter === 'GS' ? 'Guaraníes' : currencyFilter === 'USD' ? 'Dólares' : currencyFilter === 'BRL' ? 'Reales' : 'Pesos'}
+                                        Precio en {getCurrencyName(currencyFilter)}
                                     </label>
                                     <span className="text-xs sm:text-sm font-semibold text-primary-600">
-                                        Hasta {currencyFilter === 'GS' ?
-                                            `₲ ${priceRange[1].toLocaleString('es-PY')}` :
-                                            currencyFilter === 'USD' ?
-                                                `$ ${priceRange[1].toLocaleString('en-US')}` :
-                                                currencyFilter === 'BRL' ?
-                                                    `R$ ${priceRange[1].toLocaleString('pt-BR')}` :
-                                                    `$ ${priceRange[1].toLocaleString('es-AR')}`
-                                        }
+                                        Hasta {formatPriceByCurrency(priceRange[1], currencyFilter)}
                                     </span>
                                 </div>
 
@@ -1124,31 +886,18 @@ const MarketplacePage: React.FC = () => {
                                         max="1000000000"
                                         step="1000000"
                                         value={priceRange[1]}
-                                        onChange={(e) => setPriceRange([0, parseInt(e.target.value)])}
+                                        onChange={(e) => setPriceRange([0, Number.parseInt(e.target.value)])}
                                         className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-thumb"
                                         style={{
                                             background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(priceRange[1] / 1000000000) * 100}%, #e2e8f0 ${(priceRange[1] / 1000000000) * 100}%, #e2e8f0 100%)`
                                         }}
                                     />
                                     <div className="flex justify-between text-xs text-slate-500">
-                                        <span>{currencyFilter === 'GS' ? '₲' : currencyFilter === 'USD' ? '$' : currencyFilter === 'BRL' ? 'R$' : '$'} 0</span>
-                                        <span>{currencyFilter === 'GS' ?
-                                            '₲ 1.000.000.000' :
-                                            currencyFilter === 'USD' ?
-                                                '$ 1,000,000,000' :
-                                                currencyFilter === 'BRL' ?
-                                                    'R$ 1.000.000.000' :
-                                                    '$ 1.000.000.000'
-                                        }</span>
+                                        <span>{getCurrencySymbol(currencyFilter)} 0</span>
+                                        <span>{getMaxPriceFormatted(currencyFilter)}</span>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ) : (
-                        <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                            <p className="text-xs text-slate-600 text-center">
-                                💡 Para filtrar por precio, primero selecciona una moneda arriba
-                            </p>
                         </div>
                     )}
 
@@ -1373,16 +1122,28 @@ const MarketplacePage: React.FC = () => {
             {/* Modal de filtros avanzados */}
             {showAdvancedFilters && (
                 <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Cerrar filtros avanzados"
                     className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
                     onClick={() => setShowAdvancedFilters(false)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
+                            e.preventDefault();
+                            setShowAdvancedFilters(false);
+                        }
+                    }}
                 >
                     <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="filtros-avanzados-title"
                         className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="p-6">
                             <div className="flex items-center justify-between mb-6">
-                                <h2 className="text-xl font-semibold text-slate-900">Filtros Avanzados</h2>
+                                <h2 id="filtros-avanzados-title" className="text-xl font-semibold text-slate-900">Filtros Avanzados</h2>
                                 <button
                                     onClick={() => setShowAdvancedFilters(false)}
                                     className="text-slate-400 hover:text-slate-600 text-2xl"

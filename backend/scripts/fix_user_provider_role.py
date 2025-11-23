@@ -47,7 +47,7 @@ async def fix_user_provider_role():
         empresa = await conn.fetchrow(empresa_query, user_uuid)
         
         if not empresa:
-            print(f"❌ No se encontró perfil de empresa")
+            print("❌ No se encontró perfil de empresa")
             return
         
         if not (empresa['estado'] == 'verificado' and empresa['verificado']):
@@ -66,7 +66,7 @@ async def fix_user_provider_role():
         provider_role = await conn.fetchrow(provider_role_query)
         
         if not provider_role:
-            print(f"❌ No se encontró rol de proveedor en el sistema")
+            print("❌ No se encontró rol de proveedor en el sistema")
             return
         
         print(f"✅ Rol de proveedor encontrado: {provider_role['nombre']} (ID: {provider_role['id']})")
@@ -89,7 +89,7 @@ async def fix_user_provider_role():
         has_provider_role = any(role['id_rol'] == provider_role['id'] for role in current_roles)
         
         if has_provider_role:
-            print(f"✅ El usuario ya tiene el rol de proveedor")
+            print("✅ El usuario ya tiene el rol de proveedor")
             return
         
         # 5. Agregar el rol de proveedor
@@ -104,7 +104,7 @@ async def fix_user_provider_role():
         existing_role = await conn.fetchrow(existing_role_query, user_uuid, provider_role['id'])
         
         if existing_role:
-            print(f"✅ El rol de proveedor ya está asignado")
+            print("✅ El rol de proveedor ya está asignado")
             return
         
         # Insertar el rol de proveedor
@@ -114,7 +114,7 @@ async def fix_user_provider_role():
         """
         
         await conn.execute(insert_role_query, user_uuid, provider_role['id'])
-        print(f"✅ Rol de proveedor agregado exitosamente")
+        print("✅ Rol de proveedor agregado exitosamente")
         
         # 6. Verificar el resultado
         print("\n6️⃣ Verificando resultado...")

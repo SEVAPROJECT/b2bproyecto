@@ -6,6 +6,17 @@ interface AlertProps {
     className?: string;
 }
 
+// Función helper para obtener el contenido a mostrar
+const getDisplayContent = (children: React.ReactNode): string => {
+    if (typeof children === 'string') {
+        return children;
+    }
+    if (typeof children === 'object' && children !== null) {
+        return JSON.stringify(children);
+    }
+    return 'Error desconocido';
+};
+
 const Alert: React.FC<AlertProps> = ({ children, variant = 'info', className = '' }) => {
     const baseClasses = 'p-4 rounded-lg my-4 border text-sm font-medium';
     const variantClasses = {
@@ -15,9 +26,7 @@ const Alert: React.FC<AlertProps> = ({ children, variant = 'info', className = '
     };
 
     // Asegurar que children sea un string válido
-    const displayContent = typeof children === 'string' ? children : 
-                          typeof children === 'object' && children !== null ? 
-                          JSON.stringify(children) : 'Error desconocido';
+    const displayContent = getDisplayContent(children);
 
     return (
         <div className={`${baseClasses} ${variantClasses[variant]} ${className}`} role="alert">

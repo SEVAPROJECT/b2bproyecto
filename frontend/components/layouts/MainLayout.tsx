@@ -2,7 +2,7 @@ import React, { ReactNode, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../ui';
-import { HomeIcon, BuildingStorefrontIcon, UserCircleIcon, ArrowRightOnRectangleIcon, XMarkIcon } from '../icons';
+import { XMarkIcon } from '../icons';
 
 // Icono de menú hamburguesa
 const Bars3Icon: React.FC<{ className?: string }> = ({ className }) => (
@@ -30,6 +30,17 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         setIsMobileMenuOpen(false);
     };
 
+    // Función auxiliar para obtener el texto del rol del usuario
+    const getRoleDisplay = (role: string | undefined): string => {
+        if (role === 'admin') {
+            return '⚙️ Admin';
+        }
+        if (role === 'provider') {
+            return '🏢 Proveedor';
+        }
+        return '👤 Cliente';
+    };
+
     return (
         <div className="min-h-screen bg-slate-50">
             {/* Header */}
@@ -48,16 +59,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                         {/* Desktop User Menu */}
                         <div className="hidden md:flex items-center space-x-2">
                             {user ? (
-                                <>
-                                    <div className="flex items-center space-x-2">
-                                        <span className="text-sm text-slate-600">
-                                            {user.role === 'admin' ? '⚙️ Admin' : 
-                                             user.role === 'provider' ? '🏢 Proveedor' : '👤 Cliente'}
-                                        </span>
-                                        <Button to="/dashboard" variant="ghost">Mi Panel</Button>
-                                        <Button onClick={handleLogout} variant="primary">Salir</Button>
-                                    </div>
-                                </>
+                                <div className="flex items-center space-x-2">
+                                    <span className="text-sm text-slate-600">
+                                        {getRoleDisplay(user.role)}
+                                    </span>
+                                    <Button to="/dashboard" variant="ghost">Mi Panel</Button>
+                                    <Button onClick={handleLogout} variant="primary">Salir</Button>
+                                </div>
                             ) : (
                                 <>
                                     <Button to="/login" variant="ghost">Iniciar sesión</Button>
@@ -108,8 +116,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                                         <div className="space-y-3">
                                             <div className="flex items-center space-x-2 px-3 py-2">
                                                 <span className="text-sm text-slate-600">
-                                                    {user.role === 'admin' ? '⚙️ Admin' : 
-                                                     user.role === 'provider' ? '🏢 Proveedor' : '👤 Cliente'}
+                                                    {getRoleDisplay(user.role)}
                                                 </span>
                                             </div>
                                             <Link 

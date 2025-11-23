@@ -26,6 +26,40 @@ class CalificacionNotificationService:
             "marketplace": f"{self.frontend_url}/#/dashboard/marketplace"
         }
     
+    def _get_nps_label(self, nps: int) -> str:
+        """
+        Determina la etiqueta NPS basada en el puntaje
+        
+        Args:
+            nps: Puntuación NPS (1-10)
+            
+        Returns:
+            Etiqueta del tipo de NPS (Promotor, Neutral, Detractor)
+        """
+        if nps >= 9:
+            return "😊 Promotor"
+        elif nps >= 7:
+            return "😐 Neutral"
+        else:
+            return "😟 Detractor"
+    
+    def _get_nps_recommendation_text(self, nps: int) -> str:
+        """
+        Determina el texto de recomendación basado en el puntaje NPS
+        
+        Args:
+            nps: Puntuación NPS (1-10)
+            
+        Returns:
+            Texto de recomendación apropiado
+        """
+        if nps >= 9:
+            return "recomendaría"
+        elif nps >= 7:
+            return "podría recomendar"
+        else:
+            return "no recomendaría"
+    
     def _send_notification(
         self,
         to_email: str,
@@ -168,10 +202,10 @@ class CalificacionNotificationService:
                         <div style="margin: 15px 0;">
                             <strong>📈 NPS (Net Promoter Score):</strong>
                             <div class="nps-badge">
-                                {nps}/10 - {"😊 Promotor" if nps >= 9 else "😐 Neutral" if nps >= 7 else "😟 Detractor"}
+                                {nps}/10 - {self._get_nps_label(nps)}
                             </div>
                             <p style="font-size: 13px; color: #6b7280; margin: 5px 0;">
-                                {cliente_nombre} {"recomendaría" if nps >= 9 else "podría recomendar" if nps >= 7 else "no recomendaría"} tu servicio a otros.
+                                {cliente_nombre} {self._get_nps_recommendation_text(nps)} tu servicio a otros.
                             </p>
                         </div>
                         

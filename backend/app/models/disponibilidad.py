@@ -25,6 +25,4 @@ class DisponibilidadModel(Base):
     created_at: Mapped[Optional[datetime]] = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[Optional[datetime]] = Column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relaciones
-    #servicio = relationship("ServicioModel", back_populates="disponibilidades")
-    #reservas = relationship("ReservaModel", back_populates="disponibilidad")  # Eliminado: ReservaModel ya no tiene id_disponibilidad
+

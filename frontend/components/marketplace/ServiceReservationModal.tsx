@@ -50,93 +50,171 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
         return years === 1 ? 'hace 1 año' : `hace ${years} años`;
     };
 
-    const formatPriceProfessional = (price: number, service: BackendService) => {
-        // Usar la lógica de mapeo de moneda de la versión original
-        let serviceCurrency = null;
-
+    // Función helper para obtener la moneda del servicio
+    const getServiceCurrency = (service: BackendService): string => {
         // Primero intentar mapear por ID de moneda (más confiable)
         if (service.id_moneda) {
             switch (service.id_moneda) {
-                case 1: // Guaraní
-                    serviceCurrency = 'GS';
-                    break;
-                case 2: // Dólar
-                    serviceCurrency = 'USD';
-                    break;
-                case 3: // Real
-                    serviceCurrency = 'BRL';
-                    break;
-                case 4: // Peso Argentino
-                    serviceCurrency = 'ARS';
-                    break;
-                case 8: // Peso Argentino (otro ID)
-                    serviceCurrency = 'ARS';
-                    break;
+                case 1:
+                    return 'GS';
+                case 2:
+                    return 'USD';
+                case 3:
+                    return 'BRL';
+                case 4:
+                case 8:
+                    return 'ARS';
                 default:
-                    serviceCurrency = 'GS'; // Fallback a Guaraní
+                    return 'GS';
             }
         }
 
-        // Si no hay ID de moneda, usar código ISO limpio como fallback
-        if (!serviceCurrency && service.codigo_iso_moneda) {
-            serviceCurrency = service.codigo_iso_moneda.trim();
+        // Si no hay ID de moneda, intentar usar código ISO si está disponible
+        const serviceWithIso = service as BackendService & { codigo_iso_moneda?: string };
+        if (serviceWithIso.codigo_iso_moneda) {
+            return serviceWithIso.codigo_iso_moneda.trim();
         }
 
         // Si aún no hay moneda, asumir Guaraní
-        if (!serviceCurrency) {
-            serviceCurrency = 'GS';
-        }
+        return 'GS';
+    };
 
-        const currencySymbol = serviceCurrency === 'USD' ? '$' :
-                              serviceCurrency === 'BRL' ? 'R$' :
-                              serviceCurrency === 'ARS' ? '$' : '₲';
+    // Función helper para obtener el símbolo de la moneda
+    const getCurrencySymbol = (currency: string): string => {
+        if (currency === 'USD') return '$';
+        if (currency === 'BRL') return 'R$';
+        if (currency === 'ARS') return '$';
+        return '₲';
+    };
 
-        if (serviceCurrency === 'USD') {
-            return `${currencySymbol} ${price.toLocaleString('en-US')}`;
-        } else if (serviceCurrency === 'BRL') {
-            return `${currencySymbol} ${price.toLocaleString('pt-BR')}`;
-        } else if (serviceCurrency === 'ARS') {
-            return `${currencySymbol} ${price.toLocaleString('es-AR')}`;
-        } else {
-            return `${currencySymbol} ${price.toLocaleString('es-PY')}`;
+    // Función helper para formatear el precio según la moneda
+    const formatPriceByCurrency = (price: number, currency: string): string => {
+        const symbol = getCurrencySymbol(currency);
+        if (currency === 'USD') {
+            return `${symbol} ${price.toLocaleString('en-US')}`;
         }
+        if (currency === 'BRL') {
+            return `${symbol} ${price.toLocaleString('pt-BR')}`;
+        }
+        if (currency === 'ARS') {
+            return `${symbol} ${price.toLocaleString('es-AR')}`;
+        }
+        return `${symbol} ${price.toLocaleString('es-PY')}`;
+    };
+
+    const formatPriceProfessional = (price: number, service: BackendService) => {
+        const serviceCurrency = getServiceCurrency(service);
+        return formatPriceByCurrency(price, serviceCurrency);
     };
 
     const formatTarifaPrice = (monto: number, service: BackendService) => {
-        // Usar la misma lógica de mapeo de moneda
-        let serviceCurrency = null;
+        const serviceCurrency = getServiceCurrency(service);
+        return formatPriceByCurrency(monto, serviceCurrency);
+    };
 
-        if (service.id_moneda) {
-            switch (service.id_moneda) {
-                case 1: serviceCurrency = 'GS'; break;
-                case 2: serviceCurrency = 'USD'; break;
-                case 3: serviceCurrency = 'BRL'; break;
-                case 4: serviceCurrency = 'ARS'; break;
-                default: serviceCurrency = 'GS';
+    // Función helper para validar los datos de entrada
+    const validateReservationData = (): boolean => {
+        if (!service || !reservationData.date || !reservationData.time) {
+            alert('Por favor selecciona una fecha y hora disponible');
+            return false;
+        }
+        if (!isAuthenticated || !user) {
+            alert('Debes estar autenticado para crear una reserva');
+            return false;
+        }
+        return true;
+    };
+
+    // Función helper para construir los datos de la reserva
+    const buildReservationData = () => {
+        return {
+            id_servicio: Number.parseInt(service.id_servicio.toString(), 10),
+            descripcion: reservationData.observations || `Reserva para ${service.nombre}`,
+            observacion: reservationData.observations || null,
+            fecha: reservationData.date,
+            hora_inicio: reservationData.time || null
+        };
+    };
+
+    // Función helper para extraer el mensaje de error de la respuesta
+    const extractErrorMessage = async (response: Response): Promise<string> => {
+        let errorMessage = 'Error al crear la reserva';
+        
+        try {
+            const errorData = await response.json();
+            console.log('🔍 [FRONTEND] Error del backend:', errorData);
+            
+            if (typeof errorData === 'string') {
+                return errorData;
+            }
+            
+            if (errorData.detail) {
+                if (Array.isArray(errorData.detail)) {
+                    return errorData.detail.map(err => err.msg || err.message || err).join(', ');
+                }
+                return errorData.detail;
+            }
+            
+            if (errorData.message) {
+                return errorData.message;
+            }
+            
+            if (errorData.error) {
+                return errorData.error;
+            }
+            
+            return JSON.stringify(errorData);
+        } catch {
+            console.log('🔍 [FRONTEND] No se pudo parsear error JSON');
+            try {
+                const errorText = await response.text();
+                if (errorText) {
+                    return errorText;
+                }
+            } catch {
+                console.log('🔍 [FRONTEND] No se pudo obtener texto de error');
             }
         }
+        
+        return errorMessage;
+    };
 
-        if (!serviceCurrency && service.codigo_iso_moneda) {
-            serviceCurrency = service.codigo_iso_moneda.trim();
-        }
+    // Función helper para realizar la petición HTTP
+    const createReservationRequest = async (reservaData: any): Promise<Response> => {
+        const API_URL = buildApiUrl('/reservas/crear');
+        console.log('🔍 [FRONTEND] API_URL:', API_URL);
+        console.log('🔍 [FRONTEND] Datos a enviar:', reservaData);
+        console.log('🔍 [FRONTEND] AccessToken:', user.accessToken ? 'Presente' : 'No presente');
+        console.log('🔍 [FRONTEND] Enviando petición POST...');
+        
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${user.accessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(reservaData),
+        });
+        
+        console.log('🔍 [FRONTEND] Respuesta recibida:', response.status, response.statusText);
+        return response;
+    };
 
-        if (!serviceCurrency) {
-            serviceCurrency = 'GS';
-        }
+    // Función helper para manejar la respuesta exitosa
+    const handleSuccessResponse = async (response: Response) => {
+        const result = await response.json();
+        console.log('✅ [FRONTEND] Reserva creada exitosamente:', result);
+        alert('Reserva creada exitosamente. El proveedor se pondrá en contacto contigo.');
+        onClose();
+    };
 
-        const currencySymbol = serviceCurrency === 'USD' ? '$' :
-                              serviceCurrency === 'BRL' ? 'R$' :
-                              serviceCurrency === 'ARS' ? '$' : '₲';
-
-        if (serviceCurrency === 'USD') {
-            return `${currencySymbol} ${monto.toLocaleString('en-US')}`;
-        } else if (serviceCurrency === 'BRL') {
-            return `${currencySymbol} ${monto.toLocaleString('pt-BR')}`;
-        } else if (serviceCurrency === 'ARS') {
-            return `${currencySymbol} ${monto.toLocaleString('es-AR')}`;
-        } else {
-            return `${currencySymbol} ${monto.toLocaleString('es-PY')}`;
-        }
+    // Función helper para manejar errores
+    const handleError = (error: unknown) => {
+        console.error('❌ [FRONTEND] Error al crear reserva:', error);
+        console.log('❌ [FRONTEND] ========== FIN CREAR RESERVA CON ERROR ==========');
+        
+        const errorMessage = error instanceof Error ? error.message : 'Error desconocido al crear la reserva';
+        alert(`Error al crear la reserva: ${errorMessage}\n\nPor favor intenta nuevamente.`);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -148,101 +226,22 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
         console.log('🔍 [FRONTEND] User:', user);
         console.log('🔍 [FRONTEND] IsAuthenticated:', isAuthenticated);
         
-        if (!service || !reservationData.date || !reservationData.time) {
-            alert('Por favor selecciona una fecha y hora disponible');
-            return;
-        }
-
-        if (!isAuthenticated || !user) {
-            alert('Debes estar autenticado para crear una reserva');
+        if (!validateReservationData()) {
             return;
         }
 
         try {
-            // Usar la configuración centralizada de API
-            const API_URL = buildApiUrl('/reservas/crear');
-            console.log('🔍 [FRONTEND] API_URL:', API_URL);
-            
-            // Crear la reserva con datos compatibles con el backend
-            const reservaData = {
-                id_servicio: parseInt(service.id_servicio.toString()), // Asegurar que sea número
-                descripcion: reservationData.observations || `Reserva para ${service.nombre}`,
-                observacion: reservationData.observations || null,
-                fecha: reservationData.date,
-                hora_inicio: reservationData.time || null  // Agregar hora de inicio
-            };
-            
-            console.log('🔍 [FRONTEND] Datos a enviar:', reservaData);
-            console.log('🔍 [FRONTEND] Tipo de id_servicio:', typeof reservaData.id_servicio);
-            console.log('🔍 [FRONTEND] AccessToken:', user.accessToken ? 'Presente' : 'No presente');
-
-            console.log('🔍 [FRONTEND] Enviando petición POST...');
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${user.accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(reservaData),
-            });
-
-            console.log('🔍 [FRONTEND] Respuesta recibida:', response.status, response.statusText);
-            console.log('🔍 [FRONTEND] Headers de respuesta:', response.headers);
+            const reservaData = buildReservationData();
+            const response = await createReservationRequest(reservaData);
 
             if (!response.ok) {
-                // Intentar obtener el mensaje de error específico del backend
-                let errorMessage = 'Error al crear la reserva';
-                try {
-                    const errorData = await response.json();
-                    console.log('🔍 [FRONTEND] Error del backend:', errorData);
-                    console.log('🔍 [FRONTEND] Tipo de errorData:', typeof errorData);
-                    console.log('🔍 [FRONTEND] Keys de errorData:', Object.keys(errorData));
-                    
-                    // Manejar diferentes formatos de error
-                    if (typeof errorData === 'string') {
-                        errorMessage = errorData;
-                    } else if (errorData.detail) {
-                        if (Array.isArray(errorData.detail)) {
-                            // Error de validación con múltiples errores
-                            errorMessage = errorData.detail.map(err => err.msg || err.message || err).join(', ');
-                        } else {
-                            errorMessage = errorData.detail;
-                        }
-                    } else if (errorData.message) {
-                        errorMessage = errorData.message;
-                    } else if (errorData.error) {
-                        errorMessage = errorData.error;
-                    } else {
-                        errorMessage = JSON.stringify(errorData);
-                    }
-                } catch (e) {
-                    console.log('🔍 [FRONTEND] No se pudo parsear error JSON');
-                    // Si no se puede parsear el JSON, usar el texto de la respuesta
-                    try {
-                        const errorText = await response.text();
-                        console.log('🔍 [FRONTEND] Error texto:', errorText);
-                        if (errorText) errorMessage = errorText;
-                    } catch (e2) {
-                        console.log('🔍 [FRONTEND] No se pudo obtener texto de error');
-                    }
-                }
+                const errorMessage = await extractErrorMessage(response);
                 throw new Error(`Error ${response.status}: ${errorMessage}`);
             }
 
-            const result = await response.json();
-            console.log('✅ [FRONTEND] Reserva creada exitosamente:', result);
-            
-            alert('Reserva creada exitosamente. El proveedor se pondrá en contacto contigo.');
-            onClose();
+            await handleSuccessResponse(response);
         } catch (error) {
-            console.error('❌ [FRONTEND] Error al crear reserva:', error);
-            console.error('❌ [FRONTEND] Tipo de error:', typeof error);
-            console.error('❌ [FRONTEND] Error completo:', error);
-            console.log('❌ [FRONTEND] ========== FIN CREAR RESERVA CON ERROR ==========');
-            
-            // Mostrar el error específico al usuario
-            const errorMessage = error instanceof Error ? error.message : 'Error desconocido al crear la reserva';
-            alert(`Error al crear la reserva: ${errorMessage}\n\nPor favor intenta nuevamente.`);
+            handleError(error);
         }
     };
 
@@ -297,7 +296,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
                                 <h2 className="text-xl font-semibold text-slate-900 mb-4 flex items-center gap-2">
                                     <span className="w-2 h-2 bg-primary-600 rounded-full"></span>
-                                    Descripción del Servicio
+                                    <span>Descripción del Servicio</span>
                                 </h2>
                                 <p className="text-slate-700 leading-relaxed">{service.descripcion}</p>
                             </div>
@@ -306,7 +305,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                             <div className="bg-white border border-slate-200 rounded-xl p-6">
                                 <h2 className="text-xl font-semibold text-slate-900 mb-6 flex items-center gap-2">
                                     <span className="w-2 h-2 bg-primary-600 rounded-full"></span>
-                                    Información del Proveedor
+                                    <span>Información del Proveedor</span>
                                 </h2>
                                 
                                 {/* Avatar y nombre del proveedor */}
@@ -400,7 +399,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                             <div className="bg-gradient-to-br from-primary-50 to-blue-50 border border-primary-200 rounded-xl p-6">
                                 <h2 className="text-xl font-semibold text-slate-900 mb-6 flex items-center gap-2">
                                     <span className="w-2 h-2 bg-primary-600 rounded-full"></span>
-                                    Precios y Tarifas
+                                    <span>Precios y Tarifas</span>
                                 </h2>
                                 
                                 <div className="space-y-6">
@@ -468,7 +467,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                             <div className="bg-white border border-slate-200 rounded-xl p-6">
                                 <h2 className="text-xl font-semibold text-slate-900 mb-6 flex items-center gap-2">
                                     <span className="w-2 h-2 bg-primary-600 rounded-full"></span>
-                                    Reservar Servicio
+                                    <span>Reservar Servicio</span>
                                 </h2>
 
                                 <form onSubmit={handleSubmit} className="w-full space-y-5">

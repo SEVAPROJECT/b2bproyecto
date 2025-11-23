@@ -20,8 +20,8 @@ export const isValidPassword = (password: string): boolean => {
  */
 export const isValidPhone = (phone: string): boolean => {
     // Formato paraguayo: +595XXXXXXXXX o 09XXXXXXXX
-    const phoneRegex = /^(\+595|0)[0-9]{8,9}$/;
-    return phoneRegex.test(phone.replace(/\s/g, ''));
+    const phoneRegex = /^(\+595|0)\d{8,9}$/;
+    return phoneRegex.test(phone.replaceAll(/\s/g, ''));
 };
 
 /**
@@ -29,7 +29,7 @@ export const isValidPhone = (phone: string): boolean => {
  */
 export const isValidRUC = (ruc: string): boolean => {
     // RUC paraguayo: 7 u 8 dígitos seguidos de un guión y un dígito verificador
-    const rucRegex = /^[0-9]{7,8}-[0-9]$/;
+    const rucRegex = /^\d{7,8}-\d$/;
     return rucRegex.test(ruc);
 };
 
@@ -57,7 +57,7 @@ export const isValidDate = (dateString: string, allowFuture: boolean = false): b
     const date = new Date(dateString);
     const today = new Date();
     
-    if (isNaN(date.getTime())) {
+    if (Number.isNaN(date.getTime())) {
         return false;
     }
     

@@ -52,14 +52,14 @@ export const AddressSelector: React.FC<AddressSelectorProps> = ({
 
     // Cargar ciudades y barrios cuando se inicializa con valores
     useEffect(() => {
-        if (initialValues.departamento && initialValues.departamento.id_departamento) {
+        if (initialValues.departamento?.id_departamento) {
             console.log('🔄 Cargando ciudades para departamento inicial:', initialValues.departamento.nombre);
             loadCiudades(initialValues.departamento.id_departamento);
         }
     }, [initialValues.departamento]);
 
     useEffect(() => {
-        if (initialValues.ciudad && initialValues.ciudad.id_ciudad) {
+        if (initialValues.ciudad?.id_ciudad) {
             console.log('🔄 Cargando barrios para ciudad inicial:', initialValues.ciudad.nombre);
             loadBarrios(initialValues.ciudad.id_ciudad);
         }
@@ -128,7 +128,7 @@ export const AddressSelector: React.FC<AddressSelectorProps> = ({
                 setBarrios([]);
             }
         } else {
-            // Si se deselecciona el departamento, limpiar todo
+            // Si se deselecciona el departamento, limpiarlo
             console.log('🧹 Limpiando todo porque se deseleccionó departamento');
             setSelectedCiudad(null);
             setSelectedBarrio(null);

@@ -15,6 +15,30 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Constantes para formatos de fecha y hora
+DATE_FORMAT_DD_MM_YYYY = "%d/%m/%Y"
+TIME_FORMAT_HH_MM = "%H:%M"
+
+# Constantes para mensajes
+MSG_RESERVA_NO_ENCONTRADA = "Reserva no encontrada"
+MSG_ERROR_INTERNO_SERVIDOR = "Error interno del servidor"
+MSG_NO_POSIBLE_CALIFICAR = "No es posible calificar en el estado actual."
+MSG_NO_AUTORIZADO_CALIFICAR = "No autorizado para calificar esta reserva."
+MSG_YA_CALIFICADO = "Ya enviaste tu calificación para este servicio."
+MSG_ERROR_GENERANDO_REPORTE = "Error generando reporte de calificaciones"
+
+# Constantes para valores por defecto
+DEFAULT_CLIENTE = "Cliente"
+DEFAULT_PROVEEDOR = "Proveedor"
+DEFAULT_NA = "N/A"
+DEFAULT_SIN_COMENTARIO = "Sin comentario"
+DEFAULT_EMPRESA = "Empresa"
+
+# Constantes para estados y roles
+ESTADO_COMPLETADA = "completada"
+ROL_CLIENTE = "cliente"
+ROL_PROVEEDOR = "proveedor"
+
 async def get_user_with_roles(current_user: SupabaseUser = Depends(get_current_user)):
     """
     Obtiene el perfil del usuario con sus roles para determinar si es cliente o proveedor.
@@ -93,40 +117,40 @@ async def calificar_como_cliente(
             if not reserva:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Reserva no encontrada"
+                    detail=MSG_RESERVA_NO_ENCONTRADA
                 )
             
-            if reserva['estado'] != 'completada':
+            if reserva['estado'] != ESTADO_COMPLETADA:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="No es posible calificar en el estado actual."
+                    detail=MSG_NO_POSIBLE_CALIFICAR
                 )
             
             # 2. Verificar que el usuario es el cliente de la reserva
             if str(reserva['cliente_id']) != str(user_info['id']):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No autorizado para calificar esta reserva."
+                    detail=MSG_NO_AUTORIZADO_CALIFICAR
                 )
             
             # 3. Verificar que no existe calificación previa del cliente
             calificacion_existente_query = """
                 SELECT id_calificacion FROM public.calificacion 
-                WHERE id_reserva = $1 AND rol_emisor = 'cliente'
+                WHERE id_reserva = $1 AND rol_emisor = $2
             """
-            calificacion_existente = await conn.fetchrow(calificacion_existente_query, reserva_id)
+            calificacion_existente = await conn.fetchrow(calificacion_existente_query, reserva_id, ROL_CLIENTE)
             
             if calificacion_existente:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Ya enviaste tu calificación para este servicio."
+                    detail=MSG_YA_CALIFICADO
                 )
             
             # 4. Insertar calificación
             insert_query = """
                 INSERT INTO public.calificacion 
                 (id_reserva, puntaje, comentario, satisfaccion_nps, rol_emisor, usuario_id)
-                VALUES ($1, $2, $3, $4, 'cliente', $5)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id_calificacion, fecha
             """
             
@@ -136,6 +160,7 @@ async def calificar_como_cliente(
                 calificacion_data.puntaje,
                 calificacion_data.comentario,
                 calificacion_data.satisfaccion_nps,
+                ROL_CLIENTE,
                 user_info['id']
             )
             
@@ -165,22 +190,22 @@ async def calificar_como_cliente(
                 
                 if notif_data:
                     # Formatear fecha y hora
-                    fecha_formateada = notif_data['fecha'].strftime("%d/%m/%Y") if notif_data['fecha'] else "N/A"
-                    hora_formateada = notif_data['hora'].strftime("%H:%M") if notif_data['hora'] else "N/A"
+                    fecha_formateada = notif_data['fecha'].strftime(DATE_FORMAT_DD_MM_YYYY) if notif_data['fecha'] else DEFAULT_NA
+                    hora_formateada = notif_data['hora'].strftime(TIME_FORMAT_HH_MM) if notif_data['hora'] else DEFAULT_NA
                     
                     calificacion_notification_service.notify_calificacion_a_proveedor(
                         reserva_id=reserva_id,
                         servicio_nombre=notif_data['servicio_nombre'],
-                        proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
+                        proveedor_nombre=notif_data['proveedor_nombre'] or DEFAULT_PROVEEDOR,
                         proveedor_email=notif_data['proveedor_email'],
-                        cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+                        cliente_nombre=notif_data['cliente_nombre'] or DEFAULT_CLIENTE,
                         puntaje=calificacion_data.puntaje,
                         comentario=calificacion_data.comentario,
                         nps=calificacion_data.satisfaccion_nps,
                         fecha=fecha_formateada,
                         hora=hora_formateada
                     )
-                    logger.info(f"📧 Notificación de calificación enviada al proveedor")
+                    logger.info("📧 Notificación de calificación enviada al proveedor")
             except Exception as e:
                 logger.error(f"⚠️ Error enviando notificación al proveedor: {e}")
                 # No fallar si la notificación falla
@@ -191,7 +216,7 @@ async def calificar_como_cliente(
                 puntaje=calificacion_data.puntaje,
                 comentario=calificacion_data.comentario,
                 fecha=result['fecha'],
-                rol_emisor='cliente',
+                rol_emisor=ROL_CLIENTE,
                 usuario_id=str(user_info['id']),
                 satisfaccion_nps=calificacion_data.satisfaccion_nps
             )
@@ -204,7 +229,7 @@ async def calificar_como_cliente(
         logger.error(f"❌ Error al calificar como cliente: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 @router.post("/proveedor/{reserva_id}", response_model=CalificacionOut)
@@ -235,40 +260,40 @@ async def calificar_como_proveedor(
             if not reserva:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Reserva no encontrada"
+                    detail=MSG_RESERVA_NO_ENCONTRADA
                 )
             
-            if reserva['estado'] != 'completada':
+            if reserva['estado'] != ESTADO_COMPLETADA:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="No es posible calificar en el estado actual."
+                    detail=MSG_NO_POSIBLE_CALIFICAR
                 )
             
             # 2. Verificar que el usuario es el proveedor del servicio
             if str(reserva['proveedor_user_id']) != str(user_info['id']):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No autorizado para calificar esta reserva."
+                    detail=MSG_NO_AUTORIZADO_CALIFICAR
                 )
             
             # 3. Verificar que no existe calificación previa del proveedor
             calificacion_existente_query = """
                 SELECT id_calificacion FROM public.calificacion 
-                WHERE id_reserva = $1 AND rol_emisor = 'proveedor'
+                WHERE id_reserva = $1 AND rol_emisor = $2
             """
-            calificacion_existente = await conn.fetchrow(calificacion_existente_query, reserva_id)
+            calificacion_existente = await conn.fetchrow(calificacion_existente_query, reserva_id, ROL_PROVEEDOR)
             
             if calificacion_existente:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Ya enviaste tu calificación para este servicio."
+                    detail=MSG_YA_CALIFICADO
                 )
             
             # 4. Insertar calificación
             insert_query = """
                 INSERT INTO public.calificacion 
                 (id_reserva, puntaje, comentario, satisfaccion_nps, rol_emisor, usuario_id)
-                VALUES ($1, $2, $3, NULL, 'proveedor', $4)
+                VALUES ($1, $2, $3, NULL, $4, $5)
                 RETURNING id_calificacion, fecha
             """
             
@@ -277,6 +302,7 @@ async def calificar_como_proveedor(
                 reserva_id,
                 calificacion_data.puntaje,
                 calificacion_data.comentario,
+                ROL_PROVEEDOR,
                 user_info['id']
             )
             
@@ -306,22 +332,22 @@ async def calificar_como_proveedor(
                 
                 if notif_data:
                     # Formatear fecha y hora
-                    fecha_formateada = notif_data['fecha'].strftime("%d/%m/%Y") if notif_data['fecha'] else "N/A"
-                    hora_formateada = notif_data['hora'].strftime("%H:%M") if notif_data['hora'] else "N/A"
+                    fecha_formateada = notif_data['fecha'].strftime(DATE_FORMAT_DD_MM_YYYY) if notif_data['fecha'] else DEFAULT_NA
+                    hora_formateada = notif_data['hora'].strftime(TIME_FORMAT_HH_MM) if notif_data['hora'] else DEFAULT_NA
                     
                     calificacion_notification_service.notify_calificacion_a_cliente(
                         reserva_id=reserva_id,
                         servicio_nombre=notif_data['servicio_nombre'],
-                        cliente_nombre=notif_data['cliente_nombre'] or "Cliente",
+                        cliente_nombre=notif_data['cliente_nombre'] or DEFAULT_CLIENTE,
                         cliente_email=notif_data['cliente_email'],
-                        proveedor_nombre=notif_data['proveedor_nombre'] or "Proveedor",
-                        proveedor_empresa=notif_data['proveedor_empresa'] or "Empresa",
+                        proveedor_nombre=notif_data['proveedor_nombre'] or DEFAULT_PROVEEDOR,
+                        proveedor_empresa=notif_data['proveedor_empresa'] or DEFAULT_EMPRESA,
                         puntaje=calificacion_data.puntaje,
                         comentario=calificacion_data.comentario,
                         fecha=fecha_formateada,
                         hora=hora_formateada
                     )
-                    logger.info(f"📧 Notificación de calificación enviada al cliente")
+                    logger.info("📧 Notificación de calificación enviada al cliente")
             except Exception as e:
                 logger.error(f"⚠️ Error enviando notificación al cliente: {e}")
                 # No fallar si la notificación falla
@@ -332,7 +358,7 @@ async def calificar_como_proveedor(
                 puntaje=calificacion_data.puntaje,
                 comentario=calificacion_data.comentario,
                 fecha=result['fecha'],
-                rol_emisor='proveedor',
+                rol_emisor=ROL_PROVEEDOR,
                 usuario_id=str(user_info['id']),
                 satisfaccion_nps=None
             )
@@ -345,7 +371,7 @@ async def calificar_como_proveedor(
         logger.error(f"❌ Error al calificar como proveedor: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 @router.get("/verificar/{reserva_id}", response_model=CalificacionExistenteOut)
@@ -362,7 +388,7 @@ async def verificar_calificacion_existente(
         conn = await direct_db_service.get_connection()
         try:
             # Determinar rol del usuario
-            rol_emisor = 'proveedor' if user_info['is_provider'] else 'cliente'
+            rol_emisor = ROL_PROVEEDOR if user_info['is_provider'] else ROL_CLIENTE
             
             # Buscar calificación existente
             calificacion_query = """
@@ -395,7 +421,7 @@ async def verificar_calificacion_existente(
         logger.error(f"❌ Error al verificar calificación: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 # ========================================
@@ -431,18 +457,18 @@ async def get_mis_calificaciones_recibidas_cliente(
                 JOIN public.servicio s ON s.id_servicio = r.id_servicio
                 JOIN public.perfil_empresa pe ON pe.id_perfil = s.id_perfil
                 JOIN public.users u_prov ON u_prov.id = pe.user_id
-                WHERE c.rol_emisor = 'proveedor' AND r.user_id = $1
+                WHERE c.rol_emisor = $2 AND r.user_id = $1
                 ORDER BY c.fecha DESC
             """
             
-            calificaciones_data = await conn.fetch(calificaciones_query, user_info['id'])
+            calificaciones_data = await conn.fetch(calificaciones_query, user_info['id'], ROL_PROVEEDOR)
             
             calificaciones_detalladas = []
             for row in calificaciones_data:
                 # Formatear fecha a DD/MM/YYYY
                 fecha_formateada = None
                 if row['fecha']:
-                    fecha_formateada = row['fecha'].strftime("%d/%m/%Y")
+                    fecha_formateada = row['fecha'].strftime(DATE_FORMAT_DD_MM_YYYY)
                 
                 calificaciones_detalladas.append({
                     "fecha": fecha_formateada,
@@ -450,7 +476,7 @@ async def get_mis_calificaciones_recibidas_cliente(
                     "proveedor_empresa": row['proveedor_empresa'],
                     "proveedor_persona": row['proveedor_persona'],
                     "puntaje": row['puntaje'],
-                    "comentario": row['comentario'] if row['comentario'] else "Sin comentario"
+                    "comentario": row['comentario'] if row['comentario'] else DEFAULT_SIN_COMENTARIO
                 })
         
         finally:
@@ -466,7 +492,7 @@ async def get_mis_calificaciones_recibidas_cliente(
         logger.error(f"❌ Error generando reporte de calificaciones recibidas del cliente: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error generando reporte de calificaciones"
+            detail=MSG_ERROR_GENERANDO_REPORTE
         )
 
 @router.get(
@@ -499,27 +525,27 @@ async def get_mis_calificaciones_recibidas_proveedor(
                 JOIN public.servicio s ON s.id_servicio = r.id_servicio
                 JOIN public.perfil_empresa pe ON pe.id_perfil = s.id_perfil
                 JOIN public.users u_cli ON u_cli.id = r.user_id
-                WHERE c.rol_emisor = 'cliente' AND pe.user_id = $1
+                WHERE c.rol_emisor = $2 AND pe.user_id = $1
                 ORDER BY c.fecha DESC
             """
             
-            calificaciones_data = await conn.fetch(calificaciones_query, user_info['id'])
+            calificaciones_data = await conn.fetch(calificaciones_query, user_info['id'], ROL_CLIENTE)
             
             calificaciones_detalladas = []
             for row in calificaciones_data:
                 # Formatear fecha a DD/MM/YYYY
                 fecha_formateada = None
                 if row['fecha']:
-                    fecha_formateada = row['fecha'].strftime("%d/%m/%Y")
+                    fecha_formateada = row['fecha'].strftime(DATE_FORMAT_DD_MM_YYYY)
                 
                 calificaciones_detalladas.append({
                     "fecha": fecha_formateada,
                     "servicio": row['servicio'],
                     "cliente_persona": row['cliente_persona'],
-                    "cliente_empresa": row['cliente_empresa'] if row['cliente_empresa'] else "N/A",
+                    "cliente_empresa": row['cliente_empresa'] if row['cliente_empresa'] else DEFAULT_NA,
                     "puntaje": row['puntaje'],
-                    "nps": row['nps'] if row['nps'] else "N/A",
-                    "comentario": row['comentario'] if row['comentario'] else "Sin comentario"
+                    "nps": row['nps'] if row['nps'] else DEFAULT_NA,
+                    "comentario": row['comentario'] if row['comentario'] else DEFAULT_SIN_COMENTARIO
                 })
         
         finally:
@@ -535,5 +561,5 @@ async def get_mis_calificaciones_recibidas_proveedor(
         logger.error(f"❌ Error generando reporte de calificaciones recibidas del proveedor: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error generando reporte de calificaciones"
+            detail=MSG_ERROR_GENERANDO_REPORTE
         )

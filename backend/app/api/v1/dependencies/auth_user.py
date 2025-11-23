@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
 # Dependencia para validar el token JWT desde cookies o headers
-async def get_current_user(
+def get_current_user(
         request: Request,
         credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False))
     ) -> SupabaseUser:
@@ -42,20 +42,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No se proporcionó un token de autorización"
         )
-    #user_data = supabase_auth.auth.get_user(token).get("data")
-
-    # Manejando el objeto UserResponse en lugar de un diccionario
-
-    '''if not user_data:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido o expirado"
-        )
-
-    return SupabaseUser(
-        id=user_data.get("id"),
-        email=user_data.get("email")
-    )'''
+    
 
     try:
         logger.info(f"🔍 Validando token: {token[:20]}...")
@@ -125,7 +112,7 @@ async def get_admin_user(
         print(f"🔍 DEBUG: Convirtiendo ID a UUID: {current_user.id}")
         user_uuid = str(current_user.id)
         print(f"🔍 DEBUG: UUID convertido: {user_uuid}")
-        print(f"🔍 DEBUG: Ejecutando consulta de base de datos...")
+        print("🔍 DEBUG: Ejecutando consulta de base de datos...")
         
         # Obtener perfil con roles usando DirectDBService
         user_data = await direct_db_service.get_user_profile_with_roles(user_uuid)
@@ -148,13 +135,13 @@ async def get_admin_user(
         print(f"🔍 DEBUG: Roles en minúsculas: {roles_lower}")
         
         if "admin" not in roles_lower and "administrador" not in roles_lower:
-            print(f"❌ DEBUG: Usuario no tiene permisos de administrador")
+            print("❌ DEBUG: Usuario no tiene permisos de administrador")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes permisos de administrador"
             )
         
-        print(f"✅ DEBUG: Usuario administrador validado exitosamente")
+        print("✅ DEBUG: Usuario administrador validado exitosamente")
         return UserProfileAndRolesOut(
             id=user_data['id'],
             email=current_user.email,

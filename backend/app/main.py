@@ -7,6 +7,62 @@ from contextlib import asynccontextmanager
 import logging
 import os
 
+# Constantes CORS
+ORIGIN_LOCALHOST_5173 = "http://localhost:5173"
+ORIGIN_LOCALHOST_5174 = "http://localhost:5174"
+ORIGIN_LOCALHOST_3000 = "http://localhost:3000"
+ORIGIN_127_0_0_1_5173 = "http://127.0.0.1:5173"
+ORIGIN_127_0_0_1_5174 = "http://127.0.0.1:5174"
+ORIGIN_127_0_0_1_3000 = "http://127.0.0.1:3000"
+ORIGIN_RAILWAY = "https://frontend-production-ee3b.up.railway.app"
+ORIGIN_VERCEL = "https://seva-frontend.vercel.app"
+ORIGIN_NETLIFY = "https://seva-frontend.netlify.app"
+
+# Lista de orígenes permitidos
+ALLOWED_ORIGINS = [
+    ORIGIN_LOCALHOST_5173,
+    ORIGIN_LOCALHOST_5174,
+    ORIGIN_LOCALHOST_3000,
+    ORIGIN_127_0_0_1_5173,
+    ORIGIN_127_0_0_1_5174,
+    ORIGIN_127_0_0_1_3000,
+    ORIGIN_RAILWAY,
+    ORIGIN_VERCEL,
+    ORIGIN_NETLIFY,
+]
+
+# Constantes para métodos y headers CORS
+CORS_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+CORS_METHODS_STRING = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+CORS_HEADERS_STRING = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+CORS_HEADERS_LIST = [
+    "Accept",
+    "Accept-Language",
+    "Content-Language",
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Origin",
+    "Access-Control-Request-Method",
+    "Access-Control-Request-Headers",
+]
+
+# Constantes para prefijos de API
+API_PREFIX_V1 = "/api/v1"
+API_PREFIX_CALIFICACION = "/api/v1/calificacion"
+
+# Constantes para rutas y directorios
+UPLOADS_PATH = "/uploads"
+UPLOADS_DIRECTORY = "uploads"
+UPLOADS_SERVICES_DIR = "uploads/services"
+UPLOADS_PROFILE_PHOTOS_DIR = "uploads/profile_photos"
+
+# Constantes para mensajes y valores
+MSG_ERROR_INTERNO_SERVIDOR = "Error interno del servidor"
+MSG_OK = "OK"
+CORS_CREDENTIALS_TRUE = "true"
+CORS_MAX_AGE = "86400"
+
 # Imports de routers
 from app.api.v1.routers.users.auth_user import auth
 from app.api.v1.routers.users.auth_user_admin.admin_router import router as auth_admin_router
@@ -55,30 +111,10 @@ app = FastAPI(
 # de lo contrario, algunas solicitudes podrían no ser manejadas correctamente.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:5174",  # Vite dev server (puerto alternativo)
-        "http://localhost:3000",  # React dev server
-        "http://127.0.0.1:5173",  # Vite dev server (alternativo)
-        "http://127.0.0.1:5174",  # Vite dev server (puerto alternativo)
-        "http://127.0.0.1:3000",  # React dev server (alternativo)
-        "https://frontend-production-ee3b.up.railway.app",  # Railway deployment
-        "https://seva-frontend.vercel.app",  # Vercel deployment
-        "https://seva-frontend.netlify.app",  # Netlify deployment
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=[
-        "Accept",
-        "Accept-Language",
-        "Content-Language",
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Origin",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers",
-    ],
+    allow_methods=CORS_METHODS,
+    allow_headers=CORS_HEADERS_LIST,
     expose_headers=["*"],
 )
 
@@ -91,21 +127,8 @@ async def cors_error_handler(request: Request, call_next):
     # Obtener el origen de la request para configurar CORS dinámicamente
     origin = request.headers.get("origin", "")
     
-    # Lista de orígenes permitidos
-    allowed_origins = [
-        "http://localhost:5173",
-        "http://localhost:5174", 
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://127.0.0.1:3000",
-        "https://frontend-production-ee3b.up.railway.app",
-        "https://seva-frontend.vercel.app",
-        "https://seva-frontend.netlify.app",
-    ]
-    
     # Determinar el origen permitido
-    cors_origin = origin if origin in allowed_origins else "http://localhost:5174"
+    cors_origin = origin if origin in ALLOWED_ORIGINS else ORIGIN_LOCALHOST_5174
     
     try:
         response = await call_next(request)
@@ -114,21 +137,21 @@ async def cors_error_handler(request: Request, call_next):
         # Crear respuesta de error con headers CORS
         response = JSONResponse(
             status_code=500,
-            content={"detail": "Error interno del servidor"},
+            content={"detail": MSG_ERROR_INTERNO_SERVIDOR},
             headers={
                 "Access-Control-Allow-Origin": cors_origin,
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-                "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
-                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Allow-Methods": CORS_METHODS_STRING,
+                "Access-Control-Allow-Headers": CORS_HEADERS_STRING,
+                "Access-Control-Allow-Credentials": CORS_CREDENTIALS_TRUE,
             }
         )
     
     # Asegurar que los headers CORS estén presentes en todas las respuestas
     if "Access-Control-Allow-Origin" not in response.headers:
         response.headers["Access-Control-Allow-Origin"] = cors_origin
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-        response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = CORS_METHODS_STRING
+        response.headers["Access-Control-Allow-Headers"] = CORS_HEADERS_STRING
+        response.headers["Access-Control-Allow-Credentials"] = CORS_CREDENTIALS_TRUE
     
     return response
 
@@ -137,37 +160,37 @@ async def cors_error_handler(request: Request, call_next):
 
 
 # Crear directorio uploads si no existe
-os.makedirs("uploads/services", exist_ok=True)
-os.makedirs("uploads/profile_photos", exist_ok=True)
+os.makedirs(UPLOADS_SERVICES_DIR, exist_ok=True)
+os.makedirs(UPLOADS_PROFILE_PHOTOS_DIR, exist_ok=True)
 
 # Servir archivos estáticos (imágenes)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount(UPLOADS_PATH, StaticFiles(directory=UPLOADS_DIRECTORY), name=UPLOADS_DIRECTORY)
 
 # Incluir routers directamente
 
-app.include_router(auth.router, prefix="/api/v1")
-app.include_router(auth_admin_router, prefix="/api/v1")
-app.include_router(admin_stats_router, prefix="/api/v1")
-app.include_router(providers.router, prefix="/api/v1")
-app.include_router(locations.router, prefix="/api/v1")
-app.include_router(categories_router, prefix="/api/v1")
-app.include_router(services_router, prefix="/api/v1")
-app.include_router(service_requests_router, prefix="/api/v1")
-app.include_router(category_requests_router, prefix="/api/v1")
-app.include_router(provider_services_router, prefix="/api/v1")
-app.include_router(additional_router, prefix="/api/v1")
-app.include_router(password_reset_router, prefix="/api/v1")
-app.include_router(supabase_password_reset_router, prefix="/api/v1")
-app.include_router(direct_password_reset_router, prefix="/api/v1")
-app.include_router(reserva_router, prefix="/api/v1")
-app.include_router(disponibilidad_router, prefix="/api/v1")
-app.include_router(disponibilidad_optimizada_router, prefix="/api/v1")
-app.include_router(horario_trabajo_router, prefix="/api/v1")
-app.include_router(horarios_disponibles_router, prefix="/api/v1")
-app.include_router(weaviate_router, prefix="/api/v1")
-app.include_router(weaviate_test_router, prefix="/api/v1")
-app.include_router(calificacion_router, prefix="/api/v1/calificacion")
-app.include_router(test_router, prefix="/api/v1")
+app.include_router(auth.router, prefix=API_PREFIX_V1)
+app.include_router(auth_admin_router, prefix=API_PREFIX_V1)
+app.include_router(admin_stats_router, prefix=API_PREFIX_V1)
+app.include_router(providers.router, prefix=API_PREFIX_V1)
+app.include_router(locations.router, prefix=API_PREFIX_V1)
+app.include_router(categories_router, prefix=API_PREFIX_V1)
+app.include_router(services_router, prefix=API_PREFIX_V1)
+app.include_router(service_requests_router, prefix=API_PREFIX_V1)
+app.include_router(category_requests_router, prefix=API_PREFIX_V1)
+app.include_router(provider_services_router, prefix=API_PREFIX_V1)
+app.include_router(additional_router, prefix=API_PREFIX_V1)
+app.include_router(password_reset_router, prefix=API_PREFIX_V1)
+app.include_router(supabase_password_reset_router, prefix=API_PREFIX_V1)
+app.include_router(direct_password_reset_router, prefix=API_PREFIX_V1)
+app.include_router(reserva_router, prefix=API_PREFIX_V1)
+app.include_router(disponibilidad_router, prefix=API_PREFIX_V1)
+app.include_router(disponibilidad_optimizada_router, prefix=API_PREFIX_V1)
+app.include_router(horario_trabajo_router, prefix=API_PREFIX_V1)
+app.include_router(horarios_disponibles_router, prefix=API_PREFIX_V1)
+app.include_router(weaviate_router, prefix=API_PREFIX_V1)
+app.include_router(weaviate_test_router, prefix=API_PREFIX_V1)
+app.include_router(calificacion_router, prefix=API_PREFIX_CALIFICACION)
+app.include_router(test_router, prefix=API_PREFIX_V1)
 
 # endpoint (una ruta) para la URL raíz ("/")
 @app.get("/")
@@ -221,30 +244,17 @@ async def options_handler(path: str, request: Request):
     # Obtener el origen de la request
     origin = request.headers.get("origin", "")
     
-    # Lista de orígenes permitidos
-    allowed_origins = [
-        "http://localhost:5173",
-        "http://localhost:5174", 
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://127.0.0.1:3000",
-        "https://frontend-production-ee3b.up.railway.app",
-        "https://seva-frontend.vercel.app",
-        "https://seva-frontend.netlify.app",
-    ]
-    
     # Determinar el origen permitido
-    cors_origin = origin if origin in allowed_origins else "http://localhost:5174"
+    cors_origin = origin if origin in ALLOWED_ORIGINS else ORIGIN_LOCALHOST_5174
     
     return Response(
-        content="OK",
+        content=MSG_OK,
         status_code=200,
         headers={
             "Access-Control-Allow-Origin": cors_origin,
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "86400"
+            "Access-Control-Allow-Methods": CORS_METHODS_STRING,
+            "Access-Control-Allow-Headers": CORS_HEADERS_STRING,
+            "Access-Control-Allow-Credentials": CORS_CREDENTIALS_TRUE,
+            "Access-Control-Max-Age": CORS_MAX_AGE
         }
     )

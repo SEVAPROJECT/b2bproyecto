@@ -1,5 +1,6 @@
 import logging
 from typing import Tuple, Optional
+from fastapi import HTTPException, status
 from app.idrive.idrive_service import idrive_service
 from app.api.v1.dependencies.local_storage import local_storage_service
 
@@ -27,7 +28,7 @@ class SmartUploadService:
         # Si se fuerza almacenamiento local, saltar iDrive
         if force_local:
             logger.info("🔄 Forzando almacenamiento local")
-            return await self._upload_to_local(file_content, filename, document_type)
+            return self._upload_to_local(file_content, filename, document_type)
         
         # Intentar iDrive primero
         logger.info("🚀 Intentando subir a iDrive...")
@@ -43,9 +44,9 @@ class SmartUploadService:
         logger.warning(f"⚠️ iDrive falló: {idrive_message}")
         logger.info("🔄 Cambiando a almacenamiento local como fallback")
         
-        return await self._upload_to_local(file_content, filename, document_type)
+        return self._upload_to_local(file_content, filename, document_type)
     
-    async def _upload_to_local(
+    def _upload_to_local(
         self, 
         file_content: bytes, 
         filename: str, 
@@ -79,12 +80,7 @@ class SmartUploadService:
     
     def get_file_url(self, file_url: str, storage_type: str) -> str:
         """Genera la URL correcta según el tipo de almacenamiento"""
-        if storage_type == "idrive":
-            return file_url
-        elif storage_type == "local":
-            return file_url
-        else:
-            return file_url
+        return file_url
     
     def test_services(self) -> dict:
         """Prueba la conectividad de ambos servicios"""
@@ -145,4 +141,7 @@ async def upload_file_to_idrive(
         logger.info(f"✅ Archivo subido exitosamente usando {storage_type}")
         return file_url
     else:
-        raise Exception(f"Error subiendo archivo: {message}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error subiendo archivo: {message}"
+        )

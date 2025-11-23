@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { adminAPI, categoryRequestsAPI, categoriesAPI } from '../../services/api';
-import { ChartBarIcon, DocumentArrowDownIcon, EyeIcon } from '../../components/icons';
+import { DocumentArrowDownIcon, EyeIcon } from '../../components/icons';
 import { API_CONFIG, buildApiUrl } from '../../config/api';
 import { formatDateToDDMMYYYY } from '../../utils/dateUtils';
 
@@ -52,169 +52,167 @@ const AdminReportsPage: React.FC = () => {
 
     // Sin cache para evitar complejidad - carga directa
 
-    // Función helper para formatear valores con formatos específicos
-    const formatValue = (value: any, fieldName?: string): string => {
+    // Funciones helper para formatear valores
+    const handleEmptyValue = (value: any, fieldName?: string): string | null => {
         if (value === null || value === undefined || value === '') {
-            // Para comentarios, mostrar campo vacío en lugar de N/A
             if (fieldName === 'comentario_admin' || fieldName === 'comentario') {
                 return '';
             }
-            // Para otros campos, mostrar N/A solo si es necesario
             return 'N/A';
+        }
+        return null;
+    };
+
+    const formatEstadoFromObject = (value: any): string | null => {
+        if (typeof value === 'object' && value !== null) {
+            if ('label' in value && typeof value.label === 'string') {
+                return value.label.trim().toUpperCase();
+            }
+            if ('valor' in value && typeof value.valor === 'string') {
+                return value.valor.trim().toUpperCase();
+            }
+            return 'ACTIVO'; // Fallback por defecto
+        }
+        return null;
+    };
+
+    const formatEstadoFromPrimitive = (value: any): string | null => {
+        if (typeof value === 'string') {
+            return value.trim().toUpperCase();
+        }
+        if (typeof value === 'boolean') {
+            return value ? 'ACTIVO' : 'INACTIVO';
+        }
+        if (value === 'true' || value === true) return 'ACTIVO';
+        if (value === 'false' || value === false) return 'INACTIVO';
+        return null;
+    };
+
+    const formatEstado = (value: any): string => {
+        if (value === null || value === undefined) {
+            return 'N/A';
+        }
+        const fromObject = formatEstadoFromObject(value);
+        if (fromObject) return fromObject;
+        const fromPrimitive = formatEstadoFromPrimitive(value);
+        if (fromPrimitive) return fromPrimitive;
+        return String(value).toUpperCase();
+    };
+
+    const formatFechaReserva = (value: any): string => {
+        try {
+            const matchDDMMYYYY = value.match(/^(\d{2}\/\d{2}\/\d{4})/);
+            if (matchDDMMYYYY) {
+                return matchDDMMYYYY[1];
+            }
+            if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+                const dateOnly = value.split('T')[0].split(' ')[0];
+                return formatDateToDDMMYYYY(dateOnly);
+            }
+            const date = new Date(value);
+            if (!Number.isNaN(date.getTime())) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${day}/${month}/${year}`;
+            }
+        } catch (error) {
+            const matchAnyDate = value.match(/(\d{2}\/\d{2}\/\d{4})/);
+            if (matchAnyDate) {
+                return matchAnyDate[1];
+            }
+        }
+        return String(value);
+    };
+
+    const CAMPOS_NO_FECHA = new Set([
+        'estado', 'active', 'activo',
+        'nombre_persona', 'nombre_empresa', 'nombre', 'name',
+        'nombre_contacto', 'email', 'email_contacto',
+        'rol_principal', 'roles', 'todos_roles',
+        'foto_perfil', 'comentario', 'comentario_admin',
+        'descripcion', 'observacion', 'direccion',
+        'empresa', 'contacto', 'cliente', 'proveedor',
+        'servicio', 'categoria', 'precio', 'moneda'
+    ]);
+
+    const CAMPOS_FECHA = new Set([
+        'created_at', 'fecha_creacion', 'updated_at', 'fecha_actualizacion',
+        'createdAt', 'updatedAt', 'fecha_registro', 'fecha_reserva',
+        'fecha_servicio', 'fecha_solicitud', 'fecha_revision', 'fecha_verificacion',
+        'fecha_inicio', 'fecha_fin'
+    ]);
+
+    const isDateField = (fieldName?: string): boolean => {
+        return fieldName ? CAMPOS_FECHA.has(fieldName) : false;
+    };
+
+    const looksLikeDate = (value: any, fieldName?: string): boolean => {
+        if (typeof value !== 'string' || !fieldName || CAMPOS_NO_FECHA.has(fieldName)) {
+            return false;
+        }
+        return /^\d{4}-\d{2}-\d{2}$/.test(value) ||
+               /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value) ||
+               /^\d{2}\/\d{2}\/\d{4}$/.test(value) ||
+               /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(value);
+    };
+
+    const formatDateValue = (value: any, fieldName?: string): string => {
+        try {
+            if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
+                return value;
+            }
+            if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                return formatDateToDDMMYYYY(value);
+            }
+            if (value.includes('T')) {
+                const dateOnly = value.split('T')[0];
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+                    return formatDateToDDMMYYYY(dateOnly);
+                }
+            }
+            if (isDateField(fieldName)) {
+                const date = new Date(value);
+                if (!Number.isNaN(date.getTime())) {
+                    return date.toLocaleDateString('es-ES', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                    });
+                }
+            }
+        } catch (error) {
+            // Si hay error, registrar para debugging y retornar el valor original
+            console.debug('Error formateando fecha:', error);
+        }
+        return String(value);
+    };
+
+    // Función principal para formatear valores
+    const formatValue = (value: any, fieldName?: string): string => {
+        const emptyResult = handleEmptyValue(value, fieldName);
+        if (emptyResult !== null) {
+            return emptyResult;
         }
 
         // IMPORTANTE: Procesar estado ANTES de la detección de fechas para evitar conflictos
         if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo') {
-            // Manejar null/undefined ya procesado arriba, pero por si acaso
-            if (value === null || value === undefined) {
-                return 'N/A';
-            }
-            // Si es un objeto, intentar extraer el valor relevante
-            if (typeof value === 'object' && value !== null) {
-                // Si tiene propiedades label o valor (como en reservas)
-                if ('label' in value && typeof value.label === 'string') {
-                    const estadoUpper = value.label.trim().toUpperCase();
-                    if (estadoUpper === 'ACTIVO' || estadoUpper === 'INACTIVO') {
-                        return estadoUpper;
-                    }
-                    return estadoUpper;
-                }
-                if ('valor' in value && typeof value.valor === 'string') {
-                    const estadoUpper = value.valor.trim().toUpperCase();
-                    if (estadoUpper === 'ACTIVO' || estadoUpper === 'INACTIVO') {
-                        return estadoUpper;
-                    }
-                    return estadoUpper;
-                }
-                // Si es un objeto sin propiedades conocidas, convertirlo a string explícitamente
-                return 'ACTIVO'; // Fallback por defecto
-            }
-            // Si ya es un string válido, usarlo directamente
-            if (typeof value === 'string') {
-                const estadoUpper = value.trim().toUpperCase();
-                if (estadoUpper === 'ACTIVO' || estadoUpper === 'INACTIVO') {
-                    return estadoUpper;
-                }
-                // Si no es ACTIVO ni INACTIVO pero es un string, retornarlo tal cual (evitar procesarlo como fecha)
-                return estadoUpper;
-            }
-            // Manejar booleanos
-            if (typeof value === 'boolean') {
-                return value ? 'ACTIVO' : 'INACTIVO';
-            }
-            // Manejar strings true/false
-            if (value === 'true' || value === true) return 'ACTIVO';
-            if (value === 'false' || value === false) return 'INACTIVO';
-            // Fallback final para estado
-            return String(value).toUpperCase();
+            return formatEstado(value);
         }
 
         // Caso especial: fecha_reserva siempre debe mostrar solo fecha (sin hora)
         if (fieldName === 'fecha_reserva') {
-            try {
-                // Si ya está en formato DD/MM/YYYY (con o sin hora después)
-                const matchDDMMYYYY = value.match(/^(\d{2}\/\d{2}\/\d{4})/);
-                if (matchDDMMYYYY) {
-                    return matchDDMMYYYY[1]; // Retornar solo la parte de fecha
-                }
-                
-                // Si es formato YYYY-MM-DD
-                if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
-                    const dateOnly = value.split('T')[0].split(' ')[0];
-                    return formatDateToDDMMYYYY(dateOnly);
-                }
-                
-                // Fallback: intentar parsear y formatear
-                const date = new Date(value);
-                if (!isNaN(date.getTime())) {
-                    const year = date.getFullYear();
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const day = String(date.getDate()).padStart(2, '0');
-                    return `${day}/${month}/${year}`;
-                }
-            } catch (error) {
-                // Si todo falla, intentar extraer solo la parte de fecha del string
-                const matchAnyDate = value.match(/(\d{2}\/\d{2}\/\d{4})/);
-                if (matchAnyDate) {
-                    return matchAnyDate[1];
-                }
-                return String(value);
-            }
+            return formatFechaReserva(value);
         }
 
-        // Lista de campos que NUNCA deben ser procesados como fechas
-        const camposNoFecha = [
-            'estado', 'active', 'activo',
-            'nombre_persona', 'nombre_empresa', 'nombre', 'name',
-            'nombre_contacto', 'email', 'email_contacto',
-            'rol_principal', 'roles', 'todos_roles',
-            'foto_perfil', 'comentario', 'comentario_admin',
-            'descripcion', 'observacion', 'direccion',
-            'empresa', 'contacto', 'cliente', 'proveedor',
-            'servicio', 'categoria', 'precio', 'moneda'
-        ];
-        
         // Si el campo está en la lista de exclusión, retornar directamente como string
-        if (fieldName && camposNoFecha.includes(fieldName)) {
+        if (fieldName && CAMPOS_NO_FECHA.has(fieldName)) {
             return String(value);
         }
 
-        // Formatear fechas como DD/MM/AAAA
-        // Detectar fechas SOLO por nombre de campo específico
-        const isDateField = fieldName === 'created_at' || fieldName === 'fecha_creacion' || 
-                           fieldName === 'updated_at' || fieldName === 'fecha_actualizacion' ||
-                           fieldName === 'createdAt' || fieldName === 'updatedAt' ||
-                           fieldName === 'fecha_registro' || fieldName === 'fecha_reserva' ||
-                           fieldName === 'fecha_servicio' || fieldName === 'fecha_solicitud' ||
-                           fieldName === 'fecha_revision' || fieldName === 'fecha_verificacion' ||
-                           fieldName === 'fecha_inicio' || fieldName === 'fecha_fin';
-        
-        // También detectar si el valor parece ser una fecha
-        // PERO solo si tiene un formato de fecha válido y explícito
-        const looksLikeDate = typeof value === 'string' && 
-                              fieldName && !camposNoFecha.includes(fieldName) && (
-            // Solo considerar fechas si tiene formato explícito de fecha
-            /^\d{4}-\d{2}-\d{2}$/.test(value) || // YYYY-MM-DD exacto
-            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value) || // ISO completo con hora
-            /^\d{2}\/\d{2}\/\d{4}$/.test(value) || // DD/MM/YYYY exacto
-            /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(value) // YYYY-MM-DD con hora espacio
-        );
-        
-        if (isDateField || looksLikeDate) {
-            try {
-                // Si ya está en formato DD/MM/YYYY, devolverlo tal cual
-                if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
-                    return value;
-                }
-                
-                // Si es formato YYYY-MM-DD, usar la función sin conversión UTC
-                if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-                    return formatDateToDDMMYYYY(value);
-                }
-                
-                // Para fechas ISO con hora (YYYY-MM-DDTHH:MM:SS)
-                if (value.includes('T')) {
-                    const dateOnly = value.split('T')[0];
-                    if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
-                        return formatDateToDDMMYYYY(dateOnly);
-                    }
-                }
-                
-                // Fallback para otros formatos SOLO si es un campo de fecha conocido
-                if (isDateField) {
-                    const date = new Date(value);
-                    if (!isNaN(date.getTime())) {
-                        return date.toLocaleDateString('es-ES', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric'
-                        });
-                    }
-                }
-            } catch (error) {
-                // Si hay error procesando como fecha, retornar el valor original
-                return String(value);
-            }
+        // Formatear fechas
+        if (isDateField(fieldName) || looksLikeDate(value, fieldName)) {
+            return formatDateValue(value, fieldName);
         }
 
         return String(value);
@@ -231,42 +229,6 @@ const AdminReportsPage: React.FC = () => {
                reportData.total_reservas ?? 
                reportData.total_calificaciones ?? 
                reportData.total_calificaciones_proveedores ?? 0;
-    };
-
-    // Función helper para generar mensajes de error amigables
-    const getFriendlyErrorMessage = (reportType: string, error: any): string => {
-        const reportNames: {[key: string]: string} = {
-            'usuarios-activos': 'usuarios',
-            'proveedores-verificados': 'proveedores verificados',
-            'solicitudes-proveedores': 'solicitudes de proveedores',
-            'categorias': 'categorías',
-            'servicios': 'servicios',
-            'solicitudes-servicios': 'solicitudes de servicios',
-            'solicitudes-categorias': 'solicitudes de categorías'
-        };
-
-        const reportName = reportNames[reportType] || 'datos';
-        
-        if (error?.message === 'Timeout de carga') {
-            return `Error de conexión al cargar ${reportName}. Reintentando automáticamente...`;
-        }
-        
-        // Si no hay datos, mostrar mensaje amigable
-        if (error?.status === 404 || error?.detail?.includes('No se encontraron')) {
-            return `No hay ${reportName} disponibles.`;
-        }
-        
-        // Error 500 del servidor
-        if (error?.status === 500) {
-            return `Error del servidor. Reintentando...`;
-        }
-        
-        // Error de red o conexión
-        if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
-            return `Error de conexión. Verificando servidor...`;
-        }
-        
-        return `Error al cargar ${reportName}. Reintentando...`;
     };
 
     const reportTypes = [
@@ -377,12 +339,6 @@ const AdminReportsPage: React.FC = () => {
         }
     };
 
-    // Función helper para ajustar fecha a zona horaria de Argentina (UTC-3)
-    const adjustToArgentinaTime = (date: Date): Date => {
-        // Argentina está en UTC-3, así que restamos 3 horas
-        return new Date(date.getTime() - 3 * 60 * 60 * 1000);
-    };
-
     // Función helper para formatear fecha/hora con zona horaria de Argentina
     const formatArgentinaDateTime = (dateString: string): string => {
         try {
@@ -397,18 +353,6 @@ const AdminReportsPage: React.FC = () => {
         }
     };
 
-    // Función helper para formatear solo fecha con zona horaria de Argentina
-    const formatArgentinaDate = (dateString: string): string => {
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleDateString('es-AR', {
-                timeZone: 'America/Argentina/Buenos_Aires',
-            });
-        } catch (error) {
-            console.error('Error formateando fecha Argentina:', error);
-            return dateString;
-        }
-    };
 
     // Función para generar fecha actual de Argentina en formato ISO
     const getArgentinaDateISO = (): string => {
@@ -499,11 +443,11 @@ const AdminReportsPage: React.FC = () => {
                 console.log('🏢 Proveedores obtenidos para emails:', proveedores.length);
                 
                 // Crear diccionario de emails por nombre de contacto (mismo método que la página de administración)
-                proveedores.forEach((proveedor: any) => {
+                for (const proveedor of proveedores) {
                     if (proveedor.nombre_contacto && proveedor.email_contacto && proveedor.email_contacto !== 'No disponible') {
                         emailsDict[proveedor.nombre_contacto] = proveedor.email_contacto;
                     }
-                });
+                }
                 
                 console.log('📧 Emails extraídos del reporte de proveedores:', Object.keys(emailsDict).length);
             } else {
@@ -568,15 +512,66 @@ const AdminReportsPage: React.FC = () => {
         }
     };
 
-    const loadReporte = async (reportType: string) => {
+    // Funciones helper para loadReporte
+    const validateLoadReporte = (reportType: string): boolean => {
         if (!user?.accessToken) {
             console.error('❌ No hay token de acceso para cargar reporte:', reportType);
+            return false;
+        }
+        if (loading[reportType]) {
+            console.log('⏳ Reporte ya está cargando:', reportType);
+            return false;
+        }
+        return true;
+    };
+
+    const getTimeoutDuration = (reportType: string): number => {
+        if (reportType.includes('solicitudes')) return 18000;
+        if (reportType === 'usuarios-activos') return 25000;
+        if (reportType === 'categorias') return 8000;
+        if (reportType === 'proveedores-verificados') return 15000;
+        if (reportType === 'reservas') return 15000;
+        return 12000; // Default
+    };
+
+    const createTimeoutPromise = (duration: number): Promise<never> => {
+        return new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout de carga')), duration)
+        );
+    };
+
+    const handleLoadReporteError = (err: any, reportType: string): void => {
+        console.error(`❌ Error cargando reporte ${reportType}:`, err);
+
+        if (reportType === 'usuarios-activos' && err?.message?.includes('Timeout')) {
+            console.log('⏳ Timeout en reporte usuarios-activos, intentando fallback automático...');
             return;
         }
 
-        // Verificar si ya está cargando para evitar duplicados
-        if (loading[reportType]) {
-            console.log('⏳ Reporte ya está cargando:', reportType);
+        if (err?.status === 404 || err?.detail?.includes('No se encontraron') || err?.detail?.includes('No hay')) {
+            console.log(`📊 Estableciendo reporte vacío para ${reportType} (no hay datos)`);
+            const emptyReport: ReporteData = {
+                fecha_generacion: getArgentinaDateISO(),
+                total_usuarios: 0,
+                total_proveedores: 0,
+                total_solicitudes: 0,
+                total_categorias: 0,
+                total_servicios: 0,
+                total_solicitudes_servicios: 0,
+                total_solicitudes_categorias: 0,
+                pendientes: 0,
+                aprobadas: 0,
+                rechazadas: 0
+            };
+            setReportes(prev => ({ ...prev, [reportType]: emptyReport }));
+            setLoadedReports(prev => new Set(prev).add(reportType));
+        } else {
+            console.error(`Error en reporte ${reportType}:`, err);
+        }
+    };
+
+    const loadReporte = async (reportType: string) => {
+        if (!validateLoadReporte(reportType)) {
             return;
         }
 
@@ -584,28 +579,13 @@ const AdminReportsPage: React.FC = () => {
         setLoading(prev => ({ ...prev, [reportType]: true }));
         setError(null);
 
-        // Mostrar mensaje específico para usuarios-activos
         if (reportType === 'usuarios-activos') {
             console.log('👥 Cargando reporte de usuarios activos (puede tardar más tiempo)...');
         }
 
         try {
-            // Timeouts optimizados para cada tipo de reporte
-            let timeoutDuration = 12000; // Default: 12 segundos
-            if (reportType.includes('solicitudes')) {
-                timeoutDuration = 18000; // Solicitudes: 18 segundos
-            } else if (reportType === 'usuarios-activos') {
-                timeoutDuration = 25000; // Usuarios: 25 segundos (más complejo)
-            } else if (reportType === 'categorias') {
-                timeoutDuration = 8000; // Categorías: 8 segundos (más simple)
-            } else if (reportType === 'proveedores-verificados') {
-                timeoutDuration = 15000; // Proveedores: 15 segundos
-            } else if (reportType === 'reservas') {
-                timeoutDuration = 15000; // Reservas: 15 segundos
-            }
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout de carga')), timeoutDuration)
-            );
+            const timeoutDuration = getTimeoutDuration(reportType);
+            const timeoutPromise = createTimeoutPromise(timeoutDuration);
 
             let dataPromise: Promise<ReporteData>;
             
@@ -648,6 +628,7 @@ const AdminReportsPage: React.FC = () => {
                             }
                         } catch (fallbackError) {
                             console.log('⚠️ Fallback también falló, generando datos básicos...');
+                            console.error('Error en fallback de usuarios-activos:', fallbackError);
                         }
 
                         // Fallback final: sin datos si todo falla
@@ -675,9 +656,9 @@ const AdminReportsPage: React.FC = () => {
                                 ...data,
                                 fecha_generacion: getArgentinaDateISO()
                             };
-                        } catch (err1) {
+                        } catch (_error_) {
                             console.log('⚠️ adminAPI falló, intentando endpoint directo...');
-                            
+                            console.debug('Error en estrategia 1 de proveedores:', _error_);
                             // Estrategia 2: fetch directo al endpoint
                             try {
                                 const response = await fetch(buildApiUrl('/admin/reports/proveedores-verificados'), {
@@ -691,9 +672,9 @@ const AdminReportsPage: React.FC = () => {
                                     ...data,
                                     fecha_generacion: getArgentinaDateISO()
                                 };
-                            } catch (err2) {
+                            } catch (error) {
                                 console.log('⚠️ Fetch directo falló, generando reporte básico...');
-                                
+                                console.debug('Error en estrategia 2 de proveedores:', error);
                                 // Estrategia 3: generar reporte básico con datos disponibles
                                 try {
                                     // Intentar obtener datos básicos de usuarios/proveedores
@@ -724,8 +705,9 @@ const AdminReportsPage: React.FC = () => {
                                             generado_desde: 'users_fallback'
                                         };
                                     }
-                                } catch (err3) {
+                                } catch (error) {
                                     console.log('⚠️ Todas las estrategias fallaron');
+                                    console.debug('Error en estrategia 3 de proveedores:', error);
                                 }
                                 
                                 // Estrategia 4: sin datos si todo falla
@@ -819,9 +801,9 @@ const AdminReportsPage: React.FC = () => {
                                 categorias: categorias,
                                 generado_desde: 'categories_api_primary'
                             };
-                        } catch (err1) {
+                        } catch (_error_) {
                             console.log('⚠️ categoriesAPI falló, intentando fetch directo...');
-                            
+                            console.debug('Error en estrategia 1 de categorías:', _error_);
                             // Estrategia 2: fetch directo
                             try {
                                 const url = `${buildApiUrl(API_CONFIG.CATEGORIES.LIST)}`;
@@ -840,9 +822,9 @@ const AdminReportsPage: React.FC = () => {
                                     categorias: categorias,
                                     generado_desde: 'categories_fetch_fallback'
                                 };
-                            } catch (err2) {
+                            } catch (error) {
                                 console.log('⚠️ Fetch directo falló, intentando con active_only=false...');
-                                
+                                console.debug('Error en estrategia 2 de categorías:', error);
                                 // Estrategia 3: categoriesAPI sin filtro
                                 try {
                                     const categorias = await categoriesAPI.getCategories(user.accessToken, false);
@@ -853,8 +835,8 @@ const AdminReportsPage: React.FC = () => {
                                         categorias: categorias,
                                         generado_desde: 'categories_api_no_filter'
                                     };
-                                } catch (err3) {
-                                    console.error('❌ Todas las estrategias fallaron:', err3);
+                                } catch (error) {
+                                    console.error('❌ Todas las estrategias fallaron:', error);
                                     return {
                                         fecha_generacion: getArgentinaDateISO(),
                                         total_categorias: 0,
@@ -890,6 +872,7 @@ const AdminReportsPage: React.FC = () => {
                             };
                         } catch (err) {
                             console.log('⚠️ No se pudieron obtener servicios del endpoint público');
+                            console.debug('Error en estrategia 1 de servicios:', err);
                         }
 
                         // Fallback: sin datos
@@ -932,6 +915,7 @@ const AdminReportsPage: React.FC = () => {
                         };
                     }).catch(error => {
                         console.log('⚠️ Reporte de solicitudes de categorías falló, usando fallback...');
+                        console.debug('Error en estrategia 1 de categorías:', error);
                         return {
                             fecha_generacion: getArgentinaDateISO(),
                             total_solicitudes_categorias: 0,
@@ -1060,39 +1044,7 @@ const AdminReportsPage: React.FC = () => {
             setReportes(prev => ({ ...prev, [reportType]: data as ReporteData }));
             setLoadedReports(prev => new Set(prev).add(reportType));
         } catch (err: any) {
-            console.error(`❌ Error cargando reporte ${reportType}:`, err);
-
-            // Manejo especial para el reporte de usuarios que tiene fallback
-            if (reportType === 'usuarios-activos' && err?.message?.includes('Timeout')) {
-                console.log('⏳ Timeout en reporte usuarios-activos, intentando fallback automático...');
-                // No mostrar error inmediatamente, el fallback se ejecutará
-                return;
-            }
-            
-            // Si es un error de "no hay datos", establecer contador en 0 sin mostrar error
-            if (err?.status === 404 || err?.detail?.includes('No se encontraron') || err?.detail?.includes('No hay')) {
-                console.log(`📊 Estableciendo reporte vacío para ${reportType} (no hay datos)`);
-                const emptyReport: ReporteData = {
-                    fecha_generacion: getArgentinaDateISO(),
-                    total_usuarios: 0,
-                    total_proveedores: 0,
-                    total_solicitudes: 0,
-                    total_categorias: 0,
-                    total_servicios: 0,
-                    total_solicitudes_servicios: 0,
-                    total_solicitudes_categorias: 0,
-                    pendientes: 0,
-                    aprobadas: 0,
-                    rechazadas: 0
-                };
-                setReportes(prev => ({ ...prev, [reportType]: emptyReport }));
-                setLoadedReports(prev => new Set(prev).add(reportType));
-            } else {
-                // Para errores reales (500, timeout, etc.), solo registrar en consola
-                console.error(`Error en reporte ${reportType}:`, err);
-                // No mostrar error al usuario para mejor UX
-                // NO agregar a loadedReports para permitir reintento
-            }
+            handleLoadReporteError(err, reportType);
         } finally {
             setLoading(prev => ({ ...prev, [reportType]: false }));
         }
@@ -1244,7 +1196,7 @@ const AdminReportsPage: React.FC = () => {
                         <thead>
                             <tr>
                                 ${Object.keys(data[0]).map(key => {
-                                    let headerName = key.replace(/_/g, ' ').toUpperCase();
+                                    let headerName = key.replaceAll('_', ' ').toUpperCase();
                                     // Personalizar nombres específicos
                                     if (key === 'created_at') headerName = 'FECHA CREACION';
                                     if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
@@ -1273,9 +1225,72 @@ const AdminReportsPage: React.FC = () => {
 
         const newWindow = window.open('', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
         if (newWindow) {
-            newWindow.document.write(htmlContent);
-            newWindow.document.close();
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            newWindow.location.href = url;
         }
+    };
+
+    // Función helper para generar una key única para items de reporte
+    const getItemKey = (item: any, index: number): string => {
+        // Intentar usar identificadores comunes
+        if (item.id_reserva) return `reserva-${item.id_reserva}`;
+        if (item.id_solicitud) return `solicitud-${item.id_solicitud}`;
+        if (item.id) return `item-${item.id}`;
+        if (item.id_servicio) return `servicio-${item.id_servicio}`;
+        if (item.id_categoria) return `categoria-${item.id_categoria}`;
+        if (item.id_usuario) return `usuario-${item.id_usuario}`;
+        
+        // Si no hay ID, usar una combinación de propiedades únicas
+        if (item.email && item.nombre) return `${item.email}-${item.nombre}`;
+        if (item.nombre_empresa && item.nombre_contacto) return `${item.nombre_empresa}-${item.nombre_contacto}`;
+        if (item.nombre && item.fecha) return `${item.nombre}-${item.fecha}`;
+        
+        // Fallback: usar una combinación del contenido del item
+        const itemString = JSON.stringify(item);
+        return `item-${index}-${itemString.substring(0, 50)}`;
+    };
+
+    // Función helper para obtener el texto del botón de ver reporte
+    const getViewButtonText = (reportId: string, isLoading: boolean, isLoaded: boolean): string => {
+        if (isLoading) {
+            return 'Cargando...';
+        }
+        if (isLoaded) {
+            return 'Ver Reporte';
+        }
+        return 'Cargar y Ver';
+    };
+
+    // Función helper para obtener el nombre del encabezado personalizado
+    const getHeaderName = (key: string): string => {
+        const headerMap: {[key: string]: string} = {
+            'created_at': 'FECHA CREACION',
+            'updated_at': 'FECHA ACTUALIZACION',
+            'active': 'ESTADO',
+            'activo': 'ESTADO',
+            'id_reserva': 'ID RESERVA',
+            'fecha_reserva': 'FECHA DE RESERVA',
+            'estado': 'ESTADO',
+            'cliente_nombre': 'CLIENTE',
+            'servicio_nombre': 'SERVICIO',
+            'empresa_razon_social': 'PROVEEDOR',
+            'fecha_servicio': 'FECHA DEL SERVICIO',
+            'hora_servicio': 'HORA DEL SERVICIO',
+            'precio': 'PRECIO',
+            'fecha': 'FECHA',
+            'servicio': 'SERVICIO',
+            'proveedor_empresa': 'PROVEEDOR (EMPRESA)',
+            'proveedor_persona': 'PROVEEDOR (PERSONA)',
+            'cliente': 'CLIENTE',
+            'puntaje': 'PUNTAJE (1-5)',
+            'nps': 'NPS (1-10)',
+            'comentario': 'COMENTARIO',
+            'cliente_persona': 'CLIENTE (PERSONA)',
+            'cliente_empresa': 'CLIENTE (EMPRESA)'
+        };
+
+        return headerMap[key] || key.replaceAll('_', ' ').toUpperCase();
     };
 
     const generatePDF = (reportType: string) => {
@@ -1341,51 +1356,21 @@ const AdminReportsPage: React.FC = () => {
                 htmlContent += '<table class="table"><thead><tr>';
                 
                 // Headers con nombres personalizados
-                Object.keys(data[0]).forEach(key => {
-                    let headerName = key.replace(/_/g, ' ').toUpperCase();
-                    // Personalizar nombres específicos
-                    if (key === 'created_at') headerName = 'FECHA CREACION';
-                    if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
-                    if (key === 'active' || key === 'activo') headerName = 'ESTADO';
-                    
-                    // Personalizar nombres para reporte de reservas
-                    if (key === 'id_reserva') headerName = 'ID RESERVA';
-                    if (key === 'fecha_reserva') headerName = 'FECHA DE RESERVA';
-                    if (key === 'estado') headerName = 'ESTADO';
-                    if (key === 'cliente_nombre') headerName = 'CLIENTE';
-                    if (key === 'servicio_nombre') headerName = 'SERVICIO';
-                    if (key === 'empresa_razon_social') headerName = 'PROVEEDOR';
-                    if (key === 'fecha_servicio') headerName = 'FECHA DEL SERVICIO';
-                    if (key === 'hora_servicio') headerName = 'HORA DEL SERVICIO';
-                    if (key === 'precio') headerName = 'PRECIO';
-                    
-                    // Personalizar nombres para reporte de calificaciones (clientes)
-                    if (key === 'fecha') headerName = 'FECHA';
-                    if (key === 'servicio') headerName = 'SERVICIO';
-                    if (key === 'proveedor_empresa') headerName = 'PROVEEDOR (EMPRESA)';
-                    if (key === 'proveedor_persona') headerName = 'PROVEEDOR (PERSONA)';
-                    if (key === 'cliente') headerName = 'CLIENTE';
-                    if (key === 'puntaje') headerName = 'PUNTAJE (1-5)';
-                    if (key === 'nps') headerName = 'NPS (1-10)';
-                    if (key === 'comentario') headerName = 'COMENTARIO';
-                    
-                    // Personalizar nombres para reporte de calificaciones (proveedores)
-                    if (key === 'cliente_persona') headerName = 'CLIENTE (PERSONA)';
-                    if (key === 'cliente_empresa') headerName = 'CLIENTE (EMPRESA)';
-                    
+                for (const key of Object.keys(data[0])) {
+                    const headerName = getHeaderName(key);
                     htmlContent += `<th>${headerName}</th>`;
-                });
+                }
                 
                 htmlContent += '</tr></thead><tbody>';
                 
                 // Data rows
-                data.forEach(item => {
+                for (const item of data) {
                     htmlContent += '<tr>';
-                    Object.entries(item).forEach(([key, value]) => {
+                    for (const [key, value] of Object.entries(item)) {
                         htmlContent += `<td>${formatValue(value, key)}</td>`;
-                    });
+                    }
                     htmlContent += '</tr>';
-                });
+                }
                 
                 htmlContent += '</tbody></table>';
             }
@@ -1402,9 +1387,12 @@ const AdminReportsPage: React.FC = () => {
         // Crear y descargar PDF
         const printWindow = window.open('', '_blank');
         if (printWindow) {
-            printWindow.document.write(htmlContent);
-            printWindow.document.close();
-            printWindow.print();
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            printWindow.location.href = url;
+            printWindow.onload = () => {
+                printWindow.print();
+            };
         }
     };
 
@@ -1429,37 +1417,7 @@ const AdminReportsPage: React.FC = () => {
                     <thead className="bg-gray-50">
                         <tr>
                             {Object.keys(data[0]).map((key) => {
-                                let headerName = key.replace(/_/g, ' ');
-                                // Personalizar nombres específicos
-                                if (key === 'created_at') headerName = 'FECHA CREACION';
-                                if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
-                                if (key === 'active' || key === 'activo') headerName = 'ESTADO';
-                                
-                                // Personalizar nombres para reporte de reservas
-                                if (key === 'id_reserva') headerName = 'ID RESERVA';
-                                if (key === 'fecha_reserva') headerName = 'FECHA DE RESERVA';
-                                if (key === 'estado') headerName = 'ESTADO';
-                                if (key === 'cliente_nombre') headerName = 'CLIENTE';
-                                if (key === 'servicio_nombre') headerName = 'SERVICIO';
-                                if (key === 'empresa_razon_social') headerName = 'PROVEEDOR';
-                                if (key === 'fecha_servicio') headerName = 'FECHA DEL SERVICIO';
-                                if (key === 'hora_servicio') headerName = 'HORA DEL SERVICIO';
-                                if (key === 'precio') headerName = 'PRECIO';
-                                
-                                // Personalizar nombres para reporte de calificaciones (clientes)
-                                if (key === 'fecha') headerName = 'FECHA';
-                                if (key === 'servicio') headerName = 'SERVICIO';
-                                if (key === 'proveedor_empresa') headerName = 'PROVEEDOR (EMPRESA)';
-                                if (key === 'proveedor_persona') headerName = 'PROVEEDOR (PERSONA)';
-                                if (key === 'cliente') headerName = 'CLIENTE';
-                                if (key === 'puntaje') headerName = 'PUNTAJE (1-5)';
-                                if (key === 'nps') headerName = 'NPS (1-10)';
-                                if (key === 'comentario') headerName = 'COMENTARIO';
-                                
-                                // Personalizar nombres para reporte de calificaciones (proveedores)
-                                if (key === 'cliente_persona') headerName = 'CLIENTE (PERSONA)';
-                                if (key === 'cliente_empresa') headerName = 'CLIENTE (EMPRESA)';
-                                
+                                const headerName = getHeaderName(key);
                                 return (
                                 <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         {headerName}
@@ -1470,9 +1428,9 @@ const AdminReportsPage: React.FC = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {data.slice(0, 10).map((item, index) => (
-                            <tr key={index}>
-                                {Object.entries(item).map(([key, value], valueIndex) => (
-                                    <td key={valueIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <tr key={getItemKey(item, index)}>
+                                {Object.entries(item).map(([key, value]) => (
+                                    <td key={key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                         {formatValue(value, key)}
                                     </td>
                                 ))}
@@ -1544,25 +1502,24 @@ const AdminReportsPage: React.FC = () => {
                             <div className="flex space-x-2">
                                 <button
                                     onClick={() => {
-                                        if (!reportes[report.id]) {
-                                            loadReportOnDemand(report.id);
-                                        } else {
+                                        if (reportes[report.id]) {
                                             viewAllData(report.id);
+                                        } else {
+                                            loadReportOnDemand(report.id);
                                         }
                                     }}
                                     disabled={loading[report.id]}
                                     className="flex-1 flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
                                 >
                                     <EyeIcon className="w-4 h-4 mr-2" />
-                                    {loading[report.id] ? 'Cargando...' : 
-                                     loadedReports.has(report.id) ? 'Ver Reporte' : 'Cargar y Ver'}
+                                    {getViewButtonText(report.id, loading[report.id], loadedReports.has(report.id))}
                                 </button>
                                 
                                 {/* Botón de reintento eliminado para mejor UX */}
                                 
                                 <button
                                     onClick={() => generatePDF(report.id)}
-                                    disabled={!reportes[report.id]}
+                                    disabled={reportes[report.id] === undefined || reportes[report.id] === null}
                                     className="flex-1 flex items-center justify-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <DocumentArrowDownIcon className="w-4 h-4 mr-2" />

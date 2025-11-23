@@ -6,8 +6,6 @@ from app.core.config import SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_RO
 from supabase.lib.client_options import ClientOptions
 
 
-#options = ClientOptions(use_ssl=False)
-
 # Cliente para uso publico/autenticacion de usuarios (con la anon key)
 # Solo inicializar si las variables de entorno están configuradas
 if SUPABASE_URL and SUPABASE_ANON_KEY:

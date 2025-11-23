@@ -1,9 +1,7 @@
-import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { CheckCircleIcon, ClockIcon, PencilIcon, XMarkIcon } from '../icons';
 import OptimizedLoading from '../ui/OptimizedLoading';
 import { categoryRequestsAPI } from '../../services/api';
-import { AuthContext } from '../../contexts/AuthContext';
-// import { CategoryRequest } from '../../types'; // TODO: Definir este tipo
 import { API_CONFIG, buildApiUrl } from '../../config/api';
 
 // Función helper para ajustar fecha a zona horaria de Argentina (UTC-3)
@@ -54,6 +52,43 @@ const datesEqual = (date1: Date, date2: Date): boolean => {
     return d1.getTime() === d2.getTime();
 };
 
+// Función auxiliar para verificar si una fecha cumple con el filtro
+const matchesDateFilter = (requestDate: Date, dateFilter: string, customDate?: string): boolean => {
+    if (dateFilter === 'all') {
+        return true;
+    }
+
+    const now = new Date();
+
+    switch (dateFilter) {
+        case 'today':
+            return requestDate.toDateString() === now.toDateString();
+        case 'week':
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            return requestDate >= weekAgo;
+        case 'month':
+            return requestDate.getMonth() === now.getMonth() && requestDate.getFullYear() === now.getFullYear();
+        case 'year':
+            return requestDate.getFullYear() === now.getFullYear();
+        case 'custom':
+            if (customDate) {
+                const selectedDate = parseDateString(customDate);
+                return datesEqual(requestDate, selectedDate);
+            }
+            return true;
+        default:
+            return true;
+    }
+};
+
+// Función auxiliar para verificar si el estado cumple con el filtro
+const matchesStatusFilter = (estadoAprobacion: string, statusFilter: string): boolean => {
+    if (statusFilter === 'all') {
+        return true;
+    }
+    return estadoAprobacion === statusFilter;
+};
+
 // Función de filtrado de solicitudes optimizada con memoización
 const filterRequests = (requests: CategoryRequest[], filters: any) => {
     // Si no hay filtros activos, retornar todas las solicitudes
@@ -62,47 +97,26 @@ const filterRequests = (requests: CategoryRequest[], filters: any) => {
     }
 
     return requests.filter(request => {
-        // Filtro por fecha
-        if (filters.dateFilter !== 'all') {
-            const now = new Date();
-            const requestDate = new Date(request.created_at);
-
-            switch (filters.dateFilter) {
-                case 'today':
-                    if (requestDate.toDateString() !== now.toDateString()) return false;
-                    break;
-                case 'week':
-                    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                    if (requestDate < weekAgo) return false;
-                    break;
-                case 'month':
-                    if (requestDate.getMonth() !== now.getMonth() || requestDate.getFullYear() !== now.getFullYear()) return false;
-                    break;
-                case 'year':
-                    if (requestDate.getFullYear() !== now.getFullYear()) return false;
-                    break;
-                case 'custom':
-                    if (filters.customDate) {
-                        const selectedDate = parseDateString(filters.customDate);
-                        if (!datesEqual(requestDate, selectedDate)) {
-                            return false;
-                        }
-                    }
-                    break;
-            }
-        }
-
-        // Filtro por estado
-        if (filters.statusFilter !== 'all' && request.estado_aprobacion !== filters.statusFilter) {
-            return false;
-        }
-
-        return true;
+        const requestDate = new Date(request.created_at);
+        const matchesDate = matchesDateFilter(requestDate, filters.dateFilter, filters.customDate);
+        const matchesStatus = matchesStatusFilter(request.estado_aprobacion, filters.statusFilter);
+        
+        return matchesDate && matchesStatus;
     });
 };
 
+// Función auxiliar para obtener las clases CSS según el estado de aprobación
+const getEstadoAprobacionClasses = (estadoAprobacion: string): string => {
+    if (estadoAprobacion === 'pendiente') {
+        return 'bg-yellow-100 text-yellow-800';
+    }
+    if (estadoAprobacion === 'aprobada') {
+        return 'bg-green-100 text-green-800';
+    }
+    return 'bg-red-100 text-red-800';
+};
+
 const AdminCategoryRequestsPage: React.FC = () => {
-    const { user } = useContext(AuthContext);
     const [requests, setRequests] = useState<CategoryRequest[]>([]);
     const [filteredRequests, setFilteredRequests] = useState<CategoryRequest[]>([]);
     const [loading, setLoading] = useState(true);
@@ -185,68 +199,173 @@ const AdminCategoryRequestsPage: React.FC = () => {
         }
     }, []);
 
+    // Funciones auxiliares para búsqueda de emails
+    const getEmailByUserId = (user_id: string | undefined, emailsDict: {[key: string]: any}): string | null => {
+        if (!user_id || !emailsDict[user_id]) {
+            return null;
+        }
+        const userData = emailsDict[user_id];
+        return typeof userData === 'string' ? userData : userData.email;
+    };
+
+    const findEmailByNombreMatch = (nombreContacto: string, emailsDict: {[key: string]: any}): string | null => {
+        const emailMatch = Object.entries(emailsDict).find(([key, value]) => {
+            const email = typeof value === 'string' ? value : value.email;
+            if (!email) return false;
+            
+            const emailLower = email.toLowerCase();
+            const nombreLower = nombreContacto.toLowerCase();
+            
+            const nombres = nombreLower.split(' ').filter(n => n.length > 2);
+            if (nombres.length >= 2) {
+                const emailLocal = emailLower.split('@')[0];
+                const coincidencias = nombres.filter(nombre => 
+                    emailLocal.includes(nombre) || nombre.includes(emailLocal)
+                );
+                return coincidencias.length >= 2;
+            }
+            
+            return false;
+        });
+        
+        if (emailMatch) {
+            const [, userData] = emailMatch;
+            return typeof userData === 'string' ? userData : userData.email;
+        }
+        return null;
+    };
+
+    const getEmailByNombreContacto = (nombreContacto: string, emailsDict: {[key: string]: any}): string | null => {
+        const userEmail = emailsDict[nombreContacto];
+        if (!userEmail) {
+            return null;
+        }
+        return typeof userEmail === 'string' ? userEmail : userEmail.email;
+    };
+
+    const findEmailForRequest = (request: CategoryRequest, emailsDict: {[key: string]: any}): string => {
+        const defaultEmail = 'No especificado';
+        
+        if (!request.nombre_contacto || request.nombre_contacto === 'No especificado') {
+            return defaultEmail;
+        }
+
+        // Método 1: Buscar por ID de usuario (más confiable)
+        const emailByUserId = getEmailByUserId(request.user_id, emailsDict);
+        if (emailByUserId) {
+            return emailByUserId;
+        }
+
+        // Método 2: Búsqueda más precisa por nombre en emails
+        if (request.id_perfil) {
+            const emailByMatch = findEmailByNombreMatch(request.nombre_contacto, emailsDict);
+            if (emailByMatch) {
+                return emailByMatch;
+            }
+        }
+
+        // Método 3: Búsqueda por nombre de contacto (fallback)
+        const emailByNombre = getEmailByNombreContacto(request.nombre_contacto, emailsDict);
+        if (emailByNombre) {
+            return emailByNombre;
+        }
+
+        return defaultEmail;
+    };
+
+    // Estrategia 1: Intentar endpoint específico de emails-only
+    const tryLoadEmailsFromEmailsOnlyEndpoint = async (
+        requestsData: CategoryRequest[], 
+        accessToken: string
+    ): Promise<{[key: string]: any}> => {
+        try {
+            const hasUserId = requestsData.some(request => request.user_id);
+            let endpointUrl = buildApiUrl(API_CONFIG.ADMIN.USERS + '/emails-only');
+            
+            if (hasUserId) {
+                const firstUserId = requestsData.find(request => request.user_id)?.user_id;
+                if (firstUserId) {
+                    endpointUrl += `?user_id=${firstUserId}`;
+                }
+            }
+            
+            const emailsResponse = await fetch(endpointUrl, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (emailsResponse.ok) {
+                const emailsData = await emailsResponse.json();
+                return emailsData.emails || {};
+            }
+        } catch (error) {
+            if (process.env.NODE_ENV === 'development') {
+                console.debug('Estrategia 1 (emails-only) falló, intentando estrategia 2:', error);
+            }
+        }
+        return {};
+    };
+
+    // Estrategia 2: Usar endpoint de usuarios con emails
+    const tryLoadEmailsFromUsersEndpoint = async (accessToken: string): Promise<{[key: string]: any}> => {
+        try {
+            const usersResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.USERS + '?page=1&limit=100'), {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (usersResponse.ok) {
+                const usersData = await usersResponse.json();
+                const users = usersData.usuarios || [];
+                
+                const emailsDict: {[key: string]: any} = {};
+                for (const user of users) {
+                    if (user.nombre_contacto && user.email) {
+                        emailsDict[user.nombre_contacto] = user.email;
+                    }
+                }
+                return emailsDict;
+            }
+        } catch (error) {
+            if (process.env.NODE_ENV === 'development') {
+                console.debug('Estrategia 2 (usuarios con emails) falló, usando datos existentes:', error);
+            }
+        }
+        return {};
+    };
+
+    // Procesar solicitudes con emails reales
+    const processRequestsWithEmails = (
+        requestsData: CategoryRequest[], 
+        emailsDict: {[key: string]: any}
+    ): CategoryRequest[] => {
+        return requestsData.map(request => {
+            const emailContacto = findEmailForRequest(request, emailsDict);
+            
+            return {
+                ...request,
+                email_contacto: emailContacto,
+                nombre_empresa: request.nombre_empresa || '',
+                nombre_contacto: request.nombre_contacto || ''
+            };
+        });
+    };
+
     // Función optimizada para cargar emails reales con múltiples estrategias
     const loadEmailsInBackground = useCallback(async (requestsData: CategoryRequest[], accessToken: string) => {
         try {
             setLoadingEmails(true);
             
-            let emailsDict: {[key: string]: any} = {};
-            
             // ESTRATEGIA 1: Intentar endpoint específico de emails-only
-            try {
-                
-                
-                // Si tenemos user_id, usarlo para obtener email específico
-                const hasUserId = requestsData.some(request => request.user_id);
-                let endpointUrl = buildApiUrl(API_CONFIG.ADMIN.USERS + '/emails-only');
-                
-                if (hasUserId) {
-                    // Usar el primer user_id disponible para obtener email específico
-                    const firstUserId = requestsData.find(request => request.user_id)?.user_id;
-                    if (firstUserId) {
-                        endpointUrl += `?user_id=${firstUserId}`;
-                    }
-                }
-                
-                const emailsResponse = await fetch(endpointUrl, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (emailsResponse.ok) {
-                    const emailsData = await emailsResponse.json();
-                    emailsDict = emailsData.emails || {};
-                }
-            } catch (error) {
-                // Error silencioso
-            }
+            let emailsDict = await tryLoadEmailsFromEmailsOnlyEndpoint(requestsData, accessToken);
             
             // ESTRATEGIA 2: Si la primera falla, usar endpoint de usuarios con emails
             if (Object.keys(emailsDict).length === 0) {
-                try {
-                    const usersResponse = await fetch(buildApiUrl(API_CONFIG.ADMIN.USERS + '?page=1&limit=100'), {
-                        headers: {
-                            'Authorization': `Bearer ${accessToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    
-                    if (usersResponse.ok) {
-                        const usersData = await usersResponse.json();
-                        const users = usersData.usuarios || [];
-                        
-                        // Crear diccionario de emails por nombre
-                        users.forEach((user: any) => {
-                            if (user.nombre_contacto && user.email) {
-                                emailsDict[user.nombre_contacto] = user.email;
-                            }
-                        });
-                    }
-                } catch (error) {
-                    // Error silencioso
-                }
+                emailsDict = await tryLoadEmailsFromUsersEndpoint(accessToken);
             }
             
             // ESTRATEGIA 3: Si ambas fallan, usar datos existentes y mostrar mensaje
@@ -256,67 +375,7 @@ const AdminCategoryRequestsPage: React.FC = () => {
             }
             
             // Procesar solicitudes con emails reales
-            const requestsWithEmails = requestsData.map(request => {
-                let emailContacto = 'No especificado';
-                
-                // ESTRATEGIA MEJORADA: Buscar email por múltiples métodos
-                if (request.nombre_contacto && request.nombre_contacto !== 'No especificado') {
-                    
-                    // Método 1: Buscar por ID de usuario (más confiable)
-                    if (request.user_id && emailsDict[request.user_id]) {
-                        const userData = emailsDict[request.user_id];
-                        emailContacto = typeof userData === 'string' ? userData : userData.email;
-                    } else if (request.id_perfil) {
-                        // Método 1.5: Buscar por id_perfil (sin mapeo directo)
-                        
-                        // Si aún no tenemos email, continuar con otros métodos
-                        if (!emailContacto) {
-                            // Método 2: Búsqueda más precisa por nombre en emails
-                            const emailMatch = Object.entries(emailsDict).find(([key, value]) => {
-                                const email = typeof value === 'string' ? value : value.email;
-                                if (!email) return false;
-                                
-                                // Buscar coincidencias más precisas en el email
-                                const emailLower = email.toLowerCase();
-                                const nombreLower = request.nombre_contacto.toLowerCase();
-                                
-                                // Coincidencia más estricta: el email debe contener ambos nombres
-                                const nombres = nombreLower.split(' ').filter(n => n.length > 2); // Filtrar nombres cortos
-                                if (nombres.length >= 2) {
-                                    const emailLocal = emailLower.split('@')[0];
-                                    // El email debe contener al menos 2 de los nombres principales
-                                    const coincidencias = nombres.filter(nombre => 
-                                        emailLocal.includes(nombre) || nombre.includes(emailLocal)
-                                    );
-                                    return coincidencias.length >= 2;
-                                }
-                                
-                                return false; // No hacer coincidencias vagas
-                            });
-                            
-                            if (emailMatch) {
-                                const [, userData] = emailMatch;
-                                emailContacto = typeof userData === 'string' ? userData : userData.email;
-                            } else {
-                                // Método 3: Búsqueda por nombre de contacto (fallback)
-                                if (emailContacto === 'No especificado') {
-                                    const userEmail = emailsDict[request.nombre_contacto];
-                                    if (userEmail) {
-                                        emailContacto = typeof userEmail === 'string' ? userEmail : userEmail.email;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                return {
-                    ...request,
-                    email_contacto: emailContacto,
-                    nombre_empresa: request.nombre_empresa || '',
-                    nombre_contacto: request.nombre_contacto || ''
-                };
-            });
+            const requestsWithEmails = processRequestsWithEmails(requestsData, emailsDict);
             
             // Actualizar con emails reales
             setRequests(requestsWithEmails);
@@ -333,7 +392,7 @@ const AdminCategoryRequestsPage: React.FC = () => {
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) return;
 
-            // TODO: Implementar updateCategoryRequest en la API
+            //Implementar updateCategoryRequest en la API
             console.log('Actualizando solicitud de categoría:', requestId, formData);
             
             // Actualizar estado local sin recargar
@@ -347,19 +406,11 @@ const AdminCategoryRequestsPage: React.FC = () => {
             setSuccess('Solicitud actualizada exitosamente');
             setTimeout(() => setSuccess(null), 3000);
         } catch (error) {
+            console.error('Error al actualizar la solicitud:', error);
             setError('Error al actualizar la solicitud');
+            setTimeout(() => setError(null), 3000);
         }
     }, []);
-
-    // Calcular estadísticas memoizadas
-    const statistics = useMemo(() => {
-        const total = filteredRequests.length;
-        const pending = filteredRequests.filter(r => r.estado_aprobacion === 'pendiente').length;
-        const approved = filteredRequests.filter(r => r.estado_aprobacion === 'aprobada').length;
-        const rejected = filteredRequests.filter(r => r.estado_aprobacion === 'rechazada').length;
-        
-        return { total, pending, approved, rejected };
-    }, [filteredRequests]);
 
     // Funciones de acción optimizadas
     const handleApprove = useCallback(async (requestId: number) => {
@@ -379,7 +430,9 @@ const AdminCategoryRequestsPage: React.FC = () => {
             setSuccess('Solicitud aprobada exitosamente');
             setTimeout(() => setSuccess(null), 3000);
         } catch (error) {
+            console.error('Error al aprobar la solicitud:', error);
             setError('Error al aprobar la solicitud');
+            setTimeout(() => setError(null), 3000);
         }
     }, []);
 
@@ -402,7 +455,9 @@ const AdminCategoryRequestsPage: React.FC = () => {
             setSuccess('Solicitud rechazada exitosamente');
             setTimeout(() => setSuccess(null), 3000);
         } catch (error) {
+            console.error('Error al rechazar la solicitud:', error);
             setError('Error al rechazar la solicitud');
+            setTimeout(() => setError(null), 3000);
         }
     }, []);
 
@@ -540,11 +595,7 @@ const AdminCategoryRequestsPage: React.FC = () => {
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-3 mb-2">
                                                     <h3 className="text-lg font-medium text-gray-900 break-words">{request.nombre_categoria}</h3>
-                                                    <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
-                                                        request.estado_aprobacion === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                                                        request.estado_aprobacion === 'aprobada' ? 'bg-green-100 text-green-800' :
-                                                        'bg-red-100 text-red-800'
-                                                    }`}>
+                                                    <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${getEstadoAprobacionClasses(request.estado_aprobacion)}`}>
                                                         {request.estado_aprobacion}
                                                     </span>
                                                 </div>

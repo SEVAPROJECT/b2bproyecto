@@ -22,6 +22,30 @@ from app.api.v1.dependencies.auth_user import get_current_user
 
 router = APIRouter(prefix="/category-requests", tags=["Solicitudes de Categorías"])
 
+# Constantes para estados de aprobación
+ESTADO_PENDIENTE = "pendiente"
+ESTADO_APROBADA = "aprobada"
+ESTADO_RECHAZADA = "rechazada"
+
+# Constantes para valores por defecto
+VALOR_DEFAULT_NO_ESPECIFICADO = "No especificado"
+VALOR_DEFAULT_ESTADO_APROBACION = "pendiente"
+
+# Constantes para mensajes de error
+MSG_PERFIL_EMPRESA_NO_ENCONTRADO = "Perfil de empresa no encontrado"
+MSG_CATEGORIA_YA_EXISTE = "Ya existe una categoría con ese nombre"
+MSG_SOLICITUD_PENDIENTE_YA_EXISTE = "Ya existe una solicitud pendiente para esta categoría"
+MSG_SOLICITUD_NO_ENCONTRADA = "Solicitud no encontrada"
+MSG_SOLICITUD_YA_PROCESADA = "La solicitud ya ha sido procesada"
+MSG_ERROR_CREAR_SOLICITUD = "Error al crear la solicitud: {error}"
+MSG_ERROR_OBTENER_SOLICITUDES = "Error al obtener las solicitudes: {error}"
+MSG_ERROR_APROBAR_SOLICITUD = "Error al aprobar la solicitud: {error}"
+MSG_ERROR_RECHAZAR_SOLICITUD = "Error al rechazar la solicitud: {error}"
+
+# Constantes para mensajes de éxito
+MSG_SOLICITUD_APROBADA = "Solicitud aprobada y categoría creada exitosamente"
+MSG_SOLICITUD_RECHAZADA = "Solicitud rechazada exitosamente"
+
 # Función helper para enriquecer respuesta de solicitud de categoría creada
 async def enrich_category_request_response(request: SolicitudCategoria, db: AsyncSession) -> dict:
     """
@@ -52,11 +76,11 @@ async def enrich_category_request_response(request: SolicitudCategoria, db: Asyn
             "id_perfil": enriched_row.id_perfil,
             "nombre_categoria": enriched_row.nombre_categoria,
             "descripcion": enriched_row.descripcion,
-            "estado_aprobacion": enriched_row.estado_aprobacion or "pendiente",
+            "estado_aprobacion": enriched_row.estado_aprobacion or VALOR_DEFAULT_ESTADO_APROBACION,
             "comentario_admin": enriched_row.comentario_admin,
             "created_at": enriched_row.created_at.isoformat() if enriched_row.created_at else None,
-            "nombre_empresa": enriched_row.nombre_empresa or "No especificado",
-            "nombre_contacto": enriched_row.nombre_contacto or "No especificado",
+            "nombre_empresa": enriched_row.nombre_empresa or VALOR_DEFAULT_NO_ESPECIFICADO,
+            "nombre_contacto": enriched_row.nombre_contacto or VALOR_DEFAULT_NO_ESPECIFICADO,
             "email_contacto": None  # Email no disponible en UserModel
         }
     else:
@@ -66,11 +90,11 @@ async def enrich_category_request_response(request: SolicitudCategoria, db: Asyn
             "id_perfil": request.id_perfil,
             "nombre_categoria": request.nombre_categoria,
             "descripcion": request.descripcion,
-            "estado_aprobacion": request.estado_aprobacion or "pendiente",
+            "estado_aprobacion": request.estado_aprobacion or VALOR_DEFAULT_ESTADO_APROBACION,
             "comentario_admin": request.comentario_admin,
             "created_at": request.created_at.isoformat() if request.created_at else None,
-            "nombre_empresa": "No especificado",
-            "nombre_contacto": "No especificado",
+            "nombre_empresa": VALOR_DEFAULT_NO_ESPECIFICADO,
+            "nombre_contacto": VALOR_DEFAULT_NO_ESPECIFICADO,
             "email_contacto": None
         }
 
@@ -97,7 +121,7 @@ async def create_category_request(
         if not perfil:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de empresa no encontrado"
+                detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
             )
 
         # Verificar que no existe una categoría con el mismo nombre
@@ -107,20 +131,20 @@ async def create_category_request(
         if categoria_existente.scalars().first():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Ya existe una categoría con ese nombre"
+                detail=MSG_CATEGORIA_YA_EXISTE
             )
 
         # Verificar que no existe una solicitud pendiente con el mismo nombre
         solicitud_existente = await db.execute(
             select(SolicitudCategoria).where(
                 SolicitudCategoria.nombre_categoria.ilike(request.nombre_categoria),
-                SolicitudCategoria.estado_aprobacion == 'pendiente'
+                SolicitudCategoria.estado_aprobacion == ESTADO_PENDIENTE
             )
         )
         if solicitud_existente.scalars().first():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Ya existe una solicitud pendiente para esta categoría"
+                detail=MSG_SOLICITUD_PENDIENTE_YA_EXISTE
             )
 
         # Crear la nueva solicitud
@@ -128,7 +152,7 @@ async def create_category_request(
             id_perfil=perfil.id_perfil,
             nombre_categoria=request.nombre_categoria,
             descripcion=request.descripcion,
-            estado_aprobacion='pendiente'
+            estado_aprobacion=ESTADO_PENDIENTE
         )
 
         db.add(nueva_solicitud)
@@ -148,7 +172,7 @@ async def create_category_request(
         print(f"❌ Error al crear solicitud de categoría: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al crear la solicitud: {str(e)}"
+            detail=MSG_ERROR_CREAR_SOLICITUD.format(error=str(e))
         )
 
 @router.get(
@@ -173,7 +197,7 @@ async def get_my_category_requests(
         if not perfil:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de empresa no encontrado"
+                detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
             )
 
         # Obtener las solicitudes del proveedor
@@ -200,7 +224,7 @@ async def get_my_category_requests(
         except Exception as db_error:
             # Manejar errores de PgBouncer
             if "DuplicatePreparedStatementError" in str(db_error):
-                print(f"🔄 Error de PgBouncer detectado, reintentando...")
+                print("🔄 Error de PgBouncer detectado, reintentando...")
                 await db.rollback()
                 # Reintentar la consulta
                 result = await db.execute(query)
@@ -232,7 +256,7 @@ async def get_my_category_requests(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al obtener las solicitudes: {str(e)}"
+            detail=MSG_ERROR_OBTENER_SOLICITUDES.format(error=str(e))
         )
 
 @router.get(
@@ -275,7 +299,7 @@ async def get_all_category_requests_for_admin(
         except Exception as db_error:
             # Manejar errores de PgBouncer
             if "DuplicatePreparedStatementError" in str(db_error):
-                print(f"🔄 Error de PgBouncer detectado, reintentando...")
+                print("🔄 Error de PgBouncer detectado, reintentando...")
                 await db.rollback()
                 # Reintentar la consulta
                 result = await db.execute(query)
@@ -305,7 +329,7 @@ async def get_all_category_requests_for_admin(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al obtener las solicitudes: {str(e)}"
+            detail=MSG_ERROR_OBTENER_SOLICITUDES.format(error=str(e))
         )
 
 @router.put(
@@ -332,13 +356,13 @@ async def approve_category_request(
             if not request:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Solicitud no encontrada"
+                    detail=MSG_SOLICITUD_NO_ENCONTRADA
                 )
 
-            if request.estado_aprobacion != 'pendiente':
+            if request.estado_aprobacion != ESTADO_PENDIENTE:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="La solicitud ya ha sido procesada"
+                    detail=MSG_SOLICITUD_YA_PROCESADA
                 )
 
             # Verificar que no existe una categoría con el mismo nombre
@@ -348,7 +372,7 @@ async def approve_category_request(
             if categoria_existente.scalars().first():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Ya existe una categoría con ese nombre"
+                    detail=MSG_CATEGORIA_YA_EXISTE
                 )
 
             # Crear la nueva categoría
@@ -361,11 +385,11 @@ async def approve_category_request(
             await db.flush()
 
             # Actualizar la solicitud
-            request.estado_aprobacion = 'aprobada'
+            request.estado_aprobacion = ESTADO_APROBADA
             request.comentario_admin = decision.comentario
 
             return {
-                "message": "Solicitud aprobada y categoría creada exitosamente",
+                "message": MSG_SOLICITUD_APROBADA,
                 "categoria_id": nueva_categoria.id_categoria,
                 "categoria_nombre": nueva_categoria.nombre
             }
@@ -376,7 +400,7 @@ async def approve_category_request(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al aprobar la solicitud: {str(e)}"
+            detail=MSG_ERROR_APROBAR_SOLICITUD.format(error=str(e))
         )
 
 @router.put(
@@ -402,22 +426,22 @@ async def reject_category_request(
         if not request:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Solicitud no encontrada"
+                detail=MSG_SOLICITUD_NO_ENCONTRADA
             )
 
-        if request.estado_aprobacion != 'pendiente':
+        if request.estado_aprobacion != ESTADO_PENDIENTE:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La solicitud ya ha sido procesada"
+                detail=MSG_SOLICITUD_YA_PROCESADA
             )
 
         # Actualizar la solicitud
-        request.estado_aprobacion = 'rechazada'
+        request.estado_aprobacion = ESTADO_RECHAZADA
         request.comentario_admin = decision.comentario
 
         await db.commit()
 
-        return {"message": "Solicitud rechazada exitosamente"}
+        return {"message": MSG_SOLICITUD_RECHAZADA}
 
     except HTTPException:
         raise
@@ -425,7 +449,7 @@ async def reject_category_request(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al rechazar la solicitud: {str(e)}"
+            detail=MSG_ERROR_RECHAZAR_SOLICITUD.format(error=str(e))
         )
 
 @router.get(

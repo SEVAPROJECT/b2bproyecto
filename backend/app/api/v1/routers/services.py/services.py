@@ -10,6 +10,9 @@ from b2bproyecto.backend.app.models.publicar_servicio.service import Servicio
 from b2bproyecto.backend.app.schemas.publicar_servicio.service import ServicioOut
 
 
+# Constantes para mensajes de error
+MSG_NO_SERVICIOS_ACTIVOS = "No se encontraron servicios activos."
+
 # Asegúrate de que los routers se importen en main.py
 router = APIRouter(prefix="/services", tags=["services"])
 
@@ -33,6 +36,6 @@ async def get_all_services_list(db: AsyncSession = Depends(get_async_db)):
     if not services:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No se encontraron servicios activos."
+            detail=MSG_NO_SERVICIOS_ACTIVOS
         )
     return list(services)

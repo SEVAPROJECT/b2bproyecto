@@ -1,7 +1,8 @@
 // Configuración centralizada de la API
 const getApiBaseUrl = (): string => {
     // Si estamos en Railway (producción), usar la URL del backend de Railway
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    const hostname = (globalThis as Window).location?.hostname || 'localhost';
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
         // En Railway, cada servicio tiene su propia URL
         // Usar variable de entorno o URL hardcodeada temporalmente
         const backendUrl = (import.meta as any).env?.VITE_BACKEND_HOST || 'https://backend-production-249d.up.railway.app';

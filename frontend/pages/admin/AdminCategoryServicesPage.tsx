@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BuildingStorefrontIcon, PlusIcon, XMarkIcon } from '../../components/icons';
+import { PlusIcon, XMarkIcon } from '../../components/icons';
 import OptimizedLoading from '../../components/ui/OptimizedLoading';
 import { BackendService, BackendCategory } from '../../types';
 import { servicesAPI, categoriesAPI } from '../../services/api';
 import { AuthContext } from '../../contexts/AuthContext';
-import { API_CONFIG, buildApiUrl } from '../../config/api';
+import { API_CONFIG } from '../../config/api';
 
 const AdminCategoryServicesPage: React.FC = () => {
     const { user } = useContext(AuthContext);
@@ -176,12 +176,12 @@ const AdminCategoryServicesPage: React.FC = () => {
             if (!accessToken || !categoryId) return;
 
             // Cargar servicios de la categoría
-            const servicesData = await servicesAPI.getServicesByCategory(parseInt(categoryId), accessToken);
+            const servicesData = await servicesAPI.getServicesByCategory(Number.parseInt(categoryId), accessToken);
             setServices(servicesData);
 
             // Cargar información de la categoría
             const categoriesData = await categoriesAPI.getCategories(accessToken);
-            const currentCategory = categoriesData.find(cat => cat.id_categoria === parseInt(categoryId));
+            const currentCategory = categoriesData.find(cat => cat.id_categoria === Number.parseInt(categoryId));
             setCategory(currentCategory || null);
 
         } catch (err: any) {
@@ -387,7 +387,7 @@ const AdminCategoryServicesPage: React.FC = () => {
                                         type="number"
                                         id="servicePrice"
                                         value={editingService.precio || 0}
-                                        onChange={(e) => setEditingService({...editingService, precio: parseFloat(e.target.value) || 0})}
+                                        onChange={(e) => setEditingService({...editingService, precio: Number.parseFloat(e.target.value) || 0})}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         placeholder="0"
                                         min="0"

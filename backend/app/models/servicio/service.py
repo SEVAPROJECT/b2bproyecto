@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from app.models.empresa.perfil_empresa import PerfilEmpresa
     from app.models.publicar_servicio.tarifa_servicio import TarifaServicio
     from app.models.reserva_servicio.reserva import ReservaModel
-    #from app.models.disponibilidad import DisponibilidadModel
+
 
 class ServicioModel(Base):
     """

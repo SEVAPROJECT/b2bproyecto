@@ -10,7 +10,7 @@ from app.api.v1.dependencies.database_supabase import get_async_db  # dependenci
 from app.services.rate_limit_service import email_rate_limit_service
 from app.services.direct_db_service import direct_db_service
 from app.supabase.auth_service import supabase_auth, supabase_admin  # cliente Supabase inicializado
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, Optional
 from app.schemas.user import UserProfileAndRolesOut
 from app.schemas.auth_user import SupabaseUser
 from app.utils.errores import handle_supabase_auth_error  # Importa la función para manejar errores de Supabase
@@ -27,15 +27,272 @@ import os
 import uuid
 from datetime import datetime
 import asyncio
-from app.services.direct_db_service import direct_db_service
 from fastapi.responses import JSONResponse
+
+ # Importar modelos necesarios
+from app.models.empresa.perfil_empresa import PerfilEmpresa
+from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
+from app.models.empresa.documento import Documento
+from app.models.empresa.tipo_documento import TipoDocumento
+from app.models.empresa.direccion import Direccion
+from app.models.empresa.barrio import Barrio
+from app.models.empresa.ciudad import Ciudad
+from app.models.empresa.departamento import Departamento
+from app.models.empresa.sucursal_empresa import SucursalEmpresa
+from sqlalchemy.orm import selectinload
+
+from app.models.empresa.sucursal_empresa import SucursalEmpresa
+from app.services.supabase_storage_service import supabase_storage_service
 
 # Configurar logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# --- Constantes ---
+ESTADO_ACTIVO = "ACTIVO"
+TOKEN_TYPE_BEARER = "bearer"
+COOKIE_SAMESITE_LAX = "lax"
+DOMAIN_LOCALHOST = "localhost"
+COOKIE_REFRESH_TOKEN = "refresh_token"
+EMAIL_ADMIN = "b2bseva.notificaciones@gmail.com"
+MSG_SUPABASE_RESPONSE_INCOMPLETE = "Supabase response incomplete"
+MSG_USUARIO_NO_ENCONTRADO = "Usuario no encontrado"
+MSG_PERFIL_USUARIO_NO_ENCONTRADO = "Perfil de usuario no encontrado"
+MSG_NO_ENCONTRADO_PERFIL_EMPRESA = "No se encontró perfil de empresa para este usuario"
+MSG_NO_ENCONTRADA_SOLICITUD_VERIFICACION = "No se encontró solicitud de verificación"
+MSG_ERROR_INTERNO_SERVIDOR = "Error interno del servidor"
+ERROR_EMAIL_RATE_LIMIT = "email rate limit exceeded"
+ERROR_SENDING_CONFIRMATION_EMAIL = "error sending confirmation email"
+ESTADO_NONE = "none"
+ESTADO_PENDIENTE = "pendiente"
+ESTADO_APROBADA = "aprobada"
+ESTADO_RECHAZADA = "rechazada"
+ESTADO_PENDING = "pending"
+ESTADO_APPROVED = "approved"
+ESTADO_REJECTED = "rejected"
+TYPE_SIGNUP = "signup"
+MSG_ARCHIVO_DEBE_SER_IMAGEN = "El archivo debe ser una imagen"
+MSG_SOLO_PERMITEN_ARCHIVOS_IMAGEN = "Solo se permiten archivos JPG, JPEG y PNG"
+MSG_ARCHIVO_SUPERA_TAMANO = "El archivo no puede ser mayor a 5MB"
+MSG_ERROR_SUBIR_IMAGEN_STORAGE = "Error al subir la imagen a Supabase Storage"
+MSG_URL_IMAGEN_NO_VALIDA = "URL de imagen no válida para eliminación"
+MSG_ERROR_ELIMINAR_FOTO_BUCKET = "Error al eliminar la foto de perfil del bucket"
+MSG_FOTO_ELIMINADA_EXITOSA = "Foto de perfil eliminada exitosamente del bucket de Supabase Storage."
+MSG_CUENTA_INACTIVA = "Tu cuenta está inactiva. Por favor, contacta al administrador en b2bseva.notificaciones@gmail.com para más detalles."
+MSG_LIMITE_ENVIO_EMAILS_REGISTRO = "Has alcanzado el límite de envío de emails. Por favor, espera 1 hora antes de intentar registrarte nuevamente. Si necesitas ayuda inmediata, contacta a b2bseva.notificaciones@gmail.com"
+MSG_LIMITE_ENVIO_EMAILS_CONFIRMACION = "Has alcanzado el límite de envío de emails. Por favor, espera 1 hora antes de solicitar un nuevo correo de confirmación. Si necesitas ayuda inmediata, contacta a b2bseva.notificaciones@gmail.com"
+MSG_ERROR_ENVIAR_EMAIL_CONFIRMACION = "No se pudo enviar el email de confirmación. El usuario puede haberse creado correctamente. Por favor, intenta iniciar sesión o contacta al administrador en b2bseva.notificaciones@gmail.com si el problema persiste."
+MSG_ERROR_CREAR_USUARIO_EMAIL = "No se pudo crear el usuario ni enviar el email de confirmación debido a un problema con la configuración de email del servidor. Por favor, intenta nuevamente más tarde o contacta al administrador en b2bseva.notificaciones@gmail.com"
+MSG_ERROR_CREAR_USUARIO = "No se pudo crear el usuario. Por favor, intenta nuevamente o contacta al administrador en b2bseva.notificaciones@gmail.com"
+MSG_CONTACTO_ADMIN = f"Para ayuda inmediata: {EMAIL_ADMIN}"  # Se mantiene f-string porque se usa directamente
+
 # --- Endpoints de autenticación ---
+
+# Funciones helper para sign_up
+def check_rate_limit(email: str) -> None:
+    """Verifica el rate limit antes de proceder con el registro"""
+    if not email_rate_limit_service.can_send_email(email):
+        remaining_attempts = email_rate_limit_service.get_remaining_attempts(email)
+        next_attempt_time = email_rate_limit_service.get_next_attempt_time(email)
+        
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Has alcanzado el límite de intentos de registro. Intentos restantes: {remaining_attempts}. Próximo intento disponible: {next_attempt_time.strftime('%H:%M') if next_attempt_time else 'N/A'}. Contacta a {EMAIL_ADMIN} para ayuda inmediata."
+        )
+
+def build_signup_data(data: SignUpIn) -> dict:
+    """Construye los datos para el signup en Supabase Auth"""
+    return {
+        "email": data.email,
+        "password": data.password,
+        "options": {
+            "data": {
+                "nombre_persona": data.nombre_persona,
+                "nombre_empresa": data.nombre_empresa,
+                "ruc": data.ruc
+            }
+        }
+    }
+
+async def create_user_in_supabase(signup_data: dict) -> tuple[Any, str, bool]:
+    """Crea el usuario en Supabase Auth y retorna la respuesta, id_user y si hubo error de email"""
+    signup_response = None
+    id_user = None
+    email_sent_error = False
+    
+    try:
+        signup_response = supabase_auth.auth.sign_up(signup_data)
+        
+        if not signup_response.user:
+            handle_supabase_auth_error("Respuesta de Supabase incompleta (no hay user)")
+        
+        id_user = str(signup_response.user.id)
+        logger.info(f"Usuario creado en Supabase Auth con ID: {id_user}")
+        
+        return signup_response, id_user, email_sent_error
+        
+    except AuthApiError as e:
+        error_message = str(e).lower()
+        
+        # Si es error de envío de email, verificar si el usuario se creó
+        if ERROR_SENDING_CONFIRMATION_EMAIL in error_message:
+            logger.warning("⚠️ Error al enviar email de confirmación, verificando si el usuario se creó...")
+            email_sent_error = True
+            
+            id_user = await verify_user_created_despite_email_error(signup_data["email"])
+            return signup_response, id_user, email_sent_error
+        else:
+            # Otro tipo de error de AuthApiError, re-lanzar para manejo general
+            raise
+
+async def verify_user_created_despite_email_error(email: str) -> str:
+    """Verifica si el usuario se creó a pesar del error de email"""
+    try:
+        if supabase_admin:
+            # Obtener todos los usuarios y buscar por email
+            auth_users = supabase_admin.auth.admin.list_users()
+            
+            # Buscar el usuario por email
+            found_user = None
+            if auth_users:
+                for auth_user in auth_users:
+                    if auth_user.email and auth_user.email.lower() == email.lower():
+                        found_user = auth_user
+                        break
+            
+            if found_user:
+                id_user = str(found_user.id)
+                logger.info(f"✅ Usuario encontrado a pesar del error de email: {id_user}")
+                logger.warning("⚠️ El usuario se creó correctamente, pero no se pudo enviar el email de confirmación")
+                return id_user
+            else:
+                logger.error("❌ Usuario no encontrado después del error de email")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=MSG_ERROR_CREAR_USUARIO_EMAIL
+                )
+        else:
+            logger.error("❌ No se puede verificar usuario: supabase_admin no está configurado")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=MSG_ERROR_ENVIAR_EMAIL_CONFIRMACION
+            )
+    except HTTPException:
+        raise
+    except Exception as verify_error:
+        logger.error(f"❌ Error verificando usuario después del error de email: {verify_error}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No se pudo enviar el email de confirmación. El usuario puede haberse creado correctamente. Por favor, intenta iniciar sesión o contacta al administrador en b2bseva.notificaciones@gmail.com si el problema persiste."
+        )
+
+async def verify_user_profile_with_retries(id_user: str, max_retries: int = 3, retry_delay: float = 0.5) -> Optional[dict]:
+    """Verifica el perfil del usuario con reintentos"""
+    logger.info("⏳ Esperando que el trigger se ejecute...")
+    await asyncio.sleep(1.0)  # Dar tiempo al trigger
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Verificando perfil para usuario {id_user} (intento {attempt + 1}/{max_retries})")
+            
+            user_profile_data = await direct_db_service.check_user_profile(id_user)
+            
+            if user_profile_data:
+                logger.info(f"✅ Perfil encontrado en intento {attempt + 1}")
+                return user_profile_data
+            else:
+                logger.warning(f"⚠️ Perfil no encontrado en intento {attempt + 1}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error en intento {attempt + 1}: {e}")
+            
+            if attempt == max_retries - 1:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Error de conexión a la base de datos: {str(e)}"
+                )
+        
+        # Esperar antes del siguiente intento
+        if attempt < max_retries - 1:
+            await asyncio.sleep(retry_delay * (1.2 ** attempt))
+            logger.info(f"⏳ Esperando {retry_delay * (1.2 ** attempt):.1f}s antes del siguiente intento...")
+    
+    return None
+
+async def create_user_profile_manually(id_user: str, data: SignUpIn) -> dict:
+    """Crea el perfil del usuario manualmente si el trigger no lo hizo"""
+    logger.warning("⚠️ Trigger no creó el perfil, creando manualmente...")
+    
+    try:
+        await direct_db_service.create_user_profile(
+            user_id=id_user,
+            nombre_persona=data.nombre_persona,
+            nombre_empresa=data.nombre_empresa,
+            ruc=data.ruc
+        )
+        
+        logger.info("✅ Perfil creado manualmente")
+        return {
+            "id": id_user,
+            "nombre_persona": data.nombre_persona,
+            "nombre_empresa": data.nombre_empresa,
+            "ruc": data.ruc,
+            "estado": ESTADO_ACTIVO
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error creando perfil manualmente: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error: No se pudo crear el perfil del usuario. Error: {str(e)}"
+        )
+
+def build_signup_success_response(data: SignUpIn, email_sent_error: bool) -> SignUpSuccess:
+    """Construye la respuesta de éxito del signup"""
+    message = "¡Registro exitoso! 📧 "
+    if email_sent_error:
+        message += f"⚠️ No se pudo enviar el correo de confirmación automáticamente. Por favor, intenta iniciar sesión con tus credenciales. Si tienes problemas, contacta a {EMAIL_ADMIN} para ayuda."
+    else:
+        message += "Hemos enviado un correo de confirmación a tu dirección de email. Por favor, revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta. Si no encuentras el correo, revisa también tu carpeta de spam."
+    
+    return SignUpSuccess(
+        message=message,
+        email=data.email,
+        nombre_persona=data.nombre_persona,
+        nombre_empresa=data.nombre_empresa,
+        ruc=data.ruc,
+        instructions="1. Revisa tu bandeja de entrada\n2. Busca el correo de confirmación\n3. Haz clic en el enlace del correo\n4. Si no encuentras el correo, revisa la carpeta de spam" if not email_sent_error else f"1. Intenta iniciar sesión con tus credenciales\n2. Si tienes problemas, contacta a {EMAIL_ADMIN}",
+        next_steps="Una vez confirmado tu email, podrás iniciar sesión en la plataforma" if not email_sent_error else "Intenta iniciar sesión ahora mismo con tus credenciales"
+    )
+
+def build_token_response(signup_response: Any) -> dict:
+    """Construye la respuesta con el token"""
+    return {
+        "access_token": signup_response.session.access_token,
+        "expires_in": signup_response.session.expires_in,
+        "token_type": TOKEN_TYPE_BEARER
+    }
+
+def configure_refresh_token_cookie(response: JSONResponse, refresh_token: str) -> None:
+    """Configura la cookie de refresh token"""
+    logger.info(f"🍪 Estableciendo cookie refresh_token: {refresh_token[:20]}...")
+    
+    # Detectar entorno para configurar cookies
+    is_production = os.getenv("RAILWAY_ENVIRONMENT") is not None
+    
+    response.set_cookie(
+        key=COOKIE_REFRESH_TOKEN, 
+        value=refresh_token,
+        httponly=True,
+        secure=False,  # True en producción (Railway), False en desarrollo
+        samesite=COOKIE_SAMESITE_LAX,
+        max_age=7 * 24 * 60 * 60,  # 7 días
+        path="/",
+        domain=None if is_production else DOMAIN_LOCALHOST  # None en producción, "localhost" en desarrollo
+    )
+    
+    logger.info("✅ Cookies HttpOnly establecidas correctamente")
 
 @router.post(
     "/signup",
@@ -47,230 +304,50 @@ async def sign_up(data: SignUpIn) -> Union[TokenOut, SignUpSuccess]:
     try:
         logger.info(f"Iniciando registro para usuario: {data.email}")
         
-        # --- Verificar rate limit antes de proceder ---
-        if not email_rate_limit_service.can_send_email(data.email):
-            remaining_attempts = email_rate_limit_service.get_remaining_attempts(data.email)
-            next_attempt_time = email_rate_limit_service.get_next_attempt_time(data.email)
-            
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Has alcanzado el límite de intentos de registro. Intentos restantes: {remaining_attempts}. Próximo intento disponible: {next_attempt_time.strftime('%H:%M') if next_attempt_time else 'N/A'}. Contacta a b2bseva.notificaciones@gmail.com para ayuda inmediata."
-            )
+        # Verificar rate limit antes de proceder
+        check_rate_limit(data.email)
         
-        # --- Paso 1: Crear usuario en Supabase Auth con metadata ---
-        # La metadata se enviará al trigger para crear automáticamente el perfil y asignar el rol "Cliente"
-        signup_data = {
-            "email": data.email,
-            "password": data.password,
-            "options": {
-                "data": {
-                    "nombre_persona": data.nombre_persona,
-                    "nombre_empresa": data.nombre_empresa,
-                    "ruc": data.ruc
-                }
-            }
-        }
-        
+        # Construir datos de signup
+        signup_data = build_signup_data(data)
         logger.info(f"Enviando datos a Supabase Auth: {signup_data}")
         
-        signup_response = None
-        id_user = None
-        email_sent_error = False
-        
-        try:
-            signup_response = supabase_auth.auth.sign_up(signup_data)
-            
-            if not signup_response.user:
-                handle_supabase_auth_error("Respuesta de Supabase incompleta (no hay user)")
-            
-            id_user = str(signup_response.user.id)
-            logger.info(f"Usuario creado en Supabase Auth con ID: {id_user}")
-            
-        except AuthApiError as e:
-            error_message = str(e).lower()
-            
-            # Si es error de envío de email, verificar si el usuario se creó
-            if "error sending confirmation email" in error_message:
-                logger.warning("⚠️ Error al enviar email de confirmación, verificando si el usuario se creó...")
-                email_sent_error = True
-                
-                # Intentar verificar si el usuario se creó a pesar del error usando list_users()
-                try:
-                    if supabase_admin:
-                        # Obtener todos los usuarios y buscar por email
-                        auth_users = supabase_admin.auth.admin.list_users()
-                        
-                        # Buscar el usuario por email
-                        found_user = None
-                        if auth_users:
-                            for auth_user in auth_users:
-                                if auth_user.email and auth_user.email.lower() == data.email.lower():
-                                    found_user = auth_user
-                                    break
-                        
-                        if found_user:
-                            id_user = str(found_user.id)
-                            logger.info(f"✅ Usuario encontrado a pesar del error de email: {id_user}")
-                            logger.warning("⚠️ El usuario se creó correctamente, pero no se pudo enviar el email de confirmación")
-                        else:
-                            logger.error("❌ Usuario no encontrado después del error de email")
-                            # Nota: El usuario puede haberse creado en auth.users pero aún no estar visible
-                            # debido a la naturaleza asíncrona. Es mejor asumir que no se creó.
-                            raise HTTPException(
-                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                detail="No se pudo crear el usuario ni enviar el email de confirmación debido a un problema con la configuración de email del servidor. Por favor, intenta nuevamente más tarde o contacta al administrador en b2bseva.notificaciones@gmail.com"
-                            )
-                    else:
-                        logger.error("❌ No se puede verificar usuario: supabase_admin no está configurado")
-                        raise HTTPException(
-                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="No se pudo enviar el email de confirmación. El usuario puede haberse creado correctamente. Por favor, intenta iniciar sesión o contacta al administrador en b2bseva.notificaciones@gmail.com si el problema persiste."
-                        )
-                except HTTPException:
-                    # Re-lanzar HTTPException tal cual
-                    raise
-                except Exception as verify_error:
-                    logger.error(f"❌ Error verificando usuario después del error de email: {verify_error}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="No se pudo enviar el email de confirmación. El usuario puede haberse creado correctamente. Por favor, intenta iniciar sesión o contacta al administrador en b2bseva.notificaciones@gmail.com si el problema persiste."
-                    )
-            else:
-                # Otro tipo de error de AuthApiError, re-lanzar para manejo general
-                raise
+        # Crear usuario en Supabase Auth
+        signup_response, id_user, email_sent_error = await create_user_in_supabase(signup_data)
         
         # Validar que id_user existe antes de continuar
-        # Si id_user es None, significa que hubo un error que impidió crear el usuario
         if not id_user:
             logger.error("❌ No se pudo crear el usuario: id_user es None")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="No se pudo crear el usuario. Por favor, intenta nuevamente o contacta al administrador en b2bseva.notificaciones@gmail.com"
+                detail=MSG_ERROR_CREAR_USUARIO
             )
         
         # Registrar intento de envío de email (solo si no hubo error)
         if not email_sent_error:
             email_rate_limit_service.record_email_attempt(data.email)
 
-        # --- Paso 2: Verificar solo el perfil usando direct_db_service ---
-        # Usar direct_db_service.get_connection() para evitar problemas con PgBouncer
-        logger.info("⏳ Esperando que el trigger se ejecute...")
-        await asyncio.sleep(1.0)  # Dar tiempo al trigger
+        # Verificar perfil del usuario con reintentos
+        user_profile = await verify_user_profile_with_retries(id_user)
         
-        user_profile = None
-        max_retries = 3  # Solo 3 intentos para el perfil
-        retry_delay = 0.5  # Retry rápido
-        
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"Verificando perfil para usuario {id_user} (intento {attempt + 1}/{max_retries})")
-                
-                # Usar servicio directo para verificar solo el perfil (usa get_connection internamente)
-                user_profile_data = await direct_db_service.check_user_profile(id_user)
-                
-                if user_profile_data:
-                    logger.info(f"✅ Perfil encontrado en intento {attempt + 1}")
-                    user_profile = user_profile_data
-                    break
-                else:
-                    logger.warning(f"⚠️ Perfil no encontrado en intento {attempt + 1}")
-                    
-            except Exception as e:
-                logger.error(f"❌ Error en intento {attempt + 1}: {e}")
-                
-                if attempt == max_retries - 1:
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"Error de conexión a la base de datos: {str(e)}"
-                    )
-            
-            # Esperar antes del siguiente intento
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay * (1.2 ** attempt))  # 0.5s, 0.6s
-                logger.info(f"⏳ Esperando {retry_delay * (1.2 ** attempt):.1f}s antes del siguiente intento...")
-
-        # Si no se encontró el perfil, crear manualmente usando direct_db_service
+        # Si no se encontró el perfil, crear manualmente
         if not user_profile:
-            logger.warning("⚠️ Trigger no creó el perfil, creando manualmente...")
-            
-            try:
-                # Usar direct_db_service.create_user_profile que usa get_connection internamente
-                await direct_db_service.create_user_profile(
-                    user_id=id_user,
-                    nombre_persona=data.nombre_persona,
-                    nombre_empresa=data.nombre_empresa,
-                    ruc=data.ruc
-                )
-                
-                logger.info("✅ Perfil creado manualmente")
-                user_profile = {
-                    "id": id_user,
-                    "nombre_persona": data.nombre_persona,
-                    "nombre_empresa": data.nombre_empresa,
-                    "ruc": data.ruc,
-                    "estado": "ACTIVO"
-                }
-                
-            except Exception as e:
-                logger.error(f"❌ Error creando perfil manualmente: {e}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Error: No se pudo crear el perfil del usuario. Error: {str(e)}"
-                )
+            user_profile = await create_user_profile_manually(id_user, data)
         
-        # --- Paso 3: Confiar en el trigger para el rol ---
+        # Confiar en el trigger para el rol
         logger.info("✅ Perfil verificado. El trigger asignará el rol automáticamente.")
         logger.info("💡 No verificamos el rol para evitar bloquear el trigger.")
-
         logger.info(f"Registro completado exitosamente para usuario: {id_user}")
 
-        # --- Manejo de confirmación de email ---
-        # Si hubo error al enviar el email o no hay sesión (usuario no confirmado)
+        # Manejo de confirmación de email
         if email_sent_error or not signup_response or not signup_response.session:
-            message = "¡Registro exitoso! 📧 "
-            if email_sent_error:
-                message += "⚠️ No se pudo enviar el correo de confirmación automáticamente. Por favor, intenta iniciar sesión con tus credenciales. Si tienes problemas, contacta a b2bseva.notificaciones@gmail.com para ayuda."
-            else:
-                message += "Hemos enviado un correo de confirmación a tu dirección de email. Por favor, revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta. Si no encuentras el correo, revisa también tu carpeta de spam."
-            
-            return SignUpSuccess(
-                message=message,
-                email=data.email,
-                nombre_persona=data.nombre_persona,
-                nombre_empresa=data.nombre_empresa,
-                ruc=data.ruc,
-                instructions="1. Revisa tu bandeja de entrada\n2. Busca el correo de confirmación\n3. Haz clic en el enlace del correo\n4. Si no encuentras el correo, revisa la carpeta de spam" if not email_sent_error else "1. Intenta iniciar sesión con tus credenciales\n2. Si tienes problemas, contacta a b2bseva.notificaciones@gmail.com",
-                next_steps="Una vez confirmado tu email, podrás iniciar sesión en la plataforma" if not email_sent_error else "Intenta iniciar sesión ahora mismo con tus credenciales"
-            )
+            return build_signup_success_response(data, email_sent_error)
 
-        # Crear respuesta JSON (consistente con signin)
-        token_data = {
-            "access_token": signup_response.session.access_token,
-            "expires_in": signup_response.session.expires_in,
-            "token_type": "bearer"
-        }
-
+        # Crear respuesta con token
+        token_data = build_token_response(signup_response)
         response = JSONResponse(content=token_data)
-
-        # Configurar SOLO refresh_token en cookie HttpOnly (consistente con signin)
-        logger.info(f"🍪 Estableciendo cookie refresh_token: {signup_response.session.refresh_token[:20]}...")
         
-        # Detectar entorno para configurar cookies
-        import os
-        is_production = os.getenv("RAILWAY_ENVIRONMENT") is not None
-        
-        response.set_cookie(
-            key="refresh_token", 
-            value=signup_response.session.refresh_token,
-            httponly=True,
-            secure=False,  # True en producción (Railway), False en desarrollo
-            samesite="lax",
-            max_age=7 * 24 * 60 * 60,  # 7 días
-            path="/",
-            domain=None if is_production else "localhost"  # None en producción, "localhost" en desarrollo
-        )
-        
-        logger.info("✅ Cookies HttpOnly establecidas correctamente")
+        # Configurar cookie de refresh token
+        configure_refresh_token_cookie(response, signup_response.session.refresh_token)
 
         return response
 
@@ -279,10 +356,10 @@ async def sign_up(data: SignUpIn) -> Union[TokenOut, SignUpSuccess]:
         error_message = str(e).lower()
         
         # Manejar específicamente el rate limit de emails
-        if "email rate limit exceeded" in error_message:
+        if ERROR_EMAIL_RATE_LIMIT in error_message:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Has alcanzado el límite de envío de emails. Por favor, espera 1 hora antes de intentar registrarte nuevamente. Si necesitas ayuda inmediata, contacta a b2bseva.notificaciones@gmail.com"
+                detail=MSG_LIMITE_ENVIO_EMAILS_REGISTRO
             )
         
         # Este bloque ya no se ejecutará para "error sending confirmation email"
@@ -303,6 +380,99 @@ async def sign_up(data: SignUpIn) -> Union[TokenOut, SignUpSuccess]:
         )
 
 
+# Funciones helper para sign_in
+async def verify_user_status_in_db(email: str) -> tuple[Optional[str], Optional[str]]:
+    """Verifica el estado del usuario en la base de datos"""
+    try:
+        print("🔍 Obteniendo conexión de la base de datos...")
+        
+        # Usar direct_db_service para evitar problemas con PgBouncer
+        conn = await direct_db_service.get_connection()
+        print("🔍 Conexión obtenida, ejecutando consulta...")
+        try:
+            # Consulta simplificada para evitar problemas de rendimiento
+            user_result = await conn.fetchrow("""
+                SELECT u.id, u.estado 
+                FROM users u 
+                JOIN auth.users au ON u.id = au.id 
+                WHERE au.email = $1
+            """, email)
+            print(f"🔍 Consulta ejecutada, resultado: {user_result}")
+
+            if user_result:
+                user_id = str(user_result['id'])
+                user_estado = user_result['estado']
+                print(f"🔍 Usuario encontrado: ID={user_id}, Estado={user_estado}")
+
+                # Verificar estado del usuario ANTES de autenticar
+                if user_estado != ESTADO_ACTIVO:
+                    print(f"🚫 Usuario {user_id} tiene estado {user_estado} - DENEGANDO ACCESO")
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=MSG_CUENTA_INACTIVA
+                    )
+                return user_id, user_estado
+            else:
+                print(f"⚠️ Usuario con email {email} no encontrado en tabla users")
+                return None, None
+        finally:
+            await direct_db_service.pool.release(conn)
+
+    except HTTPException:
+        raise  # Re-lanzar HTTPException para mantener el comportamiento
+    except Exception as db_error:
+        print(f"⚠️ Error consultando base de datos: {str(db_error)}")
+        # Si hay error en la consulta, permitir continuar (fallback)
+        return None, None
+
+def authenticate_with_supabase(email: str, password: str) -> Any:
+    """Autentica el usuario en Supabase Auth"""
+    print("✅ Estado verificado, procediendo con autenticación en Supabase")
+    print(f"🔍 Llamando a Supabase Auth con email: {email}")
+    signin_response = supabase_auth.auth.sign_in_with_password({
+        "email": email,
+        "password": password
+    })
+    print(f"🔍 Respuesta de Supabase recibida: {signin_response}")
+    
+    if signin_response.user is None or not signin_response.session:
+        handle_supabase_auth_error(MSG_SUPABASE_RESPONSE_INCOMPLETE)
+    
+    return signin_response
+
+def verify_user_status_after_auth(user_id: Optional[str], user_estado: Optional[str]) -> None:
+    """Verificación adicional del estado del usuario después de la autenticación"""
+    if user_id and user_estado and user_estado != ESTADO_ACTIVO:
+        # Si por alguna razón llega aquí, invalidar la sesión inmediatamente
+        try:
+            supabase_auth.auth.sign_out()
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=MSG_CUENTA_INACTIVA
+        )
+
+def build_signin_token_response(signin_response: Any) -> dict:
+    """Construye la respuesta con el token de signin"""
+    return {
+        "access_token": signin_response.session.access_token,
+        "expires_in": signin_response.session.expires_in,
+        "token_type": TOKEN_TYPE_BEARER
+    }
+
+def build_signin_response(signin_response: Any) -> JSONResponse:
+    """Construye la respuesta completa de signin con cookies"""
+    token_data = build_signin_token_response(signin_response)
+    response = JSONResponse(content=token_data)
+    
+    # Configurar cookie de refresh token
+    print(f"🍪 Estableciendo cookie refresh_token: {signin_response.session.refresh_token[:20]}...")
+    configure_refresh_token_cookie(response, signin_response.session.refresh_token)
+    print("✅ Cookies HttpOnly establecidas correctamente")
+    
+    return response
+
 @router.post("/signin", response_model=TokenOut,
             status_code=status.HTTP_200_OK,
             description="Autentica un usuario con email y contraseña y devuelve sus tokens de acceso y refresh.")
@@ -313,100 +483,17 @@ async def sign_in(data: SignInIn, db: AsyncSession = Depends(get_async_db)) -> J
     try:
         print(f"🔍 LOGIN ENDPOINT INICIADO - Email: {data.email}")
         
-        # PASO 1: Verificar estado del usuario en la base de datos
-        try:
-            print(f"🔍 Obteniendo conexión de la base de datos...")
-            
-            # Usar direct_db_service para evitar problemas con PgBouncer
-            conn = await direct_db_service.get_connection()
-            print(f"🔍 Conexión obtenida, ejecutando consulta...")
-            try:
-                # Consulta simplificada para evitar problemas de rendimiento
-                user_result = await conn.fetchrow("""
-                    SELECT u.id, u.estado 
-                    FROM users u 
-                    JOIN auth.users au ON u.id = au.id 
-                    WHERE au.email = $1
-                """, data.email)
-                print(f"🔍 Consulta ejecutada, resultado: {user_result}")
-
-                if user_result:
-                    user_id = str(user_result['id'])
-                    user_estado = user_result['estado']
-                    print(f"🔍 Usuario encontrado: ID={user_id}, Estado={user_estado}")
-
-                    # Verificar estado del usuario ANTES de autenticar
-                    if user_estado != "ACTIVO":
-                        print(f"🚫 Usuario {user_id} tiene estado {user_estado} - DENEGANDO ACCESO")
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Tu cuenta está inactiva. Por favor, contacta al administrador en b2bseva.notificaciones@gmail.com para más detalles."
-                        )
-                else:
-                    print(f"⚠️ Usuario con email {data.email} no encontrado en tabla users")
-            finally:
-                await direct_db_service.pool.release(conn)
-
-        except HTTPException:
-            raise  # Re-lanzar HTTPException para mantener el comportamiento
-        except Exception as db_error:
-            print(f"⚠️ Error consultando base de datos: {str(db_error)}")
-            # Si hay error en la consulta, permitir continuar (fallback)
-
-        # PASO 2: Autenticación en Supabase Auth
-        print("✅ Estado verificado, procediendo con autenticación en Supabase")
-        print(f"🔍 Llamando a Supabase Auth con email: {data.email}")
-        signin_response = supabase_auth.auth.sign_in_with_password({
-            "email": data.email,
-            "password": data.password
-        })
-        print(f"🔍 Respuesta de Supabase recibida: {signin_response}")
-        if signin_response.user is None or not signin_response.session:
-           handle_supabase_auth_error("Supabase response incomplete")
-
-        # PASO 3: Verificación adicional por si acaso (doble verificación)
-        if user_id and user_estado:
-            if user_estado != "ACTIVO":
-                # Si por alguna razón llega aquí, invalidar la sesión inmediatamente
-                try:
-                    supabase_auth.auth.sign_out()
-                except:
-                    pass
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tu cuenta está inactiva. Por favor, contacta al administrador en b2bseva.notificaciones@gmail.com para más detalles."
-                )
-
-        # Crear respuesta JSON
-        token_data = {
-            "access_token": signin_response.session.access_token,
-            "expires_in": signin_response.session.expires_in,
-            "token_type": "bearer"
-        }
-
-        response = JSONResponse(content=token_data)
-
-        # Configurar SOLO refresh_token en cookie HttpOnly
-        print(f"🍪 Estableciendo cookie refresh_token: {signin_response.session.refresh_token[:20]}...")
+        # Verificar estado del usuario en la base de datos
+        user_id, user_estado = await verify_user_status_in_db(data.email)
         
-        # Detectar entorno para configurar cookies
-        import os
-        is_production = os.getenv("RAILWAY_ENVIRONMENT") is not None
+        # Autenticación en Supabase Auth
+        signin_response = authenticate_with_supabase(data.email, data.password)
         
-        response.set_cookie(
-            key="refresh_token", 
-            value=signin_response.session.refresh_token,
-            httponly=True,
-            secure=False,  # True en producción (Railway), False en desarrollo
-            samesite="lax",
-            max_age=7 * 24 * 60 * 60,  # 7 días
-            path="/",
-            domain=None if is_production else "localhost"  # None en producción, "localhost" en desarrollo
-        )
-        
-        print("✅ Cookies HttpOnly establecidas correctamente")
+        # Verificación adicional del estado (doble verificación)
+        verify_user_status_after_auth(user_id, user_estado)
 
-        return response
+        # Construir y retornar respuesta
+        return build_signin_response(signin_response)
 
     except AuthApiError as e:
         # Llama a la función centralizada que usa el diccionario
@@ -447,7 +534,7 @@ async def read_profile(current_user: SupabaseUser = Depends(get_current_user),
         logger.error(f"❌ Endpoint /me - Perfil no encontrado para usuario: {str(user_uuid)}")
         raise HTTPException(
             status_code=404,
-            detail="Perfil de usuario no encontrado"
+            detail=MSG_PERFIL_USUARIO_NO_ENCONTRADO
         )
     
     logger.info(f"✅ Endpoint /me - Perfil encontrado para usuario: {str(user_uuid)}")
@@ -534,7 +621,7 @@ async def resend_confirmation_email(data: EmailOnlyIn):
     """
     try:
         supabase_auth.auth.resend({
-            "type": "signup",
+            "type": TYPE_SIGNUP,
             "email": data.email
         })
         
@@ -546,10 +633,10 @@ async def resend_confirmation_email(data: EmailOnlyIn):
 
     except AuthApiError as e:
         # Manejar específicamente el rate limit de emails
-        if "email rate limit exceeded" in str(e).lower():
+        if ERROR_EMAIL_RATE_LIMIT in str(e).lower():
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Has alcanzado el límite de envío de emails. Por favor, espera 1 hora antes de solicitar un nuevo correo de confirmación. Si necesitas ayuda inmediata, contacta a b2bseva.notificaciones@gmail.com"
+                detail=MSG_LIMITE_ENVIO_EMAILS_CONFIRMACION
             )
         
         handle_supabase_auth_error(e)
@@ -574,7 +661,7 @@ async def check_email_confirmation(email: str):
         if not user_response.user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Usuario no encontrado"
+                detail=MSG_USUARIO_NO_ENCONTRADO
             )
         
         user = user_response.user
@@ -610,7 +697,7 @@ async def get_rate_limit_status():
         },
         "current_status": "Si recibes error 429, has alcanzado el límite",
         "solution": "Espera 1 hora antes de intentar nuevamente",
-        "contact": "Para ayuda inmediata: b2bseva.notificaciones@gmail.com"
+        "contact": MSG_CONTACTO_ADMIN
     }
 
 
@@ -642,7 +729,7 @@ async def logout(current_user: SupabaseUser = Depends(get_current_user)):
             detail=f"Ha ocurrido un error inesperado al cerrar la sesión: {str(e)}"
         )
 
-   
+#ACTUALMENTE NO SE USA   
 @router.post("/forgot-password", status_code=status.HTTP_200_OK,
             description="Envía un correo electrónico para restablecer la contraseña.")
 async def forgot_password(data: EmailOnlyIn):
@@ -653,7 +740,7 @@ async def forgot_password(data: EmailOnlyIn):
         # Supabase típicamente responde con éxito si la solicitud es válida,
             # incluso si el email no existe, para evitar enumeración de usuarios.
             # El método `reset_password_for_email` es el correcto.
-        response = supabase_auth.auth.reset_password_for_email(data.email)
+        #response = supabase_auth.auth.reset_password_for_email(data.email)
         
         # Si no hay error, significa que el correo se envió correctamente
         return {"message": "Te enviamos un correo para restablecer tu contraseña."}
@@ -675,7 +762,6 @@ async def get_verificacion_estado(current_user: SupabaseUser = Depends(get_curre
     Obtiene el estado de la solicitud de verificación del usuario actual
     """
     try:
-        from app.services.direct_db_service import direct_db_service
         
         # Convertir el id de string a UUID de Python
         user_uuid = str(current_user.id)
@@ -692,8 +778,8 @@ async def get_verificacion_estado(current_user: SupabaseUser = Depends(get_curre
             
             if not empresa_result:
                 return {
-                    "estado": "none",
-                    "mensaje": "No se encontró perfil de empresa para este usuario"
+                    "estado": ESTADO_NONE,
+                    "mensaje": MSG_NO_ENCONTRADO_PERFIL_EMPRESA
                 }
         
             # Buscar la solicitud de verificación más reciente
@@ -712,18 +798,18 @@ async def get_verificacion_estado(current_user: SupabaseUser = Depends(get_curre
             
             if not solicitud_result:
                 return {
-                    "estado": "none",
-                    "mensaje": "No se encontró solicitud de verificación"
+                    "estado": ESTADO_NONE,
+                    "mensaje": MSG_NO_ENCONTRADA_SOLICITUD_VERIFICACION
                 }
             
             # Mapear el estado de la base de datos al estado del frontend
             estado_mapping = {
-                "pendiente": "pending",
-                "aprobada": "approved", 
-                "rechazada": "rejected"
+                ESTADO_PENDIENTE: ESTADO_PENDING,
+                ESTADO_APROBADA: ESTADO_APPROVED, 
+                ESTADO_RECHAZADA: ESTADO_REJECTED
             }
             
-            estado_frontend = estado_mapping.get(solicitud_result['estado'], "none")
+            estado_frontend = estado_mapping.get(solicitud_result['estado'], ESTADO_NONE)
         
             return {
                 "estado": estado_frontend,
@@ -771,7 +857,7 @@ async def update_user_profile(
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Usuario no encontrado"
+                detail=MSG_USUARIO_NO_ENCONTRADO
             )
         
         # Actualizar campos permitidos
@@ -827,7 +913,7 @@ async def upload_profile_photo(
         if not file.content_type or not file.content_type.startswith('image/'):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El archivo debe ser una imagen"
+                detail=MSG_ARCHIVO_DEBE_SER_IMAGEN
             )
         
         # Validar extensiones permitidas
@@ -836,7 +922,7 @@ async def upload_profile_photo(
         if file_extension not in allowed_extensions:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Solo se permiten archivos JPG, JPEG y PNG"
+                detail=MSG_SOLO_PERMITEN_ARCHIVOS_IMAGEN
             )
         
         # Validar tamaño (5MB máximo)
@@ -844,7 +930,7 @@ async def upload_profile_photo(
         if len(file_content) > 5 * 1024 * 1024:  # 5MB
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El archivo no puede ser mayor a 5MB"
+                detail=MSG_ARCHIVO_SUPERA_TAMANO
             )
         
         # Usar Supabase Storage para fotos de perfil
@@ -860,7 +946,7 @@ async def upload_profile_photo(
         if not success or not public_url:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al subir la imagen a Supabase Storage"
+                detail=MSG_ERROR_SUBIR_IMAGEN_STORAGE
             )
         
         print(f"✅ Foto de perfil subida exitosamente a Supabase Storage: {public_url}")
@@ -894,17 +980,15 @@ async def delete_profile_photo(
     Elimina una foto de perfil del bucket de Supabase Storage.
     """
     try:
-        from app.services.supabase_storage_service import supabase_storage_service
         
         # Verificar que la URL es de Supabase Storage
         if not image_url or not image_url.startswith('https://') or 'supabase.co' not in image_url:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="URL de imagen no válida para eliminación"
+                detail=MSG_URL_IMAGEN_NO_VALIDA
             )
         
         # Extraer el nombre del archivo de la URL
-        import os
         file_name = os.path.basename(image_url.split('?')[0])  # Remover query parameters
         
         # Eliminar imagen del bucket
@@ -913,14 +997,14 @@ async def delete_profile_photo(
         if success:
             print(f"✅ Foto de perfil eliminada exitosamente del bucket: {file_name}")
             return {
-                "message": "Foto de perfil eliminada exitosamente del bucket de Supabase Storage.",
+                "message": MSG_FOTO_ELIMINADA_EXITOSA,
                 "deleted_file": file_name
             }
         else:
             print(f"❌ Error eliminando foto de perfil del bucket: {file_name}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al eliminar la foto de perfil del bucket"
+                detail=MSG_ERROR_ELIMINAR_FOTO_BUCKET
             )
             
     except HTTPException:
@@ -932,6 +1016,174 @@ async def delete_profile_photo(
             detail=f"Error al eliminar la foto de perfil: {str(e)}"
         )
 
+
+# Funciones helper para get_verificacion_datos
+async def get_empresa_profile(db: AsyncSession, user_id: str) -> PerfilEmpresa:
+    """Obtiene el perfil de empresa del usuario"""
+    empresa_query = select(PerfilEmpresa).options(
+        selectinload(PerfilEmpresa.sucursal_empresa)
+    ).where(PerfilEmpresa.user_id == uuid.UUID(user_id))
+    empresa_result = await db.execute(empresa_query)
+    empresa = empresa_result.scalars().first()
+    
+    if not empresa:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_NO_ENCONTRADO_PERFIL_EMPRESA
+        )
+    
+    print(f"✅ Empresa encontrada: {empresa.razon_social}")
+    return empresa
+
+async def get_latest_verification_request(db: AsyncSession, id_perfil: int) -> VerificacionSolicitud:
+    """Obtiene la solicitud de verificación más reciente"""
+    solicitud_query = select(VerificacionSolicitud).where(
+        VerificacionSolicitud.id_perfil == id_perfil
+    ).order_by(VerificacionSolicitud.created_at.desc())
+    solicitud_result = await db.execute(solicitud_query)
+    solicitud = solicitud_result.scalars().first()
+    
+    if not solicitud:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_NO_ENCONTRADA_SOLICITUD_VERIFICACION
+        )
+    
+    print(f"✅ Solicitud encontrada: {solicitud.estado}")
+    return solicitud
+
+async def get_direccion_data(db: AsyncSession, id_direccion: Optional[int]) -> Optional[dict]:
+    """Obtiene los datos de dirección usando consulta SQL directa"""
+    if not id_direccion:
+        return None
+    
+    direccion_query = text("""
+        SELECT 
+            d.calle,
+            d.numero,
+            d.referencia,
+            dep.nombre as departamento,
+            c.nombre as ciudad,
+            b.nombre as barrio
+        FROM direccion d
+        LEFT JOIN departamento dep ON d.id_departamento = dep.id_departamento
+        LEFT JOIN ciudad c ON d.id_ciudad = c.id_ciudad
+        LEFT JOIN barrio b ON d.id_barrio = b.id_barrio
+        WHERE d.id_direccion = :direccion_id
+    """)
+    
+    result = await db.execute(direccion_query, {"direccion_id": id_direccion})
+    direccion = result.fetchone()
+    
+    if not direccion:
+        return None
+    
+    return {
+        "calle": direccion.calle,
+        "numero": direccion.numero,
+        "referencia": direccion.referencia,
+        "departamento": direccion.departamento,
+        "ciudad": direccion.ciudad,
+        "barrio": direccion.barrio
+    }
+
+def get_sucursal_data(empresa: PerfilEmpresa) -> Optional[dict]:
+    """Obtiene los datos de la sucursal principal"""
+    print(f"🔍 Sucursales encontradas: {len(empresa.sucursal_empresa) if empresa.sucursal_empresa else 0}")
+    print(f"🔍 Tipo de sucursal_empresa: {type(empresa.sucursal_empresa)}")
+    
+    if not empresa.sucursal_empresa:
+        print("⚠️ No se encontraron sucursales para esta empresa")
+        print(f"🔍 Verificando si empresa tiene id_perfil: {empresa.id_perfil if hasattr(empresa, 'id_perfil') else 'No tiene id_perfil'}")
+        return None
+    
+    print(f"🔍 Lista de sucursales: {[s.nombre for s in empresa.sucursal_empresa]}")
+    # Obtener la primera sucursal (principal)
+    sucursal = empresa.sucursal_empresa[0] if empresa.sucursal_empresa else None
+    
+    if not sucursal:
+        print("⚠️ No se encontró sucursal principal")
+        return None
+    
+    sucursal_data = {
+        "nombre": sucursal.nombre,
+        "telefono": sucursal.telefono,
+        "email": sucursal.email
+    }
+    print(f"✅ Sucursal encontrada: {sucursal.nombre}")
+    print(f"✅ Datos de sucursal: {sucursal_data}")
+    return sucursal_data
+
+async def get_documentos_data(db: AsyncSession, id_verificacion: int) -> list[dict]:
+    """Obtiene los documentos de la solicitud de verificación"""
+    documentos_query = select(Documento).options(
+        selectinload(Documento.tipo_documento)
+    ).where(Documento.id_verificacion == id_verificacion)
+    documentos_result = await db.execute(documentos_query)
+    documentos = documentos_result.scalars().all()
+    
+    documentos_data = []
+    for doc in documentos:
+        tipo_doc_nombre = doc.tipo_documento.nombre if doc.tipo_documento else f"Tipo {doc.id_tip_documento}"
+        es_requerido = doc.tipo_documento.es_requerido if doc.tipo_documento else False
+        documentos_data.append({
+            "id_documento": doc.id_documento,
+            "tipo_documento": tipo_doc_nombre,
+            "es_requerido": es_requerido,
+            "estado_revision": doc.estado_revision,
+            "url_archivo": doc.url_archivo,
+            "fecha_verificacion": doc.fecha_verificacion,
+            "observacion": doc.observacion,
+            "created_at": doc.created_at
+        })
+    
+    return documentos_data
+
+def build_empresa_dict(empresa: PerfilEmpresa, direccion_data: Optional[dict], sucursal_data: Optional[dict]) -> dict:
+    """Construye el diccionario de datos de empresa"""
+    return {
+        "razon_social": empresa.razon_social,
+        "nombre_fantasia": empresa.nombre_fantasia,
+        "ruc": "",  # No existe en PerfilEmpresa
+        "direccion": direccion_data["calle"] + " " + direccion_data["numero"] if direccion_data else "",
+        "referencia": direccion_data["referencia"] if direccion_data else "",
+        "departamento": direccion_data["departamento"] if direccion_data else None,
+        "ciudad": direccion_data["ciudad"] if direccion_data else None,
+        "barrio": direccion_data["barrio"] if direccion_data else None,
+        "telefono": sucursal_data["telefono"] if sucursal_data else "",
+        "email": sucursal_data["email"] if sucursal_data else "",
+        "sitio_web": "",  # No existe en PerfilEmpresa
+        "descripcion": "",  # No existe en PerfilEmpresa
+        "categoria_empresa": "",  # No existe en PerfilEmpresa
+        "estado": empresa.estado,
+        "verificado": empresa.verificado,
+        "fecha_inicio": empresa.fecha_inicio,
+        "fecha_fin": empresa.fecha_fin,
+        # Agregar datos de sucursal
+        "telefono_contacto": sucursal_data["telefono"] if sucursal_data else None,
+        "email_contacto": sucursal_data["email"] if sucursal_data else None,
+        "nombre_sucursal": sucursal_data["nombre"] if sucursal_data else None
+    }
+
+def build_solicitud_dict(solicitud: VerificacionSolicitud) -> dict:
+    """Construye el diccionario de datos de solicitud"""
+    return {
+        "id_verificacion": solicitud.id_verificacion,
+        "estado": solicitud.estado,
+        "fecha_solicitud": solicitud.fecha_solicitud,
+        "fecha_revision": solicitud.fecha_revision,
+        "comentario": solicitud.comentario,
+        "created_at": solicitud.created_at
+    }
+
+def build_verificacion_response(empresa_dict: dict, solicitud_dict: dict, documentos_data: list[dict]) -> dict:
+    """Construye la respuesta completa de verificación"""
+    return {
+        "success": True,
+        "empresa": empresa_dict,
+        "solicitud": solicitud_dict,
+        "documentos": documentos_data
+    }
 
 @router.get(
     "/verificacion-datos",
@@ -946,170 +1198,31 @@ async def get_verificacion_datos(
     try:
         print(f"🔍 Obteniendo datos de verificación para usuario: {current_user.id}")
         
-        # Importar modelos necesarios
-        from app.models.empresa.perfil_empresa import PerfilEmpresa
-        from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
-        from app.models.empresa.documento import Documento
-        from app.models.empresa.tipo_documento import TipoDocumento
-        from app.models.empresa.direccion import Direccion
-        from app.models.empresa.barrio import Barrio
-        from app.models.empresa.ciudad import Ciudad
-        from app.models.empresa.departamento import Departamento
-        from app.models.empresa.sucursal_empresa import SucursalEmpresa
-        from sqlalchemy.orm import selectinload
+        # Obtener perfil de empresa
+        empresa = await get_empresa_profile(db, current_user.id)
         
-        # Buscar el perfil de empresa del usuario con relación de sucursales
-        empresa_query = select(PerfilEmpresa).options(
-            selectinload(PerfilEmpresa.sucursal_empresa)
-        ).where(PerfilEmpresa.user_id == uuid.UUID(current_user.id))
-        empresa_result = await db.execute(empresa_query)
-        empresa = empresa_result.scalars().first()
+        # Obtener solicitud de verificación más reciente
+        solicitud = await get_latest_verification_request(db, empresa.id_perfil)
         
-        if not empresa:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No se encontró perfil de empresa para este usuario"
-            )
+        # Obtener datos de dirección
+        direccion_data = await get_direccion_data(db, empresa.id_direccion)
         
-        print(f"✅ Empresa encontrada: {empresa.razon_social}")
-        
-        # Buscar la solicitud de verificación más reciente
-        solicitud_query = select(VerificacionSolicitud).where(
-            VerificacionSolicitud.id_perfil == empresa.id_perfil
-        ).order_by(VerificacionSolicitud.created_at.desc())
-        solicitud_result = await db.execute(solicitud_query)
-        solicitud = solicitud_result.scalars().first()
-        
-        if not solicitud:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No se encontró solicitud de verificación"
-            )
-        
-        print(f"✅ Solicitud encontrada: {solicitud.estado}")
-        
-        # Obtener datos de dirección usando consulta SQL directa
-        direccion_data = None
-        if empresa.id_direccion:
-            # Usar consulta SQL directa para evitar problemas con selectinload
-            direccion_query = text("""
-                SELECT 
-                    d.calle,
-                    d.numero,
-                    d.referencia,
-                    dep.nombre as departamento,
-                    c.nombre as ciudad,
-                    b.nombre as barrio
-                FROM direccion d
-                LEFT JOIN departamento dep ON d.id_departamento = dep.id_departamento
-                LEFT JOIN ciudad c ON d.id_ciudad = c.id_ciudad
-                LEFT JOIN barrio b ON d.id_barrio = b.id_barrio
-                WHERE d.id_direccion = :direccion_id
-            """)
-            
-            result = await db.execute(direccion_query, {"direccion_id": empresa.id_direccion})
-            direccion = result.fetchone()
-            
-            if direccion:
-                direccion_data = {
-                    "calle": direccion.calle,
-                    "numero": direccion.numero,
-                    "referencia": direccion.referencia,
-                    "departamento": direccion.departamento,
-                    "ciudad": direccion.ciudad,
-                    "barrio": direccion.barrio
-                }
-        
-        # Obtener datos de sucursal (si existe)
-        sucursal_data = None
-        print(f"🔍 Sucursales encontradas: {len(empresa.sucursal_empresa) if empresa.sucursal_empresa else 0}")
-        print(f"🔍 Tipo de sucursal_empresa: {type(empresa.sucursal_empresa)}")
-        if empresa.sucursal_empresa:
-            print(f"🔍 Lista de sucursales: {[s.nombre for s in empresa.sucursal_empresa]}")
-            # Obtener la primera sucursal (principal)
-            sucursal = empresa.sucursal_empresa[0] if empresa.sucursal_empresa else None
-            if sucursal:
-                sucursal_data = {
-                    "nombre": sucursal.nombre,
-                    "telefono": sucursal.telefono,
-                    "email": sucursal.email
-                }
-                print(f"✅ Sucursal encontrada: {sucursal.nombre}")
-                print(f"✅ Datos de sucursal: {sucursal_data}")
-            else:
-                print("⚠️ No se encontró sucursal principal")
-        else:
-            print("⚠️ No se encontraron sucursales para esta empresa")
-            print("🔍 Verificando si empresa tiene id_perfil:", empresa.id_perfil if hasattr(empresa, 'id_perfil') else 'No tiene id_perfil')
+        # Obtener datos de sucursal
+        sucursal_data = get_sucursal_data(empresa)
         
         # Obtener documentos
-        documentos_query = select(Documento).options(
-            selectinload(Documento.tipo_documento)
-        ).where(Documento.id_verificacion == solicitud.id_verificacion)
-        documentos_result = await db.execute(documentos_query)
-        documentos = documentos_result.scalars().all()
+        documentos_data = await get_documentos_data(db, solicitud.id_verificacion)
         
-        documentos_data = []
-        for doc in documentos:
-            tipo_doc_nombre = doc.tipo_documento.nombre if doc.tipo_documento else f"Tipo {doc.id_tip_documento}"
-            es_requerido = doc.tipo_documento.es_requerido if doc.tipo_documento else False
-            documentos_data.append({
-                "id_documento": doc.id_documento,
-                "tipo_documento": tipo_doc_nombre,
-                "es_requerido": es_requerido,
-                "estado_revision": doc.estado_revision,
-                "url_archivo": doc.url_archivo,
-                "fecha_verificacion": doc.fecha_verificacion,
-                "observacion": doc.observacion,
-                "created_at": doc.created_at
-            })
-        
-        # Preparar datos de respuesta
-        empresa_dict = {
-            "razon_social": empresa.razon_social,
-            "nombre_fantasia": empresa.nombre_fantasia,
-            "ruc": "",  # No existe en PerfilEmpresa
-            "direccion": direccion_data["calle"] + " " + direccion_data["numero"] if direccion_data else "",
-            "referencia": direccion_data["referencia"] if direccion_data else "",
-            "departamento": direccion_data["departamento"] if direccion_data else None,
-            "ciudad": direccion_data["ciudad"] if direccion_data else None,
-            "barrio": direccion_data["barrio"] if direccion_data else None,
-            "telefono": sucursal_data["telefono"] if sucursal_data else "",
-            "email": sucursal_data["email"] if sucursal_data else "",
-            "sitio_web": "",  # No existe en PerfilEmpresa
-            "descripcion": "",  # No existe en PerfilEmpresa
-            "categoria_empresa": "",  # No existe en PerfilEmpresa
-            "estado": empresa.estado,
-            "verificado": empresa.verificado,
-            "fecha_inicio": empresa.fecha_inicio,
-            "fecha_fin": empresa.fecha_fin,
-            # Agregar datos de sucursal
-            "telefono_contacto": sucursal_data["telefono"] if sucursal_data else None,
-            "email_contacto": sucursal_data["email"] if sucursal_data else None,
-            "nombre_sucursal": sucursal_data["nombre"] if sucursal_data else None
-        }
-        
-        solicitud_dict = {
-            "id_verificacion": solicitud.id_verificacion,
-            "estado": solicitud.estado,
-            "fecha_solicitud": solicitud.fecha_solicitud,
-            "fecha_revision": solicitud.fecha_revision,
-            "comentario": solicitud.comentario,
-            "created_at": solicitud.created_at
-        }
-        
-        response_data = {
-            "success": True,
-            "empresa": empresa_dict,
-            "solicitud": solicitud_dict,
-            "documentos": documentos_data
-        }
+        # Construir diccionarios de respuesta
+        empresa_dict = build_empresa_dict(empresa, direccion_data, sucursal_data)
+        solicitud_dict = build_solicitud_dict(solicitud)
+        response_data = build_verificacion_response(empresa_dict, solicitud_dict, documentos_data)
         
         print(f"✅ Datos de verificación preparados para usuario {current_user.id}")
         print(f"  - Empresa: {empresa.razon_social}")
         print(f"  - Sucursal: {sucursal_data['nombre'] if sucursal_data else 'No encontrada'}")
         print(f"  - Documentos: {len(documentos_data)}")
-        print(f"🔍 Datos de empresa_dict que se enviarán:")
+        print("🔍 Datos de empresa_dict que se enviarán:")
         print(f"  - nombre_sucursal: {empresa_dict.get('nombre_sucursal')}")
         print(f"  - telefono_contacto: {empresa_dict.get('telefono_contacto')}")
         print(f"  - email_contacto: {empresa_dict.get('email_contacto')}")
@@ -1124,7 +1237,7 @@ async def get_verificacion_datos(
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
+            detail=MSG_ERROR_INTERNO_SERVIDOR
         )
 
 
@@ -1141,11 +1254,6 @@ async def debug_sucursal(
     try:
         print(f"🔍 DEBUG: Verificando sucursales para usuario: {current_user.id}")
         
-        # Importar modelos necesarios
-        from app.models.empresa.perfil_empresa import PerfilEmpresa
-        from app.models.empresa.sucursal_empresa import SucursalEmpresa
-        from sqlalchemy.orm import selectinload
-        
         # Buscar el perfil de empresa del usuario
         empresa_query = select(PerfilEmpresa).where(PerfilEmpresa.user_id == uuid.UUID(current_user.id))
         empresa_result = await db.execute(empresa_query)
@@ -1153,7 +1261,7 @@ async def debug_sucursal(
         
         if not empresa:
             return {
-                "error": "No se encontró perfil de empresa",
+                "error": MSG_NO_ENCONTRADO_PERFIL_EMPRESA,
                 "usuario_id": current_user.id
             }
         

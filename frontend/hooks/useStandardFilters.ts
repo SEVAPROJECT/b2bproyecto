@@ -29,61 +29,84 @@ export const useStandardFilters = <T extends FilterableItem>(
 
     // Función para filtrar items
     const filterItems = useCallback((itemsToFilter: T[]) => {
-        return itemsToFilter.filter(item => {
-            // Filtro por fecha
-            if (filters.dateFilter !== 'all') {
-                const itemDate = new Date(
-                    item.created_at || 
-                    item.fecha_solicitud || 
-                    item.fecha_creacion || 
-                    new Date()
-                );
-                const now = new Date();
-                
-                switch (filters.dateFilter) {
-                    case 'today':
-                        if (itemDate.toDateString() !== now.toDateString()) return false;
-                        break;
-                    case 'week':
-                        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                        if (itemDate < weekAgo) return false;
-                        break;
-                    case 'month':
-                        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                        if (itemDate < monthAgo) return false;
-                        break;
-                    case 'year':
-                        const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-                        if (itemDate < yearAgo) return false;
-                        break;
-                    case 'custom':
-                        if (filters.customDate) {
-                            const customDate = new Date(filters.customDate);
-                            if (itemDate.toDateString() !== customDate.toDateString()) return false;
-                        }
-                        break;
+        // Función helper para obtener la fecha del item
+        const getItemDate = (item: T): Date => {
+            return new Date(
+                item.created_at || 
+                item.fecha_solicitud || 
+                item.fecha_creacion || 
+                new Date()
+            );
+        };
+
+        // Función helper para verificar si el item pasa el filtro de fecha
+        const matchesDateFilter = (item: T): boolean => {
+            if (filters.dateFilter === 'all') {
+                return true;
+            }
+
+            const itemDate = getItemDate(item);
+            const now = new Date();
+            
+            switch (filters.dateFilter) {
+                case 'today':
+                    return itemDate.toDateString() === now.toDateString();
+                case 'week': {
+                    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    return itemDate >= weekAgo;
                 }
+                case 'month': {
+                    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    return itemDate >= monthAgo;
+                }
+                case 'year': {
+                    const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+                    return itemDate >= yearAgo;
+                }
+                case 'custom': {
+                    if (filters.customDate) {
+                        const customDate = new Date(filters.customDate);
+                        return itemDate.toDateString() === customDate.toDateString();
+                    }
+                    return true;
+                }
+                default:
+                    return true;
             }
+        };
 
-            // Filtro por categoría
-            if (filters.categoryFilter !== 'all') {
-                const itemCategoryId = item.id_categoria?.toString();
-                if (itemCategoryId !== filters.categoryFilter) return false;
+        // Función helper para verificar si el item pasa el filtro de categoría
+        const matchesCategoryFilter = (item: T): boolean => {
+            if (filters.categoryFilter === 'all') {
+                return true;
             }
+            const itemCategoryId = item.id_categoria?.toString();
+            return itemCategoryId === filters.categoryFilter;
+        };
 
-            // Filtro por empresa
-            if (filters.companyFilter !== 'all') {
-                const itemCompany = item.nombre_empresa || item.razon_social;
-                if (itemCompany !== filters.companyFilter) return false;
+        // Función helper para verificar si el item pasa el filtro de empresa
+        const matchesCompanyFilter = (item: T): boolean => {
+            if (filters.companyFilter === 'all') {
+                return true;
             }
+            const itemCompany = item.nombre_empresa || item.razon_social;
+            return itemCompany === filters.companyFilter;
+        };
 
-            // Filtro por estado
-            if (filters.statusFilter !== 'all') {
-                const itemStatus = item.estado_aprobacion || item.estado;
-                if (itemStatus !== filters.statusFilter) return false;
+        // Función helper para verificar si el item pasa el filtro de estado
+        const matchesStatusFilter = (item: T): boolean => {
+            if (filters.statusFilter === 'all') {
+                return true;
             }
+            const itemStatus = item.estado_aprobacion || item.estado;
+            return itemStatus === filters.statusFilter;
+        };
 
-            return true;
+        return itemsToFilter.filter(item => {
+            return matchesDateFilter(item) &&
+                   matchesCategoryFilter(item) &&
+                   matchesCompanyFilter(item) &&
+                   matchesStatusFilter(item);
         });
     }, [filters]);
 

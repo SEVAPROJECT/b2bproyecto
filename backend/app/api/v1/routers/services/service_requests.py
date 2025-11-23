@@ -16,6 +16,26 @@ from app.models.perfil import UserModel
 
 router = APIRouter(prefix="/service-requests", tags=["service-requests"])
 
+# Constantes para estados de aprobación
+ESTADO_PENDIENTE = "pendiente"
+ESTADO_APROBADA = "aprobada"
+ESTADO_RECHAZADA = "rechazada"
+
+# Constantes para valores por defecto
+VALOR_DEFAULT_NO_ESPECIFICADO = "No especificado"
+
+# Constantes para mensajes de error
+MSG_SOLICITUD_NO_ENCONTRADA = "Solicitud no encontrada."
+MSG_SOLICITUD_YA_PROCESADA = "La solicitud ya ha sido procesada."
+MSG_PERFIL_EMPRESA_NO_ENCONTRADO = "Perfil de empresa no encontrado."
+MSG_NO_MONEDAS_ENCONTRADAS = "No se encontraron monedas en la base de datos. Agregue al menos una moneda."
+MSG_ERROR_OBTENER_SOLICITUDES = "Error al obtener todas las solicitudes: {error}"
+MSG_ERROR_APROBAR_SOLICITUD = "Error al aprobar la solicitud: {error}"
+MSG_ERROR_RECHAZAR_SOLICITUD = "Error al rechazar la solicitud: {error}"
+
+# Constantes para mensajes de éxito
+MSG_SOLICITUD_APROBADA = "Solicitud aprobada y servicio creado exitosamente."
+MSG_SOLICITUD_RECHAZADA = "Solicitud rechazada exitosamente."
 
 from pydantic import BaseModel
 
@@ -82,7 +102,7 @@ async def get_service_requests(
         # Aplicar filtro según el parámetro 'all'
         if not all:
             # Solo solicitudes pendientes (comportamiento original)
-            query = query.where(SolicitudServicio.estado_aprobacion == 'pendiente')
+            query = query.where(SolicitudServicio.estado_aprobacion == ESTADO_PENDIENTE)
         
         # Ordenar por fecha de creación (más recientes primero)
         query = query.order_by(SolicitudServicio.created_at.desc())
@@ -114,9 +134,9 @@ async def get_service_requests(
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "id_categoria": row.id_categoria,
                 "id_perfil": row.id_perfil,
-                "nombre_categoria": row.nombre_categoria or "No especificado",
-                "nombre_empresa": row.nombre_empresa or "No especificado",
-                "nombre_contacto": row.nombre_contacto or "No especificado",
+                "nombre_categoria": row.nombre_categoria or VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_empresa": row.nombre_empresa or VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_contacto": row.nombre_contacto or VALOR_DEFAULT_NO_ESPECIFICADO,
                 "email_contacto": None  # Email no disponible en el modelo actual
             }
             formatted_requests.append(formatted_request)
@@ -146,10 +166,10 @@ async def get_service_requests(
                 "created_at": request.created_at.isoformat() if request.created_at else None,
                 "id_categoria": request.id_categoria,
                 "id_perfil": request.id_perfil,
-                "nombre_categoria": "No especificado",
-                "nombre_empresa": "No especificado",
-                "nombre_contacto": "No especificado",
-                "email_contacto": "No especificado"
+                "nombre_categoria": VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_empresa": VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_contacto": VALOR_DEFAULT_NO_ESPECIFICADO,
+                "email_contacto": VALOR_DEFAULT_NO_ESPECIFICADO
             }
             formatted_requests.append(formatted_request)
 
@@ -188,7 +208,7 @@ async def get_all_service_requests_for_admin(
                 UserModel.nombre_persona.label('nombre_contacto')
             )
             .select_from(SolicitudServicio)
-            .join(Categoria, SolicitudServicio.id_categoria == Categoria.id_categoria, isouter=True)
+            .join(CategoriaModel, SolicitudServicio.id_categoria == CategoriaModel.id_categoria, isouter=True)
             .join(PerfilEmpresa, SolicitudServicio.id_perfil == PerfilEmpresa.id_perfil, isouter=True)
             .join(UserModel, PerfilEmpresa.user_id == UserModel.id, isouter=True)
             .order_by(SolicitudServicio.created_at.desc())
@@ -215,9 +235,9 @@ async def get_all_service_requests_for_admin(
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "id_categoria": row.id_categoria,
                 "id_perfil": row.id_perfil,
-                "nombre_categoria": row.nombre_categoria or "No especificado",
-                "nombre_empresa": row.nombre_empresa or "No especificado",
-                "nombre_contacto": row.nombre_contacto or "No especificado",
+                "nombre_categoria": row.nombre_categoria or VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_empresa": row.nombre_empresa or VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_contacto": row.nombre_contacto or VALOR_DEFAULT_NO_ESPECIFICADO,
                 "email_contacto": None  # Se obtendrá por separado
             }
             formatted_requests.append(formatted_request)
@@ -228,7 +248,7 @@ async def get_all_service_requests_for_admin(
         print(f"❌ Error en get_all_service_requests_for_admin: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al obtener todas las solicitudes: {str(e)}"
+            detail=MSG_ERROR_OBTENER_SOLICITUDES.format(error=str(e))
         )
 
 
@@ -255,13 +275,13 @@ async def approve_service_request(
             if not request:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Solicitud no encontrada."
+                    detail=MSG_SOLICITUD_NO_ENCONTRADA
                 )
 
-            if request.estado_aprobacion != 'pendiente':
+            if request.estado_aprobacion != ESTADO_PENDIENTE:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="La solicitud ya ha sido procesada."
+                    detail=MSG_SOLICITUD_YA_PROCESADA
                 )
 
             # Obtener la primera moneda disponible (simplificado)
@@ -276,7 +296,7 @@ async def approve_service_request(
             if not moneda_row:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="No se encontraron monedas en la base de datos. Agregue al menos una moneda."
+                    detail=MSG_NO_MONEDAS_ENCONTRADAS
                 )
 
             id_moneda_default = moneda_row[0]
@@ -296,11 +316,11 @@ async def approve_service_request(
             db.add(nuevo_servicio)
 
             # Actualizar el estado de la solicitud
-            request.estado_aprobacion = 'aprobada'
+            request.estado_aprobacion = ESTADO_APROBADA
 
             await db.flush()
 
-        return {"message": "Solicitud aprobada y servicio creado exitosamente."}
+        return {"message": MSG_SOLICITUD_APROBADA}
 
     except HTTPException:
         raise
@@ -308,7 +328,7 @@ async def approve_service_request(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al aprobar la solicitud: {str(e)}"
+            detail=MSG_ERROR_APROBAR_SOLICITUD.format(error=str(e))
         )
 
 
@@ -345,7 +365,7 @@ async def reject_service_request(
             )
 
         # Actualizar el estado de la solicitud
-        request.estado_aprobacion = 'rechazada'
+        request.estado_aprobacion = ESTADO_RECHAZADA
 
         # Guardar el comentario si existe (incluso si es vacío)
         comentario_admin = request_data.comentario_admin
@@ -360,7 +380,7 @@ async def reject_service_request(
         else:
             print("   Sin comentario")
 
-        return {"message": "Solicitud rechazada exitosamente."}
+        return {"message": MSG_SOLICITUD_RECHAZADA}
 
     except HTTPException:
         raise
@@ -368,7 +388,7 @@ async def reject_service_request(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al rechazar la solicitud: {str(e)}"
+            detail=MSG_ERROR_RECHAZAR_SOLICITUD.format(error=str(e))
         )
 
 
@@ -396,7 +416,7 @@ async def get_my_service_requests(
     if not perfil:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Perfil de empresa no encontrado."
+            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
         )
 
     # Obtener todas las solicitudes del proveedor con información completa
@@ -437,9 +457,9 @@ async def get_my_service_requests(
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "id_categoria": row.id_categoria,
                 "id_perfil": row.id_perfil,
-                "nombre_categoria": row.nombre_categoria or "No especificado",
-                "nombre_empresa": row.nombre_empresa or "No especificado",
-                "nombre_contacto": row.nombre_contacto or "No especificado",
+                "nombre_categoria": row.nombre_categoria or VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_empresa": row.nombre_empresa or VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_contacto": row.nombre_contacto or VALOR_DEFAULT_NO_ESPECIFICADO,
                 "email_contacto": None
             }
             formatted_requests.append(formatted_request)
@@ -469,9 +489,9 @@ async def get_my_service_requests(
                 "created_at": request.created_at.isoformat() if request.created_at else None,
                 "id_categoria": request.id_categoria,
                 "id_perfil": request.id_perfil,
-                "nombre_categoria": "No especificado",
-                "nombre_empresa": perfil.razon_social or "No especificado",
-                "nombre_contacto": "No especificado",
+                "nombre_categoria": VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_empresa": perfil.razon_social or VALOR_DEFAULT_NO_ESPECIFICADO,
+                "nombre_contacto": VALOR_DEFAULT_NO_ESPECIFICADO,
                 "email_contacto": None
             }
             formatted_requests.append(formatted_request)

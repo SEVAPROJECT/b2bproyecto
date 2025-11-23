@@ -1,12 +1,20 @@
 import { BackendService } from '../types';
 
 /**
+ * Obtiene el símbolo de moneda basado en el código de moneda
+ */
+const getCurrencySymbolFromCode = (currencyCode: string): string => {
+    if (currencyCode === 'USD') return '$';
+    if (currencyCode === 'BRL') return 'R$';
+    if (currencyCode === 'ARS') return '$';
+    return '₲';
+};
+
+/**
  * Formatea el precio de un servicio según su moneda
  */
 export const formatPriceProfessional = (price: number, service: BackendService): string => {
-    const currencySymbol = service.moneda === 'USD' ? '$' : 
-                          service.moneda === 'BRL' ? 'R$' : 
-                          service.moneda === 'ARS' ? '$' : '₲';
+    const currencySymbol = getCurrencySymbolFromCode(service.moneda);
     
     if (service.moneda === 'USD') {
         return `${currencySymbol} ${price.toLocaleString('en-US')}`;
@@ -23,9 +31,7 @@ export const formatPriceProfessional = (price: number, service: BackendService):
  * Obtiene el símbolo de moneda basado en el ID o código ISO
  */
 export const getCurrencySymbol = (service: BackendService): string => {
-    return service.moneda === 'USD' ? '$' : 
-           service.moneda === 'BRL' ? 'R$' : 
-           service.moneda === 'ARS' ? '$' : '₲';
+    return getCurrencySymbolFromCode(service.moneda);
 };
 
 /**

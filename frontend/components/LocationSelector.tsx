@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MagnifyingGlassIcon, ChevronDownIcon } from './icons';
+import { ChevronDownIcon } from './icons';
 
 interface LocationSelectorProps<T extends { id: number; nombre: string }> {
     label: string;
@@ -69,6 +69,13 @@ export const LocationSelector = <T extends { id: number; nombre: string }>({
         setSearchTerm(option.nombre);
     };
 
+    const handleKeyDown = (e: React.KeyboardEvent, option: T) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleSelect(option);
+        }
+    };
+
     const handleClear = () => {
         console.log('🧹 Limpiando selección');
         onChange(null);
@@ -135,8 +142,12 @@ export const LocationSelector = <T extends { id: number; nombre: string }>({
                                 {filteredOptions.map((option) => (
                                     <div
                                         key={option.id}
-                                        className="px-3 py-3 sm:py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-900 transition-colors duration-150 touch-manipulation"
+                                        role="option"
+                                        tabIndex={0}
+                                        className="px-3 py-3 sm:py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-900 transition-colors duration-150 touch-manipulation focus:outline-none focus:bg-blue-50 focus:ring-2 focus:ring-blue-500"
                                         onClick={() => handleSelect(option)}
+                                        onKeyDown={(e) => handleKeyDown(e, option)}
+                                        aria-selected={value?.id === option.id}
                                     >
                                         {option.nombre}
                                     </div>

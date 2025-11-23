@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../components/layouts';
 import Button from '../../components/ui/Button';
-import { API_CONFIG, buildApiUrl } from '../../config/api';
+import { buildApiUrl } from '../../config/api';
 
 const SimpleResetPasswordPage: React.FC = () => {
-    const navigate = useNavigate();
+    
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -35,7 +35,7 @@ const SimpleResetPasswordPage: React.FC = () => {
             } else {
                 setError(data.message || 'Error enviando el email de restablecimiento');
             }
-        } catch (error) {
+        } catch (_error_) {
             setError('Error de conexión. Inténtalo nuevamente.');
         } finally {
             setLoading(false);
@@ -63,7 +63,7 @@ const SimpleResetPasswordPage: React.FC = () => {
             } else {
                 setError(data.message || 'Error reenviando el email');
             }
-        } catch (error) {
+        } catch (_error_) {
             setError('Error de conexión. Inténtalo nuevamente.');
         } finally {
             setLoading(false);
@@ -124,35 +124,7 @@ const SimpleResetPasswordPage: React.FC = () => {
                     )}
 
                     {/* Formulario */}
-                    {!isSubmitted ? (
-                        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                            <div>
-                                <label htmlFor="email" className="block text-sm font-medium text-slate-700">
-                                    Correo electrónico
-                                </label>
-                                <input
-                                    id="email"
-                                    name="email"
-                                    type="email"
-                                    autoComplete="email"
-                                    required
-                                    className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-slate-300 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-                                    placeholder="tu@email.com"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                />
-                            </div>
-
-                            <Button
-                                type="submit"
-                                variant="primary"
-                                className="w-full"
-                                disabled={loading}
-                            >
-                                {loading ? 'Enviando...' : 'Enviar enlace de restablecimiento'}
-                            </Button>
-                        </form>
-                    ) : (
+                    {isSubmitted ? (
                         <div className="mt-8 text-center space-y-4">
                             <div className="mx-auto h-16 w-16 flex items-center justify-center rounded-full bg-green-100">
                                 <svg className="h-8 w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -193,6 +165,34 @@ const SimpleResetPasswordPage: React.FC = () => {
                                 </Button>
                             </div>
                         </div>
+                    ) : (
+                        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+                            <div>
+                                <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+                                    Correo electrónico
+                                </label>
+                                <input
+                                    id="email"
+                                    name="email"
+                                    type="email"
+                                    autoComplete="email"
+                                    required
+                                    className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-slate-300 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+                                    placeholder="tu@email.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                />
+                            </div>
+
+                            <Button
+                                type="submit"
+                                variant="primary"
+                                className="w-full"
+                                disabled={loading}
+                            >
+                                {loading ? 'Enviando...' : 'Enviar enlace de restablecimiento'}
+                            </Button>
+                        </form>
                     )}
 
                     {/* Navegación */}

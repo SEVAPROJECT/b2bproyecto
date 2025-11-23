@@ -5,21 +5,40 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple, Optional
+from fastapi import HTTPException, status
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Constantes para tipos de documentos
+DOCUMENT_TYPE_PROVIDER = "provider"
+DOCUMENT_TYPE_GENERAL = "general"
+
+# Constantes para rutas y URLs
+LOCAL_URL_PREFIX = "local://"
+UPLOADS_DIR = "uploads"
+DOCUMENTS_DIR = "documents"
+PROVIDER_DOCS_DIR = "provider_documents"
+
+# Constantes para mensajes
+MSG_FILE_NOT_FOUND = "Archivo no encontrado"
+MSG_ERROR_SAVING_FILE = "Error guardando archivo"
+DEFAULT_FILENAME = "documento.pdf"
+
+# Constantes para formato de fecha
+TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
+
 class LocalStorageService:
     def __init__(self):
         # Crear directorio de uploads si no existe
-        self.upload_dir = Path("uploads")
+        self.upload_dir = Path(UPLOADS_DIR)
         self.upload_dir.mkdir(exist_ok=True)
         
         # Crear subdirectorios para diferentes tipos de documentos
-        self.documents_dir = self.upload_dir / "documents"
+        self.documents_dir = self.upload_dir / DOCUMENTS_DIR
         self.documents_dir.mkdir(exist_ok=True)
         
-        self.provider_docs_dir = self.upload_dir / "provider_documents"
+        self.provider_docs_dir = self.upload_dir / PROVIDER_DOCS_DIR
         self.provider_docs_dir.mkdir(exist_ok=True)
         
         logger.info(f"📁 Directorio de uploads configurado: {self.upload_dir.absolute()}")
@@ -59,11 +78,11 @@ class LocalStorageService:
             # Fallback: usar directorio base
             return Path(base_path)
     
-    def save_file(self, file_content: bytes, filename: str, document_type: str = "general") -> Tuple[bool, str, Optional[str]]:
+    def save_file(self, file_content: bytes, filename: str, document_type: str = DOCUMENT_TYPE_GENERAL) -> Tuple[bool, str, Optional[str]]:
         """Guarda un archivo localmente y retorna la ruta"""
         try:
             # Generar nombre único para evitar conflictos
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
             unique_id = str(uuid.uuid4())[:8]
             
             # Sanitizar el nombre del archivo original
@@ -74,7 +93,7 @@ class LocalStorageService:
             unique_filename = f"{timestamp}_{unique_id}_{safe_filename}"
             
             # Determinar directorio según tipo de documento
-            if document_type == "provider":
+            if document_type == DOCUMENT_TYPE_PROVIDER:
                 target_dir = self.provider_docs_dir
             else:
                 target_dir = self.documents_dir
@@ -90,7 +109,7 @@ class LocalStorageService:
                 f.write(file_content)
             
             # Generar URL relativa para la base de datos
-            relative_path = f"local://{file_path.relative_to(self.upload_dir)}"
+            relative_path = f"{LOCAL_URL_PREFIX}{file_path.relative_to(self.upload_dir)}"
             
             logger.info(f"✅ Archivo guardado localmente: {file_path}")
             return True, "Archivo guardado localmente", relative_path
@@ -98,9 +117,9 @@ class LocalStorageService:
         except Exception as e:
             error_msg = str(e)
             logger.error(f"❌ Error guardando archivo localmente: {error_msg}")
-            return False, f"Error guardando archivo: {error_msg}", None
+            return False, f"{MSG_ERROR_SAVING_FILE}: {error_msg}", None
     
-    def save_file_with_path(self, file_content: bytes, file_key: str, document_type: str = "provider") -> Tuple[bool, str, Optional[str]]:
+    def save_file_with_path(self, file_content: bytes, file_key: str, document_type: str = DOCUMENT_TYPE_PROVIDER) -> Tuple[bool, str, Optional[str]]:
         """Guarda un archivo con estructura de directorios personalizada"""
         try:
             # Parsear la estructura del file_key (ej: "OMPRA SRL/RUC/documento.pdf")
@@ -110,10 +129,10 @@ class LocalStorageService:
                 # El primer elemento es la empresa, el segundo es el tipo de documento
                 empresa = path_parts[0]
                 tipo_documento = path_parts[1]
-                nombre_archivo = path_parts[-1] if len(path_parts) > 2 else "documento.pdf"
+                nombre_archivo = path_parts[-1] if len(path_parts) > 2 else DEFAULT_FILENAME
                 
                 # Crear estructura de directorios segura
-                if document_type == "provider":
+                if document_type == DOCUMENT_TYPE_PROVIDER:
                     base_dir = self.provider_docs_dir
                 else:
                     base_dir = self.documents_dir
@@ -125,7 +144,7 @@ class LocalStorageService:
                 )
                 
                 # Generar nombre único para el archivo
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
                 unique_id = str(uuid.uuid4())[:8]
                 safe_filename = self._sanitize_filename(nombre_archivo)
                 unique_filename = f"{timestamp}_{unique_id}_{safe_filename}"
@@ -138,7 +157,7 @@ class LocalStorageService:
                     f.write(file_content)
                 
                 # Generar URL relativa para la base de datos
-                relative_path = f"local://{file_path.relative_to(self.upload_dir)}"
+                relative_path = f"{LOCAL_URL_PREFIX}{file_path.relative_to(self.upload_dir)}"
                 
                 logger.info(f"✅ Archivo guardado con estructura personalizada: {file_path}")
                 return True, "Archivo guardado con estructura personalizada", relative_path
@@ -155,8 +174,8 @@ class LocalStorageService:
     def get_file_path(self, file_url: str) -> Optional[Path]:
         """Convierte una URL local en ruta de archivo"""
         try:
-            if file_url.startswith("local://"):
-                relative_path = file_url.replace("local://", "")
+            if file_url.startswith(LOCAL_URL_PREFIX):
+                relative_path = file_url.replace(LOCAL_URL_PREFIX, "")
                 return self.upload_dir / relative_path
             return None
         except Exception as e:
@@ -168,7 +187,7 @@ class LocalStorageService:
         try:
             file_path = self.get_file_path(file_url)
             if not file_path or not file_path.exists():
-                return False, "Archivo no encontrado", None
+                return False, MSG_FILE_NOT_FOUND, None
             
             with open(file_path, 'rb') as f:
                 content = f.read()
@@ -186,7 +205,7 @@ class LocalStorageService:
         try:
             file_path = self.get_file_path(file_url)
             if not file_path or not file_path.exists():
-                return False, "Archivo no encontrado"
+                return False, MSG_FILE_NOT_FOUND
             
             file_path.unlink()
             logger.info(f"✅ Archivo eliminado localmente: {file_path}")
@@ -202,7 +221,7 @@ class LocalStorageService:
         try:
             file_path = self.get_file_path(file_url)
             if not file_path or not file_path.exists():
-                return False, "Archivo no encontrado", None
+                return False, MSG_FILE_NOT_FOUND, None
             
             stat = file_path.stat()
             file_info = {
@@ -223,10 +242,13 @@ class LocalStorageService:
 # Instancia global del servicio
 local_storage_service = LocalStorageService()
 
-async def upload_file_locally(file_content: bytes, filename: str, document_type: str = "general") -> str:
+def upload_file_locally(file_content: bytes, filename: str, document_type: str = DOCUMENT_TYPE_GENERAL) -> str:
     """Función de compatibilidad para subir archivos localmente"""
     success, message, file_url = local_storage_service.save_file(file_content, filename, document_type)
     if success:
         return file_url
     else:
-        raise Exception(f"Error guardando archivo localmente: {message}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"{MSG_ERROR_SAVING_FILE} localmente: {message}"
+        )
