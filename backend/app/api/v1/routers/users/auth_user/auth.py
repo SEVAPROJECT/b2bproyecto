@@ -311,7 +311,7 @@ def configure_refresh_token_cookie(response: JSONResponse, refresh_token: str) -
         key=COOKIE_REFRESH_TOKEN, 
         value=refresh_token,
         httponly=True,
-        secure=False,  # True en producción (Railway), False en desarrollo
+        secure=is_production,  # True en producción (HTTPS), False en desarrollo (HTTP)
         samesite=COOKIE_SAMESITE_LAX,
         max_age=7 * 24 * 60 * 60,  # 7 días
         path="/",

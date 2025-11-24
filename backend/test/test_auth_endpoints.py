@@ -47,6 +47,7 @@ class TestAuthEndpoints:
         """Datos de ejemplo para un usuario"""
         return {
             "email": "test@example.com",
+            # NOSONAR: Esta es una contraseña de prueba para tests, no una credencial real hardcodeada
             "password": "testpassword123",
             "nombre_persona": "Juan Pérez",
             "nombre_empresa": "Empresa Test S.A."
@@ -57,6 +58,7 @@ class TestAuthEndpoints:
         """Datos de ejemplo para login"""
         return {
             "email": "test@example.com",
+            # NOSONAR: Esta es una contraseña de prueba para tests, no una credencial real hardcodeada
             "password": "testpassword123"
         }
     
@@ -136,6 +138,7 @@ class TestAuthEndpoints:
         """Prueba registro con datos inválidos"""
         invalid_data = {
             "email": "invalid-email",
+            # NOSONAR: Esta es una contraseña de prueba inválida para tests, no una credencial real hardcodeada
             "password": "123",  # Contraseña muy corta
             "nombre_persona": "",
             "nombre_empresa": ""
@@ -194,6 +197,7 @@ class TestAuthEndpoints:
         """Prueba login con datos inválidos"""
         invalid_data = {
             "email": "invalid-email",
+            # NOSONAR: Esta es una contraseña de prueba vacía para tests, no una credencial real hardcodeada
             "password": ""
         }
         
@@ -358,6 +362,7 @@ class TestAuthValidation:
         # Datos válidos
         valid_data = {
             "email": "test@example.com",
+            # NOSONAR: Esta es una contraseña de prueba para tests, no una credencial real hardcodeada
             "password": "testpassword123",
             "nombre_persona": "Juan Pérez",
             "nombre_empresa": "Empresa Test S.A."
@@ -373,6 +378,7 @@ class TestAuthValidation:
         """Prueba validación del esquema de login"""
         valid_data = {
             "email": "test@example.com",
+            # NOSONAR: Esta es una contraseña de prueba para tests, no una credencial real hardcodeada
             "password": "testpassword123"
         }
         

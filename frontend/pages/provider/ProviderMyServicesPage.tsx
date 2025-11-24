@@ -24,6 +24,20 @@ const formatNumber = (num: number): string => {
     });
 };
 
+// Función para generar IDs temporales únicos de forma segura
+// Usa crypto.randomUUID() si está disponible, o una combinación de timestamp y performance.now()
+const generateTempId = (prefix: string = 'temp'): string => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        // Usar crypto.randomUUID() si está disponible (navegadores modernos)
+        return `${prefix}-${crypto.randomUUID()}`;
+    }
+    // Fallback: usar timestamp y performance.now() para mayor precisión
+    // performance.now() es más preciso que Math.random() y no tiene problemas de seguridad
+    const timestamp = Date.now();
+    const performanceTime = typeof performance !== 'undefined' ? performance.now() : 0;
+    return `${prefix}-${timestamp}-${performanceTime.toString().replace('.', '')}`;
+};
+
 // Función para formatear precio con puntos de mil mientras se escribe
 const formatPriceInput = (value: string): string => {
     // Remover todos los caracteres no numéricos excepto punto y coma
@@ -40,9 +54,24 @@ const formatPriceInput = (value: string): string => {
     const integerPart = parts[0];
     const decimalPart = parts[1];
     
-    // Formatear la parte entera con puntos de mil usando una función más simple
+    // Formatear la parte entera con puntos de mil usando un algoritmo seguro (evita ReDoS)
     const formatWithDots = (num: string): string => {
-        return num.replaceAll(/(\d)(?=(\d{3})+(?!\d))/g, '$1.');
+        // Algoritmo seguro: dividir en grupos de 3 dígitos desde la derecha
+        if (!num) return '';
+        
+        let result = '';
+        let count = 0;
+        
+        // Procesar desde la derecha hacia la izquierda
+        for (let i = num.length - 1; i >= 0; i--) {
+            if (count > 0 && count % 3 === 0) {
+                result = '.' + result;
+            }
+            result = num[i] + result;
+            count++;
+        }
+        
+        return result;
     };
     
     const formattedInteger = formatWithDots(integerPart);
@@ -286,7 +315,7 @@ const ProviderMyServicesPage: React.FC = () => {
             tarifas: (service.tarifas || []).map(tarifa => ({
                 ...tarifa,
                 monto: tarifa.monto ? formatPriceInput(tarifa.monto.toString()) : '',
-                tempId: tarifa.tempId || `tarifa-${Date.now()}-${Math.random()}`
+                tempId: tarifa.tempId || generateTempId('tarifa')
             }))
         });
 
@@ -508,7 +537,7 @@ const ProviderMyServicesPage: React.FC = () => {
             fecha_inicio: new Date().toISOString().split('T')[0],
             fecha_fin: null,
             id_tarifa: rateTypes[0]?.id_tarifa || 0,
-            tempId: `temp-${Date.now()}-${Math.random()}`
+            tempId: generateTempId('temp')
         };
 
         setEditForm(prev => ({

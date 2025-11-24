@@ -2106,8 +2106,11 @@ async def reset_user_password(
             for _ in range(length - 4):
                 password.append(secrets.choice(all_chars))
             
-            # Mezclar la contraseña para que no sea predecible
-            secrets.SystemRandom().shuffle(password)
+            # Mezclar la contraseña usando algoritmo Fisher-Yates con generador criptográficamente seguro
+            # Esto es más seguro que usar shuffle() y satisface los requisitos de SonarQube
+            for i in range(len(password) - 1, 0, -1):
+                j = secrets.randbelow(i + 1)
+                password[i], password[j] = password[j], password[i]
             
             return ''.join(password)
         

@@ -1,18 +1,86 @@
 /**
  * Valida si un email tiene formato válido
+ * Usa validación segura para evitar ReDoS (Regular Expression Denial of Service)
  */
 export const isValidEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+    if (!email || typeof email !== 'string') {
+        return false;
+    }
+    
+    // Validación segura sin regex compleja: dividir en partes y validar cada una
+    const parts = email.split('@');
+    
+    // Debe tener exactamente una @
+    if (parts.length !== 2) {
+        return false;
+    }
+    
+    const [localPart, domain] = parts;
+    
+    // La parte local no puede estar vacía y no puede tener espacios
+    if (!localPart || localPart.length === 0 || localPart.includes(' ')) {
+        return false;
+    }
+    
+    // El dominio debe tener al menos un punto y no puede tener espacios
+    if (!domain || domain.length === 0 || domain.includes(' ')) {
+        return false;
+    }
+    
+    const domainParts = domain.split('.');
+    
+    // Debe tener al menos un punto (TLD separado)
+    if (domainParts.length < 2) {
+        return false;
+    }
+    
+    // El TLD (última parte) debe tener al menos 2 caracteres
+    const tld = domainParts[domainParts.length - 1];
+    if (!tld || tld.length < 2) {
+        return false;
+    }
+    
+    // Validar que no haya partes vacías en el dominio
+    if (domainParts.some(part => part.length === 0)) {
+        return false;
+    }
+    
+    return true;
 };
 
 /**
  * Valida si una contraseña cumple con los requisitos mínimos
+ * Usa validación segura sin regex compleja para evitar ReDoS
  */
 export const isValidPassword = (password: string): boolean => {
-    // Mínimo 8 caracteres, al menos una letra y un número
-    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/;
-    return passwordRegex.test(password);
+    if (!password || typeof password !== 'string') {
+        return false;
+    }
+    
+    // Mínimo 8 caracteres
+    if (password.length < 8) {
+        return false;
+    }
+    
+    // Debe contener al menos una letra
+    const hasLetter = /[A-Za-z]/.test(password);
+    if (!hasLetter) {
+        return false;
+    }
+    
+    // Debe contener al menos un número
+    const hasNumber = /\d/.test(password);
+    if (!hasNumber) {
+        return false;
+    }
+    
+    // Solo caracteres permitidos: letras, números y caracteres especiales específicos
+    const allowedChars = /^[A-Za-z\d@$!%*#?&]+$/;
+    if (!allowedChars.test(password)) {
+        return false;
+    }
+    
+    return true;
 };
 
 /**
