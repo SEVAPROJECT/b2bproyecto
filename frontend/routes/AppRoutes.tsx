@@ -31,7 +31,7 @@ import ProviderOnboardingPage from '../pages/provider/ProviderOnboardingPage';
 import AdminVerificationsPage from '../components/admin/AdminVerificationsPage';
 
 // Test Components
-import DateTestComponent from '../docs/DateTestComponent';
+// import DateTestComponent from '../docs/DateTestComponent'; // Comentado: solo para pruebas locales
 import AdminReportsPage from '../pages/admin/AdminReportsPage';
 import AdminCategoryServicesPage from '../pages/admin/AdminCategoryServicesPage';
 import ProviderExploreCategoriesPage from '../pages/provider/ProviderExploreCategoriesPage';
@@ -173,8 +173,8 @@ const AppRoutes: React.FC = () => {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             
-            {/* Ruta de prueba temporal */}
-            <Route path="/test-dates" element={<DateTestComponent />} />
+            {/* Ruta de prueba temporal - Comentada para producción */}
+            {/* <Route path="/test-dates" element={<DateTestComponent />} /> */}
 
             <Route path="/marketplace" element={
                 <MainLayout>
