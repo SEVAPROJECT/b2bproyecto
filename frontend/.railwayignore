@@ -1,0 +1,3 @@
+# Forzar uso de Dockerfile en lugar de buildpacks
+# Railway debe usar el Dockerfile presente en este directorio
+
