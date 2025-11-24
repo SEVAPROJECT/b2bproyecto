@@ -9,16 +9,22 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements e instalar dependencias
+# Copiar requirements e instalar dependencias primero (para aprovechar cache de Docker)
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip list
 
 # Copiar el código del backend
 COPY . .
 
 # Hacer ejecutable los scripts
-RUN chmod +x start.sh start_simple.sh simple_app.py
+RUN chmod +x start.sh start_simple.sh simple_app.py && \
+    ls -la start.sh start_simple.sh simple_app.py
+
+# Verificar que la aplicación se puede importar
+RUN python -c "from app.main import app; print('✅ App importada correctamente')" || \
+    (echo "❌ Error al importar la aplicación" && exit 1)
 
 # Puerto por defecto (se usará PORT en runtime)
 EXPOSE 8000
