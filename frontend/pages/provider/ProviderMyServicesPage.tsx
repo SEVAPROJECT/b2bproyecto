@@ -1201,9 +1201,9 @@ const ProviderMyServicesPage: React.FC = () => {
 
                                 {/* Imagen */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <h4 className="block text-sm font-medium text-gray-700 mb-2">
                                         Imagen del servicio
-                                    </label>
+                                    </h4>
                                     
                                     {/* Vista previa de imagen */}
                                     {imagePreview && (
@@ -1268,9 +1268,9 @@ const ProviderMyServicesPage: React.FC = () => {
                                 {/* Tarifas */}
                                 <div>
                                     <div className="flex items-center justify-between mb-3">
-                                        <label className="block text-sm font-medium text-gray-700">
+                                        <h4 className="block text-sm font-medium text-gray-700">
                                             Tarifas del servicio
-                                        </label>
+                                        </h4>
                                         <button
                                             onClick={addTarifa}
                                             className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"

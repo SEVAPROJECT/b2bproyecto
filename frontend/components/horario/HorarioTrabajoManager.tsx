@@ -292,10 +292,11 @@ const HorarioTrabajoManager: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="dia_semana" className="block text-sm font-medium text-gray-700 mb-1">
                   Día de la Semana
                 </label>
                 <select
+                  id="dia_semana"
                   value={formData.dia_semana}
                   onChange={(e) => setFormData({ ...formData, dia_semana: Number.parseInt(e.target.value) })}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -309,10 +310,11 @@ const HorarioTrabajoManager: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="activo" className="block text-sm font-medium text-gray-700 mb-1">
                   Activo
                 </label>
                 <select
+                  id="activo"
                   value={formData.activo.toString()}
                   onChange={(e) => setFormData({ ...formData, activo: e.target.value === 'true' })}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -322,10 +324,11 @@ const HorarioTrabajoManager: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="hora_inicio" className="block text-sm font-medium text-gray-700 mb-1">
                   Hora de Inicio
                 </label>
                 <input
+                  id="hora_inicio"
                   type="time"
                   value={formData.hora_inicio}
                   onChange={(e) => setFormData({ ...formData, hora_inicio: e.target.value })}
@@ -334,10 +337,11 @@ const HorarioTrabajoManager: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="hora_fin" className="block text-sm font-medium text-gray-700 mb-1">
                   Hora de Fin
                 </label>
                 <input
+                  id="hora_fin"
                   type="time"
                   value={formData.hora_fin}
                   onChange={(e) => setFormData({ ...formData, hora_fin: e.target.value })}
@@ -443,10 +447,11 @@ const HorarioTrabajoManager: React.FC = () => {
             <form onSubmit={handleExcepcionSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="excepcion_fecha" className="block text-sm font-medium text-gray-700 mb-1">
                     Fecha
                   </label>
                   <input
+                    id="excepcion_fecha"
                     type="date"
                     value={excepcionData.fecha}
                     onChange={(e) => setExcepcionData({ ...excepcionData, fecha: e.target.value })}
@@ -455,10 +460,11 @@ const HorarioTrabajoManager: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="excepcion_tipo" className="block text-sm font-medium text-gray-700 mb-1">
                     Tipo
                   </label>
                   <select
+                    id="excepcion_tipo"
                     value={excepcionData.tipo}
                     onChange={(e) => setExcepcionData({ ...excepcionData, tipo: e.target.value as 'cerrado' | 'horario_especial' })}
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -470,10 +476,11 @@ const HorarioTrabajoManager: React.FC = () => {
                 {excepcionData.tipo === 'horario_especial' && (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label htmlFor="excepcion_hora_inicio" className="block text-sm font-medium text-gray-700 mb-1">
                         Hora de Inicio
                       </label>
                       <input
+                        id="excepcion_hora_inicio"
                         type="time"
                         value={excepcionData.hora_inicio}
                         onChange={(e) => setExcepcionData({ ...excepcionData, hora_inicio: e.target.value })}
@@ -481,10 +488,11 @@ const HorarioTrabajoManager: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label htmlFor="excepcion_hora_fin" className="block text-sm font-medium text-gray-700 mb-1">
                         Hora de Fin
                       </label>
                       <input
+                        id="excepcion_hora_fin"
                         type="time"
                         value={excepcionData.hora_fin}
                         onChange={(e) => setExcepcionData({ ...excepcionData, hora_fin: e.target.value })}
@@ -494,10 +502,11 @@ const HorarioTrabajoManager: React.FC = () => {
                   </>
                 )}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="excepcion_motivo" className="block text-sm font-medium text-gray-700 mb-1">
                     Motivo (opcional)
                   </label>
                   <input
+                    id="excepcion_motivo"
                     type="text"
                     value={excepcionData.motivo}
                     onChange={(e) => setExcepcionData({ ...excepcionData, motivo: e.target.value })}

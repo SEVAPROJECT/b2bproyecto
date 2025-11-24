@@ -116,8 +116,11 @@ def build_signup_data(data: SignUpIn) -> dict:
         }
     }
 
-async def create_user_in_supabase(signup_data: dict) -> tuple[Any, str, bool]:
-    """Crea el usuario en Supabase Auth y retorna la respuesta, id_user y si hubo error de email"""
+def create_user_in_supabase(signup_data: dict) -> tuple[Any, str, bool]:
+    """Crea el usuario en Supabase Auth y retorna la respuesta, id_user y si hubo error de email
+    
+    Nota: Esta función es síncrona porque supabase_auth.auth.sign_up() es una llamada síncrona.
+    """
     signup_response = None
     id_user = None
     email_sent_error = False
@@ -335,7 +338,7 @@ async def sign_up(data: SignUpIn) -> Union[TokenOut, SignUpSuccess]:
         logger.info(f"Enviando datos a Supabase Auth: {signup_data}")
         
         # Crear usuario en Supabase Auth
-        signup_response, id_user, email_sent_error = await create_user_in_supabase(signup_data)
+        signup_response, id_user, email_sent_error = create_user_in_supabase(signup_data)
         
         # Validar que id_user existe antes de continuar
         if not id_user:

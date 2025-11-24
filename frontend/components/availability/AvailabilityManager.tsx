@@ -240,10 +240,11 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ servicioId, s
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                            <label htmlFor="fecha_inicio" className="block text-sm font-medium text-slate-700 mb-2">
                                 Fecha y Hora de Inicio
                             </label>
                             <input
+                                id="fecha_inicio"
                                 type="datetime-local"
                                 required
                                 value={formData.fecha_inicio}
@@ -253,10 +254,11 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ servicioId, s
                         </div>
                         
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                            <label htmlFor="fecha_fin" className="block text-sm font-medium text-slate-700 mb-2">
                                 Fecha y Hora de Fin
                             </label>
                             <input
+                                id="fecha_fin"
                                 type="datetime-local"
                                 required
                                 value={formData.fecha_fin}
@@ -266,10 +268,11 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ servicioId, s
                         </div>
                         
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                            <label htmlFor="precio_adicional" className="block text-sm font-medium text-slate-700 mb-2">
                                 Precio Adicional (opcional)
                             </label>
                             <input
+                                id="precio_adicional"
                                 type="number"
                                 min="0"
                                 step="0.01"
@@ -280,8 +283,9 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ servicioId, s
                         </div>
                         
                         <div>
-                            <label className="flex items-center gap-2">
+                            <label htmlFor="disponible" className="flex items-center gap-2">
                                 <input
+                                    id="disponible"
                                     type="checkbox"
                                     checked={formData.disponible}
                                     onChange={(e) => setFormData(prev => ({ ...prev, disponible: e.target.checked }))}
@@ -293,10 +297,11 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ servicioId, s
                     </div>
                     
                     <div className="mt-4">
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                        <label htmlFor="observaciones" className="block text-sm font-medium text-slate-700 mb-2">
                             Observaciones (opcional)
                         </label>
                         <textarea
+                            id="observaciones"
                             value={formData.observaciones}
                             onChange={(e) => setFormData(prev => ({ ...prev, observaciones: e.target.value }))}
                             rows={2}

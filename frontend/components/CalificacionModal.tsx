@@ -95,10 +95,10 @@ const CalificacionModal: React.FC<CalificacionModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Puntaje con estrellas */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="puntaje-estrellas" className="block text-sm font-medium text-gray-700 mb-2">
               ⭐ Puntaje (1-5 estrellas)
             </label>
-            <div className="flex space-x-1">
+            <div id="puntaje-estrellas" className="flex space-x-1" role="group" aria-label="Seleccionar puntaje de 1 a 5 estrellas">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
                   key={star}
@@ -106,6 +106,7 @@ const CalificacionModal: React.FC<CalificacionModalProps> = ({
                   onClick={() => setPuntaje(star)}
                   className="focus:outline-none"
                   disabled={loading}
+                  aria-label={`${star} estrella${star > 1 ? 's' : ''}`}
                 >
                   {star <= puntaje ? (
                     <span className="text-3xl text-yellow-400">⭐</span>
@@ -122,10 +123,11 @@ const CalificacionModal: React.FC<CalificacionModalProps> = ({
 
           {/* Comentario */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="comentario-calificacion" className="block text-sm font-medium text-gray-700 mb-2">
               💬 Comentario
             </label>
             <textarea
+              id="comentario-calificacion"
               value={comentario}
               onChange={(e) => setComentario(e.target.value)}
               rows={3}
@@ -143,10 +145,10 @@ const CalificacionModal: React.FC<CalificacionModalProps> = ({
           {/* NPS solo para cliente */}
           {tipo === 'cliente' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="nps-calificacion" className="block text-sm font-medium text-gray-700 mb-2">
                 📊 NPS - ¿Qué tan probable es que recomiendes este servicio a otras personas? (1-10)
               </label>
-              <div className="flex space-x-2">
+              <div id="nps-calificacion" className="flex space-x-2" role="group" aria-label="Seleccionar puntuación NPS de 1 a 10">
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
                   <button
                     key={num}
@@ -158,6 +160,7 @@ const CalificacionModal: React.FC<CalificacionModalProps> = ({
                         : 'bg-gray-200 text-gray-700 hover:bg-blue-100'
                     }`}
                     disabled={loading}
+                    aria-label={`Puntuación NPS ${num}`}
                   >
                     {num}
                   </button>

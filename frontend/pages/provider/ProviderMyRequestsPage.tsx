@@ -621,8 +621,9 @@ const ProviderMyRequestsPage: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                         {/* Filtro por fecha */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
+                            <label htmlFor="filter-date" className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
                             <select
+                                id="filter-date"
                                 value={filters.dateFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, dateFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -638,8 +639,9 @@ const ProviderMyRequestsPage: React.FC = () => {
 
                         {/* Filtro por categoría */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Categoría</label>
+                            <label htmlFor="filter-category" className="block text-sm font-medium text-gray-700 mb-2">Categoría</label>
                             <select
+                                id="filter-category"
                                 value={filters.categoryFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, categoryFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -655,8 +657,9 @@ const ProviderMyRequestsPage: React.FC = () => {
 
                         {/* Filtro por estado */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+                            <label htmlFor="filter-status" className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
                             <select
+                                id="filter-status"
                                 value={filters.statusFilter}
                                 onChange={(e) => setFilters(prev => ({ ...prev, statusFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -670,8 +673,9 @@ const ProviderMyRequestsPage: React.FC = () => {
 
                         {/* Filtro por tipo de solicitud */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
+                            <label htmlFor="filter-type" className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
                             <select
+                                id="filter-type"
                                 value={filters.typeFilter || 'all'}
                                 onChange={(e) => setFilters(prev => ({ ...prev, typeFilter: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -685,8 +689,9 @@ const ProviderMyRequestsPage: React.FC = () => {
                         {/* Fecha personalizada */}
                         {filters.dateFilter === 'custom' ? (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Fecha específica</label>
+                                <label htmlFor="filter-custom-date" className="block text-sm font-medium text-gray-700 mb-2">Fecha específica</label>
                                 <input
+                                    id="filter-custom-date"
                                     type="date"
                                     value={filters.customDate}
                                     onChange={(e) => setFilters(prev => ({ ...prev, customDate: e.target.value }))}
@@ -695,8 +700,9 @@ const ProviderMyRequestsPage: React.FC = () => {
                             </div>
                         ) : (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
+                                <label htmlFor="filter-search" className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
                                 <input
+                                    id="filter-search"
                                     type="text"
                                     value={filters.searchFilter || ''}
                                     onChange={(e) => setFilters(prev => ({ ...prev, searchFilter: e.target.value }))}

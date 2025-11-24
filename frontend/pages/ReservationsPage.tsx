@@ -302,10 +302,11 @@ const FiltersPanel: React.FC<FiltersPanelProps> = ({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="search-filter" className="block text-sm font-medium text-gray-700 mb-1">
                     Búsqueda general
                 </label>
                 <input
+                    id="search-filter"
                     type="text"
                     value={searchFilter}
                     onChange={(e) => onSearchFilterChange(e.target.value)}
@@ -314,10 +315,11 @@ const FiltersPanel: React.FC<FiltersPanelProps> = ({
                 />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="nombre-servicio-filter" className="block text-sm font-medium text-gray-700 mb-1">
                     Nombre del servicio
                 </label>
                 <input
+                    id="nombre-servicio-filter"
                     type="text"
                     value={nombreServicio}
                     onChange={(e) => onNombreServicioChange(e.target.value)}
@@ -326,10 +328,11 @@ const FiltersPanel: React.FC<FiltersPanelProps> = ({
                 />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="nombre-empresa-filter" className="block text-sm font-medium text-gray-700 mb-1">
                     Empresa
                 </label>
                 <input
+                    id="nombre-empresa-filter"
                     type="text"
                     value={nombreEmpresa}
                     onChange={(e) => onNombreEmpresaChange(e.target.value)}
@@ -338,10 +341,11 @@ const FiltersPanel: React.FC<FiltersPanelProps> = ({
                 />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="fecha-desde-filter" className="block text-sm font-medium text-gray-700 mb-1">
                     Desde fecha
                 </label>
                 <input
+                    id="fecha-desde-filter"
                     type="date"
                     value={fechaDesde}
                     onChange={(e) => onFechaDesdeChange(e.target.value)}
@@ -349,10 +353,11 @@ const FiltersPanel: React.FC<FiltersPanelProps> = ({
                 />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="fecha-hasta-filter" className="block text-sm font-medium text-gray-700 mb-1">
                     Hasta fecha
                 </label>
                 <input
+                    id="fecha-hasta-filter"
                     type="date"
                     value={fechaHasta}
                     onChange={(e) => onFechaHastaChange(e.target.value)}
@@ -360,10 +365,11 @@ const FiltersPanel: React.FC<FiltersPanelProps> = ({
                 />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="estado-filter" className="block text-sm font-medium text-gray-700 mb-1">
                     Estado
                 </label>
                 <select
+                    id="estado-filter"
                     value={estadoFilter}
                     onChange={(e) => onEstadoFilterChange(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
@@ -376,10 +382,11 @@ const FiltersPanel: React.FC<FiltersPanelProps> = ({
                 </select>
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="nombre-contacto-filter" className="block text-sm font-medium text-gray-700 mb-1">
                     Nombre de contacto
                 </label>
                 <input
+                    id="nombre-contacto-filter"
                     type="text"
                     value={nombreContacto}
                     onChange={(e) => onNombreContactoChange(e.target.value)}
@@ -417,10 +424,11 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                         {getModalTitle(modalData.accion)}
                     </h3>
                     <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label htmlFor="modal-observacion" className="block text-sm font-medium text-gray-700 mb-2">
                             {getModalLabelText(modalData.accion)}:
                         </label>
                         <textarea
+                            id="modal-observacion"
                             value={modalData.observacion}
                             onChange={(e) => onObservacionChange(e.target.value)}
                             className={getTextareaClasses(modalData.accion, modalData.observacion)}

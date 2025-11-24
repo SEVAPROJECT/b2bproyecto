@@ -930,8 +930,9 @@ const MarketplacePage: React.FC = () => {
 
                             {/* Filtro de categoría - compacto */}
                             <div className="space-y-1">
-                                <label className="block text-xs font-medium text-slate-700">Categoría</label>
+                                <label htmlFor="filter-category" className="block text-xs font-medium text-slate-700">Categoría</label>
                                 <select
+                                    id="filter-category"
                                     value={categoryFilter}
                                     onChange={(e) => setCategoryFilter(e.target.value)}
                                     className="w-full px-2 py-1.5 border border-slate-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors text-xs"
@@ -947,8 +948,9 @@ const MarketplacePage: React.FC = () => {
 
                             {/* Filtro de calificación - compacto */}
                             <div className="space-y-1">
-                                <label className="block text-xs font-medium text-slate-700">Calificación</label>
+                                <label htmlFor="filter-rating" className="block text-xs font-medium text-slate-700">Calificación</label>
                                 <select
+                                    id="filter-rating"
                                     value={ratingFilter}
                                     onChange={(e) => setRatingFilter(Number.parseInt(e.target.value))}
                                     className="w-full px-2 py-1.5 border border-slate-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors text-xs"
@@ -964,8 +966,9 @@ const MarketplacePage: React.FC = () => {
 
                             {/* Filtro de moneda - compacto */}
                             <div className="space-y-1">
-                                <label className="block text-xs font-medium text-slate-700">Moneda</label>
+                                <label htmlFor="filter-currency" className="block text-xs font-medium text-slate-700">Moneda</label>
                                 <select
+                                    id="filter-currency"
                                     value={currencyFilter}
                                     onChange={(e) => setCurrencyFilter(e.target.value)}
                                     className="w-full px-2 py-1.5 border border-slate-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors text-xs"
@@ -984,9 +987,9 @@ const MarketplacePage: React.FC = () => {
                         {showCustomDatePicker && (
                             <div className="mt-3 bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
-                                    <label className="block text-sm font-medium text-slate-700">
+                                    <h4 className="block text-sm font-medium text-slate-700">
                                         📅 Rango personalizado
-                                    </label>
+                                    </h4>
                                     <button
                                         onClick={() => {
                                             setDateFilter('all');
@@ -994,14 +997,16 @@ const MarketplacePage: React.FC = () => {
                                             setCustomDateRange({ start: '', end: '' });
                                         }}
                                         className="text-slate-400 hover:text-slate-600 text-lg p-1"
+                                        aria-label="Cerrar selector de rango personalizado"
                                     >
                                         ✕
                                     </button>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-slate-700">Desde</label>
+                                        <label htmlFor="custom-date-start" className="block text-sm font-medium text-slate-700">Desde</label>
                                         <input
+                                            id="custom-date-start"
                                             type="date"
                                             value={customDateRange.start}
                                             onChange={(e) => handleStartDateChange(e.target.value)}
@@ -1010,8 +1015,9 @@ const MarketplacePage: React.FC = () => {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-slate-700">Hasta</label>
+                                        <label htmlFor="custom-date-end" className="block text-sm font-medium text-slate-700">Hasta</label>
                                         <input
+                                            id="custom-date-end"
                                             type="date"
                                             value={customDateRange.end}
                                             onChange={(e) => handleEndDateChange(e.target.value)}
@@ -1030,7 +1036,7 @@ const MarketplacePage: React.FC = () => {
                         <div className="mt-3 p-3 sm:p-4 bg-primary-50 rounded-lg border border-primary-200">
                             <div className="space-y-3">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                    <label className="block text-xs sm:text-sm font-medium text-slate-700">
+                                    <label htmlFor="price-range-slider" className="block text-xs sm:text-sm font-medium text-slate-700">
                                         Precio en {getCurrencyName(currencyFilter)}
                                     </label>
                                     <span className="text-xs sm:text-sm font-semibold text-primary-600" key={`price-${sliderValue}`}>
@@ -1040,6 +1046,7 @@ const MarketplacePage: React.FC = () => {
 
                                 <div className="space-y-2">
                                     <input
+                                        id="price-range-slider"
                                         type="range"
                                         min="0"
                                         max="1000000000"

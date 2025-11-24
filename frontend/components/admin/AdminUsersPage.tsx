@@ -70,7 +70,7 @@ interface UserPhotoProps {
 
 const UserPhoto: React.FC<UserPhotoProps> = ({ fotoPerfil, nombrePersona, size = 'sm' }) => {
     const sizeClasses = size === 'sm' ? 'w-10 h-10' : 'w-12 h-12';
-    const iconSize = size === 'sm' ? 'w-6 h-6' : 'w-6 h-6';
+    const iconSize = 'w-6 h-6'; // Tamaño constante para el icono
     
     return (
         <div className={`${sizeClasses} bg-primary-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0`}>

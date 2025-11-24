@@ -145,11 +145,12 @@ export const LocationSelector = <T extends { id: number; nombre: string }>({
                                 {searchTerm.trim() === '' ? 'No hay opciones disponibles' : 'No se encontraron coincidencias'}
                             </div>
                         ) : (
-                            <ul role="listbox" aria-label={label} className="list-none m-0 p-0">
+                            <div role="listbox" aria-label={label} className="list-none m-0 p-0">
                                 {filteredOptions.map((option) => (
-                                    <li 
+                                    <div 
                                         key={option.id} 
                                         id={`option-${option.id}`}
+                                        role="option"
                                         aria-selected={value?.id === option.id}
                                         className={value?.id === option.id ? 'bg-blue-50' : ''}
                                     >
@@ -162,9 +163,9 @@ export const LocationSelector = <T extends { id: number; nombre: string }>({
                                         >
                                             {option.nombre}
                                         </button>
-                                    </li>
+                                    </div>
                                 ))}
-                            </ul>
+                            </div>
                         )}
                     </div>
                 )}

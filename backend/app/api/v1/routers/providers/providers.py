@@ -1070,7 +1070,8 @@ def get_sucursal_data(empresa: PerfilEmpresa) -> Optional[dict]:
         return None
     
     print(f"🔍 Lista de sucursales: {[s.nombre for s in empresa.sucursal_empresa]}")
-    sucursal = empresa.sucursal_empresa[0] if empresa.sucursal_empresa else None
+    # Ya verificamos que sucursal_empresa no está vacío arriba, así que podemos acceder directamente
+    sucursal = empresa.sucursal_empresa[0]
     
     if not sucursal:
         print("⚠️ No se encontró sucursal principal")

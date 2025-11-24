@@ -177,15 +177,18 @@ def build_empresa_info(empresa: Optional[PerfilEmpresa]) -> dict:
         "fecha_fin": empresa.fecha_fin
     }
 
-async def process_solicitud_data(
-    db: AsyncSession,
+def process_solicitud_data(
     solicitud: VerificacionSolicitud,
     empresa: Optional[PerfilEmpresa],
     user_nombre: str,
     user_email: str,
     documentos_detallados: List[dict]
 ) -> dict:
-    """Procesa una solicitud y construye su diccionario de datos"""
+    """Procesa una solicitud y construye su diccionario de datos
+    
+    Nota: Esta función es síncrona porque solo construye un diccionario sin operaciones asíncronas.
+    El parámetro db no se usa y se eliminó.
+    """
     empresa_info = build_empresa_info(empresa)
     
     return {
@@ -991,8 +994,12 @@ async def download_from_idrive_direct(url_archivo: str) -> bytes:
         response.raise_for_status()
         return response.content
 
-async def download_from_idrive_s3(url_archivo: str) -> bytes:
-    """Intenta descargar desde iDrive usando el cliente S3"""
+def download_from_idrive_s3(url_archivo: str) -> bytes:
+    """Intenta descargar desde iDrive usando el cliente S3
+    
+    Nota: Esta función es síncrona porque boto3 (idrive_s3_client) es síncrono.
+    Se ejecutará en un thread pool cuando se llame desde una función asíncrona.
+    """
     key = extract_file_key_from_idrive_url(url_archivo)
     response = idrive_s3_client.get_object(Bucket=IDRIVE_BUCKET_NAME, Key=key)
     return response['Body'].read()
@@ -1014,11 +1021,13 @@ async def download_from_idrive_with_headers(url_archivo: str) -> bytes:
 
 async def download_idrive_document(url_archivo: str) -> bytes:
     """Descarga un documento desde iDrive usando múltiples estrategias"""
+    import asyncio
     try:
         return await download_from_idrive_direct(url_archivo)
     except Exception:
         try:
-            return await download_from_idrive_s3(url_archivo)
+            # Ejecutar función síncrona en thread pool para no bloquear el event loop
+            return await asyncio.to_thread(download_from_idrive_s3, url_archivo)
         except Exception:
             return await download_from_idrive_with_headers(url_archivo)
 
