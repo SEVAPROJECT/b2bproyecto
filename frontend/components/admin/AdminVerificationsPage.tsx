@@ -27,6 +27,44 @@ const AdminVerificationsPage: React.FC = () => {
         customDate: ''
     });
 
+    // Funciones helper para eliminar código duplicado
+    const removeSolicitudFromState = (idVerificacion: number) => {
+        setSolicitudes(prevSolicitudes => 
+            prevSolicitudes.filter(s => s.id_verificacion !== idVerificacion)
+        );
+    };
+
+    const closeDetailModal = () => {
+        setShowDetailModal(false);
+        setSelectedSolicitud(null);
+    };
+
+    const closeRejectModal = () => {
+        setShowRejectModal(false);
+        setRejectComment('');
+        setSelectedSolicitud(null);
+    };
+
+    const buildDocumentUrl = (idVerificacion: number, idDocumento: number): string => {
+        const url = buildApiUrl(`/admin/verificaciones/${idVerificacion}/documentos/${idDocumento}/servir`);
+        return `${url}?token=${encodeURIComponent(user?.accessToken || '')}`;
+    };
+
+    const handleDocumentError = (error: any, action: 'visualización' | 'descarga'): void => {
+        const errorMessage = error?.message || '';
+        if (errorMessage.includes('temporal')) {
+            alert(`Este documento es temporal y no está disponible para ${action}.`);
+        } else if (errorMessage.includes('URL')) {
+            alert('La URL del documento no es válida.');
+        } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+            alert('No se puede acceder al documento. Posiblemente requiere permisos especiales.');
+        } else if (errorMessage.includes('autenticación')) {
+            alert('Error de autenticación al acceder al documento.');
+        } else {
+            alert(`Error al ${action === 'visualización' ? 'abrir' : 'descargar'} el documento. ${action === 'descarga' ? 'Verifica que el archivo esté disponible.' : 'Intenta descargarlo.'}`);
+        }
+    };
+
     // Función para mostrar notificaciones
     const showNotification = (type: 'success' | 'error', message: string) => {
         setNotification({ type, message });
@@ -261,13 +299,10 @@ const AdminVerificationsPage: React.FC = () => {
             setProcessingAction(solicitud.id_verificacion);
             
             // Actualización optimista: remover la solicitud de la lista inmediatamente
-            setSolicitudes(prevSolicitudes => 
-                prevSolicitudes.filter(s => s.id_verificacion !== solicitud.id_verificacion)
-            );
+            removeSolicitudFromState(solicitud.id_verificacion);
 
             // Cerrar modal de detalles si está abierto
-            setShowDetailModal(false);
-            setSelectedSolicitud(null);
+            closeDetailModal();
 
             // Mostrar mensaje de éxito inmediatamente
             showNotification('success', 'Solicitud aprobada exitosamente. El usuario ahora es proveedor.');
@@ -311,14 +346,10 @@ const AdminVerificationsPage: React.FC = () => {
             setProcessingAction(solicitud.id_verificacion);
             
             // Actualización optimista: remover la solicitud de la lista inmediatamente
-            setSolicitudes(prevSolicitudes => 
-                prevSolicitudes.filter(s => s.id_verificacion !== solicitud.id_verificacion)
-            );
+            removeSolicitudFromState(solicitud.id_verificacion);
 
             // Cerrar modal y limpiar
-            setShowRejectModal(false);
-            setRejectComment('');
-            setSelectedSolicitud(null);
+            closeRejectModal();
 
             // Mostrar mensaje de éxito inmediatamente
             showNotification('success', 'Solicitud rechazada exitosamente');
@@ -634,10 +665,7 @@ const AdminVerificationsPage: React.FC = () => {
                                 Detalles de Solicitud #{selectedSolicitud.id_verificacion}
                             </h3>
                             <button
-                                onClick={() => {
-                                    setShowDetailModal(false);
-                                    setSelectedSolicitud(null);
-                                }}
+                                onClick={closeDetailModal}
                                 className="text-slate-400 hover:text-slate-600"
                             >
                                 <XMarkIcon className="w-6 h-6" />
@@ -774,32 +802,16 @@ const AdminVerificationsPage: React.FC = () => {
                                                                 e.stopPropagation();
                                                                 try {
                                                                     if (user?.accessToken) {
-                                                                        // Crear URL con token de autorización
-                                                                        const url = buildApiUrl(`/admin/verificaciones/${selectedSolicitud.id_verificacion}/documentos/${doc.id_documento}/servir`);
-                                                                        
-                                                                        // Crear una nueva ventana con el token en la URL
-                                                                        const authUrl = `${url}?token=${encodeURIComponent(user.accessToken)}`;
+                                                                        const authUrl = buildDocumentUrl(selectedSolicitud.id_verificacion, doc.id_documento);
                                                                         const newWindow = window.open(authUrl, '_blank');
                                                                         if (!newWindow) {
                                                                             alert('Por favor, permite popups para ver el documento');
                                                                         }
-                                                                        
                                                                         console.log('✅ Documento abierto desde backend');
                                                                     }
                                                                 } catch (error: any) {
                                                                     console.error('❌ Error abriendo documento:', error);
-                                                                    const errorMessage = error?.message || '';
-                                                                    if (errorMessage.includes('temporal')) {
-                                                                        alert('Este documento es temporal y no está disponible para visualización.');
-                                                                    } else if (errorMessage.includes('URL')) {
-                                                                        alert('La URL del documento no es válida.');
-                                                                    } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
-                                                                        alert('No se puede acceder al documento. Posiblemente requiere permisos especiales.');
-                                                                    } else if (errorMessage.includes('autenticación')) {
-                                                                        alert('Error de autenticación al acceder al documento.');
-                                                                    } else {
-                                                                        alert('Error al abrir el documento. Intenta descargarlo.');
-                                                                    }
+                                                                    handleDocumentError(error, 'visualización');
                                                                 }
                                                             }}
                                                             className="text-blue-600 hover:text-blue-800 text-xs underline"
@@ -812,9 +824,7 @@ const AdminVerificationsPage: React.FC = () => {
                                                                 e.stopPropagation();
                                                                 try {
                                                                     if (user?.accessToken) {
-                                                                        // Crear URL con token de autorización para descarga
-                                                                        const url = buildApiUrl(`/admin/verificaciones/${selectedSolicitud.id_verificacion}/documentos/${doc.id_documento}/servir`);
-                                                                        const authUrl = `${url}?token=${encodeURIComponent(user.accessToken)}`;
+                                                                        const authUrl = buildDocumentUrl(selectedSolicitud.id_verificacion, doc.id_documento);
                                                                         
                                                                         // Crear enlace de descarga
                                                                         const link = document.createElement('a');
@@ -836,18 +846,7 @@ const AdminVerificationsPage: React.FC = () => {
                                                                     }
                                                                 } catch (error: any) {
                                                                     console.error('❌ Error descargando documento:', error);
-                                                                    const errorMessage = error?.message || '';
-                                                                    if (errorMessage.includes('temporal')) {
-                                                                        alert('Este documento es temporal y no está disponible para descarga.');
-                                                                    } else if (errorMessage.includes('URL')) {
-                                                                        alert('La URL del documento no es válida.');
-                                                                    } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
-                                                                        alert('No se puede acceder al documento. Posiblemente requiere permisos especiales.');
-                                                                    } else if (errorMessage.includes('autenticación')) {
-                                                                        alert('Error de autenticación al acceder al documento.');
-                                                                    } else {
-                                                                        alert('Error al descargar el documento. Verifica que el archivo esté disponible.');
-                                                                    }
+                                                                    handleDocumentError(error, 'descarga');
                                                                 }
                                                             }}
                                                             className="text-green-600 hover:text-green-800 text-xs underline"
@@ -882,7 +881,7 @@ const AdminVerificationsPage: React.FC = () => {
                         <div className="mt-6 flex flex-col sm:flex-row gap-3">
                             <button
                                 onClick={() => {
-                                    setShowDetailModal(false);
+                                    closeDetailModal();
                                     handleAprobar(selectedSolicitud);
                                 }}
                                 disabled={processingAction === selectedSolicitud.id_verificacion}
@@ -898,7 +897,7 @@ const AdminVerificationsPage: React.FC = () => {
                             </button>
                             <button
                                 onClick={() => {
-                                    setShowDetailModal(false);
+                                    closeDetailModal();
                                     openRejectModal(selectedSolicitud);
                                 }}
                                 disabled={processingAction === selectedSolicitud.id_verificacion}
@@ -913,10 +912,7 @@ const AdminVerificationsPage: React.FC = () => {
                                 <span className="sm:hidden">Rechazar</span>
                             </button>
                             <button
-                                onClick={() => {
-                                    setShowDetailModal(false);
-                                    setSelectedSolicitud(null);
-                                }}
+                                onClick={closeDetailModal}
                                 className="flex items-center justify-center px-3 py-2 sm:px-4 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 text-sm sm:text-base"
                             >
                                 Cerrar
@@ -957,11 +953,7 @@ const AdminVerificationsPage: React.FC = () => {
 
                         <div className="flex flex-col sm:flex-row justify-end gap-3">
                             <button
-                                onClick={() => {
-                                    setShowRejectModal(false);
-                                    setRejectComment('');
-                                    setSelectedSolicitud(null);
-                                }}
+                                onClick={closeRejectModal}
                                 className="px-3 py-2 sm:px-4 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
                             >
                                 Cancelar

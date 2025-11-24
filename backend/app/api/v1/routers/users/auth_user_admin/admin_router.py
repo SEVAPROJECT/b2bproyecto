@@ -7,7 +7,7 @@ import mimetypes
 import traceback
 import secrets
 import string
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1198,52 +1198,210 @@ async def get_users_emails(
         return {"emails": {}}
 
 
+# Constantes para búsqueda de usuarios
+CAMPO_NOMBRE_EMPRESA = "u.nombre_empresa"
+CAMPO_NOMBRE_PERSONA = "u.nombre_persona"
+TABLA_USERS = "users"
+ALIAS_USERS = "u"
+TABLA_USUARIO_ROL = "usuario_rol"
+ALIAS_USUARIO_ROL = "ur"
+TABLA_ROL = "rol"
+ALIAS_ROL = "r"
+CAMPO_ID_ROL = "r.id"
+CAMPO_NOMBRE_ROL = "r.nombre"
+CAMPO_ID_USUARIO = "ur.id_usuario"
+CAMPO_ID_USUARIO_SIN_ALIAS = "id_usuario"
+OPERADOR_ILIKE = "ILIKE"
+OPERADOR_AND = "AND"
+OPERADOR_OR = "OR"
+OPERADOR_IN = "IN"
+OPERADOR_EQUAL = "="
+CLAUSULA_WHERE = "WHERE"
+CLAUSULA_JOIN = "JOIN"
+CLAUSULA_LEFT_JOIN = "LEFT JOIN"
+CLAUSULA_INNER_JOIN = "INNER JOIN"
+ORDEN_DESC = "DESC"
+CAMPO_CREATED_AT = "u.created_at"
+CAMPO_ID = "u.id"
+CAMPO_TOTAL = "total"
+VALOR_FILTRO_TODOS = "all"
+OPERADOR_EQUAL_EXACTO = "="
+
+# Mapeo de valores de filtro del frontend a nombres de roles en la BD
+MAPEO_FILTRO_ROL = {
+    "admin": "Administrador",
+    "provider": "Proveedor",
+    "proveedor": "Proveedor",
+    "client": "Cliente",
+    "cliente": "Cliente",
+    "administrador": "Administrador"
+}
+
+# Constantes para nombres de roles en BD
+NOMBRE_ROL_ADMINISTRADOR = "Administrador"
+NOMBRE_ROL_PROVEEDOR = "Proveedor"
+NOMBRE_ROL_CLIENTE = "Cliente"
+
+def mapear_filtro_rol_a_nombre_bd(filter_role: Optional[str]) -> Optional[str]:
+    """Mapea el valor del filtro de rol del frontend al nombre en la base de datos"""
+    if not filter_role or filter_role == VALOR_FILTRO_TODOS:
+        return None
+    
+    filter_role_lower = filter_role.lower().strip()
+    return MAPEO_FILTRO_ROL.get(filter_role_lower, filter_role)
+
 # Funciones helper para get_all_users
-def build_user_search_filters(search_empresa: Optional[str], search_nombre: Optional[str]) -> tuple[list[str], list, int]:
+def get_user_ids_by_email(search_nombre: Optional[str]) -> list[str]:
+    """Obtiene los IDs de usuarios que coinciden con la búsqueda por email"""
+    if not search_nombre or not search_nombre.strip():
+        return []
+    
+    try:
+        search_term = search_nombre.strip().lower()
+        auth_users = supabase_admin.auth.admin.list_users()
+        matching_ids = []
+        
+        for auth_user in auth_users:
+            if auth_user.id and auth_user.email:
+                email_lower = auth_user.email.lower()
+                if search_term in email_lower:
+                    matching_ids.append(auth_user.id)
+        
+        return matching_ids
+    except Exception as e:
+        print(f"⚠️ Error buscando usuarios por email: {e}")
+        return []
+
+def build_user_search_filters(search_empresa: Optional[str], search_nombre: Optional[str], filter_role: Optional[str] = None, email_user_ids: list[str] = None) -> tuple[list[str], list, int, bool]:
     """Construye las condiciones WHERE y parámetros para la búsqueda de usuarios"""
     where_conditions = []
     params = []
     param_count = 1
     
     if search_empresa and search_empresa.strip():
-        where_conditions.append(f"u.nombre_empresa ILIKE ${param_count}")
+        where_conditions.append(f"{CAMPO_NOMBRE_EMPRESA} {OPERADOR_ILIKE} ${param_count}")
         params.append(f"%{search_empresa.strip()}%")
         param_count += 1
         
+    # Construir condición de búsqueda por nombre/email
+    nombre_email_conditions = []
     if search_nombre and search_nombre.strip():
-        where_conditions.append(f"u.nombre_persona ILIKE ${param_count}")
+        # Buscar por nombre de persona
+        nombre_email_conditions.append(f"{CAMPO_NOMBRE_PERSONA} {OPERADOR_ILIKE} ${param_count}")
         params.append(f"%{search_nombre.strip()}%")
         param_count += 1
     
-    return where_conditions, params, param_count
+    # Si hay IDs de usuarios por email, agregarlos a la búsqueda
+    if email_user_ids:
+        if len(email_user_ids) == 1:
+            nombre_email_conditions.append(f"{CAMPO_ID} = ${param_count}")
+            params.append(email_user_ids[0])
+            param_count += 1
+        else:
+            placeholders = ", ".join([f"${param_count + i}" for i in range(len(email_user_ids))])
+            nombre_email_conditions.append(f"{CAMPO_ID} IN ({placeholders})")
+            params.extend(email_user_ids)
+            param_count += len(email_user_ids)
+    
+    # Si hay condiciones de nombre/email, combinarlas con OR
+    if nombre_email_conditions:
+        if len(nombre_email_conditions) > 1:
+            where_conditions.append(f"({' OR '.join(nombre_email_conditions)})")
+        else:
+            where_conditions.append(nombre_email_conditions[0])
+    
+    # Filtro por rol - mapear valor del frontend al nombre en BD
+    # Para "Cliente", filtrar usuarios que tienen Cliente pero NO tienen Administrador ni Proveedor
+    # (ya que todos los usuarios pueden tener Cliente como rol base)
+    needs_role_join = False
+    role_name_bd = mapear_filtro_rol_a_nombre_bd(filter_role)
+    if role_name_bd:
+        if role_name_bd == NOMBRE_ROL_CLIENTE:
+            # Para Cliente: usuarios que tienen Cliente pero NO tienen Administrador ni Proveedor
+            # Usar subconsulta para filtrar correctamente (no necesita JOIN en query principal)
+            where_conditions.append(f"""
+                {CAMPO_ID} IN (
+                    SELECT ur_cliente.{CAMPO_ID_USUARIO_SIN_ALIAS}
+                    FROM {TABLA_USUARIO_ROL} ur_cliente
+                    {CLAUSULA_INNER_JOIN} {TABLA_ROL} r_cliente ON ur_cliente.id_rol = r_cliente.id
+                    WHERE LOWER(r_cliente.nombre) = LOWER(${param_count})
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM {TABLA_USUARIO_ROL} ur_otros
+                        {CLAUSULA_INNER_JOIN} {TABLA_ROL} r_otros ON ur_otros.id_rol = r_otros.id
+                        WHERE ur_otros.{CAMPO_ID_USUARIO_SIN_ALIAS} = ur_cliente.{CAMPO_ID_USUARIO_SIN_ALIAS}
+                        AND LOWER(r_otros.nombre) IN (LOWER(${param_count + 1}), LOWER(${param_count + 2}))
+                    )
+                )
+            """)
+            params.append(role_name_bd)
+            params.append(NOMBRE_ROL_ADMINISTRADOR)
+            params.append(NOMBRE_ROL_PROVEEDOR)
+            param_count += 3
+            needs_role_join = False  # No necesita JOIN porque usa subconsulta
+        else:
+            # Para otros roles: filtro normal con INNER JOIN
+            where_conditions.append(f"LOWER({CAMPO_NOMBRE_ROL}) {OPERADOR_EQUAL_EXACTO} LOWER(${param_count})")
+            params.append(role_name_bd)
+            param_count += 1
+            needs_role_join = True  # Necesita JOIN para otros roles
+    
+    return where_conditions, params, param_count, needs_role_join
 
 def build_user_where_clause(where_conditions: list[str]) -> str:
     """Construye la cláusula WHERE para las queries"""
-    return "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+    if not where_conditions:
+        return ""
+    return f"{CLAUSULA_WHERE} {OPERADOR_AND.join(where_conditions)}"
 
-def build_user_count_query(where_clause: str) -> str:
+def build_user_count_query(where_clause: str, has_role_filter: bool = False) -> str:
     """Construye la query para contar usuarios"""
+    join_clause = ""
+    if has_role_filter:
+        # Usar INNER JOIN cuando hay filtro de rol para devolver solo usuarios con ese rol específico
+        join_clause = f"""
+        {CLAUSULA_INNER_JOIN} {TABLA_USUARIO_ROL} {ALIAS_USUARIO_ROL} ON {ALIAS_USERS}.id = {CAMPO_ID_USUARIO}
+        {CLAUSULA_INNER_JOIN} {TABLA_ROL} {ALIAS_ROL} ON {ALIAS_USUARIO_ROL}.id_rol = {CAMPO_ID_ROL}
+        """
     return f"""
-        SELECT COUNT(DISTINCT u.id) as total
-        FROM users u
+        SELECT COUNT(DISTINCT {CAMPO_ID}) as {CAMPO_TOTAL}
+        FROM {TABLA_USERS} {ALIAS_USERS}
+        {join_clause}
         {where_clause}
     """
 
-def build_user_list_query(where_clause: str, param_count: int) -> str:
+def build_user_list_query(where_clause: str, param_count: int, has_role_filter: bool = False) -> str:
     """Construye la query para obtener la lista de usuarios"""
+    limit_param = param_count
+    offset_param = param_count + 1
+    join_clause = ""
+    if has_role_filter:
+        # Usar INNER JOIN cuando hay filtro de rol para devolver solo usuarios con ese rol específico
+        join_clause = f"""
+        {CLAUSULA_INNER_JOIN} {TABLA_USUARIO_ROL} {ALIAS_USUARIO_ROL} ON {ALIAS_USERS}.id = {CAMPO_ID_USUARIO}
+        {CLAUSULA_INNER_JOIN} {TABLA_ROL} {ALIAS_ROL} ON {ALIAS_USUARIO_ROL}.id_rol = {CAMPO_ID_ROL}
+        """
     return f"""
-        SELECT 
-            u.id,
-            u.nombre_persona,
-            u.nombre_empresa,
-            u.estado,
-            u.foto_perfil,
-            u.created_at
-        FROM users u
+        SELECT DISTINCT
+            {ALIAS_USERS}.id,
+            {ALIAS_USERS}.nombre_persona,
+            {ALIAS_USERS}.nombre_empresa,
+            {ALIAS_USERS}.estado,
+            {ALIAS_USERS}.foto_perfil,
+            {ALIAS_USERS}.created_at
+        FROM {TABLA_USERS} {ALIAS_USERS}
+        {join_clause}
         {where_clause}
-        ORDER BY u.created_at DESC
-        LIMIT ${param_count} OFFSET ${param_count + 1}
+        ORDER BY {CAMPO_CREATED_AT} {ORDEN_DESC}
+        LIMIT ${limit_param} OFFSET ${offset_param}
     """
+
+# Función unificada para formatear fechas a DD/MM/YYYY
+def format_date_dd_mm_yyyy(date_value) -> Optional[str]:
+    """Formatea una fecha a DD/MM/YYYY (función unificada para todas las fechas)"""
+    if date_value:
+        return date_value.strftime("%d/%m/%Y")
+    return None
 
 def get_emails_from_supabase_auth() -> dict:
     """Obtiene los emails de usuarios desde Supabase Auth"""
@@ -1275,10 +1433,14 @@ def get_user_email_and_access(user_id: str, emails_dict: dict) -> tuple[str, Opt
         return emails_dict[user_id]["email"], emails_dict[user_id]["ultimo_acceso"]
     return VALOR_DEFAULT_NO_DISPONIBLE, None
 
-def process_user_row_for_list(row: dict, emails_dict: dict) -> dict:
-    """Procesa una fila de usuario y retorna su diccionario"""
+async def process_user_row_for_list(conn, row: dict, emails_dict: dict) -> dict:
+    """Procesa una fila de usuario y retorna su diccionario con roles reales"""
     user_id = str(row['id'])
     email, ultimo_acceso = get_user_email_and_access(user_id, emails_dict)
+    
+    # Obtener roles reales del usuario
+    roles = await get_user_roles(conn, user_id)
+    rol_principal = determine_main_role(roles) if roles else "client"
     
     return {
         "id": user_id,
@@ -1288,20 +1450,24 @@ def process_user_row_for_list(row: dict, emails_dict: dict) -> dict:
         "estado": row['estado'] or "ACTIVO",
         "email": email,
         "ultimo_acceso": ultimo_acceso,
-        "roles": ["Usuario"],
-        "rol_principal": "client",
-        "todos_roles": ["Usuario"],
-        "fecha_registro": row['created_at'].strftime("%d/%m/%Y") if row['created_at'] else "Sin fecha"
+        "roles": roles if roles else ["Usuario"],
+        "rol_principal": rol_principal,
+        "todos_roles": roles if roles else ["Usuario"],
+        "fecha_registro": format_date_dd_mm_yyyy(row['created_at']) if row['created_at'] else "Sin fecha"
     }
 
 def build_users_response(users_list: list, total_users: int, page: int, limit: int) -> dict:
     """Construye la respuesta final con usuarios y paginación"""
+    # Asegurar que total_users sea un entero
+    total_int = int(total_users) if total_users is not None else 0
+    total_pages = (total_int + limit - 1) // limit if total_int > 0 else 1
+    
     return {
         "usuarios": users_list,
-        "total": total_users,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total_users + limit - 1) // limit,
+        "total": total_int,
+        "page": int(page),
+        "limit": int(limit),
+        "total_pages": total_pages,
         "message": "Usuarios obtenidos exitosamente"
     }
 
@@ -1311,32 +1477,50 @@ def build_users_response(users_list: list, total_users: int, page: int, limit: i
 )
 async def get_all_users(
     admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
-    search_empresa: str = None,
-    search_nombre: str = None,
-    page: int = 1,
-    limit: int = 100
+    search_empresa: Optional[str] = Query(None, description="Búsqueda por nombre de empresa"),
+    search_nombre: Optional[str] = Query(None, description="Búsqueda por nombre de persona o email"),
+    filter_role: Optional[str] = Query(None, description="Filtro por rol (ej: 'admin', 'provider', 'client')"),
+    page: int = Query(1, ge=1, description="Número de página"),
+    limit: int = Query(100, ge=1, le=1000, description="Cantidad de resultados por página")
 ):
     """Obtiene usuarios con paginación y búsqueda optimizada usando DirectDBService"""
     try:
+        # Obtener IDs de usuarios que coinciden con búsqueda por email
+        email_user_ids = get_user_ids_by_email(search_nombre) if search_nombre else []
+        
+        # Mapear filtro de rol del frontend al nombre en BD
+        role_name_bd = mapear_filtro_rol_a_nombre_bd(filter_role)
+        has_role_filter = role_name_bd is not None
+        
         conn = await direct_db_service.get_connection()
         
         try:
-            where_conditions, params, param_count = build_user_search_filters(search_empresa, search_nombre)
+            where_conditions, params, param_count, needs_role_join = build_user_search_filters(search_empresa, search_nombre, role_name_bd, email_user_ids)
             where_clause = build_user_where_clause(where_conditions)
             
-            count_query = build_user_count_query(where_clause)
-            total_result = await conn.fetchrow(count_query, *params)
-            total_users = total_result['total'] if total_result else 0
+            count_query = build_user_count_query(where_clause, needs_role_join)
+            # Crear una copia de params para la query de conteo (sin limit y offset)
+            count_params = params.copy()
+            total_result = await conn.fetchrow(count_query, *count_params)
+            total_users = int(total_result['total']) if total_result and total_result.get('total') is not None else 0
+            print(f"🔍 DEBUG: Total usuarios encontrados con filtros: {total_users}")
             
             offset = (page - 1) * limit
-            users_query = build_user_list_query(where_clause, param_count)
-            params.extend([limit, offset])
-            users_data = await conn.fetch(users_query, *params)
+            users_query = build_user_list_query(where_clause, param_count, needs_role_join)
+            # Crear una copia de params para la query de usuarios (con limit y offset)
+            users_params = params.copy()
+            users_params.extend([limit, offset])
+            users_data = await conn.fetch(users_query, *users_params)
             
             emails_dict = get_emails_from_supabase_auth()
-            users_list = [process_user_row_for_list(row, emails_dict) for row in users_data]
+            users_list = []
+            for row in users_data:
+                user_data = await process_user_row_for_list(conn, row, emails_dict)
+                users_list.append(user_data)
             
-            return build_users_response(users_list, total_users, page, limit)
+            response_data = build_users_response(users_list, total_users, page, limit)
+            print(f"🔍 DEBUG: Respuesta enviada - Total: {response_data['total']}, Usuarios: {len(users_list)}")
+            return response_data
             
         finally:
             await direct_db_service.pool.release(conn)
@@ -1801,30 +1985,37 @@ async def deactivate_user(
     description="Obtiene la lista de todos los roles disponibles"
 )
 async def get_available_roles(
-    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_db)
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user)
 ):
-    """Obtiene todos los roles disponibles en el sistema"""
+    """Obtiene todos los roles disponibles en el sistema usando DirectDBService para evitar problemas con PgBouncer"""
     try:
-        query = select(RolModel)
-        result = await db.execute(query)
-        roles = result.scalars().all()
+        # Usar direct_db_service para evitar problemas con prepared statements y PgBouncer
+        conn = await direct_db_service.get_connection()
         
-        roles_data = []
-        for role in roles:
-            roles_data.append({
-                "id": str(role.id),
-                "nombre": role.nombre,
-                "descripcion": role.descripcion
-            })
-        
-        return {
-            "roles": roles_data,
-            "total": len(roles_data)
-        }
+        try:
+            # Query SQL directa sin prepared statements
+            query = "SELECT id, nombre, descripcion FROM rol ORDER BY nombre"
+            rows = await conn.fetch(query)
+            
+            roles_data = []
+            for row in rows:
+                roles_data.append({
+                    "id": str(row['id']),
+                    "nombre": row['nombre'],
+                    "descripcion": row['descripcion'] if row['descripcion'] else None
+                })
+            
+            return {
+                "roles": roles_data,
+                "total": len(roles_data)
+            }
+            
+        finally:
+            await direct_db_service.pool.release(conn)
         
     except Exception as e:
         print(f"❌ Error obteniendo roles: {e}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error obteniendo roles: {str(e)}"
@@ -2372,21 +2563,9 @@ async def get_users_from_db(conn) -> list:
     return await conn.fetch(users_query)
 
 def get_emails_from_supabase() -> dict:
-    """Obtiene los emails de usuarios desde Supabase Auth"""
-    emails_dict = {}
-    try:
-        auth_users = supabase_admin.auth.admin.list_users()
-        
-        if auth_users and len(auth_users) > 0:
-            for auth_user in auth_users:
-                if auth_user.id and auth_user.email:
-                    emails_dict[auth_user.id] = {
-                        "email": auth_user.email,
-                        "created_at": auth_user.created_at
-                    }
-    except Exception as supabase_error:
-        print(f"❌ Error obteniendo emails de Supabase: {supabase_error}")
-    return emails_dict
+    """Obtiene los emails de usuarios desde Supabase Auth (alias para compatibilidad)"""
+    # Usar la función unificada get_emails_from_supabase_auth
+    return get_emails_from_supabase_auth()
 
 def format_creation_date(created_at) -> str:
     """Formatea la fecha de creación del usuario"""
@@ -2399,9 +2578,10 @@ def format_creation_date(created_at) -> str:
                 created_at = created_at.replace('Z', '+00:00')
             elif '+' not in created_at and 'T' in created_at:
                 created_at = created_at + '+00:00'
-            return datetime.fromisoformat(created_at).strftime("%d/%m/%Y")
+            date_obj = datetime.fromisoformat(created_at)
+            return format_date_dd_mm_yyyy(date_obj) or VALOR_DEFAULT_NO_DISPONIBLE
         else:
-            return created_at.strftime("%d/%m/%Y")
+            return format_date_dd_mm_yyyy(created_at) or VALOR_DEFAULT_NO_DISPONIBLE
     except Exception as date_error:
         print(f"DEBUG: Error formateando fecha: {date_error}")
         return "Error formato"
@@ -2422,12 +2602,12 @@ def determine_main_role(roles: list[str]) -> str:
     normalized_roles = [rol.lower().strip() for rol in roles]
     
     if any(admin_role in normalized_roles for admin_role in ["admin", "administrador", "administrator"]):
-        return "Administrador"
+        return "admin"  # Valor que espera el frontend
     elif any(provider_role in normalized_roles for provider_role in ["provider", "proveedor", "proveedores"]):
-        return "Proveedor"
+        return "provider"  # Valor que espera el frontend
     elif any(client_role in normalized_roles for client_role in ["client", "cliente"]):
-        return "Cliente"
-    return "Cliente"
+        return "client"  # Valor que espera el frontend
+    return "client"  # Valor por defecto que espera el frontend
 
 def normalize_user_status(estado_raw) -> str:
     """Normaliza el estado del usuario"""
@@ -2584,13 +2764,8 @@ async def get_reporte_proveedores_verificados(
                     proveedor_email = "No disponible"
                 
                 # Formatear fechas
-                fecha_verificacion_formateada = None
-                if row['fecha_verificacion']:
-                    fecha_verificacion_formateada = row['fecha_verificacion'].strftime("%d/%m/%Y")
-                
-                fecha_inicio_formateada = None
-                if row['fecha_inicio']:
-                    fecha_inicio_formateada = row['fecha_inicio'].strftime("%d/%m/%Y")
+                fecha_verificacion_formateada = format_date_dd_mm_yyyy(row['fecha_verificacion'])
+                fecha_inicio_formateada = format_date_dd_mm_yyyy(row['fecha_inicio'])
                 
                 proveedores_verificados.append({
                     "id_perfil": str(row['id_perfil']),
@@ -2664,10 +2839,8 @@ async def get_user_contact_info_for_report(db: AsyncSession, empresa: Optional[P
     return user_nombre, user_email
 
 def format_solicitud_date(date_value) -> Optional[str]:
-    """Formatea una fecha de solicitud a DD/MM/YYYY"""
-    if date_value:
-        return date_value.strftime("%d/%m/%Y")
-    return None
+    """Formatea una fecha de solicitud a DD/MM/YYYY (alias para compatibilidad)"""
+    return format_date_dd_mm_yyyy(date_value)
 
 async def process_solicitud_data(db: AsyncSession, solicitud: VerificacionSolicitud) -> dict:
     """Procesa una solicitud y retorna su diccionario para el reporte"""
@@ -2741,9 +2914,7 @@ async def get_reporte_categorias(
             servicios = servicios_result.scalars().all()
 
             # Formatear fecha a DD/MM/AAAA
-            fecha_formateada = None
-            if categoria.created_at:
-                fecha_formateada = categoria.created_at.strftime("%d/%m/%Y")
+            fecha_formateada = format_date_dd_mm_yyyy(categoria.created_at)
             
             # Formatear estado: true -> "Activa", false -> "Inactiva"
             estado_formateado = "Activa" if categoria.estado else "Inactiva"
@@ -2807,9 +2978,7 @@ async def get_reporte_servicios(
             servicios_detallados = []
             for row in servicios_data:
                 # Formatear fecha a DD/MM/AAAA
-                fecha_formateada = None
-                if row['created_at']:
-                    fecha_formateada = row['created_at'].strftime("%d/%m/%Y")
+                fecha_formateada = format_date_dd_mm_yyyy(row['created_at'])
                 
                 # Formatear estado: true -> "ACTIVO", false -> "INACTIVO"
                 estado_formateado = "ACTIVO" if row['estado'] else "INACTIVO"
@@ -2888,10 +3057,8 @@ def format_reserva_datetime(date_value) -> Optional[str]:
     return None
 
 def format_servicio_date(date_value) -> Optional[str]:
-    """Formatea una fecha de servicio a DD/MM/YYYY"""
-    if date_value:
-        return date_value.strftime("%d/%m/%Y")
-    return None
+    """Formatea una fecha de servicio a DD/MM/YYYY (alias para compatibilidad)"""
+    return format_date_dd_mm_yyyy(date_value)
 
 def format_horario_completo(hora_inicio, hora_fin) -> Optional[str]:
     """Formatea el horario completo de la reserva"""
@@ -3049,10 +3216,8 @@ def build_reservas_query() -> str:
     """
 
 def format_reserva_date(date_value) -> Optional[str]:
-    """Formatea una fecha de reserva a DD/MM/YYYY"""
-    if date_value:
-        return date_value.strftime("%d/%m/%Y")
-    return None
+    """Formatea una fecha de reserva a DD/MM/YYYY (alias para compatibilidad)"""
+    return format_date_dd_mm_yyyy(date_value)
 
 def format_hora_servicio(hora_inicio, hora_fin) -> Optional[str]:
     """Formatea la hora del servicio"""
@@ -3180,9 +3345,7 @@ async def get_reporte_calificaciones(
             calificaciones_detalladas = []
             for row in calificaciones_data:
                 # Formatear fecha a DD/MM/YYYY
-                fecha_formateada = None
-                if row['fecha']:
-                    fecha_formateada = row['fecha'].strftime("%d/%m/%Y")
+                fecha_formateada = format_date_dd_mm_yyyy(row['fecha'])
                 
                 calificaciones_detalladas.append({
                     "fecha": fecha_formateada,
@@ -3255,9 +3418,7 @@ async def get_reporte_calificaciones_proveedores(
             calificaciones_detalladas = []
             for row in calificaciones_data:
                 # Formatear fecha a DD/MM/YYYY
-                fecha_formateada = None
-                if row['fecha']:
-                    fecha_formateada = row['fecha'].strftime("%d/%m/%Y")
+                fecha_formateada = format_date_dd_mm_yyyy(row['fecha'])
                 
                 calificaciones_detalladas.append({
                     "fecha": fecha_formateada,

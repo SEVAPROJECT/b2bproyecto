@@ -37,32 +37,151 @@ const handleApiError = async (response: Response): Promise<AuthError> => {
     }
 };
 
+// Función helper para construir headers con autenticación
+const buildAuthHeaders = (accessToken?: string, contentType: string = 'application/json'): Record<string, string> => {
+    const headers: Record<string, string> = {
+        'Content-Type': contentType,
+    };
+    if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    return headers;
+};
+
+// Función helper para manejar errores en catch blocks
+const handleCatchError = (error: unknown, functionName: string): never => {
+    console.error(`❌ Error en ${functionName}:`, error);
+    if (error instanceof Error) {
+        throw createApiError(error.message);
+    }
+    throw error;
+};
+
+// Función helper para realizar peticiones fetch con manejo de errores estándar
+const performFetchRequest = async (
+    url: string,
+    options: RequestInit,
+    functionName: string
+): Promise<Response> => {
+    const response = await fetch(url, options);
+    
+    if (!response.ok) {
+        const error = await handleApiError(response);
+        throw error;
+    }
+    
+    return response;
+};
+
+// Función helper para realizar peticiones GET con autenticación
+const performGetRequest = async <T>(
+    url: string,
+    accessToken?: string,
+    functionName?: string
+): Promise<T> => {
+    try {
+        const headers = buildAuthHeaders(accessToken);
+        const response = await performFetchRequest(url, {
+            method: 'GET',
+            headers,
+        }, functionName || 'performGetRequest');
+        
+        return await response.json();
+    } catch (error) {
+        if (functionName) {
+            handleCatchError(error, functionName);
+        }
+        throw error;
+    }
+};
+
+// Función helper para realizar peticiones POST con autenticación
+const performPostRequest = async <T>(
+    url: string,
+    body: any,
+    accessToken?: string,
+    functionName?: string,
+    contentType: string = 'application/json'
+): Promise<T> => {
+    try {
+        const headers = buildAuthHeaders(accessToken, contentType);
+        const requestBody = contentType === 'application/json' ? JSON.stringify(body) : body;
+        
+        const response = await performFetchRequest(url, {
+            method: 'POST',
+            headers,
+            body: requestBody,
+        }, functionName || 'performPostRequest');
+        
+        return await response.json();
+    } catch (error) {
+        if (functionName) {
+            handleCatchError(error, functionName);
+        }
+        throw error;
+    }
+};
+
+// Función helper para realizar peticiones PUT con autenticación
+const performPutRequest = async <T>(
+    url: string,
+    body: any,
+    accessToken: string,
+    functionName?: string
+): Promise<T> => {
+    try {
+        const headers = buildAuthHeaders(accessToken);
+        const response = await performFetchRequest(url, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(body),
+        }, functionName || 'performPutRequest');
+        
+        return await response.json();
+    } catch (error) {
+        if (functionName) {
+            handleCatchError(error, functionName);
+        }
+        throw error;
+    }
+};
+
+// Función helper para realizar peticiones DELETE con autenticación
+const performDeleteRequest = async <T>(
+    url: string,
+    accessToken: string,
+    functionName?: string
+): Promise<T> => {
+    try {
+        const headers = buildAuthHeaders(accessToken);
+        const response = await performFetchRequest(url, {
+            method: 'DELETE',
+            headers,
+        }, functionName || 'performDeleteRequest');
+        
+        return await response.json();
+    } catch (error) {
+        if (functionName) {
+            handleCatchError(error, functionName);
+        }
+        throw error;
+    }
+};
+
 // Funciones de autenticación
 export const authAPI = {
     // Registro de usuario
     async signUp(data: SignUpData): Promise<SignUpResponse | TokenResponse> {
         try {
             console.log('🚀 Intentando registro en:', buildApiUrl(API_CONFIG.AUTH.REGISTER));
-            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.REGISTER), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<SignUpResponse | TokenResponse>(
+                buildApiUrl(API_CONFIG.AUTH.REGISTER),
+                data,
+                undefined,
+                'signUp'
+            );
         } catch (error) {
-            console.error('❌ Error en signUp:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'signUp');
         }
     },
 
@@ -70,102 +189,62 @@ export const authAPI = {
     async signIn(data: LoginData): Promise<TokenResponse> {
         try {
             console.log('🔐 Intentando login en:', buildApiUrl(API_CONFIG.AUTH.LOGIN));
-            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.LOGIN), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<TokenResponse>(
+                buildApiUrl(API_CONFIG.AUTH.LOGIN),
+                data,
+                undefined,
+                'signIn'
+            );
         } catch (error) {
-            console.error('❌ Error en signIn:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'signIn');
         }
     },
 
     // Refrescar token
     async refreshToken(refreshToken: string): Promise<TokenResponse> {
         try {
-            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.REFRESH), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ refresh_token: refreshToken }),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<TokenResponse>(
+                buildApiUrl(API_CONFIG.AUTH.REFRESH),
+                { refresh_token: refreshToken },
+                undefined,
+                'refreshToken'
+            );
         } catch (error) {
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'refreshToken');
         }
     },
 
     // Cerrar sesión
     async logout(accessToken: string): Promise<void> {
         try {
-            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.LOGOUT), {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
+            await performPostRequest<void>(
+                buildApiUrl(API_CONFIG.AUTH.LOGOUT),
+                undefined,
+                accessToken,
+                'logout'
+            );
         } catch (error) {
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'logout');
         }
     },
 
     // Obtener perfil del usuario
     async getProfile(accessToken?: string) {
         try {
-            const headers: Record<string, string> = {};
+            const headers = buildAuthHeaders(accessToken);
+            const response = await performFetchRequest(
+                buildApiUrl(API_CONFIG.AUTH.ME),
+                {
+                    method: 'GET',
+                    headers,
+                    credentials: 'include', // Importante: incluir cookies HttpOnly
+                },
+                'getProfile'
+            );
             
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-            
-            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.ME), {
-                method: 'GET',
-                headers,
-                credentials: 'include', // Importante: incluir cookies HttpOnly
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
             return await response.json();
         } catch (error) {
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getProfile');
         }
     },
 
@@ -173,26 +252,14 @@ export const authAPI = {
     async resetPassword(email: string): Promise<{ message: string }> {
         try {
             console.log('🔑 Intentando restablecer contraseña para:', email);
-            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.RESET_PASSWORD), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ email }),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<{ message: string }>(
+                buildApiUrl(API_CONFIG.AUTH.RESET_PASSWORD),
+                { email },
+                undefined,
+                'resetPassword'
+            );
         } catch (error) {
-            console.error('❌ Error en resetPassword:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'resetPassword');
         }
     },
 
@@ -200,28 +267,15 @@ export const authAPI = {
     async getVerificacionEstado(accessToken: string): Promise<any> {
         try {
             console.log(`🔍 Obteniendo estado de verificación...`);
-            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.VERIFICATION_STATUS), {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const result = await performGetRequest<any>(
+                buildApiUrl(API_CONFIG.AUTH.VERIFICATION_STATUS),
+                accessToken,
+                'getVerificacionEstado'
+            );
             console.log('✅ Estado de verificación obtenido:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en getVerificacionEstado:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getVerificacionEstado');
         }
     }
 };
@@ -489,34 +543,13 @@ export const adminAPI = {
             const endpoint = `${API_BASE_URL}/admin/users`;
             console.log('👥 Obteniendo todos los usuarios desde:', endpoint);
 
-            const response = await fetch(endpoint, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            console.log('📡 Estado de respuesta usuarios:', response.status, response.statusText);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.log('❌ Respuesta de error del backend:', errorText);
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const result = await performGetRequest<any[]>(endpoint, accessToken, 'getAllUsers');
             console.log('✅ Usuarios obtenidos:', result);
             console.log('📊 Total de usuarios:', result?.length || 0);
 
             return Array.isArray(result) ? result : [];
         } catch (error) {
-            console.error('❌ Error en getAllUsers:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getAllUsers');
         }
     },
 
@@ -526,34 +559,13 @@ export const adminAPI = {
             const endpoint = `${API_BASE_URL}/admin/verificaciones/todas`;
             console.log('📋 Obteniendo todas las solicitudes de verificación desde:', endpoint);
 
-            const response = await fetch(endpoint, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            console.log('📡 Estado de respuesta todas las solicitudes:', response.status, response.statusText);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.log('❌ Respuesta de error del backend:', errorText);
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const result = await performGetRequest<any[]>(endpoint, accessToken, 'getAllSolicitudesVerificacion');
             console.log('✅ Todas las solicitudes obtenidas:', result);
             console.log('📊 Total de solicitudes:', result?.length || 0);
 
             return Array.isArray(result) ? result : [];
         } catch (error) {
-            console.error('❌ Error en getAllSolicitudesVerificacion:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getAllSolicitudesVerificacion');
         }
     },
 
@@ -563,34 +575,13 @@ export const adminAPI = {
             const endpoint = `${API_BASE_URL}/admin/service-requests/todas`;
             console.log('📋 Obteniendo todas las solicitudes de servicios desde:', endpoint);
 
-            const response = await fetch(endpoint, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            console.log('📡 Estado de respuesta todas las solicitudes de servicios:', response.status, response.statusText);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.log('❌ Respuesta de error del backend:', errorText);
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const result = await performGetRequest<any[]>(endpoint, accessToken, 'getAllSolicitudesServicios');
             console.log('✅ Todas las solicitudes de servicios obtenidas:', result);
             console.log('📊 Total de solicitudes de servicios:', result?.length || 0);
 
             return Array.isArray(result) ? result : [];
         } catch (error) {
-            console.error('❌ Error en getAllSolicitudesServicios:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getAllSolicitudesServicios');
         }
     },
 
@@ -600,34 +591,13 @@ export const adminAPI = {
             const endpoint = `${API_BASE_URL}/service-requests/?all=true&admin=true&limit=100`;
             console.log('📋 Obteniendo todas las solicitudes de servicios (endpoint modificado) desde:', endpoint);
 
-            const response = await fetch(endpoint, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            console.log('📡 Estado de respuesta (endpoint modificado):', response.status, response.statusText);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.log('❌ Respuesta de error del backend (endpoint modificado):', errorText);
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const result = await performGetRequest<any[]>(endpoint, accessToken, 'getAllSolicitudesServiciosModificado');
             console.log('✅ Solicitudes obtenidas (endpoint modificado):', result);
             console.log('📊 Total de solicitudes (endpoint modificado):', result?.length || 0);
 
             return Array.isArray(result) ? result : [];
         } catch (error) {
-            console.error('❌ Error en getAllSolicitudesServiciosModificado:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getAllSolicitudesServiciosModificado');
         }
     },
 
@@ -637,24 +607,7 @@ export const adminAPI = {
             const endpoint = `${API_BASE_URL}/admin/verificaciones/pendientes`;
             console.log('📋 Obteniendo solicitudes pendientes desde:', endpoint);
 
-            const response = await fetch(endpoint, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            console.log('📡 Estado de respuesta:', response.status, response.statusText);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.log('❌ Respuesta de error del backend:', errorText);
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const result = await performGetRequest<any[]>(endpoint, accessToken, 'getSolicitudesPendientes');
             console.log('✅ Solicitudes pendientes obtenidas:', result);
             console.log('📊 Tipo de resultado:', typeof result);
             console.log('📊 Es array:', Array.isArray(result));
@@ -662,11 +615,7 @@ export const adminAPI = {
 
             return Array.isArray(result) ? result : [];
         } catch (error) {
-            console.error('❌ Error en getSolicitudesPendientes:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getSolicitudesPendientes');
         }
     },
 
@@ -674,28 +623,12 @@ export const adminAPI = {
     async getDetalleSolicitud(solicitudId: number, accessToken: string): Promise<any> {
         try {
             console.log(`📋 Obteniendo detalles de solicitud ${solicitudId}...`);
-            const response = await fetch(`${API_BASE_URL}/admin/verificaciones/${solicitudId}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/admin/verificaciones/${solicitudId}`;
+            const result = await performGetRequest<any>(endpoint, accessToken, 'getDetalleSolicitud');
             console.log('✅ Detalles de solicitud obtenidos:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en getDetalleSolicitud:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getDetalleSolicitud');
         }
     },
 
@@ -703,29 +636,12 @@ export const adminAPI = {
     async aprobarSolicitud(solicitudId: number, comentario: string | null, accessToken: string): Promise<any> {
         try {
             console.log(`✅ Aprobando solicitud ${solicitudId}...`);
-            const response = await fetch(`${API_BASE_URL}/admin/verificaciones/${solicitudId}/aprobar`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ comentario }),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/admin/verificaciones/${solicitudId}/aprobar`;
+            const result = await performPostRequest<any>(endpoint, { comentario }, accessToken, 'aprobarSolicitud');
             console.log('✅ Solicitud aprobada:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en aprobarSolicitud:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'aprobarSolicitud');
         }
     },
 
@@ -735,29 +651,12 @@ export const adminAPI = {
             console.log(`❌ Rechazando solicitud ${solicitudId}...`);
             console.log(`📝 Comentario: ${comentario}`);
             
-            const response = await fetch(`${API_BASE_URL}/admin/verificaciones/${solicitudId}/rechazar`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ comentario }),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/admin/verificaciones/${solicitudId}/rechazar`;
+            const result = await performPostRequest<any>(endpoint, { comentario }, accessToken, 'rechazarSolicitud');
             console.log('✅ Solicitud rechazada:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en rechazarSolicitud:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'rechazarSolicitud');
         }
     },
 
@@ -765,28 +664,12 @@ export const adminAPI = {
     async getDocumentosSolicitud(solicitudId: number, accessToken: string): Promise<any> {
         try {
             console.log(`📄 Obteniendo documentos de solicitud ${solicitudId}...`);
-            const response = await fetch(`${API_BASE_URL}/admin/verificaciones/${solicitudId}/documentos`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/admin/verificaciones/${solicitudId}/documentos`;
+            const result = await performGetRequest<any>(endpoint, accessToken, 'getDocumentosSolicitud');
             console.log('✅ Documentos obtenidos:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en getDocumentosSolicitud:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getDocumentosSolicitud');
         }
     },
 
@@ -794,28 +677,12 @@ export const adminAPI = {
     async getVerificacionDatos(accessToken: string): Promise<any> {
         try {
             console.log(`📋 Obteniendo datos de verificación...`);
-            const response = await fetch(`${API_BASE_URL}/auth/verificacion-datos`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/auth/verificacion-datos`;
+            const result = await performGetRequest<any>(endpoint, accessToken, 'getVerificacionDatos');
             console.log('✅ Datos de verificación obtenidos:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en getVerificacionDatos:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getVerificacionDatos');
         }
     },
 
@@ -823,28 +690,12 @@ export const adminAPI = {
     async descargarDocumento(solicitudId: number, documentoId: number, accessToken: string): Promise<any> {
         try {
             console.log(`📥 Descargando documento ${documentoId} de solicitud ${solicitudId}...`);
-            const response = await fetch(`${API_BASE_URL}/admin/verificaciones/${solicitudId}/documentos/${documentoId}/descargar`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/admin/verificaciones/${solicitudId}/documentos/${documentoId}/descargar`;
+            const result = await performGetRequest<any>(endpoint, accessToken, 'descargarDocumento');
             console.log('✅ Información de descarga obtenida:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en descargarDocumento:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'descargarDocumento');
         }
     },
 
@@ -852,183 +703,66 @@ export const adminAPI = {
     async verDocumento(solicitudId: number, documentoId: number, accessToken: string): Promise<any> {
         try {
             console.log(`👁️ Obteniendo información para ver documento ${documentoId} de solicitud ${solicitudId}...`);
-            const response = await fetch(`${API_BASE_URL}/admin/verificaciones/${solicitudId}/documentos/${documentoId}/ver`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/admin/verificaciones/${solicitudId}/documentos/${documentoId}/ver`;
+            const result = await performGetRequest<any>(endpoint, accessToken, 'verDocumento');
             console.log('✅ Información de visualización obtenida:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en verDocumento:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'verDocumento');
         }
     },
 
     // Reportes
     async getReporteUsuariosActivos(accessToken: string): Promise<any> {
-        try {
-            const response = await fetch(`${API_BASE_URL}/admin/reports/usuarios-activos`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('❌ Error en getReporteUsuariosActivos:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
-        }
+        return performGetRequest<any>(
+            `${API_BASE_URL}/admin/reports/usuarios-activos`,
+            accessToken,
+            'getReporteUsuariosActivos'
+        );
     },
 
     async getReporteProveedoresVerificados(accessToken: string): Promise<any> {
-        try {
-            const response = await fetch(`${API_BASE_URL}/admin/reports/proveedores-verificados`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('❌ Error en getReporteProveedoresVerificados:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
-        }
+        return performGetRequest<any>(
+            `${API_BASE_URL}/admin/reports/proveedores-verificados`,
+            accessToken,
+            'getReporteProveedoresVerificados'
+        );
     },
 
     async getReporteSolicitudesProveedores(accessToken: string): Promise<any> {
-        try {
-            const response = await fetch(`${API_BASE_URL}/admin/reports/solicitudes-proveedores`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('❌ Error en getReporteSolicitudesProveedores:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
-        }
+        return performGetRequest<any>(
+            `${API_BASE_URL}/admin/reports/solicitudes-proveedores`,
+            accessToken,
+            'getReporteSolicitudesProveedores'
+        );
     },
 
     async getReporteCategorias(accessToken: string): Promise<any> {
-        try {
-            const response = await fetch(`${API_BASE_URL}/admin/reports/categorias`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('❌ Error en getReporteCategorias:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
-        }
+        return performGetRequest<any>(
+            `${API_BASE_URL}/admin/reports/categorias`,
+            accessToken,
+            'getReporteCategorias'
+        );
     },
 
     async getReporteServicios(accessToken: string): Promise<any> {
-        try {
-            const response = await fetch(`${API_BASE_URL}/admin/reports/servicios`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('❌ Error en getReporteServicios:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
-        }
+        return performGetRequest<any>(
+            `${API_BASE_URL}/admin/reports/servicios`,
+            accessToken,
+            'getReporteServicios'
+        );
     },
 
     // Obtener documentos del proveedor autenticado
     async getMisDocumentos(accessToken: string): Promise<any> {
         try {
             console.log(`📋 Obteniendo documentos del proveedor...`);
-            const response = await fetch(`${API_BASE_URL}/providers/mis-documentos`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/providers/mis-documentos`;
+            const result = await performGetRequest<any>(endpoint, accessToken, 'getMisDocumentos');
             console.log('✅ Documentos del proveedor obtenidos:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en getMisDocumentos:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getMisDocumentos');
         }
     },
 
@@ -1036,28 +770,12 @@ export const adminAPI = {
     async getMisDatosSolicitud(accessToken: string): Promise<any> {
         try {
             console.log(`📋 Obteniendo datos de solicitud del proveedor...`);
-            const response = await fetch(`${API_BASE_URL}/providers/mis-datos-solicitud`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/providers/mis-datos-solicitud`;
+            const result = await performGetRequest<any>(endpoint, accessToken, 'getMisDatosSolicitud');
             console.log('✅ Datos de solicitud del proveedor obtenidos:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en getMisDatosSolicitud:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getMisDatosSolicitud');
         }
     },
 
@@ -1065,28 +783,12 @@ export const adminAPI = {
     async testDatos(accessToken: string): Promise<any> {
         try {
             console.log(`🧪 Probando endpoint de datos...`);
-            const response = await fetch(`${API_BASE_URL}/providers/test-datos`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/providers/test-datos`;
+            const result = await performGetRequest<any>(endpoint, accessToken, 'testDatos');
             console.log('✅ Datos de prueba obtenidos:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en testDatos:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'testDatos');
         }
     },
 
@@ -1094,28 +796,12 @@ export const adminAPI = {
     async selfDeactivateUser(accessToken: string): Promise<any> {
         try {
             console.log('🔍 Usuario solicitando auto-desactivación...');
-            const response = await fetch(`${API_BASE_URL}/admin/users/self-deactivate`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = `${API_BASE_URL}/admin/users/self-deactivate`;
+            const result = await performPostRequest<any>(endpoint, {}, accessToken, 'selfDeactivateUser');
             console.log('✅ Usuario auto-desactivado exitosamente:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en selfDeactivateUser:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'selfDeactivateUser');
         }
     },
 
@@ -1123,28 +809,12 @@ export const adminAPI = {
     async getDashboardStats(accessToken: string): Promise<any> {
         try {
             console.log('📊 Obteniendo estadísticas del dashboard...');
-            const response = await fetch(buildApiUrl(API_CONFIG.ADMIN.DASHBOARD_STATS), {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const result = await response.json();
+            const endpoint = buildApiUrl(API_CONFIG.ADMIN.DASHBOARD_STATS);
+            const result = await performGetRequest<any>(endpoint, accessToken, 'getDashboardStats');
             console.log('✅ Estadísticas del dashboard obtenidas:', result);
             return result;
         } catch (error) {
-            console.error('❌ Error en getDashboardStats:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getDashboardStats');
         }
     }
 };
@@ -1154,102 +824,36 @@ export const categoriesAPI = {
     // Obtener todas las categorías
     async getCategories(accessToken?: string, activeOnly: boolean = true): Promise<BackendCategory[]> {
         try {
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-            };
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-
             const params = new URLSearchParams();
             params.append('active_only', activeOnly.toString());
-
-            const response = await fetch(buildApiUrl(`${API_CONFIG.CATEGORIES.LIST}?${params.toString()}`), {
-                method: 'GET',
-                headers,
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            const url = buildApiUrl(`${API_CONFIG.CATEGORIES.LIST}?${params.toString()}`);
+            return await performGetRequest<BackendCategory[]>(url, accessToken, 'getCategories');
         } catch (error) {
-            console.error('❌ Error en getCategories:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getCategories');
         }
     },
 
     // Crear nueva categoría
     async createCategory(categoryData: BackendCategoryIn, accessToken: string): Promise<BackendCategory> {
         try {
-            const response = await fetch(buildApiUrl(API_CONFIG.CATEGORIES.CREATE), {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(categoryData),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<BackendCategory>(buildApiUrl(API_CONFIG.CATEGORIES.CREATE), categoryData, accessToken, 'createCategory');
         } catch (error) {
-            console.error('❌ Error en createCategory:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'createCategory');
         }
     },
 
     // Actualizar categoría
     async updateCategory(categoryId: number, categoryData: Partial<BackendCategoryIn>, accessToken: string): Promise<BackendCategory> {
         try {
-            const response = await fetch(buildApiUrl(`${API_CONFIG.CATEGORIES.UPDATE}/${categoryId}`), {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(categoryData),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<BackendCategory>(buildApiUrl(`${API_CONFIG.CATEGORIES.UPDATE}/${categoryId}`), categoryData, accessToken, 'updateCategory');
         } catch (error) {
-            console.error('❌ Error en updateCategory:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'updateCategory');
         }
     }
 };
 
 // Funciones helper para getFilteredServices
-// Construir headers con autenticación
-const buildAuthHeaders = (accessToken?: string): Record<string, string> => {
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-    };
-    if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
-    }
-    return headers;
-};
+// Nota: buildAuthHeaders ya está definida arriba con soporte para contentType
 
 // Construir parámetros de filtros
 const buildFilterParams = (
@@ -1304,30 +908,9 @@ export const servicesAPI = {
     // Obtener todos los servicios
     async getServices(accessToken?: string): Promise<BackendService[]> {
         try {
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-            };
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-
-            const response = await fetch(`${API_BASE_URL}/services/list`, {
-                method: 'GET',
-                headers,
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<BackendService[]>(`${API_BASE_URL}/services/list`, accessToken, 'getServices');
         } catch (error) {
-            console.error('❌ Error en getServices:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getServices');
         }
     },
 
@@ -1353,13 +936,6 @@ export const servicesAPI = {
         filters_applied: any;
     }> {
         try {
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-            };
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-
             const params = new URLSearchParams({
                 limit: limit.toString(),
                 offset: offset.toString()
@@ -1372,23 +948,20 @@ export const servicesAPI = {
                 if (filters.max_price !== undefined) params.append('max_price', filters.max_price.toString());
             }
 
-            const response = await fetch(`${buildApiUrl(API_CONFIG.SERVICES.UNIFIED)}?${params}`, {
-                method: 'GET',
-                headers,
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            const url = `${buildApiUrl(API_CONFIG.SERVICES.UNIFIED)}?${params}`;
+            return await performGetRequest<{
+                services: BackendService[];
+                pagination: {
+                    total: number;
+                    page: number;
+                    total_pages: number;
+                    limit: number;
+                    offset: number;
+                };
+                filters_applied: any;
+            }>(url, accessToken, 'getServicesWithProviders');
         } catch (error) {
-            console.error('❌ Error en getServicesWithProviders:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getServicesWithProviders');
         }
     },
 
@@ -1432,11 +1005,7 @@ export const servicesAPI = {
 
             return await response.json();
         } catch (error) {
-            console.error('❌ Error en getFilteredServices:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getFilteredServices');
         }
     },
 
@@ -1444,161 +1013,54 @@ export const servicesAPI = {
     // Obtener servicios por categoría
     async getServicesByCategory(categoryId: number, accessToken?: string): Promise<BackendService[]> {
         try {
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-            };
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-
-            const response = await fetch(`${API_BASE_URL}/services/category/${categoryId}`, {
-                method: 'GET',
-                headers,
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<BackendService[]>(`${API_BASE_URL}/services/category/${categoryId}`, accessToken, 'getServicesByCategory');
         } catch (error) {
-            console.error('❌ Error en getServicesByCategory:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getServicesByCategory');
         }
     },
 
     // Crear nuevo servicio
     async createService(serviceData: BackendServiceIn, accessToken: string): Promise<BackendService> {
         try {
-            const response = await fetch(`${API_BASE_URL}/services/`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(serviceData),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<BackendService>(`${API_BASE_URL}/services/`, serviceData, accessToken, 'createService');
         } catch (error) {
-            console.error('❌ Error en createService:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'createService');
         }
     },
 
     // Actualizar servicio existente
     async updateService(serviceId: number, serviceData: Partial<BackendServiceIn>, accessToken: string): Promise<BackendService> {
         try {
-            const response = await fetch(`${API_BASE_URL}/services/${serviceId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(serviceData),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<BackendService>(`${API_BASE_URL}/services/${serviceId}`, serviceData, accessToken, 'updateService');
         } catch (error) {
-            console.error('❌ Error en updateService:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'updateService');
         }
     },
 
     // Actualizar estado del servicio (activar/desactivar) - Para administradores
     async updateServiceStatus(serviceId: number, estado: boolean, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/services/${serviceId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ estado }),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<any>(`${API_BASE_URL}/services/${serviceId}`, { estado }, accessToken, 'updateServiceStatus');
         } catch (error) {
-            console.error('❌ Error en updateServiceStatus:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'updateServiceStatus');
         }
     },
 
     // Obtener plantillas de servicios
     async getServiceTemplates(): Promise<any[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/services/templates`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<any[]>(`${API_BASE_URL}/services/templates`, undefined, 'getServiceTemplates');
         } catch (error) {
-            console.error('❌ Error en getServiceTemplates:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getServiceTemplates');
         }
     },
 
     // Obtener plantillas de servicios por categoría
     async getServiceTemplatesByCategory(categoryId: number): Promise<any[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/services/templates/category/${categoryId}`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<any[]>(`${API_BASE_URL}/services/templates/category/${categoryId}`, undefined, 'getServiceTemplatesByCategory');
         } catch (error) {
-            console.error('❌ Error en getServiceTemplatesByCategory:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getServiceTemplatesByCategory');
         }
     },
 
@@ -1609,29 +1071,11 @@ export const servicesAPI = {
             const url = `${API_BASE_URL}/services/all/category/${categoryId}`;
             console.log('🌐 URL:', url);
             
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            console.log('📡 Respuesta del servidor:', response.status, response.statusText);
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const data = await response.json();
+            const data = await performGetRequest<any[]>(url, undefined, 'getAllServicesByCategory');
             console.log('📊 Datos recibidos:', data);
             return data;
         } catch (error) {
-            console.error('❌ Error en getAllServicesByCategory:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getAllServicesByCategory');
         }
     }
 };
@@ -1757,26 +1201,9 @@ export const serviceRequestsAPI = {
     // Obtener todas las solicitudes pendientes
     async getPendingRequests(accessToken: string): Promise<ServiceRequest[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/service-requests/`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<ServiceRequest[]>(`${API_BASE_URL}/service-requests/`, accessToken, 'getPendingRequests');
         } catch (error) {
-            console.error('❌ Error en getPendingRequests:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getPendingRequests');
         }
     },
 
@@ -1818,110 +1245,39 @@ export const serviceRequestsAPI = {
     // Aprobar solicitud
     async approveRequest(requestId: number, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/service-requests/${requestId}/approve`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<any>(`${API_BASE_URL}/service-requests/${requestId}/approve`, {}, accessToken, 'approveRequest');
         } catch (error) {
-            console.error('❌ Error en approveRequest:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'approveRequest');
         }
     },
 
     // Rechazar solicitud
     async rejectRequest(requestId: number, comentario_admin?: string, accessToken?: string): Promise<any> {
         try {
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-            };
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
+            if (!accessToken) {
+                throw new Error('Access token is required');
             }
-
-            const response = await fetch(`${API_BASE_URL}/service-requests/${requestId}/reject`, {
-                method: 'PUT',
-                headers,
-                body: JSON.stringify({ comentario_admin: comentario_admin || null }),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<any>(`${API_BASE_URL}/service-requests/${requestId}/reject`, { comentario_admin: comentario_admin || null }, accessToken, 'rejectRequest');
         } catch (error) {
-            console.error('❌ Error en rejectRequest:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'rejectRequest');
         }
     },
 
     // Proponer nuevo servicio (para proveedores)
     async proposeService(requestData: ServiceRequestIn, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/providers/services/proponer`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestData),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<any>(`${API_BASE_URL}/providers/services/proponer`, requestData, accessToken, 'proposeService');
         } catch (error) {
-            console.error('❌ Error en proposeService:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'proposeService');
         }
     },
 
     // Obtener mis solicitudes de servicios (para proveedores)
     async getMyServiceRequests(accessToken: string): Promise<ServiceRequest[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/service-requests/my-requests`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<ServiceRequest[]>(`${API_BASE_URL}/service-requests/my-requests`, accessToken, 'getMyServiceRequests');
         } catch (error) {
-            console.error('❌ Error en getMyServiceRequests:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getMyServiceRequests');
         }
     }
 };
@@ -1974,212 +1330,72 @@ export const providerServicesAPI = {
     // Obtener un servicio específico del proveedor
     async getProviderService(serviceId: number, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/provider/services/${serviceId}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<any>(`${API_BASE_URL}/provider/services/${serviceId}`, accessToken, 'getProviderService');
         } catch (error) {
-            console.error('❌ Error en getProviderService:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getProviderService');
         }
     },
 
     // Actualizar servicio del proveedor
     async updateProviderService(serviceId: number, serviceData: any, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/provider/services/${serviceId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(serviceData),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<any>(`${API_BASE_URL}/provider/services/${serviceId}`, serviceData, accessToken, 'updateProviderService');
         } catch (error) {
-            console.error('❌ Error en updateProviderService:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'updateProviderService');
         }
     },
 
     // Obtener opciones de monedas
     async getCurrencies(accessToken: string): Promise<any[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/provider/services/options/monedas`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<any[]>(`${API_BASE_URL}/provider/services/options/monedas`, accessToken, 'getCurrencies');
         } catch (error) {
-            console.error('❌ Error en getCurrencies:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getCurrencies');
         }
     },
 
     // Obtener opciones de tipos de tarifa
     async getRateTypes(accessToken: string): Promise<any[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/provider/services/options/tipos-tarifa`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<any[]>(`${API_BASE_URL}/provider/services/options/tipos-tarifa`, accessToken, 'getRateTypes');
         } catch (error) {
-            console.error('❌ Error en getRateTypes:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getRateTypes');
         }
     },
 
     // Agregar tarifa a servicio
     async addTarifaToService(serviceId: number, tarifaData: any, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/provider/services/${serviceId}/tarifas`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(tarifaData),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<any>(`${API_BASE_URL}/provider/services/${serviceId}/tarifas`, tarifaData, accessToken, 'addTarifaToService');
         } catch (error) {
-            console.error('❌ Error en addTarifaToService:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'addTarifaToService');
         }
     },
 
     // Eliminar tarifa de servicio
     async removeTarifaFromService(serviceId: number, tarifaId: number, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/provider/services/${serviceId}/tarifas/${tarifaId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performDeleteRequest<any>(`${API_BASE_URL}/provider/services/${serviceId}/tarifas/${tarifaId}`, accessToken, 'removeTarifaFromService');
         } catch (error) {
-            console.error('❌ Error en removeTarifaFromService:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'removeTarifaFromService');
         }
     },
 
     // Actualizar estado del servicio (activar/desactivar)
     async updateServiceStatus(serviceId: number, estado: boolean, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/provider/services/${serviceId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ estado }),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<any>(`${API_BASE_URL}/provider/services/${serviceId}`, { estado }, accessToken, 'updateServiceStatus');
         } catch (error) {
-            console.error('❌ Error en updateServiceStatus:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'updateServiceStatus');
         }
     },
 
     // Crear servicio desde plantilla
     async createServiceFromTemplate(templateData: any, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/provider/services/from-template`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(templateData),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<any>(`${API_BASE_URL}/provider/services/from-template`, templateData, accessToken, 'createServiceFromTemplate');
         } catch (error) {
-            console.error('❌ Error en createServiceFromTemplate:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'createServiceFromTemplate');
         }
     }
 };
@@ -2189,60 +1405,18 @@ export const additionalAPI = {
     // Obtener monedas activas
     async getCurrencies(accessToken?: string): Promise<Currency[]> {
         try {
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-            };
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-
-            const response = await fetch(`${API_BASE_URL}/additional/currencies`, {
-                method: 'GET',
-                headers,
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<Currency[]>(`${API_BASE_URL}/additional/currencies`, accessToken, 'getCurrencies');
         } catch (error) {
-            console.error('❌ Error en getCurrencies:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getCurrencies');
         }
     },
 
     // Obtener tipos de tarifa
     async getRateTypes(accessToken?: string): Promise<RateType[]> {
         try {
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-            };
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-
-            const response = await fetch(`${API_BASE_URL}/additional/rate-types`, {
-                method: 'GET',
-                headers,
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<RateType[]>(`${API_BASE_URL}/additional/rate-types`, accessToken, 'getRateTypes');
         } catch (error) {
-            console.error('❌ Error en getRateTypes:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getRateTypes');
         }
     }
 };
@@ -2252,81 +1426,30 @@ export const categoryRequestsAPI = {
     // Crear una nueva solicitud de categoría
     async createCategoryRequest(request: CategoryRequestIn, accessToken: string): Promise<CategoryRequest> {
         try {
-            const response = await fetch(`${API_BASE_URL}/category-requests/`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(request),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPostRequest<CategoryRequest>(`${API_BASE_URL}/category-requests/`, request, accessToken, 'createCategoryRequest');
         } catch (error) {
-            console.error('❌ Error en createCategoryRequest:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'createCategoryRequest');
         }
     },
 
     // Obtener solicitudes de categorías del proveedor actual
     async getMyCategoryRequests(accessToken: string): Promise<CategoryRequest[]> {
         try {
-            const response = await fetch(`${API_BASE_URL}/category-requests/`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performGetRequest<CategoryRequest[]>(`${API_BASE_URL}/category-requests/`, accessToken, 'getMyCategoryRequests');
         } catch (error) {
-            console.error('❌ Error en getMyCategoryRequests:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getMyCategoryRequests');
         }
     },
 
     // Obtener todas las solicitudes de categorías (para administradores)
     async getAllCategoryRequests(accessToken: string): Promise<CategoryRequest[]> {
         try {
-            const response = await fetch(buildApiUrl('/category-requests/admin/todas'), {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const data = await response.json();
+            const endpoint = buildApiUrl('/category-requests/admin/todas');
+            const data = await performGetRequest<CategoryRequest[]>(endpoint, accessToken, 'getAllCategoryRequests');
             console.log('📊 Datos recibidos:', data);
             return data;
         } catch (error) {
-            console.error('❌ Error en getAllCategoryRequests:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getAllCategoryRequests');
         }
     },
 
@@ -2334,82 +1457,30 @@ export const categoryRequestsAPI = {
     async getUserIdByProfile(idPerfil: number, accessToken: string): Promise<{success: boolean, user_id?: string, message?: string}> {
         try {
             console.log('🔗 Obteniendo user_id para id_perfil:', idPerfil);
-            const response = await fetch(buildApiUrl(`/admin/users/user-id-by-profile/${idPerfil}`), {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            const data = await response.json();
+            const endpoint = buildApiUrl(`/admin/users/user-id-by-profile/${idPerfil}`);
+            const data = await performGetRequest<{success: boolean, user_id?: string, message?: string}>(endpoint, accessToken, 'getUserIdByProfile');
             console.log('📊 User ID obtenido:', data);
             return data;
         } catch (error) {
-            console.error('❌ Error obteniendo user_id por id_perfil:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'getUserIdByProfile');
         }
     },
 
     // Aprobar una solicitud de categoría
     async approveCategoryRequest(requestId: number, comentario: string | null, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/category-requests/${requestId}/approve`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ comentario }),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<any>(`${API_BASE_URL}/category-requests/${requestId}/approve`, { comentario }, accessToken, 'approveCategoryRequest');
         } catch (error) {
-            console.error('❌ Error en approveCategoryRequest:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'approveCategoryRequest');
         }
     },
 
     // Rechazar una solicitud de categoría
     async rejectCategoryRequest(requestId: number, comentario: string, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/category-requests/${requestId}/reject`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ comentario }),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<any>(`${API_BASE_URL}/category-requests/${requestId}/reject`, { comentario }, accessToken, 'rejectCategoryRequest');
         } catch (error) {
-            console.error('❌ Error en rejectCategoryRequest:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'rejectCategoryRequest');
         }
     }
 };
@@ -2419,27 +1490,9 @@ export const profileAPI = {
     // Actualizar perfil del usuario
     async updateProfile(profileData: { nombre_persona?: string; foto_perfil?: string }, accessToken: string): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/auth/profile`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(profileData),
-            });
-
-            if (!response.ok) {
-                const error = await handleApiError(response);
-                throw error;
-            }
-
-            return await response.json();
+            return await performPutRequest<any>(`${API_BASE_URL}/auth/profile`, profileData, accessToken, 'updateProfile');
         } catch (error) {
-            console.error('❌ Error en updateProfile:', error);
-            if (error instanceof Error) {
-                throw createApiError(error.message);
-            }
-            throw error;
+            handleCatchError(error, 'updateProfile');
         }
     },
 

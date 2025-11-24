@@ -289,83 +289,88 @@ const AdminServiceRequestsPage: React.FC = () => {
         }
     }, []);
 
+    // Funciones helper para eliminar código duplicado
+    const getAccessToken = (): string | null => {
+        return localStorage.getItem('access_token');
+    };
+
+    const updateRequestInState = (requestId: number, updates: Partial<ServiceRequest>) => {
+        setRequests(prev => prev.map(req => 
+            req.id_solicitud === requestId 
+                ? { ...req, ...updates }
+                : req
+        ));
+    };
+
+    const showSuccessMessage = (message: string) => {
+        setSuccess(message);
+        setTimeout(() => setSuccess(null), 3000);
+    };
+
+    const showErrorMessage = (message: string) => {
+        setError(message);
+        setTimeout(() => setError(null), 3000);
+    };
+
     // Funciones de acción optimizadas
     const handleApprove = useCallback(async (requestId: number) => {
         try {
-            const accessToken = localStorage.getItem('access_token');
+            const accessToken = getAccessToken();
             if (!accessToken) return;
 
             await serviceRequestsAPI.approveRequest(requestId, accessToken);
             
             // Actualizar estado local sin recargar
-            setRequests(prev => prev.map(req => 
-                req.id_solicitud === requestId 
-                    ? { ...req, estado_aprobacion: 'aprobada' }
-                    : req
-            ));
+            updateRequestInState(requestId, { estado_aprobacion: 'aprobada' });
             
-            setSuccess('Solicitud aprobada exitosamente');
-            setTimeout(() => setSuccess(null), 3000);
+            showSuccessMessage('Solicitud aprobada exitosamente');
         } catch (error) {
             console.error('Error al aprobar la solicitud:', error);
-            setError('Error al aprobar la solicitud');
-            setTimeout(() => setError(null), 3000);
+            showErrorMessage('Error al aprobar la solicitud');
         }
     }, []);
 
     const handleReject = useCallback(async (requestId: number, comment: string) => {
         try {
-            const accessToken = localStorage.getItem('access_token');
+            const accessToken = getAccessToken();
             if (!accessToken) return;
 
             // Validar que el comentario sea requerido
             if (!comment.trim()) {
-                setError('El comentario es obligatorio para rechazar una solicitud. Por favor, explica el motivo del rechazo.');
+                showErrorMessage('El comentario es obligatorio para rechazar una solicitud. Por favor, explica el motivo del rechazo.');
                 return;
             }
 
             await serviceRequestsAPI.rejectRequest(requestId, comment, accessToken);
             
             // Actualizar estado local sin recargar
-            setRequests(prev => prev.map(req => 
-                req.id_solicitud === requestId 
-                    ? { ...req, estado_aprobacion: 'rechazada', comentario_admin: comment }
-                    : req
-            ));
+            updateRequestInState(requestId, { estado_aprobacion: 'rechazada', comentario_admin: comment });
             
             setShowRejectModal(false);
             setRejectComment('');
-            setSuccess('Solicitud rechazada exitosamente');
-            setTimeout(() => setSuccess(null), 3000);
+            showSuccessMessage('Solicitud rechazada exitosamente');
         } catch (error) {
             console.error('Error al rechazar la solicitud:', error);
-            setError('Error al rechazar la solicitud');
-            setTimeout(() => setError(null), 3000);
+            showErrorMessage('Error al rechazar la solicitud');
         }
     }, []);
 
     const handleEdit = useCallback(async (requestId: number, formData: any) => {
         try {
-            const accessToken = localStorage.getItem('access_token');
+            const accessToken = getAccessToken();
             if (!accessToken) return;
 
             // Implementar updateRequest en la API
             console.log('Actualizando solicitud:', requestId, formData);
             
             // Actualizar estado local sin recargar
-            setRequests(prev => prev.map(req => 
-                req.id_solicitud === requestId 
-                    ? { ...req, ...formData }
-                    : req
-            ));
+            updateRequestInState(requestId, formData);
             
             setShowEditModal(false);
-            setSuccess('Solicitud actualizada exitosamente');
-            setTimeout(() => setSuccess(null), 3000);
+            showSuccessMessage('Solicitud actualizada exitosamente');
         } catch (error) {
             console.error('Error al actualizar la solicitud:', error);
-            setError('Error al actualizar la solicitud');
-            setTimeout(() => setError(null), 3000);
+            showErrorMessage('Error al actualizar la solicitud');
         }
     }, []);
 

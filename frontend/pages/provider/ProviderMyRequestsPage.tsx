@@ -213,37 +213,42 @@ const ProviderMyRequestsPage: React.FC = () => {
         setTimeout(() => setFilteredRequests(filtered), 0);
     }, [requests, filters]);
 
+    // Función helper para cargar y procesar datos
+    const fetchAndProcessData = async (accessToken: string) => {
+        // Cargar solicitudes de servicios, categorías y categorías disponibles en paralelo
+        const [serviceRequestsData, categoryRequestsData, categoriesData] = await Promise.all([
+            serviceRequestsAPI.getMyServiceRequests(accessToken),
+            categoryRequestsAPI.getMyCategoryRequests(accessToken),
+            categoriesAPI.getCategories(accessToken)
+        ]);
+
+        // Combinar y marcar el tipo de solicitud, enriqueciendo con nombres de categorías
+        const unifiedRequests: UnifiedRequest[] = [
+            ...serviceRequestsData.map(req => {
+                const categoria = categoriesData.find(cat => cat.id_categoria === req.id_categoria);
+                return { 
+                    ...req, 
+                    tipo: 'servicio' as const,
+                    nombre_categoria: categoria?.nombre || 'No especificado'
+                };
+            }),
+            ...categoryRequestsData.map(req => ({ ...req, tipo: 'categoria' as const }))
+        ];
+
+        // Ordenar por fecha de creación (más recientes primero)
+        unifiedRequests.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        setRequests(unifiedRequests);
+        setCategories(categoriesData.filter(cat => cat.estado)); // Solo categorías activas
+    };
+
     const loadData = async () => {
         try {
             setLoading(true);
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) return;
 
-            // Cargar solicitudes de servicios, categorías y categorías disponibles en paralelo
-            const [serviceRequestsData, categoryRequestsData, categoriesData] = await Promise.all([
-                serviceRequestsAPI.getMyServiceRequests(accessToken),
-                categoryRequestsAPI.getMyCategoryRequests(accessToken),
-                categoriesAPI.getCategories(accessToken)
-            ]);
-
-            // Combinar y marcar el tipo de solicitud, enriqueciendo con nombres de categorías
-            const unifiedRequests: UnifiedRequest[] = [
-                ...serviceRequestsData.map(req => {
-                    const categoria = categoriesData.find(cat => cat.id_categoria === req.id_categoria);
-                    return { 
-                        ...req, 
-                        tipo: 'servicio' as const,
-                        nombre_categoria: categoria?.nombre || 'No especificado'
-                    };
-                }),
-                ...categoryRequestsData.map(req => ({ ...req, tipo: 'categoria' as const }))
-            ];
-
-            // Ordenar por fecha de creación (más recientes primero)
-            unifiedRequests.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-            setRequests(unifiedRequests);
-            setCategories(categoriesData.filter(cat => cat.estado)); // Solo categorías activas
+            await fetchAndProcessData(accessToken);
         } catch (err: any) {
             setError(err.detail || 'Error al cargar los datos');
         } finally {
@@ -257,31 +262,7 @@ const ProviderMyRequestsPage: React.FC = () => {
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) return;
 
-            // Cargar solicitudes de servicios, categorías y categorías disponibles en paralelo
-            const [serviceRequestsData, categoryRequestsData, categoriesData] = await Promise.all([
-                serviceRequestsAPI.getMyServiceRequests(accessToken),
-                categoryRequestsAPI.getMyCategoryRequests(accessToken),
-                categoriesAPI.getCategories(accessToken)
-            ]);
-
-            // Combinar y marcar el tipo de solicitud, enriqueciendo con nombres de categorías
-            const unifiedRequests: UnifiedRequest[] = [
-                ...serviceRequestsData.map(req => {
-                    const categoria = categoriesData.find(cat => cat.id_categoria === req.id_categoria);
-                    return { 
-                        ...req, 
-                        tipo: 'servicio' as const,
-                        nombre_categoria: categoria?.nombre || 'No especificado'
-                    };
-                }),
-                ...categoryRequestsData.map(req => ({ ...req, tipo: 'categoria' as const }))
-            ];
-
-            // Ordenar por fecha de creación (más recientes primero)
-            unifiedRequests.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-            setRequests(unifiedRequests);
-            setCategories(categoriesData.filter(cat => cat.estado)); // Solo categorías activas
+            await fetchAndProcessData(accessToken);
         } catch (err: any) {
             console.error('Error al recargar datos silenciosamente:', err);
         }
@@ -746,13 +727,6 @@ const ProviderMyRequestsPage: React.FC = () => {
                         </div>
                     </div>
                 </div>
-
-                {/* Error Message */}
-                {error && (
-                    <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-4">
-                        <div className="text-sm text-red-700">{error}</div>
-                    </div>
-                )}
 
                 {/* Requests List */}
                 <div key={`requests-${filteredRequests.length}-${filters.categoryFilter}`} className="bg-white shadow overflow-hidden sm:rounded-md">

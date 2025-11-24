@@ -54,6 +54,13 @@ const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     }
 };
 
+// Función helper para obtener las clases CSS del estado del usuario (elimina código duplicado)
+const getEstadoClasses = (estado: string | undefined): string => {
+    return estado === 'ACTIVO'
+        ? 'bg-green-100 text-green-800'
+        : 'bg-red-100 text-red-800';
+};
+
 // Componente para renderizar la foto de perfil del usuario
 interface UserPhotoProps {
     fotoPerfil?: string;
@@ -491,27 +498,34 @@ interface StatsSectionProps {
     isUpdating: boolean;
 }
 
-const StatsSection: React.FC<StatsSectionProps> = ({ totalUsers, isSearching, isUpdating }) => (
-    <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-slate-200/80 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-                <h3 className="text-base sm:text-lg font-medium text-slate-900">Total: {totalUsers} usuarios</h3>
-                {isSearching && (
-                    <span className="ml-2 text-blue-600 animate-pulse">🔄 Buscando...</span>
-                )}
-                {isUpdating && !isSearching && (
-                    <span className="ml-2 text-orange-600 animate-pulse">⚡ Procesando...</span>
-                )}
-            </div>
-            <div className="text-right">
-                <div className="text-sm text-slate-500">
-                    {isSearching && <span className="text-blue-600 animate-pulse">🔄 Buscando...</span>}
-                    {isUpdating && !isSearching && <span className="text-orange-600 animate-pulse">⚡ Procesando...</span>}
+const StatsSection: React.FC<StatsSectionProps> = ({ totalUsers, isSearching, isUpdating }) => {
+    console.log('🔍 StatsSection - totalUsers recibido:', totalUsers, 'tipo:', typeof totalUsers);
+    
+    // Asegurar que totalUsers sea un número válido
+    const displayTotal = typeof totalUsers === 'number' ? totalUsers : 0;
+    
+    return (
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-slate-200/80 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                    <h3 className="text-base sm:text-lg font-medium text-slate-900">Total: {displayTotal} usuarios</h3>
+                    {isSearching && (
+                        <span className="ml-2 text-blue-600 animate-pulse">🔄 Buscando...</span>
+                    )}
+                    {isUpdating && !isSearching && (
+                        <span className="ml-2 text-orange-600 animate-pulse">⚡ Procesando...</span>
+                    )}
+                </div>
+                <div className="text-right">
+                    <div className="text-sm text-slate-500">
+                        {isSearching && <span className="text-blue-600 animate-pulse">🔄 Buscando...</span>}
+                        {isUpdating && !isSearching && <span className="text-orange-600 animate-pulse">⚡ Procesando...</span>}
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 // Componente para el mensaje cuando no hay usuarios
 interface EmptyUsersMessageProps {
@@ -624,11 +638,7 @@ const UsersTable: React.FC<UsersTableProps> = ({
                             </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                user.estado === 'ACTIVO'
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-red-100 text-red-800'
-                            }`}>
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${getEstadoClasses(user.estado)}`}>
                                 {user.estado || 'ACTIVO'}
                             </span>
                         </td>
@@ -706,11 +716,7 @@ const UsersCards: React.FC<UsersCardsProps> = ({
                             <div className="sm:col-span-2">
                                 <span className="font-medium text-slate-700">Estado:</span>
                                 <div className="mt-1">
-                                    <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
-                                        user.estado === 'ACTIVO'
-                                            ? 'bg-green-100 text-green-800'
-                                            : 'bg-red-100 text-red-800'
-                                    }`}>
+                                    <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${getEstadoClasses(user.estado)}`}>
                                         {user.estado || 'ACTIVO'}
                                     </span>
                                 </div>
@@ -895,12 +901,17 @@ const AdminUsersPage: React.FC = () => {
         paginatedUsers
     } = useAdminUsers();
 
+    // Log para depuración cuando cambia totalUsers
+    React.useEffect(() => {
+        console.log('🔍 AdminUsersPage - totalUsers actualizado:', totalUsers, 'tipo:', typeof totalUsers);
+    }, [totalUsers]);
+
     if (loading) {
         return <LoadingState />;
     }
 
     if (error) {
-        return <ErrorState error={error} onRetry={() => loadUsers(1)} />;
+        return <ErrorState error={error} onRetry={() => loadUsers(1, undefined, undefined, filterRole)} />;
     }
 
     return (
@@ -933,7 +944,12 @@ const AdminUsersPage: React.FC = () => {
                         getRoleDisplayNameFromFilter={getRoleDisplayNameFromFilter}
                     />
 
-                    <StatsSection totalUsers={totalUsers} isSearching={isSearching} isUpdating={isUpdating} />
+                    <StatsSection 
+                        key={`stats-${totalUsers}-${isSearching}-${isUpdating}`}
+                        totalUsers={totalUsers} 
+                        isSearching={isSearching} 
+                        isUpdating={isUpdating} 
+                    />
 
                     {/* Lista de usuarios - Responsive */}
                     <div className="bg-white rounded-xl shadow-md border border-slate-200/80 overflow-hidden relative">
@@ -1010,20 +1026,10 @@ const AdminUsersPage: React.FC = () => {
                                             <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center overflow-hidden">
                                                 {resetPasswordData.user.foto_perfil ? (
                                                     <img
-                                                        src={resetPasswordData.user.foto_perfil.startsWith('/') 
-                                                            ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${resetPasswordData.user.foto_perfil}` 
-                                                            : resetPasswordData.user.foto_perfil}
+                                                        src={getUserPhotoUrl(resetPasswordData.user.foto_perfil)}
                                                         alt={`Foto de perfil de ${resetPasswordData.user.nombre_persona}`}
                                                         className="w-full h-full object-cover rounded-full"
-                                                        onError={(e) => {
-                                                            // Si la imagen falla al cargar, mostrar el icono por defecto
-                                                            const target = e.target as HTMLImageElement;
-                                                            target.style.display = 'none';
-                                                            const parent = target.parentElement;
-                                                            if (parent) {
-                                                                parent.innerHTML = '<svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>';
-                                                            }
-                                                        }}
+                                                        onError={handleImageError}
                                                     />
                                                 ) : (
                                                     <UserCircleIcon className="w-6 h-6 text-primary-600" />

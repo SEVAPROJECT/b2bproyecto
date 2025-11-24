@@ -304,6 +304,24 @@ async def get_provider_service(
     }
 
 # Funciones helper para update_provider_service
+async def get_perfil_empresa_by_user_id(
+    db: AsyncSession,
+    user_id: str
+) -> PerfilEmpresa:
+    """Obtiene el perfil de empresa del usuario usando SQLAlchemy"""
+    result = await db.execute(
+        select(PerfilEmpresa).where(PerfilEmpresa.user_id == user_id)
+    )
+    perfil = result.scalars().first()
+    
+    if not perfil:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
+        )
+    
+    return perfil
+
 async def get_servicio_by_id_and_perfil(
     db: AsyncSession,
     service_id: int,
@@ -403,6 +421,44 @@ async def process_tarifas_update(
     for tarifa_data in tarifas_data:
         create_tarifa_from_data(db, tarifa_data, service_id)
 
+async def verify_service_ownership(
+    db: AsyncSession,
+    service_id: int,
+    current_user: dict
+) -> ServicioModel:
+    """
+    Verifica que el servicio existe y pertenece al usuario actual.
+    Retorna el servicio si la verificación es exitosa.
+    """
+    # Verificar que el servicio pertenece al usuario
+    perfil_result = await db.execute(
+        select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
+    )
+    perfil = perfil_result.scalars().first()
+
+    if not perfil:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
+        )
+
+    # Verificar que el servicio existe y pertenece al usuario
+    service_result = await db.execute(
+        select(ServicioModel)
+        .where(ServicioModel.id_servicio == service_id)
+        .where(ServicioModel.id_perfil == perfil.id_perfil)
+    )
+
+    servicio = service_result.scalars().first()
+
+    if not servicio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_EDITAR
+        )
+    
+    return servicio
+
 @router.put("/{service_id}")
 async def update_provider_service(
     service_id: int,
@@ -414,7 +470,7 @@ async def update_provider_service(
     Actualiza un servicio del proveedor con toda su información.
     """
     # Obtener el perfil del usuario
-    perfil = await get_provider_profile(db, current_user.id)
+    perfil = await get_perfil_empresa_by_user_id(db, current_user.id)
     
     # Obtener el servicio específico
     servicio = await get_servicio_by_id_and_perfil(db, service_id, perfil.id_perfil)
@@ -534,32 +590,8 @@ async def add_tarifa_to_service(
     """
     Agrega una nueva tarifa a un servicio del proveedor.
     """
-    # Verificar que el servicio pertenece al usuario
-    perfil_result = await db.execute(
-        select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
-    )
-    perfil = perfil_result.scalars().first()
-
-    if not perfil:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
-        )
-
     # Verificar que el servicio existe y pertenece al usuario
-    service_result = await db.execute(
-        select(ServicioModel)
-        .where(ServicioModel.id_servicio == service_id)
-        .where(ServicioModel.id_perfil == perfil.id_perfil)
-    )
-
-    servicio = service_result.scalars().first()
-
-    if not servicio:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-                detail=MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_EDITAR
-        )
+    servicio = await verify_service_ownership(db, service_id, current_user)
 
     # Crear nueva tarifa
     # Las fechas ya vienen como objetos date desde Pydantic
@@ -587,32 +619,8 @@ async def remove_tarifa_from_service(
     """
     Elimina una tarifa de un servicio del proveedor.
     """
-    # Verificar que el servicio pertenece al usuario
-    perfil_result = await db.execute(
-        select(PerfilEmpresa).where(PerfilEmpresa.user_id == current_user.id)
-    )
-    perfil = perfil_result.scalars().first()
-
-    if not perfil:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
-        )
-
     # Verificar que el servicio existe y pertenece al usuario
-    service_result = await db.execute(
-        select(ServicioModel)
-        .where(ServicioModel.id_servicio == service_id)
-        .where(ServicioModel.id_perfil == perfil.id_perfil)
-    )
-
-    servicio = service_result.scalars().first()
-
-    if not servicio:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-                detail=MSG_SERVICIO_NO_ENCONTRADO_SIN_PERMISOS_EDITAR
-        )
+    servicio = await verify_service_ownership(db, service_id, current_user)
 
     # Eliminar la tarifa
     result = await db.execute(

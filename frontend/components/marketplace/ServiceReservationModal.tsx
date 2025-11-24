@@ -3,7 +3,7 @@ import { ClockIcon, UserCircleIcon, StarIcon } from '../icons';
 import { BackendService, BackendCategory } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import AvailabilityCalendar from './AvailabilityCalendar';
-import { buildApiUrl } from '../../config/api';
+import { formatPriceProfessional, getTimeAgo, getServiceImageUrl, formatPriceByCurrency, getServiceCurrency } from '../../utils/formatting';
 
 interface ServiceReservationModalProps {
     isOpen: boolean;
@@ -21,91 +21,6 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
     });
 
     if (!isOpen || !service) return null;
-
-    const getImageUrl = (imagePath: string | null) => {
-        if (!imagePath) return null;
-        // Usar la configuración centralizada para obtener la URL base
-        const baseUrl = buildApiUrl('').replace('/api/v1', '');
-        return `${baseUrl}${imagePath}`;
-    };
-
-    const getTimeAgo = (dateString: string) => {
-        const now = new Date();
-        const publishDate = new Date(dateString);
-        const diffInMs = now.getTime() - publishDate.getTime();
-        const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-        
-        if (diffInDays === 0) return 'hoy';
-        if (diffInDays === 1) return 'hace 1 día';
-        if (diffInDays < 7) return `hace ${diffInDays} días`;
-        if (diffInDays < 30) {
-            const weeks = Math.floor(diffInDays / 7);
-            return weeks === 1 ? 'hace 1 semana' : `hace ${weeks} semanas`;
-        }
-        if (diffInDays < 365) {
-            const months = Math.floor(diffInDays / 30);
-            return months === 1 ? 'hace 1 mes' : `hace ${months} meses`;
-        }
-        const years = Math.floor(diffInDays / 365);
-        return years === 1 ? 'hace 1 año' : `hace ${years} años`;
-    };
-
-    // Función helper para obtener la moneda del servicio
-    const getServiceCurrency = (service: BackendService): string => {
-        // Primero intentar mapear por ID de moneda (más confiable)
-        if (service.id_moneda) {
-            switch (service.id_moneda) {
-                case 1:
-                    return 'GS';
-                case 2:
-                    return 'USD';
-                case 3:
-                    return 'BRL';
-                case 4:
-                case 8:
-                    return 'ARS';
-                default:
-                    return 'GS';
-            }
-        }
-
-        // Si no hay ID de moneda, intentar usar código ISO si está disponible
-        const serviceWithIso = service as BackendService & { codigo_iso_moneda?: string };
-        if (serviceWithIso.codigo_iso_moneda) {
-            return serviceWithIso.codigo_iso_moneda.trim();
-        }
-
-        // Si aún no hay moneda, asumir Guaraní
-        return 'GS';
-    };
-
-    // Función helper para obtener el símbolo de la moneda
-    const getCurrencySymbol = (currency: string): string => {
-        if (currency === 'USD') return '$';
-        if (currency === 'BRL') return 'R$';
-        if (currency === 'ARS') return '$';
-        return '₲';
-    };
-
-    // Función helper para formatear el precio según la moneda
-    const formatPriceByCurrency = (price: number, currency: string): string => {
-        const symbol = getCurrencySymbol(currency);
-        if (currency === 'USD') {
-            return `${symbol} ${price.toLocaleString('en-US')}`;
-        }
-        if (currency === 'BRL') {
-            return `${symbol} ${price.toLocaleString('pt-BR')}`;
-        }
-        if (currency === 'ARS') {
-            return `${symbol} ${price.toLocaleString('es-AR')}`;
-        }
-        return `${symbol} ${price.toLocaleString('es-PY')}`;
-    };
-
-    const formatPriceProfessional = (price: number, service: BackendService) => {
-        const serviceCurrency = getServiceCurrency(service);
-        return formatPriceByCurrency(price, serviceCurrency);
-    };
 
     const formatTarifaPrice = (monto: number, service: BackendService) => {
         const serviceCurrency = getServiceCurrency(service);
@@ -281,7 +196,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
                             {service.imagen && (
                                 <div className="relative">
                                     <img 
-                                        src={getImageUrl(service.imagen)} 
+                                        src={getServiceImageUrl(service.imagen) || undefined} 
                                         alt={service.nombre}
                                         className="w-full h-64 object-cover rounded-xl shadow-lg"
                                         onError={(e) => {

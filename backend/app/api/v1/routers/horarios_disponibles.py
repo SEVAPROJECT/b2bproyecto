@@ -67,6 +67,99 @@ def hay_conflicto_horario(slot_inicio: time, slot_fin: time, reservas: List) -> 
             return True
     return False
 
+# Funciones helper para eliminar código duplicado
+async def get_horario_base_proveedor(
+    db: AsyncSession,
+    proveedor_id: int,
+    dia_semana: int
+) -> Optional[HorarioTrabajoModel]:
+    """Obtiene el horario base del proveedor para un día de la semana"""
+    horario_query = select(HorarioTrabajoModel).where(
+        and_(
+            HorarioTrabajoModel.id_proveedor == proveedor_id,
+            HorarioTrabajoModel.dia_semana == dia_semana,
+            HorarioTrabajoModel.activo == True
+        )
+    )
+    horario_result = await db.execute(horario_query)
+    return horario_result.scalar_one_or_none()
+
+async def get_excepcion_horario(
+    db: AsyncSession,
+    proveedor_id: int,
+    fecha: date
+) -> Optional[ExcepcionHorarioModel]:
+    """Obtiene la excepción de horario para un proveedor en una fecha específica"""
+    excepcion_query = select(ExcepcionHorarioModel).where(
+        and_(
+            ExcepcionHorarioModel.id_proveedor == proveedor_id,
+            ExcepcionHorarioModel.fecha == fecha
+        )
+    )
+    excepcion_result = await db.execute(excepcion_query)
+    return excepcion_result.scalar_one_or_none()
+
+def get_horario_efectivo(
+    horario_base: HorarioTrabajoModel,
+    excepcion_dia: Optional[ExcepcionHorarioModel]
+) -> tuple[time, time]:
+    """Determina el horario efectivo considerando excepciones"""
+    if excepcion_dia and excepcion_dia.tipo == TIPO_EXCEPCION_HORARIO_ESPECIAL:
+        return excepcion_dia.hora_inicio, excepcion_dia.hora_fin
+    return horario_base.hora_inicio, horario_base.hora_fin
+
+async def get_reservas_por_proveedor(
+    db: AsyncSession,
+    proveedor_id: int,
+    fecha: date
+) -> List[ReservaModel]:
+    """Obtiene las reservas existentes para un proveedor en una fecha"""
+    reservas_query = select(ReservaModel).where(
+        and_(
+            ReservaModel.fecha == fecha,
+            ReservaModel.servicio.has(ServicioModel.id_perfil == proveedor_id),
+            ReservaModel.estado.in_([ESTADO_CONFIRMADA, ESTADO_PENDIENTE])
+        )
+    )
+    reservas_result = await db.execute(reservas_query)
+    return reservas_result.scalars().all()
+
+async def get_reservas_por_servicio(
+    db: AsyncSession,
+    servicio_id: int,
+    fecha: date
+) -> List[ReservaModel]:
+    """Obtiene las reservas existentes para un servicio en una fecha"""
+    reservas_query = select(ReservaModel).where(
+        and_(
+            ReservaModel.id_servicio == servicio_id,
+            ReservaModel.fecha == fecha,
+            ReservaModel.estado.in_([ESTADO_CONFIRMADA, ESTADO_PENDIENTE])
+        )
+    )
+    reservas_result = await db.execute(reservas_query)
+    return reservas_result.scalars().all()
+
+def filtrar_slots_disponibles(
+    slots: List[time],
+    reservas_existentes: List[ReservaModel],
+    fecha: date,
+    duracion_minutos: int
+) -> List[HorarioDisponibleOut]:
+    """Filtra los slots disponibles eliminando los que tienen conflictos con reservas"""
+    slots_disponibles = []
+    for slot_inicio in slots:
+        slot_fin = (datetime.combine(date.today(), slot_inicio) + timedelta(minutes=duracion_minutos)).time()
+        
+        if not hay_conflicto_horario(slot_inicio, slot_fin, reservas_existentes):
+            slots_disponibles.append(HorarioDisponibleOut(
+                fecha=fecha,
+                hora_inicio=slot_inicio,
+                hora_fin=slot_fin,
+                disponible=True
+            ))
+    return slots_disponibles
+
 @router.get(
     "/proveedor/{proveedor_id}",
     response_model=List[HorarioDisponibleOut],
@@ -85,67 +178,28 @@ async def obtener_horarios_disponibles_proveedor(
     try:
         # 1. Obtener horario base del día de la semana
         dia_semana = fecha.weekday()
-        
-        horario_query = select(HorarioTrabajoModel).where(
-            and_(
-                HorarioTrabajoModel.id_proveedor == proveedor_id,
-                HorarioTrabajoModel.dia_semana == dia_semana,
-                HorarioTrabajoModel.activo == True
-            )
-        )
-        horario_result = await db.execute(horario_query)
-        horario_base = horario_result.scalar_one_or_none()
+        horario_base = await get_horario_base_proveedor(db, proveedor_id, dia_semana)
         
         if not horario_base:
             return []
         
         # 2. Verificar excepciones para esta fecha
-        excepcion_query = select(ExcepcionHorarioModel).where(
-            and_(
-                ExcepcionHorarioModel.id_proveedor == proveedor_id,
-                ExcepcionHorarioModel.fecha == fecha
-            )
-        )
-        excepcion_result = await db.execute(excepcion_query)
-        excepcion_dia = excepcion_result.scalar_one_or_none()
+        excepcion_dia = await get_excepcion_horario(db, proveedor_id, fecha)
         
         if excepcion_dia and excepcion_dia.tipo == TIPO_EXCEPCION_CERRADO:
             return []
         
         # 3. Determinar horario efectivo
-        if excepcion_dia and excepcion_dia.tipo == TIPO_EXCEPCION_HORARIO_ESPECIAL:
-            hora_inicio = excepcion_dia.hora_inicio
-            hora_fin = excepcion_dia.hora_fin
-        else:
-            hora_inicio = horario_base.hora_inicio
-            hora_fin = horario_base.hora_fin
+        hora_inicio, hora_fin = get_horario_efectivo(horario_base, excepcion_dia)
         
         # 4. Generar slots disponibles
         slots = generar_slots_tiempo(hora_inicio, hora_fin, duracion_minutos)
         
         # 5. Obtener reservas existentes para esta fecha
-        reservas_query = select(ReservaModel).where(
-            and_(
-                ReservaModel.fecha == fecha,
-                ReservaModel.servicio.has(ServicioModel.id_perfil == proveedor_id),
-                ReservaModel.estado.in_([ESTADO_CONFIRMADA, ESTADO_PENDIENTE])
-            )
-        )
-        reservas_result = await db.execute(reservas_query)
-        reservas_existentes = reservas_result.scalars().all()
+        reservas_existentes = await get_reservas_por_proveedor(db, proveedor_id, fecha)
         
         # 6. Filtrar slots ocupados
-        slots_disponibles = []
-        for slot_inicio in slots:
-            slot_fin = (datetime.combine(date.today(), slot_inicio) + timedelta(minutes=duracion_minutos)).time()
-            
-            if not hay_conflicto_horario(slot_inicio, slot_fin, reservas_existentes):
-                slots_disponibles.append(HorarioDisponibleOut(
-                    fecha=fecha,
-                    hora_inicio=slot_inicio,
-                    hora_fin=slot_fin,
-                    disponible=True
-                ))
+        slots_disponibles = filtrar_slots_disponibles(slots, reservas_existentes, fecha, duracion_minutos)
         
         logger.info(f"Generados {len(slots_disponibles)} horarios disponibles para proveedor {proveedor_id} en {fecha}")
         return slots_disponibles
@@ -193,66 +247,28 @@ async def obtener_horarios_disponibles_servicio(
         proveedor_id = servicio.id_perfil
         dia_semana = fecha.weekday()
         
-        horario_query = select(HorarioTrabajoModel).where(
-            and_(
-                HorarioTrabajoModel.id_proveedor == proveedor_id,
-                HorarioTrabajoModel.dia_semana == dia_semana,
-                HorarioTrabajoModel.activo == True
-            )
-        )
-        horario_result = await db.execute(horario_query)
-        horario_base = horario_result.scalar_one_or_none()
+        horario_base = await get_horario_base_proveedor(db, proveedor_id, dia_semana)
         
         if not horario_base:
             return []
         
         # 3. Verificar excepciones
-        excepcion_query = select(ExcepcionHorarioModel).where(
-            and_(
-                ExcepcionHorarioModel.id_proveedor == proveedor_id,
-                ExcepcionHorarioModel.fecha == fecha
-            )
-        )
-        excepcion_result = await db.execute(excepcion_query)
-        excepcion_dia = excepcion_result.scalar_one_or_none()
+        excepcion_dia = await get_excepcion_horario(db, proveedor_id, fecha)
         
         if excepcion_dia and excepcion_dia.tipo == TIPO_EXCEPCION_CERRADO:
             return []
         
         # 4. Determinar horario efectivo
-        if excepcion_dia and excepcion_dia.tipo == TIPO_EXCEPCION_HORARIO_ESPECIAL:
-            hora_inicio = excepcion_dia.hora_inicio
-            hora_fin = excepcion_dia.hora_fin
-        else:
-            hora_inicio = horario_base.hora_inicio
-            hora_fin = horario_base.hora_fin
+        hora_inicio, hora_fin = get_horario_efectivo(horario_base, excepcion_dia)
         
         # 5. Generar slots
         slots = generar_slots_tiempo(hora_inicio, hora_fin, duracion_minutos)
         
         # 6. Obtener reservas existentes para este servicio
-        reservas_query = select(ReservaModel).where(
-            and_(
-                ReservaModel.id_servicio == servicio_id,
-                ReservaModel.fecha == fecha,
-                ReservaModel.estado.in_([ESTADO_CONFIRMADA, ESTADO_PENDIENTE])
-            )
-        )
-        reservas_result = await db.execute(reservas_query)
-        reservas_existentes = reservas_result.scalars().all()
+        reservas_existentes = await get_reservas_por_servicio(db, servicio_id, fecha)
         
         # 7. Filtrar slots ocupados
-        slots_disponibles = []
-        for slot_inicio in slots:
-            slot_fin = (datetime.combine(date.today(), slot_inicio) + timedelta(minutes=duracion_minutos)).time()
-            
-            if not hay_conflicto_horario(slot_inicio, slot_fin, reservas_existentes):
-                slots_disponibles.append(HorarioDisponibleOut(
-                    fecha=fecha,
-                    hora_inicio=slot_inicio,
-                    hora_fin=slot_fin,
-                    disponible=True
-                ))
+        slots_disponibles = filtrar_slots_disponibles(slots, reservas_existentes, fecha, duracion_minutos)
         
         logger.info(f"Generados {len(slots_disponibles)} horarios disponibles para servicio {servicio_id} en {fecha}")
         return slots_disponibles

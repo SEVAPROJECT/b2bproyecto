@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { 
     ClipboardDocumentListIcon, 
     FunnelIcon,
@@ -458,6 +458,55 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
     );
 };
 
+// Componente helper para botón de calificación
+interface RatingButtonProps {
+    onClick: () => void;
+    label: string;
+}
+
+const RatingButton: React.FC<RatingButtonProps> = ({ onClick, label }) => (
+    <div className="mt-4">
+        <button
+            onClick={onClick}
+            className="bg-yellow-600 text-white px-4 py-2 rounded text-sm hover:bg-yellow-700 transition-all duration-200 hover:scale-105"
+        >
+            ⭐ {label}
+        </button>
+    </div>
+);
+
+// Componente helper para mostrar una calificación individual
+interface RatingCardProps {
+    title: string;
+    puntaje: number;
+    comentario: string;
+    nps?: number;
+    bgColor: 'blue' | 'green';
+}
+
+const RatingCard: React.FC<RatingCardProps> = ({ title, puntaje, comentario, nps, bgColor }) => {
+    const bgClass = bgColor === 'blue' ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200';
+    const textClass = bgColor === 'blue' ? 'text-blue-900' : 'text-green-900';
+    const textSecondaryClass = bgColor === 'blue' ? 'text-blue-800' : 'text-green-800';
+    const textTertiaryClass = bgColor === 'blue' ? 'text-blue-600' : 'text-green-600';
+
+    return (
+        <div className={`${bgClass} border rounded-lg p-3`}>
+            <div className="flex items-center justify-between mb-2">
+                <h4 className={`text-sm font-semibold ${textClass}`}>{title}</h4>
+                <div className="flex items-center">
+                    <span className="text-yellow-500 mr-1">⭐</span>
+                    <span className={`text-sm font-bold ${textClass}`}>{puntaje}/5</span>
+                </div>
+            </div>
+            <p className={`text-sm ${textSecondaryClass} italic`}>"{comentario}"</p>
+            {nps && (
+                <p className={`text-xs ${textTertiaryClass} mt-1`}>NPS: {nps}/10</p>
+            )}
+        </div>
+    );
+};
+
 // Helper para obtener el badge de estado
 const getEstadoBadge = (estado: string) => {
     const badges: { [key: string]: { label: string; className: string; icon: React.ReactNode } } = {
@@ -665,14 +714,10 @@ const ProviderReservationActions: React.FC<ProviderReservationActionsProps> = ({
                 </ActionButton>
             )}
             {showRatingButton && (
-                <div className="mt-4">
-                    <button
-                        onClick={() => onCalificar(reserva.id_reserva)}
-                        className="bg-yellow-600 text-white px-4 py-2 rounded text-sm hover:bg-yellow-700 transition-all duration-200 hover:scale-105"
-                    >
-                        ⭐ Calificar Cliente
-                    </button>
-                </div>
+                <RatingButton
+                    onClick={() => onCalificar(reserva.id_reserva)}
+                    label="Calificar Cliente"
+                />
             )}
             {reserva.estado === 'completada' && (
                 <CompletedRatingsDisplay
@@ -737,12 +782,10 @@ const ClientCompletedActions: React.FC<ClientCompletedActionsProps> = ({
         <>
             {showRatingButton && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
-                    <button
+                    <RatingButton
                         onClick={() => onCalificar(reserva.id_reserva)}
-                        className="bg-yellow-600 text-white px-4 py-2 rounded text-sm hover:bg-yellow-700 transition-all duration-200 hover:scale-105"
-                    >
-                        ⭐ Calificar Servicio
-                    </button>
+                        label="Calificar Servicio"
+                    />
                 </div>
             )}
             <CompletedRatingsDisplay
@@ -765,71 +808,32 @@ const CompletedRatingsDisplay: React.FC<CompletedRatingsDisplayProps> = ({
     calificacionCliente,
     calificacionProveedor,
     isProvider
-}) => (
-    <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
-        {isProvider ? (
-            <>
-                {calificacionCliente && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-semibold text-blue-900">Calificación del cliente:</h4>
-                            <div className="flex items-center">
-                                <span className="text-yellow-500 mr-1">⭐</span>
-                                <span className="text-sm font-bold text-blue-900">{calificacionCliente.puntaje}/5</span>
-                            </div>
-                        </div>
-                        <p className="text-sm text-blue-800 italic">"{calificacionCliente.comentario}"</p>
-                        {calificacionCliente.nps && (
-                            <p className="text-xs text-blue-600 mt-1">NPS: {calificacionCliente.nps}/10</p>
-                        )}
-                    </div>
-                )}
-                {calificacionProveedor && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-semibold text-green-900">Tu calificación del cliente:</h4>
-                            <div className="flex items-center">
-                                <span className="text-yellow-500 mr-1">⭐</span>
-                                <span className="text-sm font-bold text-green-900">{calificacionProveedor.puntaje}/5</span>
-                            </div>
-                        </div>
-                        <p className="text-sm text-green-800 italic">"{calificacionProveedor.comentario}"</p>
-                    </div>
-                )}
-            </>
-        ) : (
-            <>
-                {calificacionCliente && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-semibold text-blue-900">Tu calificación del servicio:</h4>
-                            <div className="flex items-center">
-                                <span className="text-yellow-500 mr-1">⭐</span>
-                                <span className="text-sm font-bold text-blue-900">{calificacionCliente.puntaje}/5</span>
-                            </div>
-                        </div>
-                        <p className="text-sm text-blue-800 italic">"{calificacionCliente.comentario}"</p>
-                        {calificacionCliente.nps && (
-                            <p className="text-xs text-blue-600 mt-1">NPS: {calificacionCliente.nps}/10</p>
-                        )}
-                    </div>
-                )}
-                {calificacionProveedor && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-semibold text-green-900">Calificación del proveedor:</h4>
-                            <div className="flex items-center">
-                                <span className="text-yellow-500 mr-1">⭐</span>
-                                <span className="text-sm font-bold text-green-900">{calificacionProveedor.puntaje}/5</span>
-                            </div>
-                        </div>
-                        <p className="text-sm text-green-800 italic">"{calificacionProveedor.comentario}"</p>
-                    </div>
-                )}
-            </>
-        )}
-    </div>
-);
+}) => {
+    const getClienteTitle = () => isProvider ? 'Calificación del cliente:' : 'Tu calificación del servicio:';
+    const getProveedorTitle = () => isProvider ? 'Tu calificación del cliente:' : 'Calificación del proveedor:';
+
+    return (
+        <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+            {calificacionCliente && (
+                <RatingCard
+                    title={getClienteTitle()}
+                    puntaje={calificacionCliente.puntaje}
+                    comentario={calificacionCliente.comentario}
+                    nps={calificacionCliente.nps}
+                    bgColor="blue"
+                />
+            )}
+            {calificacionProveedor && (
+                <RatingCard
+                    title={getProveedorTitle()}
+                    puntaje={calificacionProveedor.puntaje}
+                    comentario={calificacionProveedor.comentario}
+                    bgColor="green"
+                />
+            )}
+        </div>
+    );
+};
 
 // Componente helper para botones de acción
 interface ActionButtonProps {

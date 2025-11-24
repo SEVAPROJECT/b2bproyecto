@@ -46,6 +46,51 @@ MSG_ERROR_RECHAZAR_SOLICITUD = "Error al rechazar la solicitud: {error}"
 MSG_SOLICITUD_APROBADA = "Solicitud aprobada y categoría creada exitosamente"
 MSG_SOLICITUD_RECHAZADA = "Solicitud rechazada exitosamente"
 
+# Función helper para formatear una fila de solicitud de categoría
+def format_category_request_row(row: dict) -> dict:
+    """
+    Formatea una fila de solicitud de categoría desde la base de datos.
+    """
+    return {
+        'id_solicitud': row['id_solicitud'],
+        'id_perfil': row['id_perfil'],
+        'nombre_categoria': row['nombre_categoria'],
+        'descripcion': row['descripcion'],
+        'estado_aprobacion': row['estado_aprobacion'],
+        'comentario_admin': row['comentario_admin'],
+        'created_at': row['created_at'],
+        'nombre_empresa': row['nombre_empresa'],
+        'nombre_contacto': row['nombre_contacto'],
+        'user_id': str(row['user_id']) if row['user_id'] else None,
+        'email_contacto': None  # Email se obtendrá en el frontend usando user_id
+    }
+
+# Función helper para construir la query base de solicitudes de categoría
+def build_category_requests_query(where_clause: str = "", limit_clause: str = "") -> str:
+    """
+    Construye la query SQL base para obtener solicitudes de categoría.
+    """
+    where_part = f" {where_clause}" if where_clause else ""
+    limit_part = f" {limit_clause}" if limit_clause else ""
+    
+    return f"""
+        SELECT 
+            sc.id_solicitud,
+            sc.id_perfil,
+            sc.nombre_categoria,
+            sc.descripcion,
+            sc.estado_aprobacion,
+            sc.comentario_admin,
+            sc.created_at,
+            pe.razon_social AS nombre_empresa,
+            u.nombre_persona AS nombre_contacto,
+            pe.user_id AS user_id
+        FROM solicitud_categoria sc
+        JOIN perfil_empresa pe ON sc.id_perfil = pe.id_perfil
+        JOIN users u ON pe.user_id = u.id{where_part}
+        ORDER BY sc.created_at DESC{limit_part}
+    """
+
 # Función helper para enriquecer respuesta de solicitud de categoría creada
 async def enrich_category_request_response(request: SolicitudCategoria, db: AsyncSession) -> dict:
     """
@@ -207,44 +252,11 @@ async def get_my_category_requests(
             perfil_id = perfil_row['id_perfil']
             
             # Query SQL directa para evitar prepared statements
-            query = """
-                SELECT 
-                    sc.id_solicitud,
-                    sc.id_perfil,
-                    sc.nombre_categoria,
-                    sc.descripcion,
-                    sc.estado_aprobacion,
-                    sc.comentario_admin,
-                    sc.created_at,
-                    pe.razon_social AS nombre_empresa,
-                    u.nombre_persona AS nombre_contacto,
-                    pe.user_id AS user_id
-                FROM solicitud_categoria sc
-                JOIN perfil_empresa pe ON sc.id_perfil = pe.id_perfil
-                JOIN users u ON pe.user_id = u.id
-                WHERE sc.id_perfil = $1
-                ORDER BY sc.created_at DESC
-            """
-            
+            query = build_category_requests_query(where_clause="WHERE sc.id_perfil = $1")
             rows = await conn.fetch(query, perfil_id)
             
             # Formatear respuesta
-            formatted_requests = []
-            for row in rows:
-                formatted_requests.append({
-                    'id_solicitud': row['id_solicitud'],
-                    'id_perfil': row['id_perfil'],
-                    'nombre_categoria': row['nombre_categoria'],
-                    'descripcion': row['descripcion'],
-                    'estado_aprobacion': row['estado_aprobacion'],
-                    'comentario_admin': row['comentario_admin'],
-                    'created_at': row['created_at'],
-                    'nombre_empresa': row['nombre_empresa'],
-                    'nombre_contacto': row['nombre_contacto'],
-                    'user_id': str(row['user_id']) if row['user_id'] else None,
-                    'email_contacto': None  # Email se obtendrá en el frontend usando user_id
-                })
-
+            formatted_requests = [format_category_request_row(row) for row in rows]
             return formatted_requests
         finally:
             await direct_db_service.pool.release(conn)
@@ -279,45 +291,12 @@ async def get_all_category_requests_for_admin(
         try:
             # Query SQL directa para evitar prepared statements
             limit_clause = f"LIMIT {limit}" if limit > 0 else ""
-            
-            query = f"""
-                SELECT 
-                    sc.id_solicitud,
-                    sc.id_perfil,
-                    sc.nombre_categoria,
-                    sc.descripcion,
-                    sc.estado_aprobacion,
-                    sc.comentario_admin,
-                    sc.created_at,
-                    pe.razon_social AS nombre_empresa,
-                    u.nombre_persona AS nombre_contacto,
-                    pe.user_id AS user_id
-                FROM solicitud_categoria sc
-                JOIN perfil_empresa pe ON sc.id_perfil = pe.id_perfil
-                JOIN users u ON pe.user_id = u.id
-                ORDER BY sc.created_at DESC
-                {limit_clause}
-            """
+            query = build_category_requests_query(limit_clause=limit_clause)
             
             rows = await conn.fetch(query)
             
             # Formatear respuesta
-            formatted_requests = []
-            for row in rows:
-                formatted_requests.append({
-                    'id_solicitud': row['id_solicitud'],
-                    'id_perfil': row['id_perfil'],
-                    'nombre_categoria': row['nombre_categoria'],
-                    'descripcion': row['descripcion'],
-                    'estado_aprobacion': row['estado_aprobacion'],
-                    'comentario_admin': row['comentario_admin'],
-                    'created_at': row['created_at'],
-                    'nombre_empresa': row['nombre_empresa'],
-                    'nombre_contacto': row['nombre_contacto'],
-                    'user_id': str(row['user_id']) if row['user_id'] else None,
-                    'email_contacto': None  # Email se obtendrá en el frontend usando user_id
-                })
-
+            formatted_requests = [format_category_request_row(row) for row in rows]
             return formatted_requests
         finally:
             await direct_db_service.pool.release(conn)

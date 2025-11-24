@@ -221,17 +221,22 @@ const AdminCategoryRequestsPage: React.FC = () => {
     }, []);
 
     // Funciones auxiliares para búsqueda de emails
+    // Función helper para extraer email de userData (elimina código duplicado)
+    const extractEmailFromUserData = (userData: any): string | null => {
+        if (!userData) return null;
+        return typeof userData === 'string' ? userData : userData.email || null;
+    };
+
     const getEmailByUserId = (user_id: string | undefined, emailsDict: {[key: string]: any}): string | null => {
         if (!user_id || !emailsDict[user_id]) {
             return null;
         }
-        const userData = emailsDict[user_id];
-        return typeof userData === 'string' ? userData : userData.email;
+        return extractEmailFromUserData(emailsDict[user_id]);
     };
 
     const findEmailByNombreMatch = (nombreContacto: string, emailsDict: {[key: string]: any}): string | null => {
         const emailMatch = Object.entries(emailsDict).find(([key, value]) => {
-            const email = typeof value === 'string' ? value : value.email;
+            const email = extractEmailFromUserData(value);
             if (!email) return false;
             
             const emailLower = email.toLowerCase();
@@ -250,18 +255,13 @@ const AdminCategoryRequestsPage: React.FC = () => {
         });
         
         if (emailMatch) {
-            const [, userData] = emailMatch;
-            return typeof userData === 'string' ? userData : userData.email;
+            return extractEmailFromUserData(emailMatch[1]);
         }
         return null;
     };
 
     const getEmailByNombreContacto = (nombreContacto: string, emailsDict: {[key: string]: any}): string | null => {
-        const userEmail = emailsDict[nombreContacto];
-        if (!userEmail) {
-            return null;
-        }
-        return typeof userEmail === 'string' ? userEmail : userEmail.email;
+        return extractEmailFromUserData(emailsDict[nombreContacto]);
     };
 
     const findEmailForRequest = (request: CategoryRequest, emailsDict: {[key: string]: any}): string => {
@@ -434,77 +434,82 @@ const AdminCategoryRequestsPage: React.FC = () => {
         }
     }, []);
 
+    // Funciones helper para eliminar código duplicado
+    const getAccessToken = (): string | null => {
+        return localStorage.getItem('access_token');
+    };
+
+    const updateRequestInState = (requestId: number, updates: Partial<CategoryRequest>) => {
+        setRequests(prev => prev.map(req => 
+            req.id_solicitud === requestId 
+                ? { ...req, ...updates }
+                : req
+        ));
+    };
+
+    const showSuccessMessage = (message: string) => {
+        setSuccess(message);
+        setTimeout(() => setSuccess(null), 3000);
+    };
+
+    const showErrorMessage = (message: string) => {
+        setError(message);
+        setTimeout(() => setError(null), 3000);
+    };
+
     const handleEdit = useCallback(async (requestId: number, formData: any) => {
         try {
-            const accessToken = localStorage.getItem('access_token');
+            const accessToken = getAccessToken();
             if (!accessToken) return;
 
             //Implementar updateCategoryRequest en la API
             console.log('Actualizando solicitud de categoría:', requestId, formData);
             
             // Actualizar estado local sin recargar
-            setRequests(prev => prev.map(req => 
-                req.id_solicitud === requestId 
-                    ? { ...req, ...formData }
-                    : req
-            ));
+            updateRequestInState(requestId, formData);
             
             setShowEditModal(false);
-            setSuccess('Solicitud actualizada exitosamente');
-            setTimeout(() => setSuccess(null), 3000);
+            showSuccessMessage('Solicitud actualizada exitosamente');
         } catch (error) {
             console.error('Error al actualizar la solicitud:', error);
-            setError('Error al actualizar la solicitud');
-            setTimeout(() => setError(null), 3000);
+            showErrorMessage('Error al actualizar la solicitud');
         }
     }, []);
 
     // Funciones de acción optimizadas
     const handleApprove = useCallback(async (requestId: number) => {
         try {
-            const accessToken = localStorage.getItem('access_token');
+            const accessToken = getAccessToken();
             if (!accessToken) return;
 
             await categoryRequestsAPI.approveCategoryRequest(requestId, null, accessToken);
             
             // Actualizar estado local sin recargar
-            setRequests(prev => prev.map(req => 
-                req.id_solicitud === requestId 
-                    ? { ...req, estado_aprobacion: 'aprobada' }
-                    : req
-            ));
+            updateRequestInState(requestId, { estado_aprobacion: 'aprobada' });
             
-            setSuccess('Solicitud aprobada exitosamente');
-            setTimeout(() => setSuccess(null), 3000);
+            showSuccessMessage('Solicitud aprobada exitosamente');
         } catch (error) {
             console.error('Error al aprobar la solicitud:', error);
-            setError('Error al aprobar la solicitud');
-            setTimeout(() => setError(null), 3000);
+            showErrorMessage('Error al aprobar la solicitud');
         }
     }, []);
 
     const handleReject = useCallback(async (requestId: number, comment: string) => {
         try {
-            const accessToken = localStorage.getItem('access_token');
+            const accessToken = getAccessToken();
             if (!accessToken) return;
 
             await categoryRequestsAPI.rejectCategoryRequest(requestId, comment, accessToken);
             
             // Actualizar estado local sin recargar
-            setRequests(prev => prev.map(req => 
-                req.id_solicitud === requestId 
-                    ? { ...req, estado_aprobacion: 'rechazada', comentario_admin: comment }
-                    : req
-            ));
+            updateRequestInState(requestId, { estado_aprobacion: 'rechazada', comentario_admin: comment });
             
             setShowRejectModal(false);
             setRejectComment('');
-            setSuccess('Solicitud rechazada exitosamente');
-            setTimeout(() => setSuccess(null), 3000);
+            showSuccessMessage('Solicitud rechazada exitosamente');
         } catch (error) {
             console.error('Error al rechazar la solicitud:', error);
-            setError('Error al rechazar la solicitud');
-            setTimeout(() => setError(null), 3000);
+            showErrorMessage('Error al rechazar la solicitud');
         }
     }, []);
 

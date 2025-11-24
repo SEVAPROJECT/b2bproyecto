@@ -102,7 +102,7 @@ export const useAdminUsers = () => {
     }, []);
 
     // Función helper para construir URL con parámetros
-    const buildUsersUrl = useCallback((page: number, searchEmpresaParam?: string, searchNombreParam?: string): string => {
+    const buildUsersUrl = useCallback((page: number, searchEmpresaParam?: string, searchNombreParam?: string, filterRoleParam?: string): string => {
         const urlParams = new URLSearchParams();
         urlParams.append('page', page.toString());
         urlParams.append('limit', '100');
@@ -113,6 +113,10 @@ export const useAdminUsers = () => {
         
         if (searchNombreParam?.trim()) {
             urlParams.append('search_nombre', searchNombreParam.trim());
+        }
+        
+        if (filterRoleParam && filterRoleParam !== 'all' && filterRoleParam.trim()) {
+            urlParams.append('filter_role', filterRoleParam.trim());
         }
 
         return buildApiUrl(`${API_CONFIG.ADMIN.USERS}?${urlParams.toString()}`);
@@ -134,9 +138,13 @@ export const useAdminUsers = () => {
     // Función helper para procesar respuesta exitosa
     const processSuccessfulResponse = useCallback((data: any) => {
         console.log('✅ Usuarios cargados:', data.usuarios?.length || 0);
+        console.log('📊 Total antes de establecer:', data.total);
+        console.log('📊 Tipo de total:', typeof data.total);
         
         setAllUsers(data.usuarios || []);
-        setTotalUsers(data.total || 0);
+        const totalValue = data.total !== undefined && data.total !== null ? data.total : 0;
+        console.log('📊 Total establecido:', totalValue);
+        setTotalUsers(totalValue);
         setTotalPages(data.total_pages || 1);
         setCurrentPage(data.page || 1);
         
@@ -195,7 +203,7 @@ export const useAdminUsers = () => {
     }, []);
 
     // Función para cargar usuarios
-    const loadUsers = useCallback(async (page: number = 1, searchEmpresaParam?: string, searchNombreParam?: string, retryCount: number = 0) => {
+    const loadUsers = useCallback(async (page: number = 1, searchEmpresaParam?: string, searchNombreParam?: string, filterRoleParam?: string, retryCount: number = 0) => {
         try {
             if (shouldSkipLoad(retryCount)) {
                 return;
@@ -207,7 +215,7 @@ export const useAdminUsers = () => {
 
             console.log(`📊 Cargando usuarios optimizado... (intento ${retryCount + 1})`);
 
-            const url = buildUsersUrl(page, searchEmpresaParam, searchNombreParam);
+            const url = buildUsersUrl(page, searchEmpresaParam, searchNombreParam, filterRoleParam || filterRole);
             console.log(`🔗 URL de carga: ${url}`);
             const token = localStorage.getItem('access_token');
             console.log(`🔑 Token presente: ${token ? 'Sí' : 'No'}`);
@@ -218,18 +226,21 @@ export const useAdminUsers = () => {
             if (response.ok) {
                 const data = await response.json();
                 console.log(`✅ Datos recibidos: ${data.usuarios?.length || 0} usuarios`);
+                console.log(`📊 Total recibido del backend: ${data.total}`);
+                console.log(`📄 Página recibida: ${data.page}`);
+                console.log(`📑 Total de páginas: ${data.total_pages}`);
                 processSuccessfulResponse(data);
             } else {
                 const shouldRetry = await handleResponseError(response, page, searchEmpresaParam, searchNombreParam, retryCount);
                 if (shouldRetry) {
-                    return loadUsers(page, searchEmpresaParam, searchNombreParam, retryCount + 1);
+                    return loadUsers(page, searchEmpresaParam, searchNombreParam, filterRoleParam || filterRole, retryCount + 1);
                 }
             }
 
         } catch (error) {
             const shouldRetry = await handleFetchError(error, page, searchEmpresaParam, searchNombreParam, retryCount);
             if (shouldRetry) {
-                return loadUsers(page, searchEmpresaParam, searchNombreParam, retryCount + 1);
+                return loadUsers(page, searchEmpresaParam, searchNombreParam, filterRoleParam || filterRole, retryCount + 1);
             }
         } finally {
             clearLoadingStates();
@@ -310,7 +321,7 @@ export const useAdminUsers = () => {
             try {
                 console.log('🚀 Iniciando carga de datos iniciales...');
                 await loadUserPermissions();
-                await loadUsers(1);
+                await loadUsers(1, undefined, undefined, filterRole);
                 loadRoles().catch(error => {
                     console.warn('⚠️ Error cargando roles (no crítico):', error);
                 });
@@ -356,19 +367,18 @@ export const useAdminUsers = () => {
         return user.estado === statusFilter;
     }, []);
 
-    // Usuarios filtrados
+    // Usuarios filtrados - Ahora el filtro de rol se hace en el backend
+    // Solo filtramos por estado en el frontend ya que el backend maneja rol, nombre y empresa
     const filteredUsers = useMemo(() => {
         console.log('🔍 DEBUG: filteredUsers - allUsers.length:', allUsers.length);
         
         return allUsers.filter(user => {
-            const matchesSearch = matchesSearchQuery(user, searchQuery);
-            const matchesEmpresa = matchesSearchEmpresa(user, searchEmpresa);
-            const matchesRole = matchesRoleFilter(user, filterRole);
+            // El backend ya filtra por rol, nombre y empresa, solo filtramos por estado aquí
             const matchesStatus = matchesStatusFilter(user, filterStatus);
             
-            return matchesSearch && matchesEmpresa && matchesRole && matchesStatus;
+            return matchesStatus;
         });
-    }, [allUsers, searchQuery, searchEmpresa, filterRole, filterStatus, matchesSearchQuery, matchesSearchEmpresa, matchesRoleFilter, matchesStatusFilter]);
+    }, [allUsers, filterStatus, matchesStatusFilter]);
 
     // Debouncing para búsqueda de nombre/email
     useEffect(() => {
@@ -377,13 +387,13 @@ export const useAdminUsers = () => {
                 const loadUsersFn = loadUsersRef.current;
                 if (loadUsersFn) {
                     setIsSearching(true);
-                    loadUsersFn(1, undefined, searchQuery);
+                    loadUsersFn(1, undefined, searchQuery, filterRole);
                 }
             } else if (searchQuery.length === 0 && searchEmpresa.length === 0) {
                 // Si se borra la búsqueda, recargar sin filtros
                 const loadUsersFn = loadUsersRef.current;
                 if (loadUsersFn) {
-                    loadUsersFn(1, '', '');
+                    loadUsersFn(1, '', '', filterRole);
                 }
             } else {
                 // Si la búsqueda es muy corta, solo limpiar el indicador
@@ -402,13 +412,13 @@ export const useAdminUsers = () => {
                 const loadUsersFn = loadUsersRef.current;
                 if (loadUsersFn) {
                     setIsSearching(true);
-                    loadUsersFn(1, searchEmpresa, undefined);
+                    loadUsersFn(1, searchEmpresa, undefined, filterRole);
                 }
             } else if (searchEmpresa.length === 0 && searchQuery.length === 0) {
                 // Si se borra la búsqueda, recargar sin filtros
                 const loadUsersFn = loadUsersRef.current;
                 if (loadUsersFn) {
-                    loadUsersFn(1, '', '');
+                    loadUsersFn(1, '', '', filterRole);
                 }
             } else {
                 // Si la búsqueda es muy corta, solo limpiar el indicador
@@ -418,7 +428,17 @@ export const useAdminUsers = () => {
 
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchEmpresa]);
+    }, [searchEmpresa, filterRole]);
+
+    // Efecto para recargar cuando cambie el filtro de rol
+    useEffect(() => {
+        const loadUsersFn = loadUsersRef.current;
+        if (loadUsersFn) {
+            setIsSearching(true);
+            loadUsersFn(1, searchEmpresa || undefined, searchQuery || undefined, filterRole);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filterRole]);
 
     // Función para limpiar filtros
     const clearFilters = useCallback(() => {

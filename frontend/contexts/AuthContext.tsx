@@ -242,43 +242,20 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
             const profile = await authAPI.getProfile(response.access_token);
             console.log('✅ Perfil obtenido:', profile);
 
-            // Validación robusta de roles como en Apporiginal.tsx
-            let userRole: UserRole = 'client';
-            
-            // Verificar si tiene rol de admin en el backend (solución para mayúsculas/minúsculas)
-            if (profile.roles && Array.isArray(profile.roles)) {
-                const rolesLower = new Set(profile.roles.map((role: string) => role.toLowerCase()));
-                console.log('🎭 Roles en minúsculas:', Array.from(rolesLower));
-                
-                if (rolesLower.has('admin') || rolesLower.has('administrador')) {
-                    userRole = 'admin';
-                    console.log('Usuario es ADMIN (verificado en backend)');
-                } else if (rolesLower.has('provider') || rolesLower.has('proveedor')) {
-                    userRole = 'provider';
-                    console.log('🏢 Usuario es PROVIDER (verificado en backend)');
-                } else {
-                    console.log('👤 Usuario es CLIENT (verificado en backend)');
-                }
-            } else {
-                console.log('⚠️ No se encontraron roles en el perfil:', profile);
-            }
+            // Usar funciones helper para determinar rol y construir usuario
+            const userRole = determineUserRole(profile);
+            const { status: providerStatus, application: providerApplication } = 
+                await getProviderVerificationStatus(response.access_token);
 
-            // Mapear el perfil a la estructura User
+            // Mapear el perfil a la estructura User usando función helper
             console.log('🏢 RUC en perfil del login:', profile.ruc);
-            const userData: User = {
-                id: profile.id || 1,
-                name: profile.nombre_persona || profile.nombre || profile.first_name || profile.name || profile.email?.split('@')[0] || 'Usuario',
-                email: profile.email || profile.correo,
-                role: userRole,
-                companyName: profile.nombre_empresa || profile.razon_social || profile.company_name || '',
-                ruc: profile.ruc || null,
-                accessToken: response.access_token,
-                createdAt: profile.created_at || new Date().toISOString(),
-                updatedAt: profile.updated_at || new Date().toISOString(),
-                providerStatus: profile.provider_status || 'none',
-                providerApplication: profile.provider_application || { status: 'none', documents: {} },
-                foto_perfil: profile.foto_perfil || null
-            };
+            const userData = buildUserFromProfile(
+                profile,
+                response.access_token,
+                userRole,
+                providerStatus,
+                providerApplication
+            );
             console.log('🏢 RUC mapeado en userData del login:', userData.ruc);
 
             // Guardar ambos tokens en localStorage
@@ -510,55 +487,18 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
             console.log('👤 Perfil recargado:', profile);
             console.log('🔍 Campos disponibles:', Object.keys(profile));
 
-            // Usar la misma lógica que en loadUser
-            let userRole: UserRole = 'client';
-            if (profile.roles && Array.isArray(profile.roles)) {
-                const rolesLower = new Set(profile.roles.map((role: string) => role.toLowerCase()));
-                if (rolesLower.has('admin') || rolesLower.has('administrador')) {
-                    userRole = 'admin';
-                } else if (rolesLower.has('provider') || rolesLower.has('proveedor')) {
-                    userRole = 'provider';
-                }
-            }
+            // Usar funciones helper para determinar rol, obtener estado de verificación y construir usuario
+            const userRole = determineUserRole(profile);
+            const { status: providerStatus, application: providerApplication } = 
+                await getProviderVerificationStatus(accessToken);
 
-            // Obtener el estado actual de la solicitud de verificación
-            let providerStatus: ProviderStatus = 'none';
-            let providerApplication: ProviderApplicationStatus = { status: 'none', documents: {} };
-            
-            try {
-                const verificationStatus = await authAPI.getVerificacionEstado(accessToken);
-                console.log('📋 Estado de verificación:', verificationStatus);
-                
-                if (verificationStatus.estado) {
-                    const estado = verificationStatus.estado as ProviderStatus;
-                    providerStatus = estado;
-                    providerApplication = {
-                        status: estado,
-                        submittedAt: verificationStatus.fecha_solicitud,
-                        reviewedAt: verificationStatus.fecha_revision,
-                        rejectionReason: verificationStatus.comentario,
-                        documents: {}
-                    };
-                }
-            } catch (verificationError) {
-                console.log('⚠️ No se pudo obtener estado de verificación:', verificationError);
-                // Usar valores por defecto si no se puede obtener el estado
-            }
-
-            const updatedUser: User = {
-                id: profile.id || `user_${Date.now()}`,
-                name: profile.nombre_persona || profile.nombre || profile.first_name || profile.name || profile.email?.split('@')[0] || 'Usuario',
-                email: profile.email || profile.correo || 'usuario@email.com',
-                role: userRole,
-                companyName: profile.nombre_empresa || profile.razon_social || profile.company_name || 'Mi Empresa',
-                ruc: profile.ruc || null,
-                accessToken: accessToken,
-                createdAt: profile.created_at || new Date().toISOString(),
-                updatedAt: profile.updated_at || new Date().toISOString(),
-                providerStatus: providerStatus,
-                providerApplication: providerApplication,
-                foto_perfil: profile.foto_perfil || null
-            };
+            const updatedUser = buildUserFromProfile(
+                profile,
+                accessToken,
+                userRole,
+                providerStatus,
+                providerApplication
+            );
 
             console.log('✅ Usuario actualizado:', updatedUser);
             setUser(updatedUser);
@@ -604,43 +544,9 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                     throw new Error('No hay token de acceso');
                 }
 
-                // Preparar datos para la API
-                const documentos: File[] = [];
-                const nombres_tip_documento: string[] = [];
-                
-                // Mapear documentos a nombres de tipo (usando nombres en lugar de IDs)
-                const documentTypeMapping: Record<string, string> = {
-                    'ruc': 'Constancia de RUC',
-                    'cedula': 'Cédula MiPymes',
-                    'certificado': 'Certificado de Cumplimiento Tributario',
-                    'certificados_rubro': 'Certificados del Rubro',
-                };
-
-                // Procesar documentos subidos
-                for (const [key, doc] of Object.entries(data.documents)) {
-                    if (doc.status === 'uploaded' && doc.file) {
-                        documentos.push(doc.file);
-                        nombres_tip_documento.push(documentTypeMapping[key] || doc.name);
-                    }
-                }
-
-                const perfil_in = {
-                    nombre_fantasia: data.company.tradeName,
-                    direccion: {
-                        departamento: data.address.department,
-                        ciudad: data.address.city,
-                        barrio: data.address.neighborhood,
-                        calle: data.address.street,
-                        numero: data.address.number,
-                        referencia: data.address.reference
-                    },
-                    sucursal: {
-                        nombre: data.branch.name,
-                        telefono: data.branch.phone,
-                        email: data.branch.email,
-                        usar_direccion_fiscal: data.branch.useFiscalAddress
-                    }
-                };
+                // Usar funciones helper para procesar documentos y construir perfil_in
+                const { documentos, nombres_tip_documento } = processUploadedDocuments(data.documents);
+                const perfil_in = buildPerfilIn(data);
 
                 // Enviar a la API
                 await providersAPI.submitProviderApplication({
@@ -650,20 +556,8 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                     comentario_solicitud: ''
                 }, accessToken);
                 
-                const newApplication: ProviderApplicationStatus = {
-                    status: 'pending',
-                    submittedAt: new Date().toISOString(),
-                    documents: {}
-                };
-                
-                setProviderApplication(newApplication);
-                setProviderStatus('pending');
-                
-                // Persistir en localStorage
-                if (user.email) {
-                    localStorage.setItem(`providerStatus_${user.email}`, 'pending');
-                    localStorage.setItem(`providerApplication_${user.email}`, JSON.stringify(newApplication));
-                }
+                // Usar función helper para actualizar el estado
+                updateApplicationState(user.email);
                 
             } catch (error) {
                 console.error('Error enviando solicitud:', error);
