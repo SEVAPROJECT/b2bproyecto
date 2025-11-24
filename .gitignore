@@ -217,7 +217,8 @@ coverage/
 # ============================================================================
 # Archivos de deployment específicos del entorno
 docker-compose.override.yml
-.dockerignore
+# NOTA: .dockerignore NO debe ignorarse, es necesario para optimizar builds de Docker
+# .dockerignore
 
 # Archivos de configuración de CI/CD local
 .github/workflows/local/
@@ -240,10 +241,17 @@ CHANGELOG.md
 !backend/requirements.txt
 !backend/requirements-test.txt
 !backend/alembic.ini
+!backend/Dockerfile
+!backend/start.sh
+!backend/start_simple.sh
+!backend/simple_app.py
+!backend/.dockerignore
 !frontend/package.json
 !frontend/package-lock.json
 !frontend/tsconfig.json
 !frontend/vite.config.ts
+!frontend/Dockerfile
+!frontend/nginx.conf
 !supabase/config.toml
 
 # ============================================================================

@@ -1,0 +1,90 @@
+# Archivos de entorno y credenciales
+.env
+.env.*
+*.env
+*.env.local
+*.env.development
+*.env.production
+
+# Archivos de Python compilados
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Entornos virtuales
+venv/
+env/
+ENV/
+.venv/
+virtualenv/
+
+# Archivos de base de datos local
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos de logs
+*.log
+logs/
+
+# Archivos temporales y uploads locales
+temp_uploads/
+uploads/
+*.tmp
+*.temp
+*.bak
+*~
+
+# Archivos de IDE y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.project
+.classpath
+.settings/
+*.code-workspace
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+*.pid
+
+# Archivos de Git
+.git/
+.gitignore
+.gitattributes
+
+# Archivos de documentación local
+*.md
+!README.md
+RAILWAY_*.md
+weaviate_*.md
+
+# Archivos de configuración local
+pytest.ini
+sonar-project.properties
+alembic copy.ini
+
+# Archivos de test (no necesarios en producción)
+test/
+app/test/
+
+# Archivos de configuración de Alembic local
+config/alembic/
+
+# Scripts de configuración local
+configurar_*.py
+setup_*.py
+index_services_*.py
+reindex_*.py
+sync_*.py
+
+# Archivos SQL de triggers locales
+triggers_*.sql
+
+

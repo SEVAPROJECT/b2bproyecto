@@ -1,0 +1,99 @@
+# Archivos de entorno y credenciales
+.env
+.env.*
+*.env
+*.env.local
+*.env.development
+*.env.production
+*.env.test
+
+# Dependencias (se instalan con npm ci)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Archivos de build (se generan en el contenedor)
+dist/
+dist-ssr/
+build/
+*.local
+
+# Archivos de logs
+logs/
+*.log
+
+# Archivos de test
+**/__tests__/
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+coverage/
+.nyc_output/
+
+# Archivos de IDE y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+.project
+.classpath
+.settings/
+*.code-workspace
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+*.pid
+
+# Archivos de Git
+.git/
+.gitignore
+.gitattributes
+
+# Archivos de documentación local
+*.md
+!README.md
+docs/
+
+# Archivos de configuración local
+sonar-project.properties
+tsconfig.*.json
+!tsconfig.json
+
+# Archivos temporales y copias
+*.tmp
+*.temp
+*.bak
+*~
+index copy.*
+verify_app.tsx
+
+# Archivos de ejemplo y pruebas
+**/*Test*.tsx
+**/*Test*.ts
+**/*Example*.tsx
+**/*Example*.ts
+**/*Demo*.tsx
+**/*Demo*.ts
+ConnectionTest.tsx
+LocationDemo.tsx
+LocationExample.tsx
+ProviderDebugTest.tsx
+ProviderTest.tsx
+AddressTest.tsx
+AddressTestComponent.tsx
+LocationTestComponent.tsx
+
+# Archivos de metadata local
+metadata.json
+
+
