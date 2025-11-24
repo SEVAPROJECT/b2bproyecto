@@ -32,8 +32,10 @@ RUN mkdir -p /var/cache/nginx /var/log/nginx /var/run && \
 # Crear script de inicio que prepara la configuración como root y luego ejecuta nginx como usuario no root
 RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo 'set -e' >> /docker-entrypoint.sh && \
+    echo '# Establecer PORT con valor por defecto si no está definido' >> /docker-entrypoint.sh && \
+    echo 'export PORT=${PORT:-8080}' >> /docker-entrypoint.sh && \
     echo '# Preparar configuración de nginx con envsubst (como root)' >> /docker-entrypoint.sh && \
-    echo 'envsubst '"'"'${PORT:-8080}'"'"' < /etc/nginx/nginx.conf > /etc/nginx/nginx.conf.tmp && mv /etc/nginx/nginx.conf.tmp /etc/nginx/nginx.conf' >> /docker-entrypoint.sh && \
+    echo 'envsubst '"'"'$PORT'"'"' < /etc/nginx/nginx.conf > /etc/nginx/nginx.conf.tmp && mv /etc/nginx/nginx.conf.tmp /etc/nginx/nginx.conf' >> /docker-entrypoint.sh && \
     echo '# Cambiar propiedad del archivo de configuración al usuario nginx' >> /docker-entrypoint.sh && \
     echo 'chown nginx:nginx /etc/nginx/nginx.conf' >> /docker-entrypoint.sh && \
     echo '# Cambiar al usuario no root y ejecutar nginx' >> /docker-entrypoint.sh && \
