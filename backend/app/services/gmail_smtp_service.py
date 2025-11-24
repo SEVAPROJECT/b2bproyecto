@@ -33,10 +33,8 @@ MENSAJE_CORREO_AUTOMATICO = "Este es un correo automático, por favor no respond
 EQUIPO_SEVA = "Equipo SEVA EMPRESAS"
 
 # Constantes de asuntos de email
-# NOSONAR: Estas son cadenas de texto para asuntos de correo, no credenciales hardcodeadas
-ASUNTO_RESET_PASSWORD = "Código de restablecimiento de contraseña - SEVA EMPRESAS"
-# NOSONAR: Esta es una cadena de texto para asunto de correo, no una credencial hardcodeada
-ASUNTO_PASSWORD_SUCCESS = "Contraseña actualizada exitosamente - SEVA EMPRESAS"
+ASUNTO_RESET_PASSWORD = "Código de restablecimiento de contraseña - SEVA EMPRESAS"  # NOSONAR
+ASUNTO_PASSWORD_SUCCESS = "Contraseña actualizada exitosamente - SEVA EMPRESAS"  # NOSONAR
 
 # Constantes de URLs de APIs
 URL_BREVO_API = "https://api.brevo.com/v3/smtp/email"

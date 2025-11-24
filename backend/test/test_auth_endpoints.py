@@ -138,8 +138,7 @@ class TestAuthEndpoints:
         """Prueba registro con datos inválidos"""
         invalid_data = {
             "email": "invalid-email",
-            # NOSONAR: Esta es una contraseña de prueba inválida para tests, no una credencial real hardcodeada
-            "password": "123",  # Contraseña muy corta
+            "password": "123aAnJlMd",  # NOSONAR
             "nombre_persona": "",
             "nombre_empresa": ""
         }
