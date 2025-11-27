@@ -61,18 +61,38 @@ export const locationsAPI = {
     // Obtener ciudades por departamento
     async getCiudadesPorDepartamento(idDepartamento: number): Promise<Ciudad[]> {
         try {
-            const response = await fetch(buildApiUrl(`${API_CONFIG.LOCATIONS.CITIES}/${idDepartamento}`));
+            const url = buildApiUrl(`${API_CONFIG.LOCATIONS.CITIES}/${idDepartamento}`);
+            console.log(`🔍 [locationsAPI] Obteniendo ciudades para departamento ID: ${idDepartamento}`);
+            console.log(`🔗 [locationsAPI] URL: ${url}`);
+            
+            const response = await fetch(url);
             
             if (!response.ok) {
                 throw await handleApiError(response);
             }
             
             const data = await response.json();
+            console.log(`✅ [locationsAPI] Respuesta recibida:`, data);
+            console.log(`📊 [locationsAPI] Total de ciudades recibidas: ${Array.isArray(data) ? data.length : 'No es un array'}`);
+            
+            // Verificar que sea un array
+            if (!Array.isArray(data)) {
+                console.error('❌ [locationsAPI] La respuesta no es un array:', data);
+                return [];
+            }
+            
             // Mapear los datos para incluir la propiedad id
-            return data.map((ciudad: any) => ({
+            const ciudadesMapeadas = data.map((ciudad: any) => ({
                 ...ciudad,
                 id: ciudad.id_ciudad
             }));
+            
+            console.log(`✅ [locationsAPI] Ciudades mapeadas: ${ciudadesMapeadas.length}`);
+            if (ciudadesMapeadas.length > 0) {
+                console.log(`📋 [locationsAPI] Nombres de ciudades:`, ciudadesMapeadas.map(c => c.nombre));
+            }
+            
+            return ciudadesMapeadas;
         } catch (error) {
             console.error('❌ Error al obtener ciudades:', error);
             throw error;

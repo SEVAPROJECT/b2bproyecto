@@ -15,8 +15,11 @@ from app.schemas.empresa.perfil_empresa import PerfilEmpresaIn
 from app.schemas.auth_user import SupabaseUser
 from app.api.v1.dependencies.local_storage import local_storage_service
 from app.api.v1.dependencies.idrive import upload_file_to_idrive, smart_upload_service
+from app.services.direct_db_service import direct_db_service
 from typing import Optional, List
 import uuid
+import asyncpg
+from datetime import datetime
 import json
 from datetime import datetime
 from app.schemas.publicar_servicio.solicitud_servicio import SolicitudServicioIn, SolicitudServicioOut  # noqa: E402
@@ -129,99 +132,187 @@ def filter_valid_documents(documentos: List[UploadFile], nombres_tip_documento: 
     
     return documentos_validos, nombres_tip_documento_validos
 
-async def get_user_profile(db: AsyncSession, user_id: str) -> UserModel:
-    """Obtiene y valida el perfil de usuario"""
-    user_profile_result = await db.execute(
-        select(UserModel).where(UserModel.id == uuid.UUID(user_id))
-    )
-    user_profile = user_profile_result.scalars().first()
-    
-    if not user_profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=MSG_PERFIL_USUARIO_NO_ENCONTRADO
-        )
-    
-    if not user_profile.nombre_empresa:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=MSG_RAZON_SOCIAL_NO_CONFIGURADA
-        )
-    
-    return user_profile
+async def get_user_profile(db: AsyncSession, user_id: str):
+    """
+    Obtiene y valida el perfil de usuario.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    Retorna un objeto compatible con UserModel.
+    """
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        user_query = """
+            SELECT id, nombre_persona, nombre_empresa, ruc, foto_perfil, estado
+            FROM users
+            WHERE id = $1
+        """
+        user_row = await conn.fetchrow(user_query, user_id)
+        
+        if not user_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=MSG_PERFIL_USUARIO_NO_ENCONTRADO
+            )
+        
+        if not user_row['nombre_empresa']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=MSG_RAZON_SOCIAL_NO_CONFIGURADA
+            )
+        
+        # Crear objeto compatible con UserModel
+        user_profile = type('UserModel', (), {
+            'id': user_row['id'],
+            'nombre_persona': user_row['nombre_persona'],
+            'nombre_empresa': user_row['nombre_empresa'],
+            'ruc': user_row['ruc'],
+            'foto_perfil': user_row['foto_perfil'],
+            'estado': user_row['estado']
+        })()
+        
+        return user_profile
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
 async def validate_company_uniqueness(
     db: AsyncSession, 
     razon_social: str, 
     nombre_fantasia: str, 
     current_user_id: str
-) -> Optional[PerfilEmpresa]:
-    """Valida la unicidad de la empresa y retorna empresa existente si existe"""
-    query = select(PerfilEmpresa).where(
-        (PerfilEmpresa.razon_social == razon_social) |
-        (PerfilEmpresa.nombre_fantasia == nombre_fantasia)
-    )
-    empresa_existente_result = await db.execute(query)
-    empresa_existente = empresa_existente_result.scalars().first()
-    
-    if empresa_existente and empresa_existente.user_id != uuid.UUID(current_user_id):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=MSG_EMPRESA_YA_REGISTRADA
-        )
-    
-    return empresa_existente
+):
+    """
+    Valida la unicidad de la empresa y retorna empresa existente si existe.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    Retorna un objeto compatible con PerfilEmpresa o None.
+    """
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        empresa_query = """
+            SELECT id_perfil, razon_social, nombre_fantasia, user_id, estado, verificado, id_direccion
+            FROM perfil_empresa
+            WHERE razon_social = $1 OR nombre_fantasia = $2
+            LIMIT 1
+        """
+        empresa_row = await conn.fetchrow(empresa_query, razon_social, nombre_fantasia)
+        
+        if empresa_row:
+            # Verificar si pertenece a otro usuario
+            if str(empresa_row['user_id']) != current_user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=MSG_EMPRESA_YA_REGISTRADA
+                )
+            
+            # Crear objeto compatible con PerfilEmpresa
+            empresa_existente = type('PerfilEmpresa', (), {
+                'id_perfil': empresa_row['id_perfil'],
+                'razon_social': empresa_row['razon_social'],
+                'nombre_fantasia': empresa_row['nombre_fantasia'],
+                'user_id': empresa_row['user_id'],
+                'estado': empresa_row['estado'],
+                'verificado': empresa_row['verificado'],
+                'id_direccion': empresa_row['id_direccion']
+            })()
+            
+            return empresa_existente
+        
+        return None
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
 async def find_location_data(
     db: AsyncSession, 
     direccion_data: dict
 ) -> tuple:
-    """Busca y valida departamento, ciudad y barrio"""
-    # Buscar departamento
-    dept_result = await db.execute(
-        select(Departamento).where(Departamento.nombre == direccion_data['departamento'])
-    )
-    departamento = dept_result.scalars().first()
-    
-    if not departamento:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=MSG_DEPARTAMENTO_NO_ENCONTRADO.format(departamento=direccion_data['departamento'])
-        )
-    
-    # Buscar ciudad
-    ciudad_result = await db.execute(
-        select(Ciudad).where(
-            Ciudad.nombre == direccion_data['ciudad'],
-            Ciudad.id_departamento == departamento.id_departamento
-        )
-    )
-    ciudad = ciudad_result.scalars().first()
-    
-    if not ciudad:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=MSG_CIUDAD_NO_ENCONTRADA.format(
-                ciudad=direccion_data['ciudad'], 
-                departamento=direccion_data['departamento']
+    """
+    Busca y valida departamento, ciudad y barrio.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    Retorna objetos con estructura compatible con los modelos ORM.
+    """
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        # Buscar departamento
+        dept_query = "SELECT id_departamento, nombre, created_at FROM departamento WHERE nombre = $1"
+        dept_row = await conn.fetchrow(dept_query, direccion_data['departamento'])
+        
+        if not dept_row:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=MSG_DEPARTAMENTO_NO_ENCONTRADO.format(departamento=direccion_data['departamento'])
             )
+        
+        # Crear objeto departamento compatible
+        departamento = type('Departamento', (), {
+            'id_departamento': dept_row['id_departamento'],
+            'nombre': dept_row['nombre'],
+            'created_at': dept_row['created_at']
+        })()
+        
+        # Buscar ciudad
+        ciudad_query = """
+            SELECT id_ciudad, nombre, id_departamento, created_at 
+            FROM ciudad 
+            WHERE nombre = $1 AND id_departamento = $2
+        """
+        ciudad_row = await conn.fetchrow(
+            ciudad_query, 
+            direccion_data['ciudad'], 
+            departamento.id_departamento
         )
-    
-    # Buscar barrio (opcional)
-    barrio = None
-    barrio_value = direccion_data.get('barrio')
-    if barrio_value and isinstance(barrio_value, str) and barrio_value.strip():
-        barrio_result = await db.execute(
-            select(Barrio).where(
-                Barrio.nombre == direccion_data['barrio'],
-                Barrio.id_ciudad == ciudad.id_ciudad
+        
+        if not ciudad_row:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=MSG_CIUDAD_NO_ENCONTRADA.format(
+                    ciudad=direccion_data['ciudad'], 
+                    departamento=direccion_data['departamento']
+                )
             )
-        )
-        barrio = barrio_result.scalars().first()
-        if not barrio:
-            print(f"⚠️ Barrio '{direccion_data['barrio']}' no encontrado, continuando sin barrio")
-    
-    return departamento, ciudad, barrio
+        
+        # Crear objeto ciudad compatible
+        ciudad = type('Ciudad', (), {
+            'id_ciudad': ciudad_row['id_ciudad'],
+            'nombre': ciudad_row['nombre'],
+            'id_departamento': ciudad_row['id_departamento'],
+            'created_at': ciudad_row['created_at']
+        })()
+        
+        # Buscar barrio (opcional)
+        barrio = None
+        barrio_value = direccion_data.get('barrio')
+        if barrio_value and isinstance(barrio_value, str) and barrio_value.strip():
+            barrio_query = """
+                SELECT id_barrio, nombre, id_ciudad 
+                FROM barrio 
+                WHERE nombre = $1 AND id_ciudad = $2
+            """
+            barrio_row = await conn.fetchrow(
+                barrio_query,
+                direccion_data['barrio'],
+                ciudad.id_ciudad
+            )
+            
+            if barrio_row:
+                # Crear objeto barrio compatible
+                barrio = type('Barrio', (), {
+                    'id_barrio': barrio_row['id_barrio'],
+                    'nombre': barrio_row['nombre'],
+                    'id_ciudad': barrio_row['id_ciudad']
+                })()
+            else:
+                print(f"⚠️ Barrio '{direccion_data['barrio']}' no encontrado, continuando sin barrio")
+        
+        return departamento, ciudad, barrio
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
 async def sync_direccion_sequence(db: AsyncSession) -> None:
     """Sincroniza la secuencia de direccion"""
@@ -456,6 +547,161 @@ async def process_documents(
             )
             db.add(nuevo_documento)
 
+# Funciones helper para solicitar_verificacion_completa usando SQL directo
+async def create_or_update_direccion_sql(
+    conn: asyncpg.Connection,
+    perfil_data: dict,
+    departamento,
+    ciudad,
+    barrio,
+    id_direccion_existente: Optional[int]
+) -> int:
+    """Crea o actualiza una dirección usando SQL directo"""
+    calle = perfil_data['direccion'].get('calle', '')
+    numero = perfil_data['direccion'].get('numero', '')
+    referencia = perfil_data['direccion'].get('referencia', '')
+    coordenadas_wkt = 'POINT(-57.5759 -25.2637)'  # Asunción por defecto
+    
+    if id_direccion_existente:
+        # Actualizar dirección existente
+        await conn.execute("""
+            UPDATE direccion 
+            SET calle = $1, numero = $2, referencia = $3, 
+                id_departamento = $4, id_ciudad = $5, id_barrio = $6,
+                coordenadas = ST_GeomFromText($7, 4326)
+            WHERE id_direccion = $8
+        """, calle, numero, referencia, departamento.id_departamento,
+            ciudad.id_ciudad if ciudad else None, barrio.id_barrio if barrio else None,
+            coordenadas_wkt, id_direccion_existente)
+        return id_direccion_existente
+    else:
+        # Crear nueva dirección
+        nueva_direccion_row = await conn.fetchrow("""
+            INSERT INTO direccion (calle, numero, referencia, id_departamento, id_ciudad, id_barrio, coordenadas)
+            VALUES ($1, $2, $3, $4, $5, $6, ST_GeomFromText($7, 4326))
+            RETURNING id_direccion
+        """, calle, numero, referencia, departamento.id_departamento,
+            ciudad.id_ciudad if ciudad else None, barrio.id_barrio if barrio else None,
+            coordenadas_wkt)
+        return nueva_direccion_row['id_direccion']
+
+async def create_or_update_sucursal_sql(
+    conn: asyncpg.Connection,
+    perfil_data: dict,
+    id_perfil: int,
+    id_direccion: int
+) -> None:
+    """Crea o actualiza una sucursal usando SQL directo"""
+    if not perfil_data.get('sucursal'):
+        return
+    
+    sucursal_data = perfil_data['sucursal']
+    nombre = sucursal_data.get('nombre', NOMBRE_SUCURSAL_DEFAULT) or NOMBRE_SUCURSAL_DEFAULT
+    telefono = sucursal_data.get('telefono', '') or ''
+    email = sucursal_data.get('email', '') or ''
+    
+    # Verificar si existe sucursal
+    sucursal_existente = await conn.fetchrow("""
+        SELECT id_sucursal FROM sucursal_empresa WHERE id_perfil = $1 LIMIT 1
+    """, id_perfil)
+    
+    if sucursal_existente:
+        # Actualizar sucursal existente
+        await conn.execute("""
+            UPDATE sucursal_empresa 
+            SET nombre = $1, telefono = $2, email = $3, id_direccion = $4
+            WHERE id_sucursal = $5
+        """, nombre, telefono, email, id_direccion, sucursal_existente['id_sucursal'])
+    else:
+        # Crear nueva sucursal
+        await conn.execute("""
+            INSERT INTO sucursal_empresa (id_perfil, nombre, telefono, email, id_direccion, es_principal)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        """, id_perfil, nombre, telefono, email, id_direccion, True)
+
+async def process_documents_sql(
+    conn: asyncpg.Connection,
+    documentos: List[UploadFile],
+    nombres_tip_documento: List[str],
+    razon_social: str,
+    id_verificacion: int,
+    id_perfil_existente: Optional[int],
+    current_user_id: str
+) -> None:
+    """Procesa y sube los documentos usando SQL directo"""
+    if not documentos:
+        print("⚠️ No hay documentos nuevos para procesar")
+        return
+    
+    for index, file in enumerate(documentos):
+        nombre_tip_documento = nombres_tip_documento[index]
+        
+        # Obtener tipo de documento
+        # NOTA: La columna en la BD se llama 'tipo_documento', no 'nombre'
+        tipo_doc_row = await conn.fetchrow("""
+            SELECT id_tip_documento FROM tipo_documento WHERE tipo_documento = $1
+        """, nombre_tip_documento)
+        
+        if not tipo_doc_row:
+            # Obtener todos los tipos de documento disponibles para debugging
+            todos_tipos = await conn.fetch("""
+                SELECT tipo_documento FROM tipo_documento ORDER BY tipo_documento
+            """)
+            tipos_disponibles = [row['tipo_documento'] for row in todos_tipos]
+            print(f"❌ Tipo de documento '{nombre_tip_documento}' no encontrado.")
+            print(f"📋 Tipos disponibles en BD: {tipos_disponibles}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Tipo de documento '{nombre_tip_documento}' no encontrado. Tipos disponibles: {', '.join(tipos_disponibles)}"
+            )
+        
+        id_tip_documento = tipo_doc_row['id_tip_documento']
+        
+        # Subir archivo
+        try:
+            file_content = await file.read()
+            file_key = f"{razon_social}/{nombre_tip_documento}/{uuid.uuid4()}_{file.filename}"
+            idrive_url = upload_file_to_idrive(
+                file_content=file_content,
+                filename=file_key,
+                document_type=DOCUMENT_TYPE_PROVIDER
+            )
+            print(f"✅ Archivo subido exitosamente: {idrive_url}")
+        except Exception as upload_error:
+            print(f"❌ Error al subir archivo: {upload_error}")
+            idrive_url = f"{PREFIX_TEMP}{file.filename}_{current_user_id}_{id_tip_documento}"
+        
+        # Verificar si existe documento previo (solo si hay empresa existente)
+        doc_existente = None
+        if id_perfil_existente:
+            doc_existente = await conn.fetchrow("""
+                SELECT d.id_documento 
+                FROM documento d
+                JOIN verificacion_solicitud vs ON d.id_verificacion = vs.id_verificacion
+                WHERE vs.id_perfil = $1 AND d.id_tip_documento = $2
+                ORDER BY d.created_at DESC
+                LIMIT 1
+            """, id_perfil_existente, id_tip_documento)
+        
+        if doc_existente:
+            # Actualizar documento existente
+            print(f"🔄 Actualizando documento existente: {nombre_tip_documento}")
+            from app.services.date_service import DateService
+            fecha_verificacion = DateService.now_for_database()
+            await conn.execute("""
+                UPDATE documento 
+                SET url_archivo = $1, estado_revision = $2, observacion = NULL,
+                    fecha_verificacion = $3, id_verificacion = $4
+                WHERE id_documento = $5
+            """, idrive_url, ESTADO_PENDIENTE, fecha_verificacion, id_verificacion, doc_existente['id_documento'])
+        else:
+            # Crear nuevo documento
+            print(f"➕ Creando nuevo documento: {nombre_tip_documento}")
+            await conn.execute("""
+                INSERT INTO documento (id_verificacion, id_tip_documento, url_archivo, estado_revision)
+                VALUES ($1, $2, $3, $4)
+            """, id_verificacion, id_tip_documento, idrive_url, ESTADO_PENDIENTE)
+
 @router.post(
     "/solicitar-verificacion",
     status_code=status.HTTP_201_CREATED,
@@ -466,9 +712,13 @@ async def solicitar_verificacion_completa(
     nombres_tip_documento: List[str] = Form(...), # Recibe una lista de nombres de tipos de documento
     documentos: List[UploadFile] = File(...),
     comentario_solicitud: Optional[str] = Form(None),
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
+    """
+    Registra un perfil de empresa y una solicitud de verificación con documentos adjuntos.
+    Usa direct_db_service con SQL directo para evitar problemas con PgBouncer.
+    """
+    conn: Optional[asyncpg.Connection] = None
     try:
         print("🚀 Iniciando solicitud de verificación...")
         print(f"👤 Usuario: {current_user.email} ({current_user.id})")
@@ -485,63 +735,89 @@ async def solicitar_verificacion_completa(
         documentos, nombres_tip_documento = filter_valid_documents(documentos, nombres_tip_documento)
         print(f"📎 Documentos válidos para procesar: {len(documentos)}")
 
-        # Obtener perfil de usuario y razón social
-        user_profile = await get_user_profile(db, current_user.id)
-        razon_social = user_profile.nombre_empresa
+        # Obtener conexión de direct_db_service
+        conn = await direct_db_service.get_connection()
         
-        # Validar unicidad de empresa
-        empresa_existente = await validate_company_uniqueness(
-            db, razon_social, perfil_data['nombre_fantasia'], current_user.id
-        )
-        
-        # Buscar datos de ubicación
-        departamento, ciudad, barrio = await find_location_data(db, perfil_data['direccion'])
-        
-        # Determinar si hay empresa existente del mismo usuario
-        nuevo_perfil = None
-        if empresa_existente and empresa_existente.user_id == uuid.UUID(current_user.id):
-            print(f"🔍 Actualizando empresa existente para reenvío: {empresa_existente.razon_social}")
-            empresa_existente.razon_social = razon_social
-            empresa_existente.nombre_fantasia = perfil_data['nombre_fantasia']
-            empresa_existente.estado = ESTADO_PENDIENTE
-            empresa_existente.verificado = ESTADO_VERIFICADO_FALSE
-            await db.flush()
-            nuevo_perfil = empresa_existente
-        
-        # Crear o actualizar dirección
-        nueva_direccion = await update_or_create_direccion(
-            db, perfil_data, departamento, ciudad, barrio, nuevo_perfil
-        )
-        
-        # Crear o actualizar empresa (solo si no existe)
-        if nuevo_perfil is None:
-            nuevo_perfil = await update_or_create_empresa(
-                db, perfil_data, razon_social, current_user.id, nueva_direccion, empresa_existente
+        # Usar transacción para todas las operaciones
+        async with conn.transaction():
+            # Obtener perfil de usuario y razón social
+            print("🔍 Obteniendo perfil de usuario...")
+            user_profile = await get_user_profile(None, current_user.id)  # db no se usa
+            razon_social = user_profile.nombre_empresa
+            print(f"✅ Perfil de usuario obtenido. Razón social: {razon_social}")
+            
+            # Validar unicidad de empresa
+            print("🔍 Validando unicidad de empresa...")
+            empresa_existente = await validate_company_uniqueness(
+                None, razon_social, perfil_data['nombre_fantasia'], current_user.id  # db no se usa
+            )
+            print(f"✅ Validación de unicidad completada. Empresa existente: {empresa_existente is not None}")
+            
+            # Buscar datos de ubicación
+            print(f"🔍 Buscando datos de ubicación: {perfil_data['direccion']}")
+            departamento, ciudad, barrio = await find_location_data(None, perfil_data['direccion'])  # db no se usa
+            print(f"✅ Datos de ubicación encontrados. Departamento: {departamento.nombre}, Ciudad: {ciudad.nombre}, Barrio: {barrio.nombre if barrio else 'N/A'}")
+            
+            # Determinar si hay empresa existente del mismo usuario
+            id_perfil_existente = None
+            id_direccion_existente = None
+            if empresa_existente and str(empresa_existente.user_id) == current_user.id:
+                print(f"🔍 Actualizando empresa existente para reenvío: {empresa_existente.razon_social}")
+                id_perfil_existente = empresa_existente.id_perfil
+                id_direccion_existente = empresa_existente.id_direccion
+                
+                # Actualizar empresa existente
+                await conn.execute("""
+                    UPDATE perfil_empresa 
+                    SET razon_social = $1, nombre_fantasia = $2, estado = $3, verificado = $4
+                    WHERE id_perfil = $5
+                """, razon_social, perfil_data['nombre_fantasia'], ESTADO_PENDIENTE, ESTADO_VERIFICADO_FALSE, id_perfil_existente)
+            
+            # Crear o actualizar dirección usando SQL directo
+            nueva_direccion_id = await create_or_update_direccion_sql(
+                conn, perfil_data, departamento, ciudad, barrio, id_direccion_existente
+            )
+            
+            # Crear o actualizar empresa (solo si no existe)
+            if id_perfil_existente is None:
+                nuevo_perfil_row = await conn.fetchrow("""
+                    INSERT INTO perfil_empresa (user_id, razon_social, nombre_fantasia, id_direccion, estado, verificado)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING id_perfil, user_id, razon_social, nombre_fantasia, id_direccion, estado, verificado
+                """, uuid.UUID(current_user.id), razon_social, perfil_data['nombre_fantasia'], 
+                    nueva_direccion_id, ESTADO_PENDIENTE, ESTADO_VERIFICADO_FALSE)
+                id_perfil_existente = nuevo_perfil_row['id_perfil']
+                print(f"✅ Nueva empresa creada con ID: {id_perfil_existente}")
+            else:
+                # Actualizar dirección de empresa existente
+                await conn.execute("""
+                    UPDATE perfil_empresa SET id_direccion = $1 WHERE id_perfil = $2
+                """, nueva_direccion_id, id_perfil_existente)
+            
+            # Crear o actualizar sucursal usando SQL directo
+            await create_or_update_sucursal_sql(
+                conn, perfil_data, id_perfil_existente, nueva_direccion_id
+            )
+            
+            # Crear solicitud de verificación
+            nueva_solicitud_row = await conn.fetchrow("""
+                INSERT INTO verificacion_solicitud (id_perfil, estado, comentario)
+                VALUES ($1, $2, $3)
+                RETURNING id_verificacion, id_perfil, estado, comentario, fecha_solicitud, created_at
+            """, id_perfil_existente, ESTADO_PENDIENTE, comentario_solicitud)
+            id_verificacion = nueva_solicitud_row['id_verificacion']
+            print(f"🔍 Nueva solicitud creada: {id_verificacion} para empresa: {razon_social}")
+            
+            # Procesar documentos usando SQL directo
+            id_perfil_para_docs = id_perfil_existente if empresa_existente and str(empresa_existente.user_id) == current_user.id else None
+            await process_documents_sql(
+                conn, documentos, nombres_tip_documento, razon_social, 
+                id_verificacion, id_perfil_para_docs, current_user.id
             )
         
-        # Crear o actualizar sucursal
-        await update_or_create_sucursal(db, perfil_data, nuevo_perfil, nueva_direccion)
+        # La transacción se confirma automáticamente al salir del bloque `async with conn.transaction()`
         
-        # Crear solicitud de verificación
-        nueva_solicitud = VerificacionSolicitud(
-            id_perfil=nuevo_perfil.id_perfil,
-            estado=ESTADO_PENDIENTE,
-            comentario=comentario_solicitud
-        )
-        db.add(nueva_solicitud)
-        await db.flush()
-        print(f"🔍 Nueva solicitud creada: {nueva_solicitud.id_verificacion} para empresa: {nuevo_perfil.razon_social}")
-        
-        # Procesar documentos
-        await process_documents(
-            db, documentos, nombres_tip_documento, razon_social, 
-            nueva_solicitud, empresa_existente, current_user.id
-        )
-        
-        # Commit de la transacción
-        await db.commit()
-        
-        if empresa_existente and empresa_existente.user_id == uuid.UUID(current_user.id):
+        if empresa_existente and str(empresa_existente.user_id) == current_user.id:
             return {"message": MSG_SOLICITUD_REENVIADA}
         else:
             return {"message": MSG_SOLICITUD_CREADA}
@@ -549,8 +825,17 @@ async def solicitar_verificacion_completa(
     except HTTPException:
         raise
     except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=MSG_ERROR_INESPERADO.format(error=str(e)))
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"❌ Error completo en solicitar_verificacion_completa: {str(e)}")
+        print(f"📋 Traceback completo:\n{error_traceback}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Error inesperado: {str(e)}"
+        )
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
 
 # Funciones helper para servir_mi_documento

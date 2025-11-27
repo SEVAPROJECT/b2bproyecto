@@ -1041,136 +1041,211 @@ async def delete_profile_photo(
         )
 
 
+# Constantes para mensajes de error
+MSG_NO_ENCONTRADO_PERFIL_EMPRESA = "No se encontró perfil de empresa para este usuario"
+MSG_NO_ENCONTRADA_SOLICITUD_VERIFICACION = "No se encontró solicitud de verificación"
+
 # Funciones helper para get_verificacion_datos
-async def get_empresa_profile(db: AsyncSession, user_id: str) -> PerfilEmpresa:
-    """Obtiene el perfil de empresa del usuario"""
-    empresa_query = select(PerfilEmpresa).options(
-        selectinload(PerfilEmpresa.sucursal_empresa)
-    ).where(PerfilEmpresa.user_id == uuid.UUID(user_id))
-    empresa_result = await db.execute(empresa_query)
-    empresa = empresa_result.scalars().first()
-    
-    if not empresa:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=MSG_NO_ENCONTRADO_PERFIL_EMPRESA
-        )
-    
-    print(f"✅ Empresa encontrada: {empresa.razon_social}")
-    return empresa
+async def get_empresa_profile(user_id: str) -> dict:
+    """
+    Obtiene el perfil de empresa del usuario.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    Retorna un diccionario con los datos de la empresa.
+    """
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        empresa_query = """
+            SELECT 
+                pe.id_perfil,
+                pe.razon_social,
+                pe.nombre_fantasia,
+                pe.estado,
+                pe.verificado,
+                pe.fecha_inicio,
+                pe.fecha_fin,
+                pe.id_direccion,
+                pe.user_id
+            FROM perfil_empresa pe
+            WHERE pe.user_id = $1
+            LIMIT 1
+        """
+        empresa_row = await conn.fetchrow(empresa_query, user_id)
+        
+        if not empresa_row:
+            print(f"⚠️ No se encontró perfil de empresa para usuario {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=MSG_NO_ENCONTRADO_PERFIL_EMPRESA
+            )
+        
+        empresa_dict = dict(empresa_row)
+        print(f"✅ Empresa encontrada: {empresa_dict['razon_social']}")
+        return empresa_dict
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
-async def get_latest_verification_request(db: AsyncSession, id_perfil: int) -> VerificacionSolicitud:
-    """Obtiene la solicitud de verificación más reciente"""
-    solicitud_query = select(VerificacionSolicitud).where(
-        VerificacionSolicitud.id_perfil == id_perfil
-    ).order_by(VerificacionSolicitud.created_at.desc())
-    solicitud_result = await db.execute(solicitud_query)
-    solicitud = solicitud_result.scalars().first()
-    
-    if not solicitud:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=MSG_NO_ENCONTRADA_SOLICITUD_VERIFICACION
-        )
-    
-    print(f"✅ Solicitud encontrada: {solicitud.estado}")
-    return solicitud
+async def get_latest_verification_request(id_perfil: int) -> Optional[dict]:
+    """
+    Obtiene la solicitud de verificación más reciente.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    Retorna un diccionario con los datos de la solicitud o None si no existe.
+    """
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        solicitud_query = """
+            SELECT 
+                id_verificacion,
+                id_perfil,
+                estado,
+                fecha_solicitud,
+                fecha_revision,
+                comentario,
+                created_at
+            FROM verificacion_solicitud
+            WHERE id_perfil = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        solicitud_row = await conn.fetchrow(solicitud_query, id_perfil)
+        
+        if not solicitud_row:
+            print(f"⚠️ No se encontró solicitud de verificación para perfil {id_perfil}")
+            return None
+        
+        solicitud_dict = dict(solicitud_row)
+        print(f"✅ Solicitud encontrada: {solicitud_dict['estado']}")
+        return solicitud_dict
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
-async def get_direccion_data(db: AsyncSession, id_direccion: Optional[int]) -> Optional[dict]:
-    """Obtiene los datos de dirección usando consulta SQL directa"""
+async def get_direccion_data(id_direccion: Optional[int]) -> Optional[dict]:
+    """
+    Obtiene los datos de dirección.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    """
     if not id_direccion:
         return None
     
-    direccion_query = text("""
-        SELECT 
-            d.calle,
-            d.numero,
-            d.referencia,
-            dep.nombre as departamento,
-            c.nombre as ciudad,
-            b.nombre as barrio
-        FROM direccion d
-        LEFT JOIN departamento dep ON d.id_departamento = dep.id_departamento
-        LEFT JOIN ciudad c ON d.id_ciudad = c.id_ciudad
-        LEFT JOIN barrio b ON d.id_barrio = b.id_barrio
-        WHERE d.id_direccion = :direccion_id
-    """)
-    
-    result = await db.execute(direccion_query, {"direccion_id": id_direccion})
-    direccion = result.fetchone()
-    
-    if not direccion:
-        return None
-    
-    return {
-        "calle": direccion.calle,
-        "numero": direccion.numero,
-        "referencia": direccion.referencia,
-        "departamento": direccion.departamento,
-        "ciudad": direccion.ciudad,
-        "barrio": direccion.barrio
-    }
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        direccion_query = """
+            SELECT 
+                d.calle,
+                d.numero,
+                d.referencia,
+                dep.nombre as departamento,
+                c.nombre as ciudad,
+                b.nombre as barrio
+            FROM direccion d
+            LEFT JOIN departamento dep ON d.id_departamento = dep.id_departamento
+            LEFT JOIN ciudad c ON d.id_ciudad = c.id_ciudad
+            LEFT JOIN barrio b ON d.id_barrio = b.id_barrio
+            WHERE d.id_direccion = $1
+        """
+        
+        direccion_row = await conn.fetchrow(direccion_query, id_direccion)
+        
+        if not direccion_row:
+            return None
+        
+        return dict(direccion_row)
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
-def get_sucursal_data(empresa: PerfilEmpresa) -> Optional[dict]:
-    """Obtiene los datos de la sucursal principal"""
-    print(f"🔍 Sucursales encontradas: {len(empresa.sucursal_empresa) if empresa.sucursal_empresa else 0}")
-    print(f"🔍 Tipo de sucursal_empresa: {type(empresa.sucursal_empresa)}")
-    
-    if not empresa.sucursal_empresa:
-        print("⚠️ No se encontraron sucursales para esta empresa")
-        print(f"🔍 Verificando si empresa tiene id_perfil: {empresa.id_perfil if hasattr(empresa, 'id_perfil') else 'No tiene id_perfil'}")
-        return None
-    
-    print(f"🔍 Lista de sucursales: {[s.nombre for s in empresa.sucursal_empresa]}")
-    # Obtener la primera sucursal (principal)
-    # Ya verificamos que empresa.sucursal_empresa no está vacío en la línea 1116
-    sucursal = empresa.sucursal_empresa[0]
-    
-    if not sucursal:
-        print("⚠️ No se encontró sucursal principal")
-        return None
-    
-    sucursal_data = {
-        "nombre": sucursal.nombre,
-        "telefono": sucursal.telefono,
-        "email": sucursal.email
-    }
-    print(f"✅ Sucursal encontrada: {sucursal.nombre}")
-    print(f"✅ Datos de sucursal: {sucursal_data}")
-    return sucursal_data
+async def get_sucursal_data(id_perfil: int) -> Optional[dict]:
+    """
+    Obtiene los datos de la sucursal principal.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    """
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        sucursal_query = """
+            SELECT nombre, telefono, email
+            FROM sucursal_empresa
+            WHERE id_perfil = $1
+            ORDER BY created_at ASC
+            LIMIT 1
+        """
+        sucursal_row = await conn.fetchrow(sucursal_query, id_perfil)
+        
+        if not sucursal_row:
+            print("⚠️ No se encontraron sucursales para esta empresa")
+            return None
+        
+        sucursal_data = dict(sucursal_row)
+        print(f"✅ Sucursal encontrada: {sucursal_data['nombre']}")
+        print(f"✅ Datos de sucursal: {sucursal_data}")
+        return sucursal_data
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
-async def get_documentos_data(db: AsyncSession, id_verificacion: int) -> list[dict]:
-    """Obtiene los documentos de la solicitud de verificación"""
-    documentos_query = select(Documento).options(
-        selectinload(Documento.tipo_documento)
-    ).where(Documento.id_verificacion == id_verificacion)
-    documentos_result = await db.execute(documentos_query)
-    documentos = documentos_result.scalars().all()
-    
-    documentos_data = []
-    for doc in documentos:
-        tipo_doc_nombre = doc.tipo_documento.nombre if doc.tipo_documento else f"Tipo {doc.id_tip_documento}"
-        es_requerido = doc.tipo_documento.es_requerido if doc.tipo_documento else False
-        documentos_data.append({
-            "id_documento": doc.id_documento,
-            "tipo_documento": tipo_doc_nombre,
-            "es_requerido": es_requerido,
-            "estado_revision": doc.estado_revision,
-            "url_archivo": doc.url_archivo,
-            "fecha_verificacion": doc.fecha_verificacion,
-            "observacion": doc.observacion,
-            "created_at": doc.created_at
-        })
-    
-    return documentos_data
+async def get_documentos_data(id_verificacion: int) -> list[dict]:
+    """
+    Obtiene los documentos de la solicitud de verificación.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    """
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        documentos_query = """
+            SELECT 
+                d.id_documento,
+                d.id_verificacion,
+                d.id_tip_documento,
+                d.estado_revision,
+                d.url_archivo,
+                d.fecha_verificacion,
+                d.observacion,
+                d.created_at,
+                td.nombre as tipo_documento_nombre,
+                td.es_requerido
+            FROM documento d
+            LEFT JOIN tipo_documento td ON d.id_tip_documento = td.id_tip_documento
+            WHERE d.id_verificacion = $1
+            ORDER BY d.created_at ASC
+        """
+        documentos_rows = await conn.fetch(documentos_query, id_verificacion)
+        
+        documentos_data = []
+        for row in documentos_rows:
+            tipo_doc_nombre = row['tipo_documento_nombre'] if row['tipo_documento_nombre'] else f"Tipo {row['id_tip_documento']}"
+            es_requerido = row['es_requerido'] if row['es_requerido'] is not None else False
+            documentos_data.append({
+                "id_documento": row['id_documento'],
+                "tipo_documento": tipo_doc_nombre,
+                "es_requerido": es_requerido,
+                "estado_revision": row['estado_revision'],
+                "url_archivo": row['url_archivo'],
+                "fecha_verificacion": row['fecha_verificacion'],
+                "observacion": row['observacion'],
+                "created_at": row['created_at']
+            })
+        
+        return documentos_data
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
-def build_empresa_dict(empresa: PerfilEmpresa, direccion_data: Optional[dict], sucursal_data: Optional[dict]) -> dict:
+def build_empresa_dict(empresa: dict, direccion_data: Optional[dict], sucursal_data: Optional[dict]) -> dict:
     """Construye el diccionario de datos de empresa"""
     return {
-        "razon_social": empresa.razon_social,
-        "nombre_fantasia": empresa.nombre_fantasia,
+        "razon_social": empresa["razon_social"],
+        "nombre_fantasia": empresa["nombre_fantasia"],
         "ruc": "",  # No existe en PerfilEmpresa
-        "direccion": direccion_data["calle"] + " " + direccion_data["numero"] if direccion_data else "",
+        "direccion": direccion_data["calle"] + " " + direccion_data["numero"] if direccion_data and direccion_data.get("calle") and direccion_data.get("numero") else "",
         "referencia": direccion_data["referencia"] if direccion_data else "",
         "departamento": direccion_data["departamento"] if direccion_data else None,
         "ciudad": direccion_data["ciudad"] if direccion_data else None,
@@ -1180,25 +1255,34 @@ def build_empresa_dict(empresa: PerfilEmpresa, direccion_data: Optional[dict], s
         "sitio_web": "",  # No existe en PerfilEmpresa
         "descripcion": "",  # No existe en PerfilEmpresa
         "categoria_empresa": "",  # No existe en PerfilEmpresa
-        "estado": empresa.estado,
-        "verificado": empresa.verificado,
-        "fecha_inicio": empresa.fecha_inicio,
-        "fecha_fin": empresa.fecha_fin,
+        "estado": empresa["estado"],
+        "verificado": empresa["verificado"],
+        "fecha_inicio": empresa["fecha_inicio"],
+        "fecha_fin": empresa["fecha_fin"],
         # Agregar datos de sucursal
         "telefono_contacto": sucursal_data["telefono"] if sucursal_data else None,
         "email_contacto": sucursal_data["email"] if sucursal_data else None,
         "nombre_sucursal": sucursal_data["nombre"] if sucursal_data else None
     }
 
-def build_solicitud_dict(solicitud: VerificacionSolicitud) -> dict:
+def build_solicitud_dict(solicitud: Optional[dict]) -> dict:
     """Construye el diccionario de datos de solicitud"""
+    if not solicitud:
+        return {
+            "id_verificacion": None,
+            "estado": None,
+            "fecha_solicitud": None,
+            "fecha_revision": None,
+            "comentario": None,
+            "created_at": None
+        }
     return {
-        "id_verificacion": solicitud.id_verificacion,
-        "estado": solicitud.estado,
-        "fecha_solicitud": solicitud.fecha_solicitud,
-        "fecha_revision": solicitud.fecha_revision,
-        "comentario": solicitud.comentario,
-        "created_at": solicitud.created_at
+        "id_verificacion": solicitud["id_verificacion"],
+        "estado": solicitud["estado"],
+        "fecha_solicitud": solicitud["fecha_solicitud"],
+        "fecha_revision": solicitud["fecha_revision"],
+        "comentario": solicitud["comentario"],
+        "created_at": solicitud["created_at"]
     }
 
 def build_verificacion_response(empresa_dict: dict, solicitud_dict: dict, documentos_data: list[dict]) -> dict:
@@ -1215,36 +1299,39 @@ def build_verificacion_response(empresa_dict: dict, solicitud_dict: dict, docume
     description="Obtiene los datos completos de verificación del usuario autenticado, incluyendo empresa, sucursal, dirección y documentos."
 )
 async def get_verificacion_datos(
-    current_user: SupabaseUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
-    """Obtiene los datos completos de verificación del usuario autenticado"""
-    
+    """
+    Obtiene los datos completos de verificación del usuario autenticado.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    """
     try:
         print(f"🔍 Obteniendo datos de verificación para usuario: {current_user.id}")
         
         # Obtener perfil de empresa
-        empresa = await get_empresa_profile(db, current_user.id)
+        empresa = await get_empresa_profile(current_user.id)
         
-        # Obtener solicitud de verificación más reciente
-        solicitud = await get_latest_verification_request(db, empresa.id_perfil)
+        # Obtener solicitud de verificación más reciente (puede ser None)
+        solicitud = await get_latest_verification_request(empresa["id_perfil"])
         
         # Obtener datos de dirección
-        direccion_data = await get_direccion_data(db, empresa.id_direccion)
+        direccion_data = await get_direccion_data(empresa.get("id_direccion"))
         
         # Obtener datos de sucursal
-        sucursal_data = get_sucursal_data(empresa)
+        sucursal_data = await get_sucursal_data(empresa["id_perfil"])
         
-        # Obtener documentos
-        documentos_data = await get_documentos_data(db, solicitud.id_verificacion)
+        # Obtener documentos (solo si hay solicitud)
+        documentos_data = []
+        if solicitud:
+            documentos_data = await get_documentos_data(solicitud["id_verificacion"])
         
         # Construir diccionarios de respuesta
         empresa_dict = build_empresa_dict(empresa, direccion_data, sucursal_data)
-        solicitud_dict = build_solicitud_dict(solicitud)
+        solicitud_dict = build_solicitud_dict(solicitud) if solicitud else {}
         response_data = build_verificacion_response(empresa_dict, solicitud_dict, documentos_data)
         
         print(f"✅ Datos de verificación preparados para usuario {current_user.id}")
-        print(f"  - Empresa: {empresa.razon_social}")
+        print(f"  - Empresa: {empresa['razon_social']}")
         print(f"  - Sucursal: {sucursal_data['nombre'] if sucursal_data else 'No encontrada'}")
         print(f"  - Documentos: {len(documentos_data)}")
         print("🔍 Datos de empresa_dict que se enviarán:")

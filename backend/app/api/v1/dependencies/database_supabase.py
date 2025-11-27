@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """
     Proporciona una sesión de base de datos asíncrona con manejo robusto de errores.
+    Configurado para evitar problemas con PgBouncer deshabilitando prepared statements.
     """
     try:
         # Verificar que AsyncSessionLocal esté disponible
@@ -17,6 +18,8 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
 
         async with AsyncSessionLocal() as session:
             try:
+                # La configuración de prepared=False ya está en el engine
+                # No es necesario configurarlo por sesión
                 yield session
             except Exception as e:
                 # No registrar HTTPException como errores críticos (son respuestas HTTP normales)

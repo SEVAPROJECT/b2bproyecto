@@ -1,18 +1,25 @@
-# app/api/v1/routers/locations.py
+# app/api/v1/routers/locations/locations.py
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from typing import List
-from app.api.v1.dependencies.database_supabase import get_async_db
-from app.models.empresa.departamento import Departamento
-from app.models.empresa.ciudad import Ciudad
-from app.models.empresa.barrio import Barrio
+import logging
+from datetime import datetime
+
+from app.services.direct_db_service import direct_db_service
 from app.schemas.empresa.departamento import DepartamentoOut
 from app.schemas.empresa.ciudad import CiudadOut
 from app.schemas.empresa.barrio import BarrioOut
 
+# Constantes para mensajes de error
+MSG_ERROR_OBTENER_DEPARTAMENTOS = "Error al obtener departamentos de la base de datos"
+MSG_ERROR_OBTENER_CIUDADES = "Error al obtener ciudades de la base de datos"
+MSG_ERROR_OBTENER_BARRIOS = "Error al obtener barrios de la base de datos"
+
+# Logger para errores
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/locations", tags=["locations"])
+
 
 @router.get(
     "/departamentos",
@@ -20,18 +27,38 @@ router = APIRouter(prefix="/locations", tags=["locations"])
     status_code=status.HTTP_200_OK,
     description="Devuelve una lista de todos los departamentos."
 )
-async def get_departamentos(db: AsyncSession = Depends(get_async_db)):
+async def get_departamentos() -> List[DepartamentoOut]:
     """
     Obtiene todos los departamentos de la base de datos.
+    Devuelve una lista vacía si no hay departamentos disponibles.
+    Usa direct_db_service para evitar problemas con PgBouncer.
     """
-    result = await db.execute(select(Departamento))
-    departamentos = result.scalars().all()
-    if not departamentos:
+    try:
+        conn = await direct_db_service.get_connection()
+        try:
+            query = "SELECT id_departamento, nombre, created_at FROM departamento ORDER BY nombre"
+            rows = await conn.fetch(query)
+            
+            departamentos = [
+                DepartamentoOut(
+                    id_departamento=row['id_departamento'],
+                    nombre=row['nombre'],
+                    created_at=row['created_at']
+                )
+                for row in rows
+            ]
+            
+            logger.info(f"✅ Encontrados {len(departamentos)} departamentos")
+            return departamentos
+        finally:
+            await direct_db_service.pool.release(conn)
+    except Exception as e:
+        logger.error(f"{MSG_ERROR_OBTENER_DEPARTAMENTOS}: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No se encontraron departamentos."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=MSG_ERROR_OBTENER_DEPARTAMENTOS
         )
-    return list(departamentos)
+
 
 @router.get(
     "/ciudades/{id_departamento}",
@@ -39,20 +66,52 @@ async def get_departamentos(db: AsyncSession = Depends(get_async_db)):
     status_code=status.HTTP_200_OK,
     description="Devuelve una lista de ciudades para un departamento específico."
 )
-async def get_ciudades_por_departamento(id_departamento: int, db: AsyncSession = Depends(get_async_db)):
+async def get_ciudades_por_departamento(
+    id_departamento: int
+) -> List[CiudadOut]:
     """
     Obtiene todas las ciudades de un departamento por su ID.
+    Devuelve una lista vacía si no hay ciudades para el departamento.
+    Usa direct_db_service para evitar problemas con PgBouncer.
     """
-    result = await db.execute(
-        select(Ciudad).where(Ciudad.id_departamento == id_departamento)
-    )
-    ciudades = result.scalars().all()
-    if not ciudades:
+    try:
+        logger.info(f"🔍 Buscando ciudades para departamento ID: {id_departamento}")
+        
+        conn = await direct_db_service.get_connection()
+        try:
+            query = """
+                SELECT id_ciudad, nombre, id_departamento, created_at 
+                FROM ciudad 
+                WHERE id_departamento = $1 
+                ORDER BY nombre
+            """
+            rows = await conn.fetch(query, id_departamento)
+            
+            ciudades = [
+                CiudadOut(
+                    id_ciudad=row['id_ciudad'],
+                    nombre=row['nombre'],
+                    id_departamento=row['id_departamento'],
+                    created_at=row['created_at']
+                )
+                for row in rows
+            ]
+            
+            logger.info(f"✅ Encontradas {len(ciudades)} ciudades para departamento ID {id_departamento}")
+            if ciudades:
+                nombres_ciudades = [c.nombre for c in ciudades]
+                logger.debug(f"📋 Ciudades encontradas: {nombres_ciudades}")
+            
+            return ciudades
+        finally:
+            await direct_db_service.pool.release(conn)
+    except Exception as e:
+        logger.error(f"{MSG_ERROR_OBTENER_CIUDADES}: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontraron ciudades para el departamento con ID {id_departamento}."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=MSG_ERROR_OBTENER_CIUDADES
         )
-    return list(ciudades)
+
 
 @router.get(
     "/barrios/{id_ciudad}",
@@ -60,17 +119,41 @@ async def get_ciudades_por_departamento(id_departamento: int, db: AsyncSession =
     status_code=status.HTTP_200_OK,
     description="Devuelve una lista de barrios para una ciudad específica."
 )
-async def get_barrios_por_ciudad(id_ciudad: int, db: AsyncSession = Depends(get_async_db)):
+async def get_barrios_por_ciudad(
+    id_ciudad: int
+) -> List[BarrioOut]:
     """
     Obtiene todos los barrios de una ciudad por su ID.
+    Devuelve una lista vacía si no hay barrios para la ciudad.
+    Usa direct_db_service para evitar problemas con PgBouncer.
     """
-    result = await db.execute(
-        select(Barrio).where(Barrio.id_ciudad == id_ciudad)
-    )
-    barrios = result.scalars().all()
-    if not barrios:
+    try:
+        conn = await direct_db_service.get_connection()
+        try:
+            query = """
+                SELECT id_barrio, nombre, id_ciudad 
+                FROM barrio 
+                WHERE id_ciudad = $1 
+                ORDER BY nombre
+            """
+            rows = await conn.fetch(query, id_ciudad)
+            
+            barrios = [
+                BarrioOut(
+                    id_barrio=row['id_barrio'],
+                    nombre=row['nombre'],
+                    id_ciudad=row['id_ciudad']
+                )
+                for row in rows
+            ]
+            
+            logger.info(f"✅ Encontrados {len(barrios)} barrios para ciudad ID {id_ciudad}")
+            return barrios
+        finally:
+            await direct_db_service.pool.release(conn)
+    except Exception as e:
+        logger.error(f"{MSG_ERROR_OBTENER_BARRIOS}: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontraron barrios para la ciudad con ID {id_ciudad}."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=MSG_ERROR_OBTENER_BARRIOS
         )
-    return list(barrios)

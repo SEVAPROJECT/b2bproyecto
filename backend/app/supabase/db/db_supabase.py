@@ -121,6 +121,7 @@ try:
         echo=VALOR_FALSE,
         connect_args={
             "statement_cache_size": CACHE_SIZE_DISABLED,  # Deshabilitar prepared statements para PgBouncer (asyncpg)
+            "prepared_statement_cache_size": CACHE_SIZE_DISABLED,  # Deshabilitar cache de prepared statements
             "command_timeout": COMMAND_TIMEOUT,  # Timeout para comandos
             "server_settings": {
                 CLAVE_JIT: JIT_OFF,  # Deshabilitar JIT para evitar problemas con PgBouncer
@@ -132,7 +133,10 @@ try:
         # Configuración optimizada para PgBouncer (que sigue siendo usado)
         pool_pre_ping=VALOR_TRUE,  # Verificar conexiones antes de usar
         pool_recycle=POOL_RECYCLE_3600,  # Reciclar conexiones cada hora
-        execution_options={CLAVE_PREPARED: VALOR_FALSE}  # 🚨 Clave para PgBouncer - deshabilitar prepared statements
+        execution_options={
+            CLAVE_PREPARED: VALOR_FALSE,  # 🚨 Clave para PgBouncer - deshabilitar prepared statements
+            "autocommit": VALOR_FALSE
+        }
     )
 
     AsyncSessionLocal = sessionmaker(
