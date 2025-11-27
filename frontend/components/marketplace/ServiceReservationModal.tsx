@@ -4,6 +4,7 @@ import { BackendService, BackendCategory } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import AvailabilityCalendar from './AvailabilityCalendar';
 import { formatPriceProfessional, getTimeAgo, getServiceImageUrl, formatPriceByCurrency, getServiceCurrency } from '../../utils/formatting';
+import { buildApiUrl } from '../../config/api';
 
 interface ServiceReservationModalProps {
     isOpen: boolean;
