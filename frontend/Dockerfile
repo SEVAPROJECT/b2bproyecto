@@ -14,11 +14,11 @@ COPY nginx.conf /etc/nginx/nginx.conf.template
 # Crear script de inicio para procesar el puerto
 RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo 'set -e' >> /docker-entrypoint.sh && \
-    echo 'PORT=${PORT:-80}' >> /docker-entrypoint.sh && \
+    echo 'PORT=${PORT:-8080}' >> /docker-entrypoint.sh && \
     echo 'envsubst '"'"'$PORT'"'"' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf' >> /docker-entrypoint.sh && \
     echo 'exec nginx -g "daemon off;"' >> /docker-entrypoint.sh && \
     chmod +x /docker-entrypoint.sh
 
-EXPOSE 80
+EXPOSE 8080
 
 CMD ["/docker-entrypoint.sh"]
