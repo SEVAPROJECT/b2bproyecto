@@ -1,0 +1,48 @@
+{
+  "departamentos": [
+    {"nombre": "Central"},
+    {"nombre": "Asunción"},
+    {"nombre": "Alto Paraná"},
+    {"nombre": "Itapúa"},
+    {"nombre": "Caaguazú"},
+    {"nombre": "San Pedro"},
+    {"nombre": "Paraguarí"},
+    {"nombre": "Cordillera"},
+    {"nombre": "Guairá"},
+    {"nombre": "Caazapá"}
+  ],
+  "ciudades": [
+    {"nombre": "Asunción", "departamento": "Asunción"},
+    {"nombre": "San Lorenzo", "departamento": "Central"},
+    {"nombre": "Fernando de la Mora", "departamento": "Central"},
+    {"nombre": "Luque", "departamento": "Central"},
+    {"nombre": "Ciudad del Este", "departamento": "Alto Paraná"},
+    {"nombre": "Encarnación", "departamento": "Itapúa"},
+    {"nombre": "Villarrica", "departamento": "Guairá"},
+    {"nombre": "Coronel Oviedo", "departamento": "Caaguazú"}
+  ],
+  "barrios": [
+    {"nombre": "Centro", "ciudad": "Asunción"},
+    {"nombre": "Villa Morra", "ciudad": "Asunción"},
+    {"nombre": "Barcequillo", "ciudad": "San Lorenzo"},
+    {"nombre": "Centro", "ciudad": "San Lorenzo"},
+    {"nombre": "Centro", "ciudad": "Ciudad del Este"}
+  ],
+  "categorias": [
+    {"nombre": "Catering", "estado": true},
+    {"nombre": "Transporte", "estado": true},
+    {"nombre": "Salud", "estado": true},
+    {"nombre": "Educación", "estado": true},
+    {"nombre": "Tecnología", "estado": true},
+    {"nombre": "Construcción", "estado": true},
+    {"nombre": "Eventos", "estado": true},
+    {"nombre": "Limpieza", "estado": true}
+  ],
+  "tipos_documento": [
+    {"nombre": "Constancia de RUC", "es_requerido": true, "estado_documento": "ACTIVO"},
+    {"nombre": "Cédula MiPymes", "es_requerido": true, "estado_documento": "ACTIVO"},
+    {"nombre": "Certificado de Cumplimiento Tributario", "es_requerido": true, "estado_documento": "ACTIVO"},
+    {"nombre": "Certificados del Rubro", "es_requerido": true, "estado_documento": "ACTIVO"}
+  ]
+}
+

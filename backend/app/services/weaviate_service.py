@@ -138,8 +138,8 @@ class WeaviateService:
     
     async def index_servicios(self, limit: int = 100):
         """Indexar servicios desde la base de datos a Weaviate"""
-        if not self.client:
-            logger.error("❌ Cliente de Weaviate no disponible")
+        if not self.connected:
+            logger.error("❌ Conexión a Weaviate no disponible")
             return False
         
         try:
@@ -180,34 +180,50 @@ class WeaviateService:
             return False
     
     def _index_servicio(self, servicio: Dict[str, Any]):
-        """Indexar un servicio individual en Weaviate"""
+        """Indexar un servicio individual en Weaviate usando HTTP directo"""
+        if not self.connected:
+            logger.error("❌ Conexión a Weaviate no disponible")
+            return False
+        
         try:
-            # Preparar datos para Weaviate
+            # Preparar datos para Weaviate (formato HTTP API)
             servicio_data = {
-                "id_servicio": servicio['id_servicio'],
-                "nombre": servicio['nombre'] or "",
-                "descripcion": servicio['descripcion'] or "",
-                "precio": float(servicio['precio']) if servicio['precio'] else 0.0,
-                "categoria": servicio['categoria'] or "",
-                "empresa": servicio['empresa'] or "",
-                "ubicacion": "",  # Campo vacío por ahora
-                "estado": "activo" if servicio['estado'] else "inactivo"
+                "class": self.class_name,
+                "properties": {
+                    "id_servicio": servicio.get('id_servicio'),
+                    "nombre": servicio.get('nombre') or "",
+                    "descripcion": servicio.get('descripcion') or "",
+                    "precio": float(servicio.get('precio', 0)) if servicio.get('precio') else 0.0,
+                    "categoria": servicio.get('categoria') or "",
+                    "empresa": servicio.get('empresa') or "",
+                    "ubicacion": "",  # Campo vacío por ahora
+                    "estado": "activo" if servicio.get('estado') else "inactivo"
+                }
             }
             
-            # Obtener la colección y crear objeto (con vectorización automática)
-            collection = self.client.collections.get(self.class_name)
-            collection.data.insert(servicio_data)
+            # Insertar objeto en Weaviate usando HTTP POST
+            url = f"{self.base_url}/v1/objects"
+            headers = self._build_search_headers()
+            headers['Content-Type'] = 'application/json'
             
-            logger.debug(f"✅ Servicio {servicio['id_servicio']} indexado con Ollama")
+            response = requests.post(url, json=servicio_data, headers=headers, timeout=30)
+            
+            if response.status_code in [200, 201]:
+                logger.debug(f"✅ Servicio {servicio.get('id_servicio', 'unknown')} indexado exitosamente")
+                return True
+            else:
+                logger.error(f"❌ Error al indexar servicio {servicio.get('id_servicio', 'unknown')}: HTTP {response.status_code} - {response.text}")
+                return False
             
         except Exception as e:
             logger.error(f"❌ Error al indexar servicio {servicio.get('id_servicio', 'unknown')}: {str(e)}")
+            return False
     
-    def _build_search_request_params(self) -> dict:
+    def _build_search_request_params(self, limit: int = 1000) -> dict:
         """Construye los parámetros para la petición de búsqueda"""
         return {
             'class': self.class_name,
-            'limit': 100
+            'limit': limit
         }
     
     def _build_search_headers(self) -> dict:
@@ -217,10 +233,10 @@ class WeaviateService:
             headers['Authorization'] = f'Bearer {self.api_key}'
         return headers
     
-    def _fetch_objects_from_weaviate(self) -> Optional[List[Dict[str, Any]]]:
+    def _fetch_objects_from_weaviate(self, limit: int = 1000) -> Optional[List[Dict[str, Any]]]:
         """Obtiene objetos de Weaviate mediante HTTP"""
         search_url = f"{self.base_url}/v1/objects"
-        params = self._build_search_request_params()
+        params = self._build_search_request_params(limit=limit)
         headers = self._build_search_headers()
         
         try:
@@ -321,8 +337,9 @@ class WeaviateService:
         try:
             logger.info(f"🔍 Búsqueda híbrida con query: '{query}' (texto + semántica)")
             
-            # Obtener objetos de Weaviate
-            objects = self._fetch_objects_from_weaviate()
+            # Obtener objetos de Weaviate (aumentar límite para obtener más resultados)
+            fetch_limit = max(limit * 10, 1000)  # Obtener al menos 10x el límite solicitado o 1000
+            objects = self._fetch_objects_from_weaviate(limit=fetch_limit)
             if objects is None:
                 return []
             

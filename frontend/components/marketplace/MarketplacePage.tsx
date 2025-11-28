@@ -302,6 +302,7 @@ const MarketplacePage: React.FC = () => {
 
     // Estados separados para búsquedas
     const [isAISearching, setIsAISearching] = useState(false);
+    const [isAISearchMode, setIsAISearchMode] = useState(false); // Indica si estamos en modo búsqueda con IA
 
     // Ref para el dialog de filtros avanzados
     const advancedFiltersDialogRef = useRef<HTMLDialogElement>(null);
@@ -404,6 +405,9 @@ const MarketplacePage: React.FC = () => {
         const pageToUse = page ?? currentPage;
         console.log('🚀 Iniciando loadInitialData...', { page: pageToUse });
         
+        // Desactivar modo IA al cargar datos iniciales
+        setIsAISearchMode(false);
+        
         try {
             setIsLoading(true);
             setError(null);
@@ -473,6 +477,9 @@ const MarketplacePage: React.FC = () => {
         const pageToUse = page ?? currentPage;
         console.log('🔄 Recargando datos filtrados...', { page: pageToUse, showFullLoading });
         
+        // Desactivar modo IA cuando se hace búsqueda normal
+        setIsAISearchMode(false);
+        
         try {
             setLoadingState(showFullLoading);
             
@@ -509,7 +516,15 @@ const MarketplacePage: React.FC = () => {
             return;
         }
         
-        // Usar reloadFilteredData con la página específica y loading de página
+        // Si estamos en modo búsqueda con IA, solo cambiar la página localmente
+        if (isAISearchMode) {
+            console.log('🤖 Modo IA activo - paginando localmente');
+            setCurrentPage(page);
+            setIsLoadingPage(false);
+            return;
+        }
+        
+        // Si no estamos en modo IA, usar búsqueda normal del backend
         setIsLoadingPage(true);
         try {
             await reloadFilteredData(page, false);
@@ -519,7 +534,7 @@ const MarketplacePage: React.FC = () => {
         } finally {
             setTimeout(() => setIsLoadingPage(false), 100);
         }
-    }, [currentPage, reloadFilteredData]);
+    }, [currentPage, reloadFilteredData, isAISearchMode]);
 
     useEffect(() => {
         console.log('🎯 useEffect ejecutándose - llamando loadInitialData');
@@ -593,6 +608,8 @@ const MarketplacePage: React.FC = () => {
 
     // Función para manejar búsqueda normal (filtros del backend)
     const handleSearch = useCallback(() => {
+        // Desactivar modo IA cuando se hace búsqueda normal
+        setIsAISearchMode(false);
         setIsSearching(true);
         // Recargar datos con filtros aplicados
         reloadFilteredData().finally(() => {
@@ -603,7 +620,8 @@ const MarketplacePage: React.FC = () => {
     // Función helper para realizar la búsqueda en Weaviate
     const searchWeaviate = useCallback(async (query: string) => {
         const weaviateSearchUrl = buildApiUrl('/weaviate/search-public');
-        const response = await fetch(`${weaviateSearchUrl}?query=${encodeURIComponent(query)}&limit=10`, {
+        // Aumentar límite a 100 para obtener más resultados (máximo permitido por el backend es 50, pero usamos 100 para intentar)
+        const response = await fetch(`${weaviateSearchUrl}?query=${encodeURIComponent(query)}&limit=100`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -622,6 +640,7 @@ const MarketplacePage: React.FC = () => {
         setServices(aiServices);
         setTotalServices(aiServices.length);
         setCurrentPage(1);
+        setIsAISearchMode(true); // Activar modo búsqueda con IA
     }, []);
 
     // Función para búsqueda con IA usando Weaviate
@@ -786,7 +805,16 @@ const MarketplacePage: React.FC = () => {
             itemsPerPage: itemsPerPage
         });
         
-        // NUEVO: Si estamos usando el endpoint filtrado del servidor, NO aplicar filtros locales
+        // Si estamos en modo búsqueda con IA, paginar localmente los servicios
+        if (isAISearchMode) {
+            console.log('🤖 Modo IA - paginando localmente');
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const paginated = services.slice(startIndex, startIndex + itemsPerPage);
+            console.log('📄 Paginación IA - Total servicios:', services.length, 'Página:', currentPage, 'Mostrando:', paginated.length);
+            return paginated;
+        }
+        
+        // Si estamos usando el endpoint filtrado del servidor, NO aplicar filtros locales
         // Los servicios ya vienen filtrados y paginados del servidor
         if (totalServices > 0) {
             console.log('📄 Usando servicios filtrados del servidor (sin filtros locales)');
@@ -800,10 +828,15 @@ const MarketplacePage: React.FC = () => {
         const paginated = filteredServices.slice(startIndex, startIndex + itemsPerPage);
         console.log('📄 Paginación local - Servicios filtrados:', filteredServices.length, 'Paginados:', paginated.length);
         return paginated;
-    }, [services, filteredServices, currentPage, itemsPerPage, totalServices]);
+    }, [services, filteredServices, currentPage, itemsPerPage, totalServices, isAISearchMode]);
 
     // Calcular total de páginas basado en servicios filtrados cuando hay filtros activos
     const totalPages = useMemo(() => {
+        // Si estamos en modo IA, calcular páginas basándose en los servicios en memoria
+        if (isAISearchMode) {
+            return calculateTotalPagesWithLocalFilters(services.length, itemsPerPage);
+        }
+        
         if (totalServices > 0) {
             return calculateTotalPagesWithServer(totalServices, itemsPerPage);
         }
@@ -822,7 +855,7 @@ const MarketplacePage: React.FC = () => {
         }
         
         return calculateTotalPagesWithServer(totalServices, itemsPerPage);
-    }, [filteredServices.length, totalServices, itemsPerPage, priceRange, currencyFilter, categoryFilter, departmentFilter, cityFilter, searchQuery]);
+    }, [filteredServices.length, totalServices, itemsPerPage, priceRange, currencyFilter, categoryFilter, departmentFilter, cityFilter, searchQuery, isAISearchMode, services.length]);
 
     // Memoizar el texto formateado del precio para asegurar actualización en tiempo real
     const formattedMaxPrice = useMemo(() => {
@@ -842,6 +875,7 @@ const MarketplacePage: React.FC = () => {
         setDepartmentFilter('all');
         setCityFilter('all');
         setCurrentPage(1);
+        setIsAISearchMode(false); // Desactivar modo IA al resetear filtros
     }, []);
 
     // Estados de loading y error

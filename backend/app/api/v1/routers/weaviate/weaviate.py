@@ -161,7 +161,7 @@ async def delete_servicio_weaviate(
 )
 async def search_servicios_public(
     query: str = Query(..., description="Texto de búsqueda semántica"),
-    limit: int = Query(10, ge=1, le=50)
+    limit: int = Query(100, ge=1, le=200)  # Aumentado a 200 para permitir más resultados
 ):
     """Buscar servicios usando búsqueda semántica con Weaviate (endpoint público)"""
     try:

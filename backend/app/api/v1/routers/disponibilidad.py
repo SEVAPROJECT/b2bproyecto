@@ -505,17 +505,62 @@ async def obtener_disponibilidades_disponibles_servicio(
     servicio_id: int
 ):
     """
-    Obtiene horarios disponibles para un servicio específico usando la nueva arquitectura.
-    Redirige a la nueva lógica de horario_trabajo + excepciones_horario.
+    Obtiene horarios disponibles para un servicio específico.
+    Primero consulta la tabla disponibilidad directamente.
+    Si no hay disponibilidades, usa la lógica de horario_trabajo + excepciones_horario.
     """
     logger.info(f"🔍 [GET /disponibilidades/servicio/{servicio_id}/disponibles] ========== INICIO OBTENER DISPONIBILIDADES ==========")
     logger.info(f"🔍 [GET /disponibilidades] Servicio ID: {servicio_id}")
-    logger.info(f"🔍 [GET /disponibilidades] Tipo de servicio_id: {type(servicio_id)}")
     
     try:
         conn = await direct_db_service.get_connection()
         try:
+            # Verificar que el servicio existe
             servicio_info = await _verificar_servicio(conn, servicio_id)
+            
+            # PRIMERO: Consultar disponibilidades directas de la tabla disponibilidad
+            logger.info(f"🔍 [GET /disponibilidades] Consultando tabla disponibilidad directamente...")
+            disponibilidades_query = """
+                SELECT 
+                    id_servicio,
+                    fecha_inicio,
+                    fecha_fin,
+                    disponible,
+                    precio_adicional,
+                    observaciones,
+                    created_at,
+                    updated_at
+                FROM disponibilidad
+                WHERE id_servicio = $1
+                AND disponible = true
+                AND fecha_inicio >= CURRENT_DATE
+                AND fecha_inicio <= CURRENT_DATE + INTERVAL '30 days'
+                ORDER BY fecha_inicio ASC
+                LIMIT 500
+            """
+            
+            disponibilidades_rows = await conn.fetch(disponibilidades_query, servicio_id)
+            
+            if disponibilidades_rows and len(disponibilidades_rows) > 0:
+                logger.info(f"✅ [GET /disponibilidades] Encontradas {len(disponibilidades_rows)} disponibilidades en tabla")
+                # Convertir a formato DisponibilidadOut
+                disponibilidades = []
+                for row in disponibilidades_rows:
+                    disponibilidades.append({
+                        "id_servicio": row['id_servicio'],
+                        "fecha_inicio": row['fecha_inicio'],
+                        "fecha_fin": row['fecha_fin'],
+                        "disponible": row['disponible'],
+                        "precio_adicional": float(row['precio_adicional']) if row['precio_adicional'] else 0.0,
+                        "observaciones": row['observaciones'],
+                        "created_at": row.get('created_at'),
+                        "updated_at": row.get('updated_at')
+                    })
+                logger.info(f"✅ [GET /disponibilidades] Retornando {len(disponibilidades)} disponibilidades de tabla")
+                return disponibilidades
+            
+            # SEGUNDO: Si no hay disponibilidades directas, usar lógica de horario_trabajo
+            logger.info(f"ℹ️ [GET /disponibilidades] No hay disponibilidades directas, usando horario_trabajo...")
             proveedor_id = servicio_info['proveedor_id']
             duracion_minutos = servicio_info['duracion_minutos']
             
@@ -536,6 +581,7 @@ async def obtener_disponibilidades_disponibles_servicio(
                 duracion_minutos
             )
             
+            logger.info(f"✅ [GET /disponibilidades] Retornando {len(horarios_disponibles)} horarios generados")
             return horarios_disponibles
             
         finally:
