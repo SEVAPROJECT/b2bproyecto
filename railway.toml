@@ -1,0 +1,14 @@
+# Configuración para el servicio Frontend
+# Este archivo debe estar en la raíz del repositorio
+# Root Directory en Railway debe estar VACÍO (/)
+# Este Dockerfile construye el frontend desde la raíz
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "nginx -g 'daemon off;'"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
