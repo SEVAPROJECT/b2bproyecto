@@ -8,7 +8,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "nginx -g 'daemon off;'"
+# NO especificar startCommand aquí - usar el CMD del Dockerfile
+# El CMD del Dockerfile procesa el PORT con envsubst antes de iniciar nginx
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 
