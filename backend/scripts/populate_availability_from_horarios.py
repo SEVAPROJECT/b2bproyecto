@@ -21,6 +21,7 @@ from app.services.direct_db_service import direct_db_service
 # Configuración
 DIAS_DISPONIBLES = 30  # Días futuros a crear disponibilidades
 DURACION_SLOT_MINUTOS = 60  # Duración de cada slot en minutos (1 hora)
+BATCH_SIZE = 5000  # Tamaño del lote para inserción masiva
 
 async def get_proveedores_con_horarios() -> List[Dict[str, Any]]:
     """Obtiene proveedores que tienen horarios de trabajo configurados"""
@@ -90,44 +91,8 @@ def generar_slots_desde_horario(
     
     return slots
 
-async def create_availability_slot(
-    conn,
-    id_servicio: int,
-    fecha_inicio: datetime,
-    fecha_fin: datetime
-) -> bool:
-    """Crea un slot de disponibilidad"""
-    try:
-        query = """
-            INSERT INTO disponibilidad (
-                id_servicio,
-                fecha_inicio,
-                fecha_fin,
-                disponible,
-                precio_adicional,
-                observaciones,
-                created_at,
-                updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-            ON CONFLICT DO NOTHING
-        """
-        
-        observaciones = f"Generado desde horario_trabajo - Servicio ID {id_servicio}"
-        
-        await conn.execute(
-            query,
-            id_servicio,
-            fecha_inicio,
-            fecha_fin,
-            True,  # disponible
-            0.0,   # precio_adicional
-            observaciones
-        )
-        return True
-    except Exception as e:
-        print(f"  ⚠️  Error creando disponibilidad: {str(e)}")
-        return False
+# Configuración para inserción masiva
+BATCH_SIZE = 5000  # Tamaño del lote para inserción masiva
 
 async def populate_from_horarios():
     """Genera disponibilidades basándose en horarios de trabajo"""
@@ -174,40 +139,70 @@ async def populate_from_horarios():
             
             # Paso 3: Generar disponibilidades para los próximos N días
             today = date.today()
-            disponibilidades_proveedor = 0
+            all_availability_data = []
             
-            async with conn.transaction():
-                for day_offset in range(DIAS_DISPONIBLES):
-                    current_date = today + timedelta(days=day_offset)
-                    dia_semana = current_date.weekday()
-                    
-                    # Verificar si hay horario para este día
-                    if dia_semana not in horarios_map:
-                        continue
-                    
-                    horario = horarios_map[dia_semana]
-                    hora_inicio = horario['hora_inicio']
-                    hora_fin = horario['hora_fin']
-                    
-                    # Generar slots para este día
-                    slots = generar_slots_desde_horario(
-                        current_date,
-                        hora_inicio,
-                        hora_fin,
-                        DURACION_SLOT_MINUTOS
+            # Generar todos los datos primero
+            for day_offset in range(DIAS_DISPONIBLES):
+                current_date = today + timedelta(days=day_offset)
+                dia_semana = current_date.weekday()
+                
+                # Verificar si hay horario para este día
+                if dia_semana not in horarios_map:
+                    continue
+                
+                horario = horarios_map[dia_semana]
+                hora_inicio = horario['hora_inicio']
+                hora_fin = horario['hora_fin']
+                
+                # Generar slots para este día
+                slots = generar_slots_desde_horario(
+                    current_date,
+                    hora_inicio,
+                    hora_fin,
+                    DURACION_SLOT_MINUTOS
+                )
+                
+                # Agregar datos para cada servicio y cada slot
+                for id_servicio in servicios_ids:
+                    for fecha_inicio, fecha_fin in slots:
+                        observaciones = f"Generado desde horario_trabajo - Servicio ID {id_servicio}"
+                        all_availability_data.append((
+                            id_servicio,
+                            fecha_inicio,
+                            fecha_fin,
+                            True,  # disponible
+                            0.0,   # precio_adicional
+                            observaciones,
+                            datetime.now(timezone.utc),  # created_at
+                            datetime.now(timezone.utc)   # updated_at
+                        ))
+            
+            # Insertar en lotes
+            if all_availability_data:
+                query = """
+                    INSERT INTO disponibilidad (
+                        id_servicio, fecha_inicio, fecha_fin, disponible,
+                        precio_adicional, observaciones, created_at, updated_at
                     )
-                    
-                    # Crear disponibilidades para cada servicio y cada slot
-                    for id_servicio in servicios_ids:
-                        for fecha_inicio, fecha_fin in slots:
-                            success = await create_availability_slot(
-                                conn,
-                                id_servicio,
-                                fecha_inicio,
-                                fecha_fin
-                            )
-                            if success:
-                                disponibilidades_proveedor += 1
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    ON CONFLICT DO NOTHING
+                """
+                
+                num_batches = (len(all_availability_data) + BATCH_SIZE - 1) // BATCH_SIZE
+                
+                async with conn.transaction():
+                    for batch_num in range(num_batches):
+                        start_idx = batch_num * BATCH_SIZE
+                        end_idx = min((batch_num + 1) * BATCH_SIZE, len(all_availability_data))
+                        batch = all_availability_data[start_idx:end_idx]
+                        
+                        await conn.executemany(query, batch)
+                        if batch_num == 0 or (batch_num + 1) % 5 == 0:
+                            print(f"  📦 Lote {batch_num + 1}/{num_batches} insertado ({len(batch)} registros)...")
+                
+                disponibilidades_proveedor = len(all_availability_data)
+            else:
+                disponibilidades_proveedor = 0
             
             total_servicios_procesados += len(servicios_ids)
             total_disponibilidades_creadas += disponibilidades_proveedor

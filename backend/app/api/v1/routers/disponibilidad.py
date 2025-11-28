@@ -546,15 +546,25 @@ async def obtener_disponibilidades_disponibles_servicio(
                 # Convertir a formato DisponibilidadOut
                 disponibilidades = []
                 for row in disponibilidades_rows:
+                    # Asegurar que las fechas se serialicen correctamente como ISO 8601
+                    fecha_inicio = row['fecha_inicio']
+                    fecha_fin = row['fecha_fin']
+                    
+                    # Si es datetime, convertir a ISO string
+                    if isinstance(fecha_inicio, datetime):
+                        fecha_inicio = fecha_inicio.isoformat()
+                    if isinstance(fecha_fin, datetime):
+                        fecha_fin = fecha_fin.isoformat()
+                    
                     disponibilidades.append({
                         "id_servicio": row['id_servicio'],
-                        "fecha_inicio": row['fecha_inicio'],
-                        "fecha_fin": row['fecha_fin'],
+                        "fecha_inicio": fecha_inicio,
+                        "fecha_fin": fecha_fin,
                         "disponible": row['disponible'],
                         "precio_adicional": float(row['precio_adicional']) if row['precio_adicional'] else 0.0,
                         "observaciones": row['observaciones'],
-                        "created_at": row.get('created_at'),
-                        "updated_at": row.get('updated_at')
+                        "created_at": row.get('created_at').isoformat() if row.get('created_at') and isinstance(row.get('created_at'), datetime) else row.get('created_at'),
+                        "updated_at": row.get('updated_at').isoformat() if row.get('updated_at') and isinstance(row.get('updated_at'), datetime) else row.get('updated_at')
                     })
                 logger.info(f"✅ [GET /disponibilidades] Retornando {len(disponibilidades)} disponibilidades de tabla")
                 return disponibilidades

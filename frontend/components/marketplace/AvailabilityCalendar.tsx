@@ -75,31 +75,55 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                 }
 
                 const data = await response.json();
+                console.log(`📊 Datos recibidos: ${data.length} disponibilidades`);
+                console.log(`📋 Primeros 3 registros:`, data.slice(0, 3));
                 
                 // Procesar fechas y horas disponibles
                 const dates = new Set<string>();
                 const timesMap = new Map<string, string[]>();
 
                 for (const disp of data) {
-                    if (disp.disponible) {
-                        // Parsear fecha como UTC para evitar cambios de zona horaria
-                        const fechaInicio = new Date(disp.fecha_inicio + 'Z');
+                    if (disp.disponible && disp.fecha_inicio) {
+                        // Parsear fecha - puede venir con timezone o sin él
+                        let fechaInicio: Date;
+                        const fechaStrRaw = disp.fecha_inicio;
+                        
+                        // Si ya tiene timezone (termina con +00:00, -05:00, Z, etc.), parsear directamente
+                        if (typeof fechaStrRaw === 'string') {
+                            // Si no termina con Z ni tiene timezone, agregar Z para UTC
+                            if (!fechaStrRaw.endsWith('Z') && !fechaStrRaw.includes('+') && !fechaStrRaw.includes('-', 10)) {
+                                fechaInicio = new Date(fechaStrRaw + 'Z');
+                            } else {
+                                fechaInicio = new Date(fechaStrRaw);
+                            }
+                        } else {
+                            fechaInicio = new Date(fechaStrRaw);
+                        }
+                        
+                        // Validar que la fecha sea válida
+                        if (isNaN(fechaInicio.getTime())) {
+                            console.warn(`⚠️ Fecha inválida: ${fechaStrRaw}`);
+                            continue;
+                        }
                         
                         // Agregar fecha (usar función local sin conversión UTC)
                         const fechaStr = formatDateToYYYYMMDD(fechaInicio);
                         dates.add(fechaStr);
                         
-                        // Agregar hora
+                        // Agregar hora - usar hora local del datetime
                         const horaStr = fechaInicio.toTimeString().split(' ')[0].substring(0, 5);
                         if (!timesMap.has(fechaStr)) {
                             timesMap.set(fechaStr, []);
                         }
                         const times = timesMap.get(fechaStr);
-                        if (times) {
+                        if (times && !times.includes(horaStr)) {
                             times.push(horaStr);
                         }
                     }
                 }
+                
+                console.log(`✅ Fechas disponibles: ${dates.size}`);
+                console.log(`✅ Horarios por fecha:`, Array.from(timesMap.entries()).slice(0, 3));
 
                 setAvailableDates(dates);
                 setAvailableTimes(timesMap);
