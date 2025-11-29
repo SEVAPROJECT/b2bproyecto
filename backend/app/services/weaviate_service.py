@@ -17,8 +17,15 @@ class WeaviateService:
         # Detectar si estamos en desarrollo local
         weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8080")
         
-        # Si la URL contiene 'railway.app' pero estamos en local, usar localhost
-        if "railway.app" in weaviate_url and "localhost" not in weaviate_url:
+        # En Railway, preferir usar la URL pública del servicio si está disponible
+        railway_weaviate_url = os.getenv("RAILWAY_SERVICE_WEAVIATE_URL")
+        if railway_weaviate_url and "railway.app" in railway_weaviate_url:
+            # Usar la URL pública de Railway (más confiable que nombres internos)
+            if not railway_weaviate_url.startswith(('http://', 'https://')):
+                railway_weaviate_url = f"https://{railway_weaviate_url}"
+            self.base_url = railway_weaviate_url
+            logger.info(f"🔧 Usando URL pública de Weaviate desde Railway: {self.base_url}")
+        elif "railway.app" in weaviate_url and "localhost" not in weaviate_url:
             # Estamos en desarrollo local pero la URL es de Railway
             # Usar localhost para desarrollo
             self.base_url = "http://localhost:8080"
@@ -45,17 +52,60 @@ class WeaviateService:
             if ":8080:8080" in self.base_url:
                 self.base_url = self.base_url.replace(":8080:8080", ":8080")
             
+            # Si la URL es pública de Railway, puede requerir HTTPS
+            # Si es interna (weaviate:8080), usar HTTP
+            if "railway.app" in self.base_url:
+                # URL pública, asegurar HTTPS
+                if not self.base_url.startswith('https://'):
+                    self.base_url = self.base_url.replace('http://', 'https://')
+            elif "weaviate" in self.base_url.lower() and ":8080" in self.base_url:
+                # URL interna, usar HTTP
+                if not self.base_url.startswith('http://'):
+                    self.base_url = self.base_url.replace('https://', 'http://')
+                # Intentar diferentes variaciones del nombre del servicio
+                test_urls = [
+                    self.base_url.replace("weaviate", "Weaviate"),
+                    self.base_url.replace("Weaviate", "weaviate"),
+                    self.base_url
+                ]
+            else:
+                test_urls = [self.base_url]
+            
             logger.info(f"🔗 Conectando a Weaviate en: {self.base_url}")
             
             # Probar conexión
-            response = requests.get(f"{self.base_url}/v1/meta", timeout=10)
-            
-            if response.status_code == 200:
-                self.connected = True
-                logger.info("✅ Conexión a Weaviate establecida exitosamente")
+            if "test_urls" in locals():
+                # Probar con diferentes variaciones
+                connected = False
+                for test_url in test_urls:
+                    try:
+                        response = requests.get(f"{test_url}/v1/meta", timeout=10, verify=False)
+                        if response.status_code == 200:
+                            self.base_url = test_url
+                            self.connected = True
+                            connected = True
+                            logger.info(f"✅ Conexión a Weaviate establecida exitosamente en: {test_url}")
+                            break
+                    except Exception as e:
+                        logger.debug(f"⚠️ No se pudo conectar a {test_url}: {str(e)}")
+                        continue
+                
+                if not connected:
+                    logger.error(f"❌ No se pudo conectar a Weaviate con ninguna de las URLs probadas")
+                    self.connected = False
             else:
-                logger.error(f"❌ Error de conexión: {response.status_code}")
-                self.connected = False
+                # Probar con la URL única
+                try:
+                    response = requests.get(f"{self.base_url}/v1/meta", timeout=10, verify=False)
+                    if response.status_code == 200:
+                        self.connected = True
+                        logger.info("✅ Conexión a Weaviate establecida exitosamente")
+                    else:
+                        logger.error(f"❌ Error de conexión: {response.status_code}")
+                        self.connected = False
+                except Exception as e:
+                    logger.error(f"❌ Error al conectar: {str(e)}")
+                    self.connected = False
                 
         except Exception as e:
             logger.error(f"❌ Error al inicializar Weaviate: {str(e)}")
