@@ -72,6 +72,56 @@ class WeaviateService:
             logger.error(f"❌ Error al verificar schema: {str(e)}")
             return False
     
+    def _get_schema(self) -> Optional[Dict[str, Any]]:
+        """Obtener el schema actual de la clase"""
+        try:
+            url = f"{self.base_url}/v1/schema/{self.class_name}"
+            headers = self._build_search_headers()
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error al obtener schema: {str(e)}")
+            return None
+    
+    def _check_schema_has_vectorizer(self) -> bool:
+        """Verificar si el schema tiene vectorizador configurado"""
+        schema = self._get_schema()
+        if not schema:
+            return False
+        
+        # Verificar si tiene vectorizer configurado
+        vectorizer = schema.get('vectorizer')
+        if not vectorizer or vectorizer == 'none':
+            logger.warning(f"⚠️ Schema '{self.class_name}' no tiene vectorizador configurado")
+            return False
+        
+        # Verificar si tiene moduleConfig para text2vec-ollama
+        module_config = schema.get('moduleConfig', {})
+        if 'text2vec-ollama' not in module_config:
+            logger.warning(f"⚠️ Schema '{self.class_name}' no tiene módulo text2vec-ollama configurado")
+            return False
+        
+        logger.info(f"✅ Schema '{self.class_name}' tiene vectorizador '{vectorizer}' configurado")
+        return True
+    
+    def _delete_schema(self) -> bool:
+        """Eliminar el schema existente (para recrearlo)"""
+        try:
+            url = f"{self.base_url}/v1/schema/{self.class_name}"
+            headers = self._build_search_headers()
+            response = requests.delete(url, headers=headers, timeout=30)
+            if response.status_code in [200, 204]:
+                logger.info(f"✅ Schema '{self.class_name}' eliminado exitosamente")
+                return True
+            else:
+                logger.error(f"❌ Error al eliminar schema: HTTP {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error al eliminar schema: {str(e)}")
+            return False
+    
     def _setup_schema(self):
         """Configurar el esquema de Weaviate para servicios con Ollama usando REST API v1"""
         try:
@@ -79,13 +129,31 @@ class WeaviateService:
                 logger.error("❌ Conexión a Weaviate no disponible para configurar schema")
                 return
             
-            # Verificar si el schema ya existe
+            # Verificar si el schema ya existe y tiene vectorizador
             if self._check_schema_exists():
-                logger.info(f"✅ Schema '{self.class_name}' ya existe en Weaviate")
-                return
+                if self._check_schema_has_vectorizer():
+                    logger.info(f"✅ Schema '{self.class_name}' ya existe y tiene vectorizador configurado")
+                    return
+                else:
+                    logger.warning(f"⚠️ Schema '{self.class_name}' existe pero no tiene vectorizador. Eliminando para recrearlo...")
+                    self._delete_schema()
             
             # Configuración de Ollama
-            ollama_endpoint = os.getenv("OLLAMA_ENDPOINT", "http://host.docker.internal:11434")
+            # En Railway, los servicios se comunican usando nombres de servicio internos
+            # Si OLLAMA_ENDPOINT no está configurado, intentar detectar el endpoint correcto
+            ollama_endpoint = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL")
+            if not ollama_endpoint:
+                # En Railway, usar el nombre del servicio interno
+                # Si estamos en Railway, usar el nombre del servicio
+                if "railway" in os.getenv("RAILWAY_ENVIRONMENT", "").lower() or os.getenv("RAILWAY_SERVICE_NAME"):
+                    ollama_endpoint = "http://ollama:11434"
+                    logger.info("🔧 Detectado Railway: usando endpoint interno de Ollama")
+                else:
+                    ollama_endpoint = "http://host.docker.internal:11434"
+                    logger.info("🔧 Modo local: usando host.docker.internal")
+            else:
+                logger.info(f"🔧 Usando endpoint de Ollama desde variable de entorno: {ollama_endpoint}")
+            
             ollama_model = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
             
             logger.info(f"🤖 Configurando schema con Ollama: {ollama_endpoint} con modelo: {ollama_model}")

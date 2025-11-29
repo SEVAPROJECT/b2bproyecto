@@ -32,6 +32,67 @@ async def get_weaviate_status():
             detail=f"Error al verificar Weaviate: {str(e)}"
         )
 
+@router.get(
+    "/schema/check",
+    description="Verificar el schema de Weaviate y su configuración de vectorizador"
+)
+async def check_schema():
+    """Verificar si el schema existe y tiene vectorizador configurado"""
+    try:
+        schema_exists = weaviate_service._check_schema_exists()
+        has_vectorizer = False
+        schema_data = None
+        
+        if schema_exists:
+            schema_data = weaviate_service._get_schema()
+            has_vectorizer = weaviate_service._check_schema_has_vectorizer()
+        
+        return {
+            "schema_exists": schema_exists,
+            "has_vectorizer": has_vectorizer,
+            "schema": schema_data,
+            "class_name": weaviate_service.class_name
+        }
+    except Exception as e:
+        logger.error(f"❌ Error al verificar schema: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al verificar schema: {str(e)}"
+        )
+
+@router.post(
+    "/schema/setup",
+    description="Crear o actualizar el schema de Weaviate con vectorizador"
+)
+async def setup_schema(
+    force: bool = Query(False, description="Forzar recreación del schema aunque ya exista")
+):
+    """Crear o actualizar el schema de Weaviate con vectorizador configurado"""
+    try:
+        if force:
+            logger.info("🔄 Forzando recreación del schema...")
+            weaviate_service._delete_schema()
+        
+        # Intentar crear/verificar el schema
+        weaviate_service._setup_schema()
+        
+        # Verificar que se creó correctamente
+        schema_exists = weaviate_service._check_schema_exists()
+        has_vectorizer = weaviate_service._check_schema_has_vectorizer()
+        
+        return {
+            "message": "Schema configurado exitosamente" if (schema_exists and has_vectorizer) else "Error al configurar schema",
+            "schema_exists": schema_exists,
+            "has_vectorizer": has_vectorizer,
+            "class_name": weaviate_service.class_name
+        }
+    except Exception as e:
+        logger.error(f"❌ Error al configurar schema: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al configurar schema: {str(e)}"
+        )
+
 @router.post(
     "/index-servicios",
     description="Indexar todos los servicios en Weaviate"
