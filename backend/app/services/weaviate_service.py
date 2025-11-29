@@ -30,6 +30,9 @@ class WeaviateService:
         self.class_name = "Servicios"
         self.connected = False
         self._initialize_connection()
+        # Configurar schema si la conexión es exitosa
+        if self.connected:
+            self._setup_schema()
 
     def _initialize_connection(self):
         """Inicializar la conexión HTTP con Weaviate"""
@@ -58,83 +61,143 @@ class WeaviateService:
             logger.error(f"❌ Error al inicializar Weaviate: {str(e)}")
             self.connected = False
 
-    def _setup_schema(self):
-        """Configurar el esquema de Weaviate para servicios con Ollama v4"""
+    def _check_schema_exists(self) -> bool:
+        """Verificar si el schema de la clase existe en Weaviate"""
         try:
-            if not self.client:
-                return
-                
-            # Verificar si la colección ya existe
-            if self.client.collections.exists(self.class_name):
-                logger.info(f"✅ Colección '{self.class_name}' ya existe en Weaviate")
+            url = f"{self.base_url}/v1/schema/{self.class_name}"
+            headers = self._build_search_headers()
+            response = requests.get(url, headers=headers, timeout=10)
+            return response.status_code == 200
+        except Exception as e:
+            logger.error(f"❌ Error al verificar schema: {str(e)}")
+            return False
+    
+    def _setup_schema(self):
+        """Configurar el esquema de Weaviate para servicios con Ollama usando REST API v1"""
+        try:
+            if not self.connected:
+                logger.error("❌ Conexión a Weaviate no disponible para configurar schema")
                 return
             
-            # Configuración de Ollama - usar host.docker.internal para acceso desde contenedor
+            # Verificar si el schema ya existe
+            if self._check_schema_exists():
+                logger.info(f"✅ Schema '{self.class_name}' ya existe en Weaviate")
+                return
+            
+            # Configuración de Ollama
             ollama_endpoint = os.getenv("OLLAMA_ENDPOINT", "http://host.docker.internal:11434")
             ollama_model = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
             
-            logger.info(f"🤖 Configurando Ollama: {ollama_endpoint} con modelo: {ollama_model}")
+            logger.info(f"🤖 Configurando schema con Ollama: {ollama_endpoint} con modelo: {ollama_model}")
             
-            # Crear la colección con vectorizador Ollama
-            self.client.collections.create(
-                name=self.class_name,
-                description="Servicios de la plataforma B2B",
-                vector_config=[
-                    Configure.Vectors.text2vec_ollama(
-                        name="servicio_vector",
-                        source_properties=["nombre", "descripcion", "categoria", "empresa"],
-                        api_endpoint=ollama_endpoint,
-                        model=ollama_model,
-                    )
-                ],
-                properties=[
-                    weaviate.classes.config.Property(
-                        name="id_servicio",
-                        data_type=weaviate.classes.config.DataType.INT,
-                        description="ID del servicio en la base de datos"
-                    ),
-                    weaviate.classes.config.Property(
-                        name="nombre",
-                        data_type=weaviate.classes.config.DataType.TEXT,
-                        description="Nombre del servicio"
-                    ),
-                    weaviate.classes.config.Property(
-                        name="descripcion",
-                        data_type=weaviate.classes.config.DataType.TEXT,
-                        description="Descripción del servicio"
-                    ),
-                    weaviate.classes.config.Property(
-                        name="precio",
-                        data_type=weaviate.classes.config.DataType.NUMBER,
-                        description="Precio del servicio"
-                    ),
-                    weaviate.classes.config.Property(
-                        name="categoria",
-                        data_type=weaviate.classes.config.DataType.TEXT,
-                        description="Categoría del servicio"
-                    ),
-                    weaviate.classes.config.Property(
-                        name="empresa",
-                        data_type=weaviate.classes.config.DataType.TEXT,
-                        description="Nombre de la empresa proveedora"
-                    ),
-                    weaviate.classes.config.Property(
-                        name="ubicacion",
-                        data_type=weaviate.classes.config.DataType.TEXT,
-                        description="Ubicación del servicio"
-                    ),
-                    weaviate.classes.config.Property(
-                        name="estado",
-                        data_type=weaviate.classes.config.DataType.TEXT,
-                        description="Estado del servicio (activo/inactivo)"
-                    )
+            # Crear el schema usando REST API v1
+            schema_url = f"{self.base_url}/v1/schema"
+            headers = self._build_search_headers()
+            headers['Content-Type'] = 'application/json'
+            
+            schema_definition = {
+                "class": self.class_name,
+                "description": "Servicios de la plataforma B2B",
+                "vectorizer": "text2vec-ollama",
+                "moduleConfig": {
+                    "text2vec-ollama": {
+                        "model": ollama_model,
+                        "apiEndpoint": ollama_endpoint,
+                        "vectorizeClassName": False
+                    }
+                },
+                "properties": [
+                    {
+                        "name": "id_servicio",
+                        "dataType": ["int"],
+                        "description": "ID del servicio en la base de datos"
+                    },
+                    {
+                        "name": "nombre",
+                        "dataType": ["text"],
+                        "description": "Nombre del servicio",
+                        "moduleConfig": {
+                            "text2vec-ollama": {
+                                "skip": False,
+                                "vectorizePropertyName": False
+                            }
+                        }
+                    },
+                    {
+                        "name": "descripcion",
+                        "dataType": ["text"],
+                        "description": "Descripción del servicio",
+                        "moduleConfig": {
+                            "text2vec-ollama": {
+                                "skip": False,
+                                "vectorizePropertyName": False
+                            }
+                        }
+                    },
+                    {
+                        "name": "precio",
+                        "dataType": ["number"],
+                        "description": "Precio del servicio",
+                        "moduleConfig": {
+                            "text2vec-ollama": {
+                                "skip": True
+                            }
+                        }
+                    },
+                    {
+                        "name": "categoria",
+                        "dataType": ["text"],
+                        "description": "Categoría del servicio",
+                        "moduleConfig": {
+                            "text2vec-ollama": {
+                                "skip": False,
+                                "vectorizePropertyName": False
+                            }
+                        }
+                    },
+                    {
+                        "name": "empresa",
+                        "dataType": ["text"],
+                        "description": "Nombre de la empresa proveedora",
+                        "moduleConfig": {
+                            "text2vec-ollama": {
+                                "skip": False,
+                                "vectorizePropertyName": False
+                            }
+                        }
+                    },
+                    {
+                        "name": "ubicacion",
+                        "dataType": ["text"],
+                        "description": "Ubicación del servicio",
+                        "moduleConfig": {
+                            "text2vec-ollama": {
+                                "skip": True
+                            }
+                        }
+                    },
+                    {
+                        "name": "estado",
+                        "dataType": ["text"],
+                        "description": "Estado del servicio (activo/inactivo)",
+                        "moduleConfig": {
+                            "text2vec-ollama": {
+                                "skip": True
+                            }
+                        }
+                    }
                 ]
-            )
+            }
             
-            logger.info(f"✅ Colección '{self.class_name}' creada exitosamente con Ollama")
+            response = requests.post(schema_url, json=schema_definition, headers=headers, timeout=30)
+            
+            if response.status_code in [200, 201]:
+                logger.info(f"✅ Schema '{self.class_name}' creado exitosamente con Ollama")
+            else:
+                logger.error(f"❌ Error al crear schema: HTTP {response.status_code} - {response.text}")
             
         except Exception as e:
-            logger.error(f"❌ Error al configurar esquema de Weaviate: {str(e)}")
+            logger.error(f"❌ Error al configurar schema de Weaviate: {str(e)}")
     
     async def index_servicios(self, limit: int = 100):
         """Indexar servicios desde la base de datos a Weaviate"""
@@ -478,6 +541,11 @@ class WeaviateService:
         if not query or not query.strip():
             logger.warning("⚠️ Query vacía, retornando lista vacía")
             return []
+        
+        # Asegurar que el schema esté configurado antes de buscar
+        if not self._check_schema_exists():
+            logger.warning("⚠️ Schema no existe, intentando crearlo...")
+            self._setup_schema()
         
         try:
             # Escapar comillas en la query para GraphQL
