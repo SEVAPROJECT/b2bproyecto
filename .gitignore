@@ -48,6 +48,10 @@ backend/.env.production
 backend/logs/
 backend/*.log
 
+# Scripts de inserción de datos y utilidades de desarrollo
+# Estos scripts no son necesarios en Railway, solo para desarrollo local
+backend/scripts/
+
 # Archivos de base de datos local
 backend/*.db
 backend/*.sqlite
@@ -233,6 +237,30 @@ TODO.md
 CHANGELOG.md
 *.md.bak
 
+# Archivos .md de documentación que no se necesitan en Railway
+# (Mantener solo README.md principal en la raíz)
+DOCUMENTACION_*.md
+ANALISIS_*.md
+SOLUCION_*.md
+PREGUNTAS_*.md
+QUE_HACER_*.md
+VER_*.md
+CONFIGURAR_*.md
+PASOS_*.md
+PLAN_*.md
+QUICK_START_*.md
+DOCKER_*.md
+SONARQUBE_*.md
+CASOS_DE_PRUEBA_*.md
+*_SETUP.md
+*_DEPLOYMENT.md
+*_GUIDE.md
+*_CONFIG.md
+backend/scripts/*.md
+backend/*.md
+frontend/*.md
+# Nota: README.md principal se mantiene explícitamente en la sección de archivos incluidos
+
 # ============================================================================
 # ✅ ARCHIVOS QUE SÍ SE INCLUYEN (EXPLÍCITAMENTE)
 # ============================================================================
@@ -270,4 +298,8 @@ CHANGELOG.md
 # ❌ Archivos temporales y de backup
 # 
 # ✅ Se incluyen solo los archivos esenciales para el funcionamiento
+# 
+# 📋 EXCLUSIONES ADICIONALES:
+# ❌ backend/scripts/ - Scripts de inserción de datos (solo desarrollo local)
+# ❌ *.md - Archivos de documentación excepto README.md principal
 # ============================================================================

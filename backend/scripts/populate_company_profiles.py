@@ -406,3 +406,4 @@ async def populate_company_profiles():
 if __name__ == "__main__":
     asyncio.run(populate_company_profiles())
 
+

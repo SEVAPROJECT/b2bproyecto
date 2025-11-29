@@ -19,3 +19,4 @@ async def insert_categories():
 if __name__ == "__main__":
     asyncio.run(insert_categories())
 
+

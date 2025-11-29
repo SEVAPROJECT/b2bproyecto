@@ -66,3 +66,4 @@ def generate_ddl():
 if __name__ == "__main__":
     generate_ddl()
 
+

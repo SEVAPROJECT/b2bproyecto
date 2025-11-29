@@ -328,17 +328,189 @@ class WeaviateService:
         logger.info(f"🔍 Búsqueda híbrida: {len(servicios_limitados)} resultados de {len(servicios)} servicios")
         return servicios_limitados
     
-    def search_servicios(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Buscar servicios usando búsqueda híbrida (texto + semántica)"""
+    def _search_vectorial_nativa(self, query: str, limit: int = 10) -> Optional[List[Dict[str, Any]]]:
+        """Búsqueda vectorial nativa usando REST API v1 con GraphQL (nearText)"""
+        try:
+            # Escapar comillas y caracteres especiales para GraphQL
+            query_escaped = query.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
+            
+            # Construir query GraphQL para búsqueda vectorial
+            graphql_query = {
+                "query": f"""{{
+                    Get {{
+                        {self.class_name} (
+                            nearText: {{
+                                concepts: ["{query_escaped}"]
+                            }}
+                            limit: {limit}
+                        ) {{
+                            id_servicio
+                            nombre
+                            descripcion
+                            precio
+                            categoria
+                            empresa
+                            ubicacion
+                            estado
+                            _additional {{
+                                distance
+                                id
+                            }}
+                        }}
+                    }}
+                }}"""
+            }
+            
+            # Enviar query a Weaviate usando REST API v1 /v1/graphql
+            url = f"{self.base_url}/v1/graphql"
+            headers = self._build_search_headers()
+            headers['Content-Type'] = 'application/json'
+            
+            response = requests.post(url, json=graphql_query, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'errors' in data:
+                    logger.error(f"❌ Error en query GraphQL: {data['errors']}")
+                    return None
+                
+                # Extraer resultados
+                get_data = data.get('data', {}).get('Get', {}).get(self.class_name, [])
+                logger.info(f"✅ Búsqueda vectorial: {len(get_data)} resultados encontrados")
+                return get_data
+            else:
+                logger.error(f"❌ Error en búsqueda vectorial: HTTP {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error en búsqueda vectorial nativa: {str(e)}")
+            return None
+    
+    def _search_hibrida_nativa(self, query: str, limit: int = 10) -> Optional[List[Dict[str, Any]]]:
+        """Búsqueda híbrida nativa usando REST API v1 con GraphQL (hybrid search con BM25 + Vectorial)"""
+        try:
+            # Escapar comillas y caracteres especiales para GraphQL
+            query_escaped = query.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
+            
+            # Construir query GraphQL para búsqueda híbrida
+            graphql_query = {
+                "query": f"""{{
+                    Get {{
+                        {self.class_name} (
+                            hybrid: {{
+                                query: "{query_escaped}"
+                            }}
+                            limit: {limit}
+                        ) {{
+                            id_servicio
+                            nombre
+                            descripcion
+                            precio
+                            categoria
+                            empresa
+                            ubicacion
+                            estado
+                            _additional {{
+                                distance
+                                score
+                                id
+                            }}
+                        }}
+                    }}
+                }}"""
+            }
+            
+            # Enviar query a Weaviate usando REST API v1 /v1/graphql
+            url = f"{self.base_url}/v1/graphql"
+            headers = self._build_search_headers()
+            headers['Content-Type'] = 'application/json'
+            
+            response = requests.post(url, json=graphql_query, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'errors' in data:
+                    logger.error(f"❌ Error en query GraphQL híbrida: {data['errors']}")
+                    return None
+                
+                # Extraer resultados
+                get_data = data.get('data', {}).get('Get', {}).get(self.class_name, [])
+                logger.info(f"✅ Búsqueda híbrida nativa: {len(get_data)} resultados encontrados")
+                return get_data
+            else:
+                logger.error(f"❌ Error en búsqueda híbrida: HTTP {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error en búsqueda híbrida nativa: {str(e)}")
+            return None
+    
+    def _process_graphql_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Procesa los resultados de GraphQL y los convierte en formato de servicio"""
+        servicios = []
+        for result in results:
+            servicio = {
+                "id_servicio": result.get("id_servicio"),
+                "nombre": result.get("nombre", ""),
+                "descripcion": result.get("descripcion", ""),
+                "precio": result.get("precio", 0.0),
+                "categoria": result.get("categoria", ""),
+                "empresa": result.get("empresa", ""),
+                "ubicacion": result.get("ubicacion", ""),
+                "estado": result.get("estado", "activo")
+            }
+            servicios.append(servicio)
+        return servicios
+    
+    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True) -> List[Dict[str, Any]]:
+        """
+        Buscar servicios usando búsqueda nativa de Weaviate (REST API v1)
+        
+        Args:
+            query: Texto de búsqueda
+            limit: Número máximo de resultados
+            use_hybrid: Si True, usa búsqueda híbrida (BM25 + Vectorial). Si False, solo vectorial.
+        """
         if not self.connected:
             logger.error("❌ Conexión a Weaviate no disponible")
             return []
         
+        if not query or not query.strip():
+            logger.warning("⚠️ Query vacía, retornando lista vacía")
+            return []
+        
         try:
-            logger.info(f"🔍 Búsqueda híbrida con query: '{query}' (texto + semántica)")
+            # Escapar comillas en la query para GraphQL
+            query_escaped = query.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
             
+            if use_hybrid:
+                logger.info(f"🔍 Búsqueda híbrida nativa (BM25 + Vectorial) con query: '{query}'")
+                results = self._search_hibrida_nativa(query_escaped, limit)
+            else:
+                logger.info(f"🔍 Búsqueda vectorial nativa con query: '{query}'")
+                results = self._search_vectorial_nativa(query_escaped, limit)
+            
+            if results is None:
+                logger.warning("⚠️ No se obtuvieron resultados de Weaviate")
+                return []
+            
+            # Procesar resultados
+            servicios = self._process_graphql_results(results)
+            
+            logger.info(f"📊 Resultados encontrados: {len(servicios)}")
+            return servicios
+            
+        except Exception as e:
+            logger.error(f"❌ Error en búsqueda: {str(e)}")
+            # Fallback a método anterior si hay error
+            logger.info("🔄 Intentando fallback a método anterior...")
+            return self._search_fallback(query, limit)
+    
+    def _search_fallback(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        """Método de fallback si la búsqueda nativa falla"""
+        try:
             # Obtener objetos de Weaviate (aumentar límite para obtener más resultados)
-            fetch_limit = max(limit * 10, 1000)  # Obtener al menos 10x el límite solicitado o 1000
+            fetch_limit = max(limit * 10, 1000)
             objects = self._fetch_objects_from_weaviate(limit=fetch_limit)
             if objects is None:
                 return []
@@ -349,11 +521,11 @@ class WeaviateService:
             # Aplicar búsqueda híbrida si hay query
             servicios = self._apply_hybrid_search_filter(servicios, query, limit)
             
-            logger.info(f"📊 Resultados encontrados: {len(servicios)}")
+            logger.info(f"📊 Resultados fallback: {len(servicios)}")
             return servicios
             
         except Exception as e:
-            logger.error(f"❌ Error en búsqueda híbrida: {str(e)}")
+            logger.error(f"❌ Error en búsqueda fallback: {str(e)}")
             return []
     
     def _get_palabras_relacionadas(self, query: str) -> List[str]:
