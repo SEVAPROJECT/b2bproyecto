@@ -124,15 +124,23 @@ export const useAdminUsers = () => {
 
     // Función helper para realizar el fetch con timeout
     const fetchUsersWithTimeout = useCallback(async (url: string): Promise<Response> => {
-        const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout de usuarios')), 10000)
-        );
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos
 
-        const fetchPromise = fetch(url, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-        });
-
-        return await Promise.race([fetchPromise, timeoutPromise]);
+        try {
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` },
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            return response;
+        } catch (error: any) {
+            clearTimeout(timeoutId);
+            if (error.name === 'AbortError') {
+                throw new Error('Timeout de usuarios');
+            }
+            throw error;
+        }
     }, []);
 
     // Función helper para procesar respuesta exitosa
@@ -224,11 +232,39 @@ export const useAdminUsers = () => {
             console.log(`📡 Respuesta recibida: ${response.status} ${response.statusText}`);
 
             if (response.ok) {
-                const data = await response.json();
+                // Verificar que la respuesta tenga contenido
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Respuesta no es JSON válido');
+                }
+                
+                const text = await response.text();
+                console.log(`📦 Respuesta raw (primeros 500 chars): ${text.substring(0, 500)}`);
+                
+                if (!text || text.trim().length === 0) {
+                    throw new Error('Respuesta vacía del servidor');
+                }
+                
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (parseError) {
+                    console.error('❌ Error parseando JSON:', parseError);
+                    console.error('📦 Texto recibido:', text);
+                    throw new Error('Error parseando respuesta JSON');
+                }
+                
                 console.log(`✅ Datos recibidos: ${data.usuarios?.length || 0} usuarios`);
                 console.log(`📊 Total recibido del backend: ${data.total}`);
                 console.log(`📄 Página recibida: ${data.page}`);
                 console.log(`📑 Total de páginas: ${data.total_pages}`);
+                
+                // Validar estructura de respuesta
+                if (!data.usuarios || !Array.isArray(data.usuarios)) {
+                    console.error('❌ Estructura de respuesta inválida:', data);
+                    throw new Error('Estructura de respuesta inválida: usuarios no es un array');
+                }
+                
                 processSuccessfulResponse(data);
             } else {
                 const shouldRetry = await handleResponseError(response, page, searchEmpresaParam, searchNombreParam, retryCount);

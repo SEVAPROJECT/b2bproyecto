@@ -50,6 +50,7 @@ backend/*.log
 
 # Scripts de inserción de datos y utilidades de desarrollo
 # Estos scripts no son necesarios en Railway, solo para desarrollo local
+# Incluye: scripts de población de datos, verificación, corrección de duplicados, etc.
 backend/scripts/
 
 # Archivos de base de datos local

@@ -1529,6 +1529,8 @@ async def get_all_users(
             
             response_data = build_users_response(users_list, total_users, page, limit)
             print(f"🔍 DEBUG: Respuesta enviada - Total: {response_data['total']}, Usuarios: {len(users_list)}")
+            print(f"🔍 DEBUG: Estructura respuesta - tiene 'usuarios': {'usuarios' in response_data}, tipo usuarios: {type(response_data.get('usuarios'))}")
+            print(f"🔍 DEBUG: Tamaño respuesta (aprox): {len(str(response_data))} caracteres")
             return response_data
             
         finally:
