@@ -193,6 +193,10 @@ class WeaviateService:
                     else:
                         ollama_endpoint = "http://host.docker.internal:11434"
                 
+                # IMPORTANTE: El apiEndpoint debe ser solo la URL base (sin /api/embeddings)
+                if ollama_endpoint.endswith('/'):
+                    ollama_endpoint = ollama_endpoint.rstrip('/')
+                
                 ollama_model = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
                 
                 # Verificar si la configuración actual coincide
@@ -235,6 +239,13 @@ class WeaviateService:
                     logger.info("🔧 Modo local: usando host.docker.internal")
             else:
                 logger.info(f"🔧 Usando endpoint de Ollama desde variable de entorno: {ollama_endpoint}")
+            
+            # IMPORTANTE: Según la documentación oficial de Weaviate, el apiEndpoint
+            # debe ser solo la URL base (sin /api/embeddings). El módulo agrega la ruta automáticamente.
+            # Sin embargo, hay un bug conocido donde usa /api/embed en lugar de /api/embeddings.
+            # La solución es asegurar que la URL base termine sin barra final.
+            if ollama_endpoint.endswith('/'):
+                ollama_endpoint = ollama_endpoint.rstrip('/')
             
             ollama_model = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
             
