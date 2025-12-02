@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
-from typing import List, Optional
+from typing import List, Optional, Dict
 import uuid
 from app.api.v1.dependencies.database_supabase import get_async_db
 from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
@@ -3064,6 +3064,27 @@ async def get_cliente_email_from_auth(conn, cliente_user_id: uuid.UUID) -> str:
         print(f"Error obteniendo email del cliente {cliente_user_id}: {e}")
     return VALOR_DEFAULT_NO_DISPONIBLE
 
+async def get_emails_batch_from_auth(conn, user_ids: List[uuid.UUID]) -> Dict[uuid.UUID, str]:
+    """Obtiene los emails de múltiples usuarios en una sola consulta"""
+    if not user_ids:
+        return {}
+    
+    try:
+        # Crear una lista de placeholders para la consulta IN
+        placeholders = ','.join([f'${i+1}' for i in range(len(user_ids))])
+        email_query = f"SELECT id, email FROM auth.users WHERE id IN ({placeholders})"
+        email_results = await conn.fetch(email_query, *user_ids)
+        
+        # Crear un diccionario de user_id -> email
+        emails_dict = {}
+        for row in email_results:
+            emails_dict[row['id']] = row['email']
+        
+        return emails_dict
+    except Exception as e:
+        print(f"Error obteniendo emails en batch: {e}")
+        return {}
+
 def format_reserva_datetime(date_value) -> Optional[str]:
     """Formatea una fecha/hora de reserva a DD/MM/YYYY HH:MM"""
     if date_value:
@@ -3102,9 +3123,10 @@ def format_estado_reserva(estado: str) -> dict:
         'color': 'gray'
     })
 
-async def process_reserva_row(conn, row: dict) -> dict:
+async def process_reserva_row(conn, row: dict, emails_dict: Dict[uuid.UUID, str]) -> dict:
     """Procesa una fila de reserva y retorna su diccionario"""
-    cliente_email = await get_cliente_email_from_auth(conn, row['cliente_user_id'])
+    cliente_user_id = row['cliente_user_id']
+    cliente_email = emails_dict.get(cliente_user_id, VALOR_DEFAULT_NO_DISPONIBLE)
     estado_formateado = format_estado_reserva(row['estado'])
     
     return {
@@ -3112,7 +3134,7 @@ async def process_reserva_row(conn, row: dict) -> dict:
         "cliente": {
             "nombre": row['cliente_nombre'],
             "email": cliente_email,
-            "user_id": str(row['cliente_user_id'])
+            "user_id": str(cliente_user_id)
         },
         "proveedor": {
             "empresa": row['empresa_razon_social'],
@@ -3140,11 +3162,24 @@ async def process_reserva_row(conn, row: dict) -> dict:
     }
 
 async def process_all_reservas(conn, reservas_data: list) -> list[dict]:
-    """Procesa todas las reservas y retorna la lista completa"""
+    """Procesa todas las reservas y retorna la lista completa (optimizado con batch)"""
+    if not reservas_data:
+        return []
+    
+    # Obtener todos los user_ids únicos de clientes
+    cliente_user_ids = list(set(row['cliente_user_id'] for row in reservas_data if row.get('cliente_user_id')))
+    
+    # Obtener todos los emails en una sola consulta
+    print(f"🔍 Obteniendo emails para {len(cliente_user_ids)} clientes únicos...")
+    emails_dict = await get_emails_batch_from_auth(conn, cliente_user_ids)
+    print(f"✅ Emails obtenidos: {len(emails_dict)} de {len(cliente_user_ids)}")
+    
+    # Procesar todas las reservas usando el diccionario de emails
     reservas_detalladas = []
     for row in reservas_data:
-        reserva_data = await process_reserva_row(conn, row)
+        reserva_data = await process_reserva_row(conn, row, emails_dict)
         reservas_detalladas.append(reserva_data)
+    
     return reservas_detalladas
 
 def calculate_reservas_statistics(reservas_detalladas: list[dict]) -> dict:
@@ -3180,28 +3215,42 @@ async def get_reporte_reservas_proveedores(
 ):
     """Genera reporte detallado de reservas de proveedores"""
     try:
+        print("🔍 Iniciando generación de reporte de reservas de proveedores...")
         
         conn = await direct_db_service.get_connection()
         
         try:
+            print("📊 Ejecutando consulta de reservas...")
             reservas_query = build_reservas_proveedores_query()
             reservas_data = await conn.fetch(reservas_query)
-            reservas_detalladas = await process_all_reservas(conn, reservas_data)
-            statistics = calculate_reservas_statistics(reservas_detalladas)
+            print(f"✅ Reservas obtenidas: {len(reservas_data)}")
             
-            return build_reservas_proveedores_response(reservas_detalladas, statistics)
+            print("🔄 Procesando reservas...")
+            reservas_detalladas = await process_all_reservas(conn, reservas_data)
+            print(f"✅ Reservas procesadas: {len(reservas_detalladas)}")
+            
+            print("📈 Calculando estadísticas...")
+            statistics = calculate_reservas_statistics(reservas_detalladas)
+            print(f"✅ Estadísticas calculadas: {statistics}")
+            
+            response = build_reservas_proveedores_response(reservas_detalladas, statistics)
+            print(f"✅ Reporte generado exitosamente - Total reservas: {response['total_reservas']}")
+            
+            return response
             
         finally:
             await direct_db_service.pool.release(conn)
             
     except Exception as e:
-        print(f"Error generando reporte de reservas de proveedores: {e}")
+        print(f"❌ Error generando reporte de reservas de proveedores: {e}")
+        print("Traceback completo:")
+        traceback.print_exc()
         if "prepared statement" in str(e).lower() or "pgbouncer" in str(e).lower():
             try:
                 await db.rollback()
             except Exception:
                 pass
-        raise HTTPException(status_code=500, detail="Error generando reporte de reservas de proveedores")
+        raise HTTPException(status_code=500, detail=f"Error generando reporte de reservas de proveedores: {str(e)}")
 
 # Funciones helper para get_reporte_reservas
 def build_reservas_query() -> str:

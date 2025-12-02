@@ -188,6 +188,27 @@ const AdminReportsPage: React.FC = () => {
     };
 
     // Función principal para formatear valores
+    // Función helper para traducir roles al español
+    const translateRole = (role: string): string => {
+        const roleLower = role.toLowerCase().trim();
+        switch (roleLower) {
+            case 'admin':
+            case 'administrador':
+            case 'administrator':
+                return 'Administrador';
+            case 'provider':
+            case 'proveedor':
+            case 'proveedores':
+                return 'Proveedor';
+            case 'client':
+            case 'cliente':
+            case 'clientes':
+                return 'Cliente';
+            default:
+                return role; // Retornar el valor original si no se reconoce
+        }
+    };
+
     const formatValue = (value: any, fieldName?: string): string => {
         const emptyResult = handleEmptyValue(value, fieldName);
         if (emptyResult !== null) {
@@ -197,6 +218,11 @@ const AdminReportsPage: React.FC = () => {
         // IMPORTANTE: Procesar estado ANTES de la detección de fechas para evitar conflictos
         if (fieldName === 'estado' || fieldName === 'active' || fieldName === 'activo') {
             return formatEstado(value);
+        }
+
+        // Traducir roles al español
+        if (fieldName === 'rol_principal' || fieldName === 'rol') {
+            return translateRole(String(value));
         }
 
         // Caso especial: fecha_reserva siempre debe mostrar solo fecha (sin hora)
@@ -523,7 +549,7 @@ const AdminReportsPage: React.FC = () => {
         if (reportType === 'usuarios-activos') return 25000;
         if (reportType === 'categorias') return 8000;
         if (reportType === 'proveedores-verificados') return 15000;
-        if (reportType === 'reservas') return 15000;
+        if (reportType === 'reservas') return 45000; // Aumentado a 45 segundos para procesar muchas reservas
         if (reportType === 'calificaciones' || reportType === 'calificaciones-proveedores') return 15000;
         return 12000; // Default
     };
@@ -963,13 +989,7 @@ const AdminReportsPage: React.FC = () => {
                             };
                         } catch (error) {
                             console.error('❌ Error cargando reporte de reservas de proveedores:', error);
-                            return {
-                                fecha_generacion: getArgentinaDateISO(),
-                                total_reservas: 0,
-                                reservas: [],
-                                generado_desde: 'sin_datos_backend',
-                                mensaje: 'No se pudieron cargar las reservas de proveedores'
-                            };
+                            throw error; // Lanzar el error para que se maneje en el catch principal
                         }
                     })();
                     break;
@@ -1187,11 +1207,7 @@ const AdminReportsPage: React.FC = () => {
                         <thead>
                             <tr>
                                 ${Object.keys(data[0]).map(key => {
-                                    let headerName = key.replaceAll('_', ' ').toUpperCase();
-                                    // Personalizar nombres específicos
-                                    if (key === 'created_at') headerName = 'FECHA CREACION';
-                                    if (key === 'updated_at') headerName = 'FECHA ACTUALIZACION';
-                                    if (key === 'active' || key === 'activo') headerName = 'ESTADO';
+                                    const headerName = getHeaderName(key);
                                     return `<th>${headerName}</th>`;
                                 }).join('')}
                             </tr>
@@ -1263,6 +1279,9 @@ const AdminReportsPage: React.FC = () => {
             'id_reserva': 'ID RESERVA',
             'fecha_reserva': 'FECHA DE RESERVA',
             'estado': 'ESTADO',
+            'rol_principal': 'ROL PRINCIPAL',
+            'rol': 'ROL',
+            'roles': 'ROLES',
             'cliente_nombre': 'CLIENTE',
             'servicio_nombre': 'SERVICIO',
             'empresa_razon_social': 'PROVEEDOR',
