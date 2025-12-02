@@ -168,6 +168,63 @@ async def verify_service_exists(conn, servicio_id: int) -> dict:
     
     return servicio_result
 
+async def verify_provider_not_own_service(conn, servicio_id: int, user_id: str) -> None:
+    """
+    Verifica que el usuario no esté intentando reservar su propio servicio.
+    Un proveedor no puede reservar servicios que le pertenecen.
+    """
+    verificacion_query = """
+        SELECT s.id_servicio, pe.user_id
+        FROM servicio s
+        INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+        WHERE s.id_servicio = $1 AND pe.user_id = $2
+    """
+    
+    servicio_propio = await conn.fetchrow(verificacion_query, servicio_id, user_id)
+    
+    if servicio_propio:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No puedes reservar tus propios servicios. Solo los clientes pueden hacer reservas."
+        )
+
+async def verify_no_duplicate_reservation(
+    conn,
+    user_id: str,
+    fecha: date,
+    hora_inicio: time,
+    hora_fin: time
+) -> None:
+    """
+    Verifica que el cliente no tenga otra reserva en el mismo horario.
+    Una reserva en el mismo horario es aquella que tiene la misma fecha y horas que se solapan.
+    Dos intervalos [a1, b1] y [a2, b2] se solapan si: a1 < b2 AND b1 > a2
+    """
+    verificacion_query = """
+        SELECT id_reserva, fecha, hora_inicio, hora_fin, estado
+        FROM reserva
+        WHERE user_id = $1
+        AND fecha = $2
+        AND estado != $3
+        AND hora_inicio < $4
+        AND hora_fin > $5
+    """
+    
+    reserva_existente = await conn.fetchrow(
+        verificacion_query,
+        user_id,
+        fecha,
+        ESTADO_CANCELADA,  # Excluir reservas canceladas
+        hora_fin,  # $4: hora_fin de la nueva reserva
+        hora_inicio  # $5: hora_inicio de la nueva reserva
+    )
+    
+    if reserva_existente:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ya tienes una reserva en el mismo horario (fecha: {fecha.strftime(FORMATO_FECHA_DD_MM_YYYY)}, hora: {hora_inicio.strftime('%H:%M')}). No puedes hacer dos reservas en el mismo horario."
+        )
+
 def validate_and_convert_service_id(id_servicio) -> int:
     """Valida y convierte el ID de servicio a entero"""
     try:
@@ -318,11 +375,19 @@ async def crear_reserva(
             servicio_id = validate_and_convert_service_id(reserva.id_servicio)
             
             # Verificar que el servicio existe y está activo
-            await verify_service_exists(conn, servicio_id)
+            servicio_info = await verify_service_exists(conn, servicio_id)
+            
+            # Verificar que el proveedor no esté reservando su propio servicio
+            await verify_provider_not_own_service(conn, servicio_id, current_user.id)
             
             # Procesar hora de inicio y calcular hora fin
             hora_inicio = process_hora_inicio(reserva.hora_inicio)
             hora_fin = calculate_hora_fin(hora_inicio)
+            
+            # Validar que el cliente no tenga otra reserva en el mismo horario
+            await verify_no_duplicate_reservation(
+                conn, current_user.id, reserva.fecha, hora_inicio, hora_fin
+            )
             
             # Insertar reserva
             nueva_reserva = await insert_reserva(

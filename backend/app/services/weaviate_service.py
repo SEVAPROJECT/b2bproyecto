@@ -611,7 +611,27 @@ class WeaviateService:
             if response.status_code == 200:
                 data = response.json()
                 if 'errors' in data:
-                    logger.error(f"❌ Error en query GraphQL híbrida: {data['errors']}")
+                    errors = data['errors']
+                    logger.error(f"❌ Error en query GraphQL híbrida: {errors}")
+                    
+                    # Detectar si el error es por modelo no encontrado
+                    error_message = str(errors)
+                    if 'model' in error_message.lower() and ('not found' in error_message.lower() or 'try pulling' in error_message.lower()):
+                        modelo = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
+                        ollama_url = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL") or "http://ollama:11434"
+                        logger.error(f"")
+                        logger.error(f"🔴 PROBLEMA DETECTADO: El modelo '{modelo}' no está disponible en Ollama")
+                        logger.error(f"")
+                        logger.error(f"💡 SOLUCIÓN:")
+                        logger.error(f"   1. Conecta al servicio Ollama en Railway")
+                        logger.error(f"   2. Ejecuta: ollama pull {modelo}")
+                        logger.error(f"")
+                        logger.error(f"   O ejecuta el script de descarga:")
+                        logger.error(f"   python scripts/descargar_modelo_ollama.py")
+                        logger.error(f"")
+                        logger.error(f"   URL de Ollama: {ollama_url}")
+                        logger.error(f"")
+                    
                     return None
                 
                 # Extraer resultados

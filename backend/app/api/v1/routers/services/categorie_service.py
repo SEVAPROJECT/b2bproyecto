@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import and_
 from typing import List, Optional
 
 from app.api.v1.dependencies.database_supabase import get_async_db
@@ -145,9 +146,47 @@ async def update_category(
                 detail="Categoría no encontrada."
             )
 
-        # Actualizar solo los campos proporcionados
+        # Validar y actualizar nombre si se proporciona
         if category_update.nombre is not None:
-            categoria.nombre = category_update.nombre
+            nombre_trimmed = category_update.nombre.strip()
+            
+            # Validar que el nombre no esté vacío
+            if not nombre_trimmed:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El nombre de la categoría no puede estar vacío."
+                )
+            
+            # Validar longitud del nombre (máximo 100 caracteres según el modelo)
+            if len(nombre_trimmed) > 100:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El nombre de la categoría no puede exceder 100 caracteres."
+                )
+            
+            # Verificar que no haya duplicados (case-insensitive, excluyendo la categoría actual)
+            existing_result = await db.execute(
+                select(CategoriaModel).where(
+                    and_(
+                        CategoriaModel.nombre.ilike(nombre_trimmed),
+                        CategoriaModel.id_categoria != category_id
+                    )
+                )
+            )
+            existing_categoria = existing_result.scalars().first()
+            
+            if existing_categoria:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Ya existe una categoría con el nombre '{nombre_trimmed}'."
+                )
+            
+            # Actualizar el nombre solo si es diferente
+            if categoria.nombre.strip() != nombre_trimmed:
+                categoria.nombre = nombre_trimmed
+            # Si es el mismo, no hacer nada (evita actualizaciones innecesarias)
+
+        # Actualizar estado si se proporciona
         if category_update.estado is not None:
             categoria.estado = category_update.estado
 

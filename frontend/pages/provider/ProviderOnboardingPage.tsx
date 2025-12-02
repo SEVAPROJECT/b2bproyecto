@@ -763,12 +763,20 @@ const ProviderOnboardingPage: React.FC = () => {
         return documentosMapeados;
     };
 
-    // Cargar datos previos si es una solicitud rechazada - EXACTAMENTE COMO EN AppOriginal.tsx
+    // Estado para controlar si los datos ya se cargaron
+    const [dataLoaded, setDataLoaded] = useState(false);
+    const [loadingPreviousData, setLoadingPreviousData] = useState(false);
+
+    // Cargar datos previos si es una solicitud rechazada - Mejorado para recargar automáticamente
     useEffect(() => {
         const loadRejectedData = async () => {
-            if (providerStatus === 'rejected' && user?.accessToken) {
+            // Cargar datos si:
+            // 1. El estado es 'rejected' Y aún no se han cargado los datos
+            // 2. O si hay un token de acceso disponible (para recargar si es necesario)
+            if ((providerStatus === 'rejected' || providerStatus === 'pending') && user?.accessToken && !dataLoaded) {
                 try {
-                    console.log('🔄 Cargando datos de solicitud rechazada...');
+                    setLoadingPreviousData(true);
+                    console.log('🔄 Cargando datos de solicitud previa...');
                 
                 // Debug: Verificar sucursales
                 try {
@@ -856,21 +864,35 @@ const ProviderOnboardingPage: React.FC = () => {
 
                         console.log('📄 Documentos mapeados correctamente');
                         setData(datosFormulario);
+                        setDataLoaded(true); // Marcar que los datos se cargaron
                         console.log('✅ Formulario cargado con datos de solicitud rechazada');
                     } else {
                         console.log('⚠️ No se pudieron cargar los datos de la solicitud rechazada');
                         console.log('❌ datosRechazados:', datosRechazados);
                         console.log('❌ datosRechazados.empresa:', datosRechazados?.empresa);
                         console.log('❌ empresaData:', empresaData);
+                        // Marcar como cargado incluso si no hay datos para evitar reintentos infinitos
+                        setDataLoaded(true);
                     }
                 } catch (error) {
                     console.error('❌ Error cargando datos de solicitud rechazada:', error);
+                    // Marcar como cargado para evitar reintentos infinitos en caso de error
+                    setDataLoaded(true);
+                } finally {
+                    setLoadingPreviousData(false);
                 }
             }
         };
 
         loadRejectedData();
-    }, [providerStatus, user]);
+    }, [providerStatus, user, dataLoaded]);
+
+    // Resetear el flag de carga cuando cambia el estado del proveedor (nueva solicitud rechazada)
+    useEffect(() => {
+        if (providerStatus === 'rejected') {
+            setDataLoaded(false);
+        }
+    }, [providerStatus]);
 
     const nextStep = () => setStep(s => Math.min(s + 1, 5));
     const prevStep = () => setStep(s => Math.max(s - 1, 1));
@@ -930,8 +952,8 @@ const ProviderOnboardingPage: React.FC = () => {
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
                     </div>
-                    <h2 className="text-xl font-semibold text-slate-800 mb-2">Enviando solicitud</h2>
-                    <p className="text-slate-600 mb-4">Por favor espera mientras procesamos tu solicitud...</p>
+                    <h2 className="text-xl font-semibold text-slate-800 mb-2">Espere por favor</h2>
+                    <p className="text-slate-600 mb-4">Se está enviando la solicitud. No salga de esta pantalla.</p>
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <p className="text-sm text-blue-700">
                             <strong>No cierres esta ventana</strong> hasta que se complete el proceso.
@@ -1000,6 +1022,35 @@ const ProviderOnboardingPage: React.FC = () => {
             
             {/* Contenido con scroll */}
             <div className="p-6 sm:p-8 max-h-[70vh] overflow-y-auto">
+                {/* Indicador de carga de datos previos */}
+                {loadingPreviousData && (
+                    <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div className="flex items-center">
+                            <svg className="animate-spin h-5 w-5 text-blue-600 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <div>
+                                <p className="text-sm font-medium text-blue-800">Cargando datos de tu solicitud anterior...</p>
+                                <p className="text-xs text-blue-600 mt-1">Los campos se completarán automáticamente con la información que ya enviaste.</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                
+                {/* Mensaje informativo cuando los datos se cargaron */}
+                {dataLoaded && providerStatus === 'rejected' && !loadingPreviousData && (
+                    <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div className="flex items-start">
+                            <CheckCircleIcon className="h-5 w-5 text-green-600 mr-3 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-medium text-green-800">Datos de tu solicitud anterior cargados</p>
+                                <p className="text-xs text-green-700 mt-1">Revisá y corregí los campos según las observaciones del administrador. Los documentos que ya subiste se mantendrán si no los cambias.</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                
                 {renderStep()}
             </div>
             

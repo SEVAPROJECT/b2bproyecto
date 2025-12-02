@@ -68,11 +68,34 @@ const AdminCategoriesPage: React.FC = () => {
     };
 
     const handleSaveCategoryEdit = async () => {
-        if (!editingCategoryName.trim() || !editingCategoryId) return;
+        if (!editingCategoryName.trim() || !editingCategoryId) {
+            setError('El nombre de la categoría no puede estar vacío');
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+
+        // Validar que el nombre no sea muy largo
+        if (editingCategoryName.trim().length > 100) {
+            setError('El nombre de la categoría no puede exceder 100 caracteres');
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+
+        // Validar que el nombre haya cambiado
+        const currentCategory = categories.find(cat => cat.id_categoria === editingCategoryId);
+        if (currentCategory && currentCategory.nombre.trim() === editingCategoryName.trim()) {
+            setError('No se detectaron cambios en el nombre');
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
 
         try {
             const accessToken = localStorage.getItem('access_token');
-            if (!accessToken) return;
+            if (!accessToken) {
+                setError('No se encontró el token de autenticación');
+                setTimeout(() => setError(null), 3000);
+                return;
+            }
 
             await categoriesAPI.updateCategory(editingCategoryId, {
                 nombre: editingCategoryName.trim()
@@ -82,10 +105,12 @@ const AdminCategoriesPage: React.FC = () => {
             setEditingCategoryId(null);
             setEditingCategoryName('');
             loadCategories();
-            setTimeout(() => setSuccess(null), 13000);
+            setTimeout(() => setSuccess(null), 5000);
         } catch (err: any) {
-            setError(err.detail || 'Error al actualizar categoría');
-            setTimeout(() => setError(null), 3000);
+            console.error('Error actualizando categoría:', err);
+            const errorMessage = err.detail || err.message || 'Error al actualizar categoría';
+            setError(errorMessage);
+            setTimeout(() => setError(null), 5000);
         }
     };
 

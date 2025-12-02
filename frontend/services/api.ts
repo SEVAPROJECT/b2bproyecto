@@ -845,7 +845,9 @@ export const categoriesAPI = {
     // Actualizar categoría
     async updateCategory(categoryId: number, categoryData: Partial<BackendCategoryIn>, accessToken: string): Promise<BackendCategory> {
         try {
-            return await performPutRequest<BackendCategory>(buildApiUrl(`${API_CONFIG.CATEGORIES.UPDATE}/${categoryId}`), categoryData, accessToken, 'updateCategory');
+            const url = buildApiUrl(`${API_CONFIG.CATEGORIES.UPDATE}/${categoryId}`);
+            console.log(`🔄 Actualizando categoría ${categoryId}:`, url);
+            return await performPutRequest<BackendCategory>(url, categoryData, accessToken, 'updateCategory');
         } catch (error) {
             handleCatchError(error, 'updateCategory');
         }

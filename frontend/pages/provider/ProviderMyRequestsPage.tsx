@@ -460,6 +460,13 @@ const ProviderMyRequestsPage: React.FC = () => {
             return;
         }
 
+        // Validar longitud de descripción (máximo 500 caracteres)
+        if (newServiceDescription.trim().length > 500) {
+            setError('La descripción no puede superar los 500 caracteres. Por favor, acorta tu descripción.');
+            setTimeout(() => setError(null), 5000);
+            return;
+        }
+
         // Para servicios, también necesitamos la categoría
         if (requestType === 'servicio' && !selectedCategoryId) {
             setError('Por favor selecciona una categoría para el servicio');
@@ -835,10 +842,29 @@ const ProviderMyRequestsPage: React.FC = () => {
                                             value={newServiceDescription}
                                             onChange={(e) => setNewServiceDescription(e.target.value)}
                                             rows={4}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            maxLength={500}
+                                            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                                                newServiceDescription.length > 500 
+                                                    ? 'border-red-500 focus:ring-red-500' 
+                                                    : 'border-gray-300 focus:ring-blue-500'
+                                            }`}
                                             placeholder={requestType === 'servicio' ? "Describe detalladamente el servicio que deseas ofrecer..." : "Describe detalladamente la categoría que deseas proponer..."}
                                             required
                                         />
+                                        <div className="mt-1 flex justify-between items-center">
+                                            <span className={`text-xs ${
+                                                newServiceDescription.length > 500 
+                                                    ? 'text-red-600 font-medium' 
+                                                    : newServiceDescription.length > 450 
+                                                        ? 'text-yellow-600' 
+                                                        : 'text-gray-500'
+                                            }`}>
+                                                {newServiceDescription.length > 500 
+                                                    ? `⚠️ La descripción supera el límite de 500 caracteres (${newServiceDescription.length}/500)`
+                                                    : `${newServiceDescription.length}/500 caracteres`
+                                                }
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
 

@@ -63,7 +63,7 @@ export const API_CONFIG = {
     CATEGORIES: {
         LIST: '/categories/',
         CREATE: '/categories/',
-        UPDATE: '/categories/',
+        UPDATE: '/categories', // Sin slash final para permitir concatenación con /{id}
     },
     
     // Endpoints de ubicaciones

@@ -113,12 +113,15 @@ async def get_reservas_por_proveedor(
     proveedor_id: int,
     fecha: date
 ) -> List[ReservaModel]:
-    """Obtiene las reservas existentes para un proveedor en una fecha"""
+    """
+    Obtiene las reservas confirmadas para un proveedor en una fecha.
+    Solo considera reservas confirmadas para que no aparezcan como disponibles.
+    """
     reservas_query = select(ReservaModel).where(
         and_(
             ReservaModel.fecha == fecha,
             ReservaModel.servicio.has(ServicioModel.id_perfil == proveedor_id),
-            ReservaModel.estado.in_([ESTADO_CONFIRMADA, ESTADO_PENDIENTE])
+            ReservaModel.estado == ESTADO_CONFIRMADA
         )
     )
     reservas_result = await db.execute(reservas_query)
@@ -129,12 +132,15 @@ async def get_reservas_por_servicio(
     servicio_id: int,
     fecha: date
 ) -> List[ReservaModel]:
-    """Obtiene las reservas existentes para un servicio en una fecha"""
+    """
+    Obtiene las reservas confirmadas para un servicio en una fecha.
+    Solo considera reservas confirmadas para que no aparezcan como disponibles.
+    """
     reservas_query = select(ReservaModel).where(
         and_(
             ReservaModel.id_servicio == servicio_id,
             ReservaModel.fecha == fecha,
-            ReservaModel.estado.in_([ESTADO_CONFIRMADA, ESTADO_PENDIENTE])
+            ReservaModel.estado == ESTADO_CONFIRMADA
         )
     )
     reservas_result = await db.execute(reservas_query)

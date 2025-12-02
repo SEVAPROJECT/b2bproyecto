@@ -1297,7 +1297,18 @@ const AdminReportsPage: React.FC = () => {
             'nps': 'NPS (1-10)',
             'comentario': 'COMENTARIO',
             'cliente_persona': 'CLIENTE (PERSONA)',
-            'cliente_empresa': 'CLIENTE (EMPRESA)'
+            'cliente_empresa': 'CLIENTE (EMPRESA)',
+            'email_contacto': 'EMAIL CONTACTO',
+            'email': 'EMAIL',
+            'contacto': 'CONTACTO',
+            'nombre_contacto': 'NOMBRE CONTACTO',
+            'empresa': 'EMPRESA',
+            'categoria': 'CATEGORIA',
+            'nombre_servicio': 'NOMBRE SERVICIO',
+            'descripcion': 'DESCRIPCION',
+            'estado_aprobacion': 'ESTADO APROBACION',
+            'comentario_admin': 'COMENTARIO ADMIN',
+            'fecha_creacion': 'FECHA CREACION'
         };
 
         return headerMap[key] || key.replaceAll('_', ' ').toUpperCase();

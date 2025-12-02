@@ -370,12 +370,18 @@ async def _obtener_excepciones_horario(conn: Any, proveedor_id: int, fecha_inici
 
 
 async def _obtener_reservas(conn: Any, servicio_id: int, fecha_inicio: date, fecha_fin: date) -> Dict[date, List[Dict[str, Any]]]:
-    """Obtiene todas las reservas del servicio en el rango de fechas."""
-    logger.info("🔍 [GET /disponibilidades] Obteniendo reservas existentes...")
+    """
+    Obtiene todas las reservas confirmadas del servicio en el rango de fechas.
+    Solo considera reservas confirmadas para que no aparezcan como disponibles.
+    """
+    logger.info("🔍 [GET /disponibilidades] Obteniendo reservas confirmadas existentes...")
     reservas_query = """
         SELECT fecha, hora_inicio, hora_fin
         FROM reserva
-        WHERE id_servicio = $1 AND fecha >= $2 AND fecha <= $3 AND estado != 'cancelada'
+        WHERE id_servicio = $1 
+        AND fecha >= $2 
+        AND fecha <= $3 
+        AND estado = 'confirmada'
     """
     reservas_result = await conn.fetch(reservas_query, servicio_id, fecha_inicio, fecha_fin)
     reservas_map: Dict[date, List[Dict[str, Any]]] = {}
@@ -387,7 +393,7 @@ async def _obtener_reservas(conn: Any, servicio_id: int, fecha_inicio: date, fec
             'hora_inicio': reserva['hora_inicio'],
             'hora_fin': reserva['hora_fin']
         })
-    logger.info(f"✅ [GET /disponibilidades] Obtenidas {len(reservas_map)} fechas con reservas")
+    logger.info(f"✅ [GET /disponibilidades] Obtenidas {len(reservas_map)} fechas con reservas confirmadas")
     return reservas_map
 
 

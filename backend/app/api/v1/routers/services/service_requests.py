@@ -123,9 +123,53 @@ async def get_service_requests(
             estados = [row.estado_aprobacion for row in rows]
             print(f"🔍 Estados encontrados: {set(estados)}")
 
+        # Obtener user_ids y emails desde auth.users en una sola operación optimizada
+        solicitud_ids = [row.id_solicitud for row in rows]
+        emails_dict = {}
+        solicitud_user_ids = {}
+        
+        if solicitud_ids:
+            try:
+                conn = await direct_db_service.get_connection()
+                try:
+                    # Obtener user_ids de las solicitudes y mapearlos
+                    user_ids_map_query = """
+                        SELECT ss.id_solicitud, pe.user_id
+                        FROM solicitud_servicio ss
+                        INNER JOIN perfil_empresa pe ON ss.id_perfil = pe.id_perfil
+                        WHERE ss.id_solicitud = ANY($1::bigint[])
+                        AND pe.user_id IS NOT NULL
+                    """
+                    user_ids_map_rows = await conn.fetch(user_ids_map_query, solicitud_ids)
+                    
+                    # Crear mapeo de solicitud -> user_id y obtener user_ids únicos
+                    user_ids = []
+                    for row in user_ids_map_rows:
+                        solicitud_user_ids[row['id_solicitud']] = row['user_id']
+                        if row['user_id'] not in user_ids:
+                            user_ids.append(row['user_id'])
+                    
+                    # Obtener emails desde auth.users en batch
+                    if user_ids:
+                        placeholders = ','.join([f'${i+1}' for i in range(len(user_ids))])
+                        email_query = f"SELECT id, email FROM auth.users WHERE id IN ({placeholders})"
+                        email_results = await conn.fetch(email_query, *user_ids)
+                        
+                        for email_row in email_results:
+                            emails_dict[email_row['id']] = email_row['email']
+                        
+                        print(f"✅ Emails obtenidos: {len(emails_dict)} de {len(user_ids)} usuarios")
+                finally:
+                    await direct_db_service.pool.release(conn)
+            except Exception as e:
+                print(f"⚠️ Error obteniendo emails desde auth.users: {e}")
+
         # Formatear respuesta con información completa
         formatted_requests = []
         for row in rows:
+            user_id = solicitud_user_ids.get(row.id_solicitud)
+            email_contacto = emails_dict.get(user_id) if user_id else None
+            
             formatted_request = {
                 "id_solicitud": row.id_solicitud,
                 "nombre_servicio": row.nombre_servicio,
@@ -138,7 +182,7 @@ async def get_service_requests(
                 "nombre_categoria": row.nombre_categoria or VALOR_DEFAULT_NO_ESPECIFICADO,
                 "nombre_empresa": row.nombre_empresa or VALOR_DEFAULT_NO_ESPECIFICADO,
                 "nombre_contacto": row.nombre_contacto or VALOR_DEFAULT_NO_ESPECIFICADO,
-                "email_contacto": None  # Email no disponible en el modelo actual
+                "email_contacto": email_contacto or VALOR_DEFAULT_NO_ESPECIFICADO
             }
             formatted_requests.append(formatted_request)
 
@@ -209,7 +253,8 @@ async def get_all_service_requests_for_admin(
                     ss.id_perfil,
                     c.nombre AS nombre_categoria,
                     pe.razon_social AS nombre_empresa,
-                    u.nombre_persona AS nombre_contacto
+                    u.nombre_persona AS nombre_contacto,
+                    pe.user_id AS user_id
                 FROM solicitud_servicio ss
                 LEFT JOIN categoria c ON ss.id_categoria = c.id_categoria
                 LEFT JOIN perfil_empresa pe ON ss.id_perfil = pe.id_perfil
@@ -226,9 +271,31 @@ async def get_all_service_requests_for_admin(
                 estados = [row['estado_aprobacion'] for row in rows]
                 print(f"🔍 Estados encontrados: {set(estados)}")
 
+            # Obtener todos los user_ids únicos para obtener emails en batch
+            user_ids = [row['user_id'] for row in rows if row.get('user_id')]
+            user_ids_unique = list(set(user_ids))
+            
+            # Obtener emails desde auth.users en batch
+            emails_dict = {}
+            if user_ids_unique:
+                try:
+                    placeholders = ','.join([f'${i+1}' for i in range(len(user_ids_unique))])
+                    email_query = f"SELECT id, email FROM auth.users WHERE id IN ({placeholders})"
+                    email_results = await conn.fetch(email_query, *user_ids_unique)
+                    
+                    for email_row in email_results:
+                        emails_dict[email_row['id']] = email_row['email']
+                    
+                    print(f"✅ Emails obtenidos: {len(emails_dict)} de {len(user_ids_unique)} usuarios")
+                except Exception as e:
+                    print(f"⚠️ Error obteniendo emails desde auth.users: {e}")
+
             # Formatear respuesta con información completa
             formatted_requests = []
             for row in rows:
+                user_id = row.get('user_id')
+                email_contacto = emails_dict.get(user_id) if user_id else None
+                
                 formatted_request = {
                     "id_solicitud": row['id_solicitud'],
                     "nombre_servicio": row['nombre_servicio'],
@@ -241,7 +308,7 @@ async def get_all_service_requests_for_admin(
                     "nombre_categoria": row['nombre_categoria'] or VALOR_DEFAULT_NO_ESPECIFICADO,
                     "nombre_empresa": row['nombre_empresa'] or VALOR_DEFAULT_NO_ESPECIFICADO,
                     "nombre_contacto": row['nombre_contacto'] or VALOR_DEFAULT_NO_ESPECIFICADO,
-                    "email_contacto": None  # Se obtendrá por separado
+                    "email_contacto": email_contacto or VALOR_DEFAULT_NO_ESPECIFICADO
                 }
                 formatted_requests.append(formatted_request)
 
