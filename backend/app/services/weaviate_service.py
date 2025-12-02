@@ -206,7 +206,14 @@ class WeaviateService:
                     endpoint_actual = config_ollama.get('apiEndpoint', '')
                     model_actual = config_ollama.get('model', '')
                     
-                    if endpoint_actual != ollama_endpoint or model_actual != ollama_model:
+                    # FORZAR RECREACION: Si el endpoint tiene /api/embeddings o /api/embed, eliminarlo
+                    # Esto puede indicar una configuración incorrecta anterior
+                    if '/api/embeddings' in endpoint_actual or '/api/embed' in endpoint_actual:
+                        logger.warning(f"⚠️ Schema tiene endpoint con ruta API (bug conocido):")
+                        logger.warning(f"   Endpoint actual: {endpoint_actual}")
+                        logger.warning(f"🔄 Eliminando schema para recrearlo sin la ruta API...")
+                        self._delete_schema()
+                    elif endpoint_actual != ollama_endpoint or model_actual != ollama_model:
                         logger.warning(f"⚠️ Schema existe pero configuración no coincide:")
                         logger.warning(f"   Endpoint actual: {endpoint_actual}")
                         logger.warning(f"   Endpoint esperado: {ollama_endpoint}")
