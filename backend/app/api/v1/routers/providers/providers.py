@@ -99,37 +99,37 @@ VALOR_DEFAULT_TIPO_NO_ENCONTRADO = "Tipo no encontrado"
 # Funciones helper para reducir complejidad cognitiva
 def parse_and_validate_profile(perfil_in: str) -> dict:
     """Parsea y valida el JSON del perfil"""
-        try:
-            perfil_data = json.loads(perfil_in)
-            print(f"✅ JSON parseado correctamente: {perfil_data}")
+    try:
+        perfil_data = json.loads(perfil_in)
+        print(f"✅ JSON parseado correctamente: {perfil_data}")
         return perfil_data
-        except json.JSONDecodeError as e:
-            print(f"❌ Error parseando JSON: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+    except json.JSONDecodeError as e:
+        print(f"❌ Error parseando JSON: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=MSG_ERROR_JSON_INVALIDO
-            )
+        )
         
 def validate_documents_count(nombres_tip_documento: List[str], documentos: List[UploadFile]) -> None:
     """Valida que la cantidad de nombres de tipos de documento coincide con la de los archivos"""
-        if len(nombres_tip_documento) != len(documentos):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+    if len(nombres_tip_documento) != len(documentos):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=MSG_ERROR_NUMERO_DOCUMENTOS
-            )
+        )
 
 def filter_valid_documents(documentos: List[UploadFile], nombres_tip_documento: List[str]) -> tuple:
     """Filtra documentos vacíos y retorna documentos y nombres válidos"""
-        documentos_validos = []
-        nombres_tip_documento_validos = []
-        
-        for i, doc in enumerate(documentos):
+    documentos_validos = []
+    nombres_tip_documento_validos = []
+    
+    for i, doc in enumerate(documentos):
         if doc.filename != FILENAME_EMPTY and doc.size > 0:
-                documentos_validos.append(doc)
-                nombres_tip_documento_validos.append(nombres_tip_documento[i])
-            else:
-                print(f"⚠️ Documento vacío filtrado: {doc.filename}")
-        
+            documentos_validos.append(doc)
+            nombres_tip_documento_validos.append(nombres_tip_documento[i])
+        else:
+            print(f"⚠️ Documento vacío filtrado: {doc.filename}")
+    
     return documentos_validos, nombres_tip_documento_validos
 
 async def get_user_profile(db: AsyncSession, user_id: str):
@@ -202,8 +202,8 @@ async def validate_company_uniqueness(
         if empresa_row:
             # Verificar si pertenece a otro usuario
             if str(empresa_row['user_id']) != current_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
                     detail=MSG_EMPRESA_YA_REGISTRADA
                 )
             
@@ -333,39 +333,39 @@ async def create_direccion_with_retry(
     barrio
 ) -> Direccion:
     """Crea una dirección con manejo de errores de secuencia"""
-            nueva_direccion = Direccion(
+    nueva_direccion = Direccion(
         calle=direccion_data['calle'],
         numero=direccion_data['numero'],
         referencia=direccion_data['referencia'],
-                id_departamento=departamento.id_departamento,
-                id_ciudad=ciudad.id_ciudad if ciudad else None,
-                id_barrio=barrio.id_barrio if barrio else None,
+        id_departamento=departamento.id_departamento,
+        id_ciudad=ciudad.id_ciudad if ciudad else None,
+        id_barrio=barrio.id_barrio if barrio else None,
         coordenadas=COORDENADAS_ASUNCION
-            )
-            db.add(nueva_direccion)
+    )
+    db.add(nueva_direccion)
     
-            try:
-                await db.flush()
-            except IntegrityError as e:
-                if 'duplicate key value violates unique constraint "direccion_pkey"' in str(e):
-                    print("⚠️ Secuencia de direccion desincronizada, sincronizando...")
-                    db.expunge(nueva_direccion)
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        if 'duplicate key value violates unique constraint "direccion_pkey"' in str(e):
+            print("⚠️ Secuencia de direccion desincronizada, sincronizando...")
+            db.expunge(nueva_direccion)
             await sync_direccion_sequence(db)
-                    # Recrear el objeto dirección
-                    nueva_direccion = Direccion(
+            # Recrear el objeto dirección
+            nueva_direccion = Direccion(
                 calle=direccion_data['calle'],
                 numero=direccion_data['numero'],
                 referencia=direccion_data['referencia'],
-                        id_departamento=departamento.id_departamento,
-                        id_ciudad=ciudad.id_ciudad if ciudad else None,
-                        id_barrio=barrio.id_barrio if barrio else None,
+                id_departamento=departamento.id_departamento,
+                id_ciudad=ciudad.id_ciudad if ciudad else None,
+                id_barrio=barrio.id_barrio if barrio else None,
                 coordenadas=COORDENADAS_ASUNCION
-                    )
-                    db.add(nueva_direccion)
-                    await db.flush()
-                else:
-                    raise
-            
+            )
+            db.add(nueva_direccion)
+            await db.flush()
+        else:
+            raise
+    
     return nueva_direccion
 
 async def update_or_create_direccion(
@@ -381,27 +381,27 @@ async def update_or_create_direccion(
         return await create_direccion_with_retry(
             db, perfil_data['direccion'], departamento, ciudad, barrio
         )
-        else:
-            if nuevo_perfil.id_direccion:
+    else:
+        if nuevo_perfil.id_direccion:
             direccion_existente_result = await db.execute(
-                    select(Direccion).where(Direccion.id_direccion == nuevo_perfil.id_direccion)
-                )
+                select(Direccion).where(Direccion.id_direccion == nuevo_perfil.id_direccion)
+            )
             direccion_existente = direccion_existente_result.scalars().first()
-                if direccion_existente:
-                    direccion_existente.calle = perfil_data['direccion']['calle']
-                    direccion_existente.numero = perfil_data['direccion']['numero']
-                    direccion_existente.referencia = perfil_data['direccion']['referencia']
-                    direccion_existente.id_departamento = departamento.id_departamento
-                    direccion_existente.id_ciudad = ciudad.id_ciudad if ciudad else None
-                    direccion_existente.id_barrio = barrio.id_barrio if barrio else None
-                    await db.flush()
+            if direccion_existente:
+                direccion_existente.calle = perfil_data['direccion']['calle']
+                direccion_existente.numero = perfil_data['direccion']['numero']
+                direccion_existente.referencia = perfil_data['direccion']['referencia']
+                direccion_existente.id_departamento = departamento.id_departamento
+                direccion_existente.id_ciudad = ciudad.id_ciudad if ciudad else None
+                direccion_existente.id_barrio = barrio.id_barrio if barrio else None
+                await db.flush()
                 return direccion_existente
         
         nueva_direccion = await create_direccion_with_retry(
             db, perfil_data['direccion'], departamento, ciudad, barrio
         )
         nuevo_perfil.id_direccion = nueva_direccion.id_direccion
-                    await db.flush()
+        await db.flush()
         return nueva_direccion
 
 async def update_or_create_empresa(
@@ -419,9 +419,9 @@ async def update_or_create_empresa(
         empresa_existente.nombre_fantasia = perfil_data['nombre_fantasia']
         empresa_existente.estado = ESTADO_PENDIENTE
         empresa_existente.verificado = ESTADO_VERIFICADO_FALSE
-                        await db.flush()
+        await db.flush()
         return empresa_existente
-                    else:
+    else:
         nuevo_perfil = PerfilEmpresa(
             user_id=uuid.UUID(current_user_id),
             razon_social=razon_social,
@@ -431,7 +431,7 @@ async def update_or_create_empresa(
             verificado=ESTADO_VERIFICADO_FALSE
         )
         db.add(nuevo_perfil)
-                await db.flush()
+        await db.flush()
         return nuevo_perfil
 
 async def update_or_create_sucursal(
@@ -445,29 +445,29 @@ async def update_or_create_sucursal(
         return
     
     sucursal_data = perfil_data['sucursal']
-            sucursal_existente_query = select(SucursalEmpresa).where(
-                SucursalEmpresa.id_perfil == nuevo_perfil.id_perfil
-            )
-            sucursal_existente_result = await db.execute(sucursal_existente_query)
-            sucursal_existente = sucursal_existente_result.scalars().first()
-            
-            if sucursal_existente:
+    sucursal_existente_query = select(SucursalEmpresa).where(
+        SucursalEmpresa.id_perfil == nuevo_perfil.id_perfil
+    )
+    sucursal_existente_result = await db.execute(sucursal_existente_query)
+    sucursal_existente = sucursal_existente_result.scalars().first()
+    
+    if sucursal_existente:
         sucursal_existente.nombre = sucursal_data.get('nombre', NOMBRE_SUCURSAL_DEFAULT)
-                sucursal_existente.telefono = sucursal_data.get('telefono', '')
-                sucursal_existente.email = sucursal_data.get('email', '')
+        sucursal_existente.telefono = sucursal_data.get('telefono', '')
+        sucursal_existente.email = sucursal_data.get('email', '')
         sucursal_existente.id_direccion = nueva_direccion.id_direccion
-            else:
-                nueva_sucursal = SucursalEmpresa(
-                    id_perfil=nuevo_perfil.id_perfil,
+    else:
+        nueva_sucursal = SucursalEmpresa(
+            id_perfil=nuevo_perfil.id_perfil,
             nombre=sucursal_data.get('nombre', NOMBRE_SUCURSAL_DEFAULT),
-                    telefono=sucursal_data.get('telefono', ''),
-                    email=sucursal_data.get('email', ''),
+            telefono=sucursal_data.get('telefono', ''),
+            email=sucursal_data.get('email', ''),
             id_direccion=nueva_direccion.id_direccion,
-                    es_principal=True
-                )
-                db.add(nueva_sucursal)
-            
-            await db.flush()
+            es_principal=True
+        )
+        db.add(nueva_sucursal)
+    
+    await db.flush()
 
 async def process_documents(
     db: AsyncSession,
@@ -483,69 +483,69 @@ async def process_documents(
         print("⚠️ No hay documentos nuevos para procesar")
         return
     
-            for index, file in enumerate(documentos):
-                nombre_tip_documento = nombres_tip_documento[index]
-                
-                tipo_doc_result = await db.execute(
-                    select(TipoDocumento).where(TipoDocumento.nombre == nombre_tip_documento)
-                )
-                tipo_documento = tipo_doc_result.scalars().first()
-                
-                if not tipo_documento:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
+    for index, file in enumerate(documentos):
+        nombre_tip_documento = nombres_tip_documento[index]
+        
+        tipo_doc_result = await db.execute(
+            select(TipoDocumento).where(TipoDocumento.nombre == nombre_tip_documento)
+        )
+        tipo_documento = tipo_doc_result.scalars().first()
+        
+        if not tipo_documento:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=MSG_TIPO_DOCUMENTO_NO_ENCONTRADO.format(nombre_tip_documento=nombre_tip_documento)
-                    )
-                
+            )
+        
         # Subir archivo
-                try:
-                    file_content = await file.read()
-                    file_key = f"{razon_social}/{nombre_tip_documento}/{uuid.uuid4()}_{file.filename}"
+        try:
+            file_content = await file.read()
+            file_key = f"{razon_social}/{nombre_tip_documento}/{uuid.uuid4()}_{file.filename}"
             idrive_url = upload_file_to_idrive(
-                        file_content=file_content,
-                        filename=file_key,
+                file_content=file_content,
+                filename=file_key,
                 document_type=DOCUMENT_TYPE_PROVIDER
-                    )
-                    print(f"✅ Archivo subido exitosamente: {idrive_url}")
-                except Exception as upload_error:
-                    print(f"❌ Error al subir archivo: {upload_error}")
+            )
+            print(f"✅ Archivo subido exitosamente: {idrive_url}")
+        except Exception as upload_error:
+            print(f"❌ Error al subir archivo: {upload_error}")
             idrive_url = f"{PREFIX_TEMP}{file.filename}_{current_user_id}_{tipo_documento.id_tip_documento}"
-                
+        
         # Crear o actualizar documento
         if empresa_existente and empresa_existente.user_id == uuid.UUID(current_user_id):
-                    doc_existente_query = select(Documento).join(VerificacionSolicitud).where(
-                        VerificacionSolicitud.id_perfil == empresa_existente.id_perfil,
-                        Documento.id_tip_documento == tipo_documento.id_tip_documento
-                    ).order_by(Documento.created_at.desc())
-                    
-                    doc_existente_result = await db.execute(doc_existente_query)
-                    doc_existente = doc_existente_result.scalars().first()
-                    
-                    if doc_existente:
-                        print(f"🔄 Actualizando documento existente: {nombre_tip_documento}")
-                        doc_existente.url_archivo = idrive_url
+            doc_existente_query = select(Documento).join(VerificacionSolicitud).where(
+                VerificacionSolicitud.id_perfil == empresa_existente.id_perfil,
+                Documento.id_tip_documento == tipo_documento.id_tip_documento
+            ).order_by(Documento.created_at.desc())
+            
+            doc_existente_result = await db.execute(doc_existente_query)
+            doc_existente = doc_existente_result.scalars().first()
+            
+            if doc_existente:
+                print(f"🔄 Actualizando documento existente: {nombre_tip_documento}")
+                doc_existente.url_archivo = idrive_url
                 doc_existente.estado_revision = ESTADO_PENDIENTE
                 doc_existente.observacion = None
-                        from app.services.date_service import DateService
-                        doc_existente.fecha_verificacion = DateService.now_for_database()
-                        doc_existente.id_verificacion = nueva_solicitud.id_verificacion
-                    else:
-                        print(f"➕ Creando nuevo documento: {nombre_tip_documento}")
-                        nuevo_documento = Documento(
-                            id_verificacion=nueva_solicitud.id_verificacion,
-                            id_tip_documento=tipo_documento.id_tip_documento,
-                            url_archivo=idrive_url,
+                from app.services.date_service import DateService
+                doc_existente.fecha_verificacion = DateService.now_for_database()
+                doc_existente.id_verificacion = nueva_solicitud.id_verificacion
+            else:
+                print(f"➕ Creando nuevo documento: {nombre_tip_documento}")
+                nuevo_documento = Documento(
+                    id_verificacion=nueva_solicitud.id_verificacion,
+                    id_tip_documento=tipo_documento.id_tip_documento,
+                    url_archivo=idrive_url,
                     estado_revision=ESTADO_PENDIENTE
-                        )
-                        db.add(nuevo_documento)
-                else:
-                    nuevo_documento = Documento(
-                        id_verificacion=nueva_solicitud.id_verificacion,
-                        id_tip_documento=tipo_documento.id_tip_documento,
-                        url_archivo=idrive_url,
+                )
+                db.add(nuevo_documento)
+        else:
+            nuevo_documento = Documento(
+                id_verificacion=nueva_solicitud.id_verificacion,
+                id_tip_documento=tipo_documento.id_tip_documento,
+                url_archivo=idrive_url,
                 estado_revision=ESTADO_PENDIENTE
-                    )
-                    db.add(nuevo_documento)
+            )
+            db.add(nuevo_documento)
 
 # Funciones helper para solicitar_verificacion_completa usando SQL directo
 async def create_or_update_direccion_sql(
@@ -574,7 +574,7 @@ async def create_or_update_direccion_sql(
             ciudad.id_ciudad if ciudad else None, barrio.id_barrio if barrio else None,
             coordenadas_wkt, id_direccion_existente)
         return id_direccion_existente
-        else:
+    else:
         # Crear nueva dirección
         nueva_direccion_row = await conn.fetchrow("""
             INSERT INTO direccion (calle, numero, referencia, id_departamento, id_ciudad, id_barrio, coordenadas)
@@ -612,7 +612,7 @@ async def create_or_update_sucursal_sql(
             SET nombre = $1, telefono = $2, email = $3, id_direccion = $4
             WHERE id_sucursal = $5
         """, nombre, telefono, email, id_direccion, sucursal_existente['id_sucursal'])
-        else:
+    else:
         # Crear nueva sucursal
         await conn.execute("""
             INSERT INTO sucursal_empresa (id_perfil, nombre, telefono, email, id_direccion, es_principal)
@@ -846,16 +846,16 @@ def validate_token_and_get_user_id(token: Optional[str]) -> Optional[str]:
         return None
     
     try:
-                user_response = supabase_auth.auth.get_user(token)
-                if user_response and user_response.user:
-                    current_user_id = user_response.user.id
-                    print(f"✅ Token válido para usuario: {current_user_id}")
+        user_response = supabase_auth.auth.get_user(token)
+        if user_response and user_response.user:
+            current_user_id = user_response.user.id
+            print(f"✅ Token válido para usuario: {current_user_id}")
             return current_user_id
-                else:
-                    print("⚠️ Token inválido, continuando sin validación completa...")
-            return None
-            except Exception as auth_error:
-                print(f"⚠️ Error validando token: {auth_error}, continuando sin validación...")
+        else:
+            print("⚠️ Token inválido, continuando sin validación completa...")
+        return None
+    except Exception as auth_error:
+        print(f"⚠️ Error validando token: {auth_error}, continuando sin validación...")
         return None
 
 async def verify_document_permissions(
@@ -868,25 +868,25 @@ async def verify_document_permissions(
         return
     
     try:
-                solicitud_query = select(VerificacionSolicitud).where(
-                    VerificacionSolicitud.id_verificacion == documento.id_verificacion
-                )
-                solicitud_result = await db.execute(solicitud_query)
-                solicitud = solicitud_result.scalars().first()
+        solicitud_query = select(VerificacionSolicitud).where(
+            VerificacionSolicitud.id_verificacion == documento.id_verificacion
+        )
+        solicitud_result = await db.execute(solicitud_query)
+        solicitud = solicitud_result.scalars().first()
 
-                if solicitud:
-                    empresa_query = select(PerfilEmpresa).where(
-                        PerfilEmpresa.id_perfil == solicitud.id_perfil
-                    )
-                    empresa_result = await db.execute(empresa_query)
-                    empresa = empresa_result.scalars().first()
+        if solicitud:
+            empresa_query = select(PerfilEmpresa).where(
+                PerfilEmpresa.id_perfil == solicitud.id_perfil
+            )
+            empresa_result = await db.execute(empresa_query)
+            empresa = empresa_result.scalars().first()
 
-                    if empresa and empresa.user_id == uuid.UUID(current_user_id):
-                        print("✅ Permisos verificados correctamente")
-                    else:
-                        print("⚠️ Documento no pertenece al usuario, pero permitiendo acceso para testing")
-            except Exception as perm_error:
-                print(f"⚠️ Error verificando permisos: {perm_error}, continuando...")
+            if empresa and empresa.user_id == uuid.UUID(current_user_id):
+                print("✅ Permisos verificados correctamente")
+            else:
+                print("⚠️ Documento no pertenece al usuario, pero permitiendo acceso para testing")
+    except Exception as perm_error:
+        print(f"⚠️ Error verificando permisos: {perm_error}, continuando...")
 
 def extract_file_key_from_url(url_completa: str) -> str:
     """Extrae la clave del archivo desde la URL completa"""
@@ -1273,30 +1273,30 @@ async def get_mis_documentos(
 # Funciones helper para get_mis_datos_solicitud
 async def get_empresa_with_sucursales(db: AsyncSession, user_id: str) -> PerfilEmpresa:
     """Obtiene el perfil de empresa del usuario con relación de sucursales"""
-        empresa_query = select(PerfilEmpresa).options(
-            selectinload(PerfilEmpresa.sucursal_empresa)
+    empresa_query = select(PerfilEmpresa).options(
+        selectinload(PerfilEmpresa.sucursal_empresa)
     ).where(PerfilEmpresa.user_id == uuid.UUID(user_id))
-        empresa_result = await db.execute(empresa_query)
-        empresa = empresa_result.scalars().first()
-        
-        if not empresa:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+    empresa_result = await db.execute(empresa_query)
+    empresa = empresa_result.scalars().first()
+    
+    if not empresa:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=MSG_PERFIL_EMPRESA_NO_ENCONTRADO
-            )
+        )
     return empresa
         
 async def get_latest_verification_request(db: AsyncSession, perfil_id: int) -> VerificacionSolicitud:
     """Obtiene la solicitud de verificación más reciente para un perfil"""
-        solicitud_query = select(VerificacionSolicitud).where(
+    solicitud_query = select(VerificacionSolicitud).where(
         VerificacionSolicitud.id_perfil == perfil_id
-        ).order_by(VerificacionSolicitud.created_at.desc())
-        solicitud_result = await db.execute(solicitud_query)
-        solicitud = solicitud_result.scalars().first()
-        
-        if not solicitud:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+    ).order_by(VerificacionSolicitud.created_at.desc())
+    solicitud_result = await db.execute(solicitud_query)
+    solicitud = solicitud_result.scalars().first()
+    
+    if not solicitud:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=MSG_SOLICITUD_VERIFICACION_NO_ENCONTRADA
         )
     return solicitud
@@ -1322,12 +1322,12 @@ async def get_direccion_data(db: AsyncSession, direccion_id: int) -> Optional[di
     if not direccion_id:
         return None
     
-            direccion_query = select(Direccion).options(
-                selectinload(Direccion.departamento).selectinload(Departamento.ciudad).selectinload(Ciudad.barrio)
+    direccion_query = select(Direccion).options(
+        selectinload(Direccion.departamento).selectinload(Departamento.ciudad).selectinload(Ciudad.barrio)
     ).where(Direccion.id_direccion == direccion_id)
-            direccion_result = await db.execute(direccion_query)
-            direccion = direccion_result.scalars().first()
-            
+    direccion_result = await db.execute(direccion_query)
+    direccion = direccion_result.scalars().first()
+    
     if not direccion or not direccion.departamento:
         return None
     
@@ -1336,25 +1336,25 @@ async def get_direccion_data(db: AsyncSession, direccion_id: int) -> Optional[di
     barrio_data = extract_barrio_data(direccion.departamento)
     
     return {
-                    "calle": direccion.calle,
-                    "numero": direccion.numero,
-                    "referencia": direccion.referencia,
-                    "departamento": departamento_data["nombre"],
-                    "ciudad": ciudad_data["nombre"] if ciudad_data else None,
-                    "barrio": barrio_data["nombre"] if barrio_data else None
-                }
+        "calle": direccion.calle,
+        "numero": direccion.numero,
+        "referencia": direccion.referencia,
+        "departamento": departamento_data["nombre"],
+        "ciudad": ciudad_data["nombre"] if ciudad_data else None,
+        "barrio": barrio_data["nombre"] if barrio_data else None
+    }
         
 def get_sucursal_data(empresa: PerfilEmpresa) -> Optional[dict]:
     """Obtiene los datos de la sucursal principal de la empresa"""
-        print(f"🔍 Sucursales encontradas: {len(empresa.sucursal_empresa) if empresa.sucursal_empresa else 0}")
-        print(f"🔍 Tipo de sucursal_empresa: {type(empresa.sucursal_empresa)}")
+    print(f"🔍 Sucursales encontradas: {len(empresa.sucursal_empresa) if empresa.sucursal_empresa else 0}")
+    print(f"🔍 Tipo de sucursal_empresa: {type(empresa.sucursal_empresa)}")
     
     if not empresa.sucursal_empresa:
         print("⚠️ No se encontraron sucursales para esta empresa")
         print(f"🔍 Verificando si empresa tiene id_perfil: {empresa.id_perfil if hasattr(empresa, 'id_perfil') else 'No tiene id_perfil'}")
         return None
     
-            print(f"🔍 Lista de sucursales: {[s.nombre for s in empresa.sucursal_empresa]}")
+    print(f"🔍 Lista de sucursales: {[s.nombre for s in empresa.sucursal_empresa]}")
     # Ya verificamos que sucursal_empresa no está vacío arriba, así que podemos acceder directamente
     sucursal = empresa.sucursal_empresa[0]
     
@@ -1364,30 +1364,30 @@ def get_sucursal_data(empresa: PerfilEmpresa) -> Optional[dict]:
     
     print(f"✅ Sucursal encontrada: {sucursal.nombre}")
     return {
-                    "nombre": sucursal.nombre,
-                    "telefono": sucursal.telefono,
-                    "email": sucursal.email
-                }
+        "nombre": sucursal.nombre,
+        "telefono": sucursal.telefono,
+        "email": sucursal.email
+    }
 
 def build_empresa_data(empresa: PerfilEmpresa, sucursal_data: Optional[dict]) -> dict:
     """Construye los datos de empresa para la respuesta"""
     return {
-                "razon_social": empresa.razon_social,
-                "nombre_fantasia": empresa.nombre_fantasia,
-                "telefono_contacto": sucursal_data["telefono"] if sucursal_data else None,
-                "email_contacto": sucursal_data["email"] if sucursal_data else None,
-                "nombre_sucursal": sucursal_data["nombre"] if sucursal_data else None
+        "razon_social": empresa.razon_social,
+        "nombre_fantasia": empresa.nombre_fantasia,
+        "telefono_contacto": sucursal_data["telefono"] if sucursal_data else None,
+        "email_contacto": sucursal_data["email"] if sucursal_data else None,
+        "nombre_sucursal": sucursal_data["nombre"] if sucursal_data else None
     }
 
 def build_solicitud_data(solicitud: VerificacionSolicitud) -> dict:
     """Construye los datos de solicitud para la respuesta"""
     return {
-                "id_verificacion": solicitud.id_verificacion,
-                "estado": solicitud.estado,
-                "comentario": solicitud.comentario,
-                "fecha_solicitud": solicitud.fecha_solicitud,
-                "fecha_revision": solicitud.fecha_revision
-            }
+        "id_verificacion": solicitud.id_verificacion,
+        "estado": solicitud.estado,
+        "comentario": solicitud.comentario,
+        "fecha_solicitud": solicitud.fecha_solicitud,
+        "fecha_revision": solicitud.fecha_revision
+    }
 
 def build_response_data(empresa: PerfilEmpresa, direccion_data: Optional[dict], 
                        sucursal_data: Optional[dict], solicitud: VerificacionSolicitud) -> dict:
