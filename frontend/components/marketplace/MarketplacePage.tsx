@@ -639,10 +639,14 @@ const MarketplacePage: React.FC = () => {
 
     // Función helper para actualizar servicios con resultados de IA
     const updateServicesWithAIResults = useCallback((aiServices: BackendService[]) => {
+        console.log('🤖 Actualizando servicios con resultados de IA:', aiServices.length, 'servicios');
+        // Establecer modo IA primero para que la paginación funcione correctamente
+        setIsAISearchMode(true);
+        // Luego establecer los servicios y resetear a página 1
         setServices(aiServices);
         setTotalServices(aiServices.length);
         setCurrentPage(1);
-        setIsAISearchMode(true); // Activar modo búsqueda con IA
+        console.log('🤖 Modo IA activado, servicios establecidos, página reseteada a 1');
     }, []);
 
     // Función para búsqueda con IA usando Weaviate
@@ -811,8 +815,16 @@ const MarketplacePage: React.FC = () => {
         if (isAISearchMode) {
             console.log('🤖 Modo IA - paginando localmente');
             const startIndex = (currentPage - 1) * itemsPerPage;
-            const paginated = services.slice(startIndex, startIndex + itemsPerPage);
-            console.log('📄 Paginación IA - Total servicios:', services.length, 'Página:', currentPage, 'Mostrando:', paginated.length);
+            const endIndex = startIndex + itemsPerPage;
+            const paginated = services.slice(startIndex, endIndex);
+            console.log('📄 Paginación IA - Total servicios:', services.length, 'Página:', currentPage, 'Índice inicio:', startIndex, 'Índice fin:', endIndex, 'Mostrando:', paginated.length);
+            
+            // Verificación de seguridad: asegurar que nunca se muestren más de itemsPerPage
+            if (paginated.length > itemsPerPage) {
+                console.warn(`⚠️ ERROR: Paginación IA devolvió ${paginated.length} servicios, limitando a ${itemsPerPage}`);
+                return paginated.slice(0, itemsPerPage);
+            }
+            
             return paginated;
         }
         
