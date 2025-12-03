@@ -743,6 +743,18 @@ class WeaviateService:
                         except Exception as schema_error:
                             logger.error(f"❌ Error al recrear schema: {str(schema_error)}")
                     
+                    # Detectar si el error es 401 (Unauthorized) de HuggingFace
+                    if '401' in error_message or 'unauthorized' in error_message.lower() or 'hugging face' in error_message.lower():
+                        logger.error(f"")
+                        logger.error(f"🔴 PROBLEMA DETECTADO: Error 401 (Unauthorized) al acceder a HuggingFace")
+                        logger.error(f"")
+                        logger.error(f"💡 SOLUCIÓN:")
+                        logger.error(f"   1. El modelo puede requerir autenticación")
+                        logger.error(f"   2. Configura HUGGINGFACE_API_TOKEN en Railway (servicio Backend)")
+                        logger.error(f"   3. O usa un modelo público que no requiera token")
+                        logger.error(f"   4. Verifica que el modelo '{os.getenv('HUGGINGFACE_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')}' esté disponible")
+                        logger.error(f"")
+                    
                     # Detectar si el error es por modelo no encontrado
                     if 'model' in error_message.lower() and ('not found' in error_message.lower() or 'try pulling' in error_message.lower()):
                         modelo = os.getenv("OLLAMA_MODEL", "nomic-embed-text")

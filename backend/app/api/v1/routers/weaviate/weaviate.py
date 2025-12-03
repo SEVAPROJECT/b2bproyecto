@@ -300,20 +300,22 @@ async def _fallback_search_normal(query: str, limit: int):
                     s.descripcion,
                     s.precio,
                     s.estado,
-                    c.nombre as categoria,
+                    cat.nombre as categoria,
                     pe.nombre_fantasia as empresa,
-                    COALESCE(d.ciudad || ', ' || d.departamento, '') as ubicacion,
+                    COALESCE(ci.nombre || ', ' || dep.nombre, '') as ubicacion,
                     s.created_at,
                     s.updated_at
                 FROM servicio s
-                LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+                LEFT JOIN categoria cat ON s.id_categoria = cat.id_categoria
                 LEFT JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                LEFT JOIN direccion d ON pe.id_direccion = d.id_direccion
+                LEFT JOIN direccion dir ON pe.id_direccion = dir.id_direccion
+                LEFT JOIN departamento dep ON dir.id_departamento = dep.id_departamento
+                LEFT JOIN ciudad ci ON dir.id_ciudad = ci.id_ciudad
                 WHERE s.estado = true
                     AND (
                         s.nombre ILIKE $1 
                         OR s.descripcion ILIKE $1
-                        OR c.nombre ILIKE $1
+                        OR cat.nombre ILIKE $1
                         OR pe.nombre_fantasia ILIKE $1
                     )
                 ORDER BY s.created_at DESC
