@@ -141,6 +141,11 @@ async def search_servicios(
         
         resultados = weaviate_service.search_servicios(query=query, limit=limit)
         
+        # Si Weaviate no devuelve resultados, usar fallback
+        if not resultados or len(resultados) == 0:
+            logger.warning("⚠️ Weaviate no devolvió resultados, usando fallback a búsqueda normal")
+            resultados = await _fallback_search_normal(query, limit)
+        
         return {
             "query": query,
             "results": resultados,
@@ -150,10 +155,21 @@ async def search_servicios(
         
     except Exception as e:
         logger.error(f"❌ Error en búsqueda semántica: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error en búsqueda: {str(e)}"
-        )
+        logger.info("🔄 Intentando fallback a búsqueda normal...")
+        try:
+            resultados = await _fallback_search_normal(query, limit)
+            return {
+                "query": query,
+                "results": resultados,
+                "total": len(resultados),
+                "limit": limit
+            }
+        except Exception as fallback_error:
+            logger.error(f"❌ Error en fallback también: {str(fallback_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error en búsqueda: {str(e)}"
+            )
 
 @router.get(
     "/servicio/{servicio_id}",
@@ -230,6 +246,11 @@ async def search_servicios_public(
         
         resultados = weaviate_service.search_servicios(query=query, limit=limit)
         
+        # Si Weaviate no devuelve resultados o hay error, usar fallback a búsqueda normal
+        if not resultados or len(resultados) == 0:
+            logger.warning("⚠️ Weaviate no devolvió resultados, usando fallback a búsqueda normal")
+            resultados = await _fallback_search_normal(query, limit)
+        
         return {
             "query": query,
             "results": resultados,
@@ -239,10 +260,76 @@ async def search_servicios_public(
         
     except Exception as e:
         logger.error(f"❌ Error en búsqueda semántica pública: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error en búsqueda: {str(e)}"
-        )
+        logger.info("🔄 Intentando fallback a búsqueda normal...")
+        try:
+            resultados = await _fallback_search_normal(query, limit)
+            return {
+                "query": query,
+                "results": resultados,
+                "total": len(resultados),
+                "limit": limit
+            }
+        except Exception as fallback_error:
+            logger.error(f"❌ Error en fallback también: {str(fallback_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error en búsqueda: {str(e)}"
+            )
+
+async def _fallback_search_normal(query: str, limit: int):
+    """Fallback a búsqueda normal cuando Weaviate falla"""
+    try:
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        try:
+            # Búsqueda simple por nombre o descripción
+            search_query = """
+                SELECT DISTINCT
+                    s.id_servicio,
+                    s.nombre,
+                    s.descripcion,
+                    s.precio,
+                    s.categoria,
+                    s.empresa,
+                    s.ubicacion,
+                    s.created_at,
+                    s.updated_at
+                FROM servicios s
+                WHERE s.estado = 'activo'
+                    AND (
+                        s.nombre ILIKE $1 
+                        OR s.descripcion ILIKE $1
+                        OR s.categoria ILIKE $1
+                    )
+                ORDER BY s.created_at DESC
+                LIMIT $2
+            """
+            
+            search_pattern = f"%{query}%"
+            rows = await conn.fetch(search_query, search_pattern, limit)
+            
+            resultados = []
+            for row in rows:
+                resultados.append({
+                    "id_servicio": row["id_servicio"],
+                    "nombre": row["nombre"],
+                    "descripcion": row["descripcion"],
+                    "precio": row["precio"],
+                    "categoria": row["categoria"],
+                    "empresa": row["empresa"],
+                    "ubicacion": row["ubicacion"],
+                    "created_at": str(row["created_at"]) if row["created_at"] else None,
+                    "updated_at": str(row["updated_at"]) if row["updated_at"] else None
+                })
+            
+            logger.info(f"✅ Fallback: {len(resultados)} resultados encontrados")
+            return resultados
+        finally:
+            await direct_db_service.return_connection(conn)
+    except Exception as e:
+        logger.error(f"❌ Error en fallback: {str(e)}")
+        return []
 
 @router.get(
     "/recommendations/{servicio_id}",

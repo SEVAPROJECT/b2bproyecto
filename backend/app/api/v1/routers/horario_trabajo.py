@@ -14,6 +14,17 @@ from datetime import datetime, date, time, timedelta
 
 logger = logging.getLogger(__name__)
 
+# Helper function para obtener el nombre del día de la semana
+def get_nombre_dia_semana(dia_semana: int) -> str:
+    """
+    Convierte el número del día de la semana (0-6) al nombre del día.
+    0 = Lunes, 1 = Martes, ..., 6 = Domingo
+    """
+    dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+    if 0 <= dia_semana <= 6:
+        return dias[dia_semana]
+    return f"Día {dia_semana}"
+
 # Helper function para obtener perfil usando direct_db_service
 async def get_provider_profile_direct(user_id: str) -> int:
     """
@@ -94,6 +105,18 @@ async def crear_horario_trabajo(
         perfil_id = await get_provider_profile_direct(current_user.id)
         logger.info(f"✅ [POST /horario-trabajo/] Perfil encontrado: id_perfil = {perfil_id}")
         
+        # Validar horarios antes de verificar existencia
+        # La validación del schema ya se ejecutó automáticamente, pero la hacemos explícita para mejor mensaje de error
+        try:
+            from app.schemas.horario_trabajo import validate_horario_times
+            validate_horario_times(horario.hora_inicio, horario.hora_fin)
+        except ValueError as e:
+            logger.warning(f"❌ [POST /horario-trabajo/] Validación de horarios falló: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        
         # Verificar que no existe ya un horario para este día
         logger.info(f"🔍 [POST /horario-trabajo/] Verificando horario existente para día {horario.dia_semana}...")
         verificar_query = """
@@ -104,10 +127,11 @@ async def crear_horario_trabajo(
         logger.info(f"🔍 [POST /horario-trabajo/] Horario existente: {horario_existente}")
         
         if horario_existente:
-            logger.warning(f"❌ [POST /horario-trabajo/] Ya existe horario para día {horario.dia_semana}")
+            nombre_dia = get_nombre_dia_semana(horario.dia_semana)
+            logger.warning(f"❌ [POST /horario-trabajo/] Ya existe horario para día {nombre_dia} ({horario.dia_semana})")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ya existe un horario para el día {horario.dia_semana}. Actualiza el existente o elimínalo primero."
+                detail=f"Ya existe un horario para el día {nombre_dia}. Actualiza el existente o elimínalo primero."
             )
         
         # Crear nuevo horario usando helper
@@ -133,6 +157,13 @@ async def crear_horario_trabajo(
         
     except HTTPException:
         raise
+    except ValueError as e:
+        # Capturar errores de validación de horarios
+        logger.warning(f"❌ [POST /horario-trabajo/] Error de validación: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(f"❌ [POST /horario-trabajo/] Error crítico: {str(e)}")
         logger.error(f"❌ [POST /horario-trabajo/] Tipo de error: {type(e).__name__}")
@@ -247,6 +278,21 @@ async def actualizar_horario_trabajo(
             logger.info("✅ [PUT /horario-trabajo] No hay cambios que aplicar, devolviendo horario actual")
             return horario_existente
         
+        # Validar horarios: combinar valores nuevos con existentes para validación completa
+        hora_inicio_final = update_data.get('hora_inicio', horario_existente['hora_inicio'])
+        hora_fin_final = update_data.get('hora_fin', horario_existente['hora_fin'])
+        
+        # Validar que hora_inicio < hora_fin
+        try:
+            from app.schemas.horario_trabajo import validate_horario_times
+            validate_horario_times(hora_inicio_final, hora_fin_final)
+        except ValueError as e:
+            logger.warning(f"❌ [PUT /horario-trabajo] Validación de horarios falló: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        
         # Construir query de actualización dinámicamente
         set_clauses = []
         params = [horario_id, perfil_id]
@@ -273,6 +319,13 @@ async def actualizar_horario_trabajo(
         
     except HTTPException:
         raise
+    except ValueError as e:
+        # Capturar errores de validación de horarios
+        logger.warning(f"❌ [PUT /horario-trabajo] Error de validación: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(f"❌ [PUT /horario-trabajo] Error crítico: {str(e)}")
         logger.error(f"❌ [PUT /horario-trabajo] Tipo de error: {type(e).__name__}")
@@ -375,6 +428,19 @@ async def configurar_horario_completo(
         await direct_db_service.execute(delete_horarios_query, perfil_id)
         logger.info("✅ [POST /configuracion-completa] Horarios existentes eliminados")
         
+        # Validar todos los horarios antes de crear
+        from app.schemas.horario_trabajo import validate_horario_times
+        for i, horario_data in enumerate(configuracion.horarios):
+            try:
+                validate_horario_times(horario_data.hora_inicio, horario_data.hora_fin)
+            except ValueError as e:
+                nombre_dia = get_nombre_dia_semana(horario_data.dia_semana)
+                logger.warning(f"❌ [POST /configuracion-completa] Validación falló para horario {i+1} (día {nombre_dia}): {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Error en horario del día {nombre_dia}: {str(e)}"
+                )
+        
         # Crear nuevos horarios usando direct_db_service
         logger.info(f"🔍 [POST /configuracion-completa] Creando {len(configuracion.horarios)} nuevos horarios...")
         horarios_creados = []
@@ -395,6 +461,20 @@ async def configurar_horario_completo(
             )
             horarios_creados.append(nuevo_horario)
         logger.info(f"✅ [POST /configuracion-completa] {len(horarios_creados)} horarios creados")
+        
+        # Validar excepciones antes de crear
+        if configuracion.excepciones:
+            for i, excepcion_data in enumerate(configuracion.excepciones):
+                if excepcion_data.tipo == 'horario_especial':
+                    try:
+                        if excepcion_data.hora_inicio and excepcion_data.hora_fin:
+                            validate_horario_times(excepcion_data.hora_inicio, excepcion_data.hora_fin)
+                    except ValueError as e:
+                        logger.warning(f"❌ [POST /configuracion-completa] Validación falló para excepción {i+1} (fecha {excepcion_data.fecha}): {str(e)}")
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Error en excepción del {excepcion_data.fecha}: {str(e)}"
+                        )
         
         # Crear excepciones si se proporcionan
         excepciones_creadas = []
@@ -428,6 +508,13 @@ async def configurar_horario_completo(
         
     except HTTPException:
         raise
+    except ValueError as e:
+        # Capturar errores de validación de horarios
+        logger.warning(f"❌ [POST /configuracion-completa] Error de validación: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(f"❌ [POST /configuracion-completa] Error crítico: {str(e)}")
         logger.error(f"❌ [POST /configuracion-completa] Tipo de error: {type(e).__name__}")
@@ -457,29 +544,73 @@ async def crear_excepcion_horario(
     logger.info(f"🔍 [POST /excepciones] Datos de excepción: {excepcion.dict()}")
     
     try:
+        # Asegurar que la fecha sea un objeto date puro, sin timezone
+        # Esto previene problemas de conversión de zona horaria que pueden restar un día
+        from datetime import date as date_type
+        fecha_date = excepcion.fecha
+        
+        # Procesar la fecha de manera segura para evitar problemas de timezone
+        if isinstance(fecha_date, str):
+            # Si viene como string, parsearlo como date puro
+            # Asegurarse de tomar solo la parte de fecha (YYYY-MM-DD) sin hora ni timezone
+            fecha_str = fecha_date.split('T')[0].split(' ')[0]  # Tomar solo YYYY-MM-DD
+            fecha_date = date_type.fromisoformat(fecha_str)
+        elif isinstance(fecha_date, date_type):
+            # Si ya es date, usarlo directamente
+            pass
+        elif hasattr(fecha_date, 'date'):
+            # Si es datetime, extraer solo la parte de fecha
+            fecha_date = fecha_date.date()
+        else:
+            # Si es otro tipo, intentar convertirlo
+            logger.warning(f"⚠️ [POST /excepciones] Tipo de fecha inesperado: {type(fecha_date).__name__}, valor: {fecha_date}")
+            if hasattr(fecha_date, 'isoformat'):
+                fecha_str = fecha_date.isoformat().split('T')[0]
+                fecha_date = date_type.fromisoformat(fecha_str)
+            else:
+                raise ValueError(f"Tipo de fecha no soportado: {type(fecha_date).__name__}")
+        
+        logger.info(f"🔍 [POST /excepciones] Fecha recibida: {excepcion.fecha} (tipo: {type(excepcion.fecha).__name__})")
+        logger.info(f"🔍 [POST /excepciones] Fecha procesada: {fecha_date} (tipo: {type(fecha_date).__name__})")
+        
         # Obtener el perfil del proveedor usando helper
         logger.info("🔍 [POST /excepciones] Consultando perfil de empresa...")
         perfil_id = await get_provider_profile_direct(current_user.id)
         logger.info(f"✅ [POST /excepciones] Perfil encontrado: id_perfil = {perfil_id}")
         
         # Verificar que no existe ya una excepción para esta fecha
-        logger.info(f"🔍 [POST /excepciones] Verificando excepción existente para fecha {excepcion.fecha}...")
+        logger.info(f"🔍 [POST /excepciones] Verificando excepción existente para fecha {fecha_date}...")
         verificar_query = """
             SELECT id_excepcion FROM excepciones_horario 
             WHERE id_proveedor = $1 AND fecha = $2
         """
-        excepcion_existente = await fetch_one_query(verificar_query, perfil_id, excepcion.fecha)
+        excepcion_existente = await fetch_one_query(verificar_query, perfil_id, fecha_date)
         logger.info(f"🔍 [POST /excepciones] Excepción existente: {excepcion_existente}")
         
         if excepcion_existente:
-            logger.warning(f"❌ [POST /excepciones] Ya existe excepción para fecha {excepcion.fecha}")
+            logger.warning(f"❌ [POST /excepciones] Ya existe excepción para fecha {fecha_date}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ya existe una excepción para la fecha {excepcion.fecha}. Actualiza la existente o elimínala primero."
+                detail=f"Ya existe una excepción para la fecha {fecha_date}. Actualiza la existente o elimínala primero."
             )
+        
+        # Validar horarios si es horario_especial
+        # La validación del schema ya se ejecutó automáticamente, pero la hacemos explícita para mejor mensaje de error
+        if excepcion.tipo == 'horario_especial':
+            try:
+                from app.schemas.horario_trabajo import validate_horario_times
+                if excepcion.hora_inicio and excepcion.hora_fin:
+                    validate_horario_times(excepcion.hora_inicio, excepcion.hora_fin)
+            except ValueError as e:
+                logger.warning(f"❌ [POST /excepciones] Validación de horarios falló: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(e)
+                )
         
         # Crear nueva excepción usando helper
         logger.info("🔍 [POST /excepciones] Creando nueva excepción en base de datos...")
+        logger.info(f"🔍 [POST /excepciones] Insertando fecha: {fecha_date} (tipo: {type(fecha_date).__name__})")
         insert_query = """
             INSERT INTO excepciones_horario (id_proveedor, fecha, tipo, hora_inicio, hora_fin, motivo)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -488,12 +619,13 @@ async def crear_excepcion_horario(
         nueva_excepcion = await fetch_one_query(
             insert_query,
             perfil_id,
-            excepcion.fecha,
+            fecha_date,  # Usar fecha_date procesada en lugar de excepcion.fecha
             excepcion.tipo,
             excepcion.hora_inicio,
             excepcion.hora_fin,
             excepcion.motivo
         )
+        logger.info(f"🔍 [POST /excepciones] Fecha guardada en BD: {nueva_excepcion.get('fecha')} (tipo: {type(nueva_excepcion.get('fecha')).__name__})")
         logger.info(f"🔍 [POST /excepciones] Excepción insertada: {nueva_excepcion}")
         
         logger.info(f"✅ [POST /excepciones] Excepción creada exitosamente: {nueva_excepcion['id_excepcion']}")
@@ -502,6 +634,13 @@ async def crear_excepcion_horario(
         
     except HTTPException:
         raise
+    except ValueError as e:
+        # Capturar errores de validación de horarios
+        logger.warning(f"❌ [POST /excepciones] Error de validación: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(f"❌ [POST /excepciones] Error crítico: {str(e)}")
         logger.error(f"❌ [POST /excepciones] Tipo de error: {type(e).__name__}")
@@ -554,6 +693,20 @@ async def obtener_excepciones_horario(
         excepciones_result = await fetch_all_query(excepciones_query, perfil_id)
         logger.info(f"🔍 [GET /excepciones] Excepciones encontradas: {len(excepciones_result) if excepciones_result else 0}")
         
+        # Normalizar fechas para asegurar que sean objetos date puros, sin timezone
+        from datetime import date as date_type
+        if excepciones_result:
+            for excepcion in excepciones_result:
+                if 'fecha' in excepcion and excepcion['fecha']:
+                    fecha_original = excepcion['fecha']
+                    if isinstance(fecha_original, str):
+                        # Si viene como string, parsearlo como date puro
+                        excepcion['fecha'] = date_type.fromisoformat(fecha_original.split('T')[0])  # Tomar solo la parte de fecha
+                    elif hasattr(fecha_original, 'date'):
+                        # Si es datetime, extraer solo la parte de fecha
+                        excepcion['fecha'] = fecha_original.date()
+                    # Si ya es date, dejarlo como está
+        
         logger.info(f"✅ [GET /excepciones] Devolviendo {len(excepciones_result)} excepciones")
         return excepciones_result
         
@@ -567,4 +720,84 @@ async def obtener_excepciones_horario(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error interno del servidor al obtener excepciones: {str(e)}"
+        )
+
+@router.delete(
+    "/excepciones/{excepcion_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    description="Elimina una excepción de horario."
+)
+async def eliminar_excepcion_horario(
+    excepcion_id: int,
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Elimina una excepción de horario usando direct_db_service.
+    """
+    logger.info(f"🔍 [DELETE /excepciones/{excepcion_id}] Iniciando eliminar_excepcion_horario para user_id: {current_user.id}")
+    
+    try:
+        # Obtener el perfil del proveedor usando helper
+        logger.info("🔍 [DELETE /excepciones] Consultando perfil de empresa...")
+        perfil_id = await get_provider_profile_direct(current_user.id)
+        logger.info(f"✅ [DELETE /excepciones] Perfil encontrado: id_perfil = {perfil_id}")
+        
+        # Verificar que la excepción existe y pertenece al usuario
+        logger.info(f"🔍 [DELETE /excepciones] Verificando excepción {excepcion_id} (tipo: {type(excepcion_id).__name__}) para proveedor {perfil_id} (tipo: {type(perfil_id).__name__})...")
+        
+        # Primero verificar si la excepción existe (sin verificar el proveedor)
+        verificar_existencia_query = """
+            SELECT id_excepcion, id_proveedor FROM excepciones_horario 
+            WHERE id_excepcion = $1
+        """
+        excepcion_data = await fetch_one_query(verificar_existencia_query, excepcion_id)
+        logger.info(f"🔍 [DELETE /excepciones] Datos de excepción en BD: {excepcion_data}")
+        
+        if not excepcion_data:
+            # Intentar buscar todas las excepciones del proveedor para debugging
+            todas_excepciones_query = """
+                SELECT id_excepcion, id_proveedor, fecha FROM excepciones_horario 
+                WHERE id_proveedor = $1
+                ORDER BY id_excepcion
+            """
+            todas_excepciones = await fetch_all_query(todas_excepciones_query, perfil_id)
+            logger.warning(f"❌ [DELETE /excepciones] Excepción {excepcion_id} no existe en la base de datos")
+            logger.warning(f"🔍 [DELETE /excepciones] Excepciones disponibles para este proveedor: {todas_excepciones}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Excepción no encontrada."
+            )
+        
+        # Verificar que pertenece al proveedor (comparar como enteros para evitar problemas de tipo)
+        id_proveedor_bd = int(excepcion_data.get('id_proveedor')) if excepcion_data.get('id_proveedor') is not None else None
+        perfil_id_int = int(perfil_id) if perfil_id is not None else None
+        
+        logger.info(f"🔍 [DELETE /excepciones] Comparando: id_proveedor_bd={id_proveedor_bd} (tipo: {type(id_proveedor_bd).__name__}) vs perfil_id={perfil_id_int} (tipo: {type(perfil_id_int).__name__})")
+        
+        if id_proveedor_bd != perfil_id_int:
+            logger.warning(f"❌ [DELETE /excepciones] Excepción {excepcion_id} pertenece a proveedor {id_proveedor_bd}, pero el usuario actual es {perfil_id_int}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes permiso para eliminar esta excepción."
+            )
+        
+        # Eliminar excepción usando helper
+        delete_query = """
+            DELETE FROM excepciones_horario 
+            WHERE id_excepcion = $1 AND id_proveedor = $2
+        """
+        await execute_query(delete_query, excepcion_id, perfil_id)
+        
+        logger.info(f"✅ [DELETE /excepciones] Excepción {excepcion_id} eliminada exitosamente")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [DELETE /excepciones] Error crítico: {str(e)}")
+        logger.error(f"❌ [DELETE /excepciones] Tipo de error: {type(e).__name__}")
+        import traceback
+        logger.error(f"❌ [DELETE /excepciones] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor al eliminar excepción: {str(e)}"
         )

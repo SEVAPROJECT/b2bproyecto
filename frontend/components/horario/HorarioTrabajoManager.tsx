@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { buildApiUrl } from '../../config/api';
+import { formatISODateToDDMMYYYY } from '../../utils/dateUtils';
 import { 
   ClockIcon, 
   CalendarDaysIcon, 
@@ -36,6 +37,33 @@ const DIAS_SEMANA = [
   'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'
 ];
 
+/**
+ * Función helper para validar que la hora de inicio sea menor que la hora de fin
+ * @param horaInicio - Hora de inicio en formato HH:MM
+ * @param horaFin - Hora de fin en formato HH:MM
+ * @returns Objeto con isValid (boolean) y errorMessage (string | null)
+ */
+const validateHorarioTimes = (horaInicio: string, horaFin: string): { isValid: boolean; errorMessage: string | null } => {
+  if (!horaInicio || !horaFin) {
+    return { isValid: false, errorMessage: 'Ambas horas son requeridas' };
+  }
+
+  const [horaInicioH, horaInicioM] = horaInicio.split(':').map(Number);
+  const [horaFinH, horaFinM] = horaFin.split(':').map(Number);
+
+  const inicioMinutos = horaInicioH * 60 + horaInicioM;
+  const finMinutos = horaFinH * 60 + horaFinM;
+
+  if (inicioMinutos >= finMinutos) {
+    return {
+      isValid: false,
+      errorMessage: `La hora de inicio (${horaInicio}) debe ser menor que la hora de fin (${horaFin}). Por favor, verifica que el horario de inicio sea anterior al horario de fin.`
+    };
+  }
+
+  return { isValid: true, errorMessage: null };
+};
+
 const HorarioTrabajoManager: React.FC = () => {
   const { user } = useAuth();
   const [horarios, setHorarios] = useState<HorarioTrabajo[]>([]);
@@ -44,6 +72,8 @@ const HorarioTrabajoManager: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [showExcepcionForm, setShowExcepcionForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [errorHorario, setErrorHorario] = useState<string | null>(null);
+  const [errorExcepcion, setErrorExcepcion] = useState<string | null>(null);
 
   // Estados para el formulario de horario
   const [formData, setFormData] = useState({
@@ -110,6 +140,15 @@ const HorarioTrabajoManager: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validar horarios antes de enviar
+    const validation = validateHorarioTimes(formData.hora_inicio, formData.hora_fin);
+    if (!validation.isValid) {
+      setErrorHorario(validation.errorMessage);
+      return;
+    }
+    
+    setErrorHorario(null);
+    
     try {
       const url = editingId 
         ? buildApiUrl(`/horario-trabajo/${editingId}`)
@@ -130,18 +169,33 @@ const HorarioTrabajoManager: React.FC = () => {
         await loadHorarios();
         setShowForm(false);
         setEditingId(null);
+        setErrorHorario(null);
         setFormData({ dia_semana: 0, hora_inicio: '09:00', hora_fin: '17:00', activo: true });
       } else {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ detail: 'Error desconocido' }));
+        setErrorHorario(errorData.detail || 'Error al guardar horario');
         console.error('Error al guardar horario:', errorData);
+        alert('Error al guardar horario: ' + (errorData.detail || 'Error desconocido'));
       }
     } catch (error) {
+      setErrorHorario('Error de conexión. Por favor, intenta nuevamente.');
       console.error('Error al guardar horario:', error);
     }
   };
 
   const handleExcepcionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validar horarios si es horario_especial
+    if (excepcionData.tipo === 'horario_especial') {
+      const validation = validateHorarioTimes(excepcionData.hora_inicio, excepcionData.hora_fin);
+      if (!validation.isValid) {
+        setErrorExcepcion(validation.errorMessage);
+        return;
+      }
+    }
+    
+    setErrorExcepcion(null);
     
     try {
       const response = await fetch(buildApiUrl('/horario-trabajo/excepciones'), {
@@ -156,6 +210,7 @@ const HorarioTrabajoManager: React.FC = () => {
       if (response.ok) {
         await loadExcepciones();
         setShowExcepcionForm(false);
+        setErrorExcepcion(null);
         setExcepcionData({ 
           fecha: '', 
           tipo: 'cerrado', 
@@ -165,9 +220,11 @@ const HorarioTrabajoManager: React.FC = () => {
         });
       } else {
         const errorData = await response.json();
+        setErrorExcepcion(errorData.detail || 'Error al guardar excepción');
         console.error('Error al guardar excepción:', errorData);
       }
     } catch (error) {
+      setErrorExcepcion('Error de conexión. Por favor, intenta nuevamente.');
       console.error('Error al guardar excepción:', error);
     }
   };
@@ -194,13 +251,47 @@ const HorarioTrabajoManager: React.FC = () => {
         },
       });
 
-      if (response.ok) {
+      if (response.ok || response.status === 204) {
         await loadHorarios();
       } else {
-        console.error('Error al eliminar horario');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Error al eliminar horario:', errorData.detail || 'Error desconocido');
+        alert('Error al eliminar horario: ' + (errorData.detail || 'Error desconocido'));
       }
     } catch (error) {
       console.error('Error al eliminar horario:', error);
+      alert('Error al eliminar horario. Por favor, intenta nuevamente.');
+    }
+  };
+
+  const handleDeleteExcepcion = async (id: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar esta excepción?')) return;
+
+    try {
+      console.log('🔍 [DELETE] Intentando eliminar excepción con ID:', id);
+      const url = buildApiUrl(`/horario-trabajo/excepciones/${id}`);
+      console.log('🔍 [DELETE] URL:', url);
+      
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${user?.accessToken}`,
+        },
+      });
+
+      console.log('🔍 [DELETE] Response status:', response.status);
+      
+      if (response.ok || response.status === 204) {
+        await loadExcepciones();
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ [DELETE] Error al eliminar excepción:', errorData);
+        console.error('❌ [DELETE] ID enviado:', id);
+        alert('Error al eliminar excepción: ' + (errorData.detail || 'Error desconocido'));
+      }
+    } catch (error) {
+      console.error('❌ [DELETE] Error al eliminar excepción:', error);
+      alert('Error al eliminar excepción. Por favor, intenta nuevamente.');
     }
   };
 
@@ -331,8 +422,18 @@ const HorarioTrabajoManager: React.FC = () => {
                   id="hora_inicio"
                   type="time"
                   value={formData.hora_inicio}
-                  onChange={(e) => setFormData({ ...formData, hora_inicio: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(e) => {
+                    const newHoraInicio = e.target.value;
+                    setFormData({ ...formData, hora_inicio: newHoraInicio });
+                    // Validar en tiempo real
+                    if (formData.hora_fin) {
+                      const validation = validateHorarioTimes(newHoraInicio, formData.hora_fin);
+                      setErrorHorario(validation.isValid ? null : validation.errorMessage);
+                    }
+                  }}
+                  className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                    errorHorario ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   required
                 />
               </div>
@@ -344,12 +445,27 @@ const HorarioTrabajoManager: React.FC = () => {
                   id="hora_fin"
                   type="time"
                   value={formData.hora_fin}
-                  onChange={(e) => setFormData({ ...formData, hora_fin: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(e) => {
+                    const newHoraFin = e.target.value;
+                    setFormData({ ...formData, hora_fin: newHoraFin });
+                    // Validar en tiempo real
+                    if (formData.hora_inicio) {
+                      const validation = validateHorarioTimes(formData.hora_inicio, newHoraFin);
+                      setErrorHorario(validation.isValid ? null : validation.errorMessage);
+                    }
+                  }}
+                  className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                    errorHorario ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   required
                 />
               </div>
             </div>
+            {errorHorario && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {errorHorario}
+              </div>
+            )}
             <div className="flex justify-end space-x-2">
               <button
                 type="button"
@@ -364,7 +480,8 @@ const HorarioTrabajoManager: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={!!errorHorario}
               >
                 {editingId ? 'Actualizar' : 'Crear'}
               </button>
@@ -466,7 +583,20 @@ const HorarioTrabajoManager: React.FC = () => {
                   <select
                     id="excepcion_tipo"
                     value={excepcionData.tipo}
-                    onChange={(e) => setExcepcionData({ ...excepcionData, tipo: e.target.value as 'cerrado' | 'horario_especial' })}
+                    onChange={(e) => {
+                      const newTipo = e.target.value as 'cerrado' | 'horario_especial';
+                      setExcepcionData({ ...excepcionData, tipo: newTipo });
+                      // Limpiar error si cambia a "cerrado"
+                      if (newTipo === 'cerrado') {
+                        setErrorExcepcion(null);
+                      } else if (newTipo === 'horario_especial') {
+                        // Validar inmediatamente si ya hay horarios
+                        if (excepcionData.hora_inicio && excepcionData.hora_fin) {
+                          const validation = validateHorarioTimes(excepcionData.hora_inicio, excepcionData.hora_fin);
+                          setErrorExcepcion(validation.isValid ? null : validation.errorMessage);
+                        }
+                      }
+                    }}
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="cerrado">Día Cerrado</option>
@@ -477,26 +607,48 @@ const HorarioTrabajoManager: React.FC = () => {
                   <>
                     <div>
                       <label htmlFor="excepcion_hora_inicio" className="block text-sm font-medium text-gray-700 mb-1">
-                        Hora de Inicio
+                        Hora de Inicio <span className="text-red-500">*</span>
                       </label>
                       <input
                         id="excepcion_hora_inicio"
                         type="time"
                         value={excepcionData.hora_inicio}
-                        onChange={(e) => setExcepcionData({ ...excepcionData, hora_inicio: e.target.value })}
-                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        onChange={(e) => {
+                          const newHoraInicio = e.target.value;
+                          setExcepcionData({ ...excepcionData, hora_inicio: newHoraInicio });
+                          // Validar en tiempo real
+                          if (excepcionData.hora_fin) {
+                            const validation = validateHorarioTimes(newHoraInicio, excepcionData.hora_fin);
+                            setErrorExcepcion(validation.isValid ? null : validation.errorMessage);
+                          }
+                        }}
+                        className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                          errorExcepcion ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        required
                       />
                     </div>
                     <div>
                       <label htmlFor="excepcion_hora_fin" className="block text-sm font-medium text-gray-700 mb-1">
-                        Hora de Fin
+                        Hora de Fin <span className="text-red-500">*</span>
                       </label>
                       <input
                         id="excepcion_hora_fin"
                         type="time"
                         value={excepcionData.hora_fin}
-                        onChange={(e) => setExcepcionData({ ...excepcionData, hora_fin: e.target.value })}
-                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        onChange={(e) => {
+                          const newHoraFin = e.target.value;
+                          setExcepcionData({ ...excepcionData, hora_fin: newHoraFin });
+                          // Validar en tiempo real
+                          if (excepcionData.hora_inicio) {
+                            const validation = validateHorarioTimes(excepcionData.hora_inicio, newHoraFin);
+                            setErrorExcepcion(validation.isValid ? null : validation.errorMessage);
+                          }
+                        }}
+                        className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                          errorExcepcion ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        required
                       />
                     </div>
                   </>
@@ -515,11 +667,17 @@ const HorarioTrabajoManager: React.FC = () => {
                   />
                 </div>
               </div>
+              {errorExcepcion && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {errorExcepcion}
+                </div>
+              )}
               <div className="flex justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => {
                     setShowExcepcionForm(false);
+                    setErrorExcepcion(null);
                     setExcepcionData({ 
                       fecha: '', 
                       tipo: 'cerrado', 
@@ -534,7 +692,8 @@ const HorarioTrabajoManager: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={!!errorExcepcion}
                 >
                   Crear Excepción
                 </button>
@@ -553,7 +712,7 @@ const HorarioTrabajoManager: React.FC = () => {
               <div key={excepcion.id_excepcion} className="p-6 flex items-center justify-between">
                 <div>
                   <h4 className="font-medium text-gray-900">
-                    {new Date(excepcion.fecha).toLocaleDateString()}
+                    {formatISODateToDDMMYYYY(excepcion.fecha)}
                   </h4>
                   <p className="text-sm text-gray-600">
                     {excepcion.tipo === 'cerrado' 
@@ -566,7 +725,7 @@ const HorarioTrabajoManager: React.FC = () => {
                   )}
                 </div>
                 <button
-                  onClick={() => {/* Implementar eliminación */}}
+                  onClick={() => handleDeleteExcepcion(excepcion.id_excepcion)}
                   className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
                 >
                   <TrashIcon className="w-4 h-4" />

@@ -151,10 +151,10 @@ class WeaviateService:
             logger.warning(f"⚠️ Schema '{self.class_name}' no tiene vectorizador configurado")
             return False
         
-        # Verificar si tiene moduleConfig para text2vec-ollama
+        # Verificar si tiene moduleConfig para text2vec-ollama o text2vec-huggingface
         module_config = schema.get('moduleConfig', {})
-        if 'text2vec-ollama' not in module_config:
-            logger.warning(f"⚠️ Schema '{self.class_name}' no tiene módulo text2vec-ollama configurado")
+        if 'text2vec-ollama' not in module_config and 'text2vec-huggingface' not in module_config:
+            logger.warning(f"⚠️ Schema '{self.class_name}' no tiene módulo text2vec-ollama ni text2vec-huggingface configurado")
             return False
         
         logger.info(f"✅ Schema '{self.class_name}' tiene vectorizador '{vectorizer}' configurado")
@@ -177,86 +177,138 @@ class WeaviateService:
             return False
     
     def _setup_schema(self):
-        """Configurar el esquema de Weaviate para servicios con Ollama usando REST API v1"""
+        """Configurar el esquema de Weaviate para servicios con Ollama o HuggingFace usando REST API v1"""
         try:
             if not self.connected:
                 logger.error("❌ Conexión a Weaviate no disponible para configurar schema")
                 return
             
+            # Detectar qué vectorizador usar
+            # Prioridad: 1. HUGGINGFACE_MODEL (text2vec-huggingface), 2. OLLAMA (text2vec-ollama)
+            huggingface_model = os.getenv("HUGGINGFACE_MODEL")
+            use_huggingface = huggingface_model is not None and huggingface_model.strip() != ""
+            
+            if use_huggingface:
+                vectorizer = "text2vec-huggingface"
+                logger.info(f"🤖 Usando text2vec-huggingface con modelo: {huggingface_model}")
+            else:
+                vectorizer = "text2vec-ollama"
+                logger.info(f"🤖 Usando text2vec-ollama (fallback)")
+            
             # Verificar si el schema ya existe y tiene vectorizador
             if self._check_schema_exists():
-                # Obtener configuración actual de Ollama
-                ollama_endpoint = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL")
-                if not ollama_endpoint:
-                    if "railway" in os.getenv("RAILWAY_ENVIRONMENT", "").lower() or os.getenv("RAILWAY_SERVICE_NAME"):
-                        ollama_endpoint = "http://Ollama:11434"  # Usar "Ollama" con mayúscula por defecto
-                    else:
-                        ollama_endpoint = "http://host.docker.internal:11434"
-                
-                # IMPORTANTE: El apiEndpoint debe ser solo la URL base (sin /api/embeddings)
-                if ollama_endpoint.endswith('/'):
-                    ollama_endpoint = ollama_endpoint.rstrip('/')
-                
-                ollama_model = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
-                
-                # Verificar si la configuración actual coincide
                 schema_actual = self._get_schema_config()
                 if schema_actual:
-                    config_ollama = schema_actual.get('moduleConfig', {}).get('text2vec-ollama', {})
-                    endpoint_actual = config_ollama.get('apiEndpoint', '')
-                    model_actual = config_ollama.get('model', '')
+                    vectorizer_actual = schema_actual.get('vectorizer', '')
                     
-                    # FORZAR RECREACION: Si el endpoint tiene /api/embeddings o /api/embed, eliminarlo
-                    # Esto puede indicar una configuración incorrecta anterior
-                    if '/api/embeddings' in endpoint_actual or '/api/embed' in endpoint_actual:
-                        logger.warning(f"⚠️ Schema tiene endpoint con ruta API (bug conocido):")
-                        logger.warning(f"   Endpoint actual: {endpoint_actual}")
-                        logger.warning(f"🔄 Eliminando schema para recrearlo sin la ruta API...")
+                    # Verificar si el vectorizador coincide
+                    if vectorizer_actual != vectorizer:
+                        logger.warning(f"⚠️ Schema existe pero vectorizador no coincide:")
+                        logger.warning(f"   Vectorizador actual: {vectorizer_actual}")
+                        logger.warning(f"   Vectorizador esperado: {vectorizer}")
+                        logger.warning(f"🔄 Eliminando schema para recrearlo con vectorizador correcto...")
                         self._delete_schema()
-                    elif endpoint_actual != ollama_endpoint or model_actual != ollama_model:
-                        logger.warning(f"⚠️ Schema existe pero configuración no coincide:")
-                        logger.warning(f"   Endpoint actual: {endpoint_actual}")
-                        logger.warning(f"   Endpoint esperado: {ollama_endpoint}")
-                        logger.warning(f"   Modelo actual: {model_actual}")
-                        logger.warning(f"   Modelo esperado: {ollama_model}")
-                        logger.warning(f"🔄 Eliminando schema para recrearlo con configuración correcta...")
-                        self._delete_schema()
-                    elif self._check_schema_has_vectorizer():
-                        logger.info(f"✅ Schema '{self.class_name}' ya existe y tiene vectorizador configurado correctamente")
-                        return
+                    elif use_huggingface:
+                        # Verificar configuración de HuggingFace
+                        config_hf = schema_actual.get('moduleConfig', {}).get('text2vec-huggingface', {})
+                        model_actual = config_hf.get('model', '')
+                        if model_actual != huggingface_model:
+                            logger.warning(f"⚠️ Schema existe pero modelo HuggingFace no coincide:")
+                            logger.warning(f"   Modelo actual: {model_actual}")
+                            logger.warning(f"   Modelo esperado: {huggingface_model}")
+                            logger.warning(f"🔄 Eliminando schema para recrearlo con modelo correcto...")
+                            self._delete_schema()
+                        elif self._check_schema_has_vectorizer():
+                            logger.info(f"✅ Schema '{self.class_name}' ya existe y tiene vectorizador configurado correctamente")
+                            return
+                        else:
+                            logger.warning(f"⚠️ Schema '{self.class_name}' existe pero no tiene vectorizador. Eliminando para recrearlo...")
+                            self._delete_schema()
                     else:
-                        logger.warning(f"⚠️ Schema '{self.class_name}' existe pero no tiene vectorizador. Eliminando para recrearlo...")
-                        self._delete_schema()
+                        # Verificar configuración de Ollama
+                        ollama_endpoint = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL")
+                        if not ollama_endpoint:
+                            if "railway" in os.getenv("RAILWAY_ENVIRONMENT", "").lower() or os.getenv("RAILWAY_SERVICE_NAME"):
+                                ollama_endpoint = "http://Ollama:11434"
+                            else:
+                                ollama_endpoint = "http://host.docker.internal:11434"
+                        
+                        if ollama_endpoint.endswith('/'):
+                            ollama_endpoint = ollama_endpoint.rstrip('/')
+                        
+                        ollama_model = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
+                        config_ollama = schema_actual.get('moduleConfig', {}).get('text2vec-ollama', {})
+                        endpoint_actual = config_ollama.get('apiEndpoint', '')
+                        model_actual = config_ollama.get('model', '')
+                        
+                        # FORZAR RECREACION: Si el endpoint tiene /api/embeddings o /api/embed, eliminarlo
+                        if '/api/embeddings' in endpoint_actual or '/api/embed' in endpoint_actual:
+                            logger.warning(f"⚠️ Schema tiene endpoint con ruta API (bug conocido):")
+                            logger.warning(f"   Endpoint actual: {endpoint_actual}")
+                            logger.warning(f"🔄 Eliminando schema para recrearlo sin la ruta API...")
+                            self._delete_schema()
+                        elif endpoint_actual != ollama_endpoint or model_actual != ollama_model:
+                            logger.warning(f"⚠️ Schema existe pero configuración Ollama no coincide:")
+                            logger.warning(f"   Endpoint actual: {endpoint_actual}")
+                            logger.warning(f"   Endpoint esperado: {ollama_endpoint}")
+                            logger.warning(f"   Modelo actual: {model_actual}")
+                            logger.warning(f"   Modelo esperado: {ollama_model}")
+                            logger.warning(f"🔄 Eliminando schema para recrearlo con configuración correcta...")
+                            self._delete_schema()
+                        elif self._check_schema_has_vectorizer():
+                            logger.info(f"✅ Schema '{self.class_name}' ya existe y tiene vectorizador configurado correctamente")
+                            return
+                        else:
+                            logger.warning(f"⚠️ Schema '{self.class_name}' existe pero no tiene vectorizador. Eliminando para recrearlo...")
+                            self._delete_schema()
                 else:
                     logger.warning(f"⚠️ No se pudo obtener configuración del schema. Eliminando para recrearlo...")
                     self._delete_schema()
             
-            # Configuración de Ollama
-            # En Railway, los servicios se comunican usando nombres de servicio internos
-            # Si OLLAMA_ENDPOINT no está configurado, intentar detectar el endpoint correcto
-            ollama_endpoint = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL")
-            if not ollama_endpoint:
-                # En Railway, usar el nombre del servicio interno
-                # Si estamos en Railway, usar el nombre del servicio
-                if "railway" in os.getenv("RAILWAY_ENVIRONMENT", "").lower() or os.getenv("RAILWAY_SERVICE_NAME"):
-                    ollama_endpoint = "http://Ollama:11434"  # Usar "Ollama" con mayúscula por defecto
-                    logger.info("🔧 Detectado Railway: usando endpoint interno de Ollama")
-                else:
-                    ollama_endpoint = "http://host.docker.internal:11434"
-                    logger.info("🔧 Modo local: usando host.docker.internal")
+            # Configurar el vectorizador según las variables de entorno
+            if use_huggingface:
+                # Configuración para HuggingFace
+                huggingface_model = huggingface_model or "sentence-transformers/all-MiniLM-L6-v2"
+                logger.info(f"🤖 Configurando schema con HuggingFace: {huggingface_model}")
+                
+                module_config = {
+                    "text2vec-huggingface": {
+                        "model": huggingface_model,
+                        "vectorizeClassName": False
+                    }
+                }
+                
+                # Agregar token de HuggingFace si está configurado
+                hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
+                if hf_token:
+                    module_config["text2vec-huggingface"]["token"] = hf_token
+                    logger.info("🔑 Token de HuggingFace configurado")
             else:
-                logger.info(f"🔧 Usando endpoint de Ollama desde variable de entorno: {ollama_endpoint}")
-            
-            # IMPORTANTE: Según la documentación oficial de Weaviate, el apiEndpoint
-            # debe ser solo la URL base (sin /api/embeddings). El módulo agrega la ruta automáticamente.
-            # Sin embargo, hay un bug conocido donde usa /api/embed en lugar de /api/embeddings.
-            # La solución es asegurar que la URL base termine sin barra final.
-            if ollama_endpoint.endswith('/'):
-                ollama_endpoint = ollama_endpoint.rstrip('/')
-            
-            ollama_model = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
-            
-            logger.info(f"🤖 Configurando schema con Ollama: {ollama_endpoint} con modelo: {ollama_model}")
+                # Configuración para Ollama (fallback)
+                ollama_endpoint = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL")
+                if not ollama_endpoint:
+                    if "railway" in os.getenv("RAILWAY_ENVIRONMENT", "").lower() or os.getenv("RAILWAY_SERVICE_NAME"):
+                        ollama_endpoint = "http://Ollama:11434"
+                        logger.info("🔧 Detectado Railway: usando endpoint interno de Ollama")
+                    else:
+                        ollama_endpoint = "http://host.docker.internal:11434"
+                        logger.info("🔧 Modo local: usando host.docker.internal")
+                else:
+                    logger.info(f"🔧 Usando endpoint de Ollama desde variable de entorno: {ollama_endpoint}")
+                
+                if ollama_endpoint.endswith('/'):
+                    ollama_endpoint = ollama_endpoint.rstrip('/')
+                
+                ollama_model = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
+                logger.info(f"🤖 Configurando schema con Ollama: {ollama_endpoint} con modelo: {ollama_model}")
+                
+                module_config = {
+                    "text2vec-ollama": {
+                        "model": ollama_model,
+                        "apiEndpoint": ollama_endpoint,
+                        "vectorizeClassName": False
+                    }
+                }
             
             # Crear el schema usando REST API v1
             schema_url = f"{self.base_url}/v1/schema"
@@ -266,14 +318,8 @@ class WeaviateService:
             schema_definition = {
                 "class": self.class_name,
                 "description": "Servicios de la plataforma B2B",
-                "vectorizer": "text2vec-ollama",
-                "moduleConfig": {
-                    "text2vec-ollama": {
-                        "model": ollama_model,
-                        "apiEndpoint": ollama_endpoint,
-                        "vectorizeClassName": False
-                    }
-                },
+                "vectorizer": vectorizer,
+                "moduleConfig": module_config,
                 "properties": [
                     {
                         "name": "id_servicio",
@@ -285,7 +331,7 @@ class WeaviateService:
                         "dataType": ["text"],
                         "description": "Nombre del servicio",
                         "moduleConfig": {
-                            "text2vec-ollama": {
+                            vectorizer: {
                                 "skip": False,
                                 "vectorizePropertyName": False
                             }
@@ -296,7 +342,7 @@ class WeaviateService:
                         "dataType": ["text"],
                         "description": "Descripción del servicio",
                         "moduleConfig": {
-                            "text2vec-ollama": {
+                            vectorizer: {
                                 "skip": False,
                                 "vectorizePropertyName": False
                             }
@@ -307,7 +353,7 @@ class WeaviateService:
                         "dataType": ["number"],
                         "description": "Precio del servicio",
                         "moduleConfig": {
-                            "text2vec-ollama": {
+                            vectorizer: {
                                 "skip": True
                             }
                         }
@@ -317,7 +363,7 @@ class WeaviateService:
                         "dataType": ["text"],
                         "description": "Categoría del servicio",
                         "moduleConfig": {
-                            "text2vec-ollama": {
+                            vectorizer: {
                                 "skip": False,
                                 "vectorizePropertyName": False
                             }
@@ -328,7 +374,7 @@ class WeaviateService:
                         "dataType": ["text"],
                         "description": "Nombre de la empresa proveedora",
                         "moduleConfig": {
-                            "text2vec-ollama": {
+                            vectorizer: {
                                 "skip": False,
                                 "vectorizePropertyName": False
                             }
@@ -339,7 +385,7 @@ class WeaviateService:
                         "dataType": ["text"],
                         "description": "Ubicación del servicio",
                         "moduleConfig": {
-                            "text2vec-ollama": {
+                            vectorizer: {
                                 "skip": True
                             }
                         }
@@ -349,7 +395,7 @@ class WeaviateService:
                         "dataType": ["text"],
                         "description": "Estado del servicio (activo/inactivo)",
                         "moduleConfig": {
-                            "text2vec-ollama": {
+                            vectorizer: {
                                 "skip": True
                             }
                         }
@@ -360,7 +406,7 @@ class WeaviateService:
             response = requests.post(schema_url, json=schema_definition, headers=headers, timeout=30)
             
             if response.status_code in [200, 201]:
-                logger.info(f"✅ Schema '{self.class_name}' creado exitosamente con Ollama")
+                logger.info(f"✅ Schema '{self.class_name}' creado exitosamente con {vectorizer}")
             else:
                 logger.error(f"❌ Error al crear schema: HTTP {response.status_code} - {response.text}")
             
