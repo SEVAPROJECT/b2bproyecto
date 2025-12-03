@@ -251,6 +251,7 @@ async def search_servicios_public(
             logger.warning("⚠️ Weaviate no devolvió resultados, usando fallback a búsqueda normal")
             resultados = await _fallback_search_normal(query, limit)
         
+        logger.info(f"✅ Búsqueda completada: {len(resultados)} resultados encontrados")
         return {
             "query": query,
             "results": resultados,
@@ -263,6 +264,7 @@ async def search_servicios_public(
         logger.info("🔄 Intentando fallback a búsqueda normal...")
         try:
             resultados = await _fallback_search_normal(query, limit)
+            logger.info(f"✅ Fallback completado: {len(resultados)} resultados encontrados")
             return {
                 "query": query,
                 "results": resultados,
@@ -271,10 +273,16 @@ async def search_servicios_public(
             }
         except Exception as fallback_error:
             logger.error(f"❌ Error en fallback también: {str(fallback_error)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error en búsqueda: {str(e)}"
-            )
+            import traceback
+            logger.error(f"❌ Traceback del fallback: {traceback.format_exc()}")
+            # Devolver respuesta vacía en lugar de lanzar error para que el frontend pueda manejarlo
+            return {
+                "query": query,
+                "results": [],
+                "total": 0,
+                "limit": limit,
+                "error": str(fallback_error)
+            }
 
 async def _fallback_search_normal(query: str, limit: int):
     """Fallback a búsqueda normal cuando Weaviate falla"""
@@ -284,23 +292,29 @@ async def _fallback_search_normal(query: str, limit: int):
         conn = await direct_db_service.get_connection()
         try:
             # Búsqueda simple por nombre o descripción
+            # Usar la misma estructura que en weaviate_service.py para indexar
             search_query = """
                 SELECT DISTINCT
                     s.id_servicio,
                     s.nombre,
                     s.descripcion,
                     s.precio,
-                    s.categoria,
-                    s.empresa,
-                    s.ubicacion,
+                    s.estado,
+                    c.nombre as categoria,
+                    pe.nombre_fantasia as empresa,
+                    COALESCE(d.ciudad || ', ' || d.departamento, '') as ubicacion,
                     s.created_at,
                     s.updated_at
-                FROM servicios s
-                WHERE s.estado = 'activo'
+                FROM servicio s
+                LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+                LEFT JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+                LEFT JOIN direccion d ON pe.id_perfil = d.id_perfil AND d.es_principal = true
+                WHERE s.estado = true
                     AND (
                         s.nombre ILIKE $1 
                         OR s.descripcion ILIKE $1
-                        OR s.categoria ILIKE $1
+                        OR c.nombre ILIKE $1
+                        OR pe.nombre_fantasia ILIKE $1
                     )
                 ORDER BY s.created_at DESC
                 LIMIT $2

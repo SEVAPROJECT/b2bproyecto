@@ -188,12 +188,17 @@ class WeaviateService:
             huggingface_model = os.getenv("HUGGINGFACE_MODEL")
             use_huggingface = huggingface_model is not None and huggingface_model.strip() != ""
             
+            # Logging para diagnóstico
+            logger.info(f"🔍 [Detección de vectorizador] HUGGINGFACE_MODEL: {huggingface_model}")
+            logger.info(f"🔍 [Detección de vectorizador] use_huggingface: {use_huggingface}")
+            
             if use_huggingface:
                 vectorizer = "text2vec-huggingface"
                 logger.info(f"🤖 Usando text2vec-huggingface con modelo: {huggingface_model}")
             else:
                 vectorizer = "text2vec-ollama"
-                logger.info(f"🤖 Usando text2vec-ollama (fallback)")
+                logger.warning(f"⚠️ HUGGINGFACE_MODEL no configurado, usando text2vec-ollama (fallback)")
+                logger.warning(f"💡 Para usar HuggingFace, configura HUGGINGFACE_MODEL en Railway (ej: sentence-transformers/all-MiniLM-L6-v2)")
             
             # Verificar si el schema ya existe y tiene vectorizador
             if self._check_schema_exists():
