@@ -702,6 +702,24 @@ class WeaviateService:
     
     def _search_hibrida_nativa(self, query: str, limit: int = 10) -> Optional[List[Dict[str, Any]]]:
         """Búsqueda híbrida nativa usando REST API v1 con GraphQL (hybrid search con BM25 + Vectorial)"""
+        # Verificar si el schema necesita ser recreado (token configurado pero no en schema)
+        try:
+            huggingface_model = os.getenv("HUGGINGFACE_MODEL")
+            if huggingface_model:
+                hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
+                if hf_token and self._check_schema_exists():
+                    schema_actual = self._get_schema_config()
+                    if schema_actual:
+                        config_hf = schema_actual.get('moduleConfig', {}).get('text2vec-huggingface', {})
+                        token_actual = config_hf.get('token', '')
+                        if not token_actual:
+                            logger.warning(f"⚠️ Token de HuggingFace configurado pero no está en el schema")
+                            logger.warning(f"🔄 Recreando schema con token antes de búsqueda...")
+                            self._delete_schema()
+                            self._setup_schema()
+        except Exception as e:
+            logger.warning(f"⚠️ Error al verificar schema antes de búsqueda: {str(e)}")
+        
         try:
             # Escapar comillas y caracteres especiales para GraphQL
             query_escaped = query.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
@@ -761,14 +779,26 @@ class WeaviateService:
                     
                     # Detectar si el error es 401 (Unauthorized) de HuggingFace
                     if '401' in error_message or 'unauthorized' in error_message.lower() or 'hugging face' in error_message.lower():
+                        hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
                         logger.error(f"")
                         logger.error(f"🔴 PROBLEMA DETECTADO: Error 401 (Unauthorized) al acceder a HuggingFace")
                         logger.error(f"")
-                        logger.error(f"💡 SOLUCIÓN:")
-                        logger.error(f"   1. El modelo puede requerir autenticación")
-                        logger.error(f"   2. Configura HUGGINGFACE_API_TOKEN en Railway (servicio Backend)")
-                        logger.error(f"   3. O usa un modelo público que no requiera token")
-                        logger.error(f"   4. Verifica que el modelo '{os.getenv('HUGGINGFACE_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')}' esté disponible")
+                        
+                        if hf_token:
+                            logger.warning(f"⚠️ Token de HuggingFace está configurado pero el schema puede no tenerlo")
+                            logger.warning(f"🔄 Intentando recrear schema con token...")
+                            try:
+                                self._delete_schema()
+                                self._setup_schema()
+                                logger.info(f"✅ Schema recreado con token. Intenta la búsqueda nuevamente.")
+                            except Exception as schema_error:
+                                logger.error(f"❌ Error al recrear schema: {str(schema_error)}")
+                        else:
+                            logger.error(f"💡 SOLUCIÓN:")
+                            logger.error(f"   1. El modelo puede requerir autenticación")
+                            logger.error(f"   2. Configura HUGGINGFACE_API_TOKEN en Railway (servicio Backend)")
+                            logger.error(f"   3. O usa un modelo público que no requiera token")
+                            logger.error(f"   4. Verifica que el modelo '{os.getenv('HUGGINGFACE_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')}' esté disponible")
                         logger.error(f"")
                     
                     # Detectar si el error es por modelo no encontrado
