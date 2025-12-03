@@ -217,14 +217,28 @@ class WeaviateService:
                         # Verificar configuración de HuggingFace
                         config_hf = schema_actual.get('moduleConfig', {}).get('text2vec-huggingface', {})
                         model_actual = config_hf.get('model', '')
-                        if model_actual != huggingface_model:
+                        token_actual = config_hf.get('token', '')
+                        hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
+                        
+                        # Verificar si el token está configurado pero no está en el schema
+                        if hf_token and not token_actual:
+                            logger.warning(f"⚠️ Token de HuggingFace configurado pero no está en el schema")
+                            logger.warning(f"🔄 Eliminando schema para recrearlo con token...")
+                            self._delete_schema()
+                        elif model_actual != huggingface_model:
                             logger.warning(f"⚠️ Schema existe pero modelo HuggingFace no coincide:")
                             logger.warning(f"   Modelo actual: {model_actual}")
                             logger.warning(f"   Modelo esperado: {huggingface_model}")
                             logger.warning(f"🔄 Eliminando schema para recrearlo con modelo correcto...")
                             self._delete_schema()
+                        elif hf_token and token_actual != hf_token:
+                            logger.warning(f"⚠️ Token de HuggingFace ha cambiado")
+                            logger.warning(f"🔄 Eliminando schema para recrearlo con nuevo token...")
+                            self._delete_schema()
                         elif self._check_schema_has_vectorizer():
                             logger.info(f"✅ Schema '{self.class_name}' ya existe y tiene vectorizador configurado correctamente")
+                            if hf_token:
+                                logger.info(f"🔑 Token de HuggingFace presente en el schema")
                             return
                         else:
                             logger.warning(f"⚠️ Schema '{self.class_name}' existe pero no tiene vectorizador. Eliminando para recrearlo...")
@@ -287,7 +301,9 @@ class WeaviateService:
                 hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
                 if hf_token:
                     module_config["text2vec-huggingface"]["token"] = hf_token
-                    logger.info("🔑 Token de HuggingFace configurado")
+                    logger.info(f"🔑 Token de HuggingFace configurado (longitud: {len(hf_token)} caracteres)")
+                else:
+                    logger.warning(f"⚠️ HUGGINGFACE_API_TOKEN no configurado - puede causar error 401")
             else:
                 # Configuración para Ollama (fallback)
                 ollama_endpoint = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL")

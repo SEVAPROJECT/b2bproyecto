@@ -303,8 +303,7 @@ async def _fallback_search_normal(query: str, limit: int):
                     cat.nombre as categoria,
                     pe.nombre_fantasia as empresa,
                     COALESCE(ci.nombre || ', ' || dep.nombre, '') as ubicacion,
-                    s.created_at,
-                    s.updated_at
+                    s.created_at
                 FROM servicio s
                 LEFT JOIN categoria cat ON s.id_categoria = cat.id_categoria
                 LEFT JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
@@ -335,8 +334,7 @@ async def _fallback_search_normal(query: str, limit: int):
                     "categoria": row["categoria"],
                     "empresa": row["empresa"],
                     "ubicacion": row["ubicacion"],
-                    "created_at": str(row["created_at"]) if row["created_at"] else None,
-                    "updated_at": str(row["updated_at"]) if row["updated_at"] else None
+                    "created_at": str(row["created_at"]) if row["created_at"] else None
                 })
             
             logger.info(f"✅ Fallback: {len(resultados)} resultados encontrados")
