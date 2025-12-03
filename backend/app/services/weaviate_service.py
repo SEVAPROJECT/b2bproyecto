@@ -710,8 +710,18 @@ class WeaviateService:
                     errors = data['errors']
                     logger.error(f"❌ Error en query GraphQL híbrida: {errors}")
                     
-                    # Detectar si el error es por modelo no encontrado
+                    # Detectar si el error es por falta de vectorizador
                     error_message = str(errors)
+                    if 'vectorizer' in error_message.lower() and 'without vectorizer' in error_message.lower():
+                        logger.warning(f"⚠️ Schema no tiene vectorizador configurado. Intentando recrear schema...")
+                        try:
+                            self._delete_schema()
+                            self._setup_schema()
+                            logger.info(f"✅ Schema recreado. Intenta la búsqueda nuevamente.")
+                        except Exception as schema_error:
+                            logger.error(f"❌ Error al recrear schema: {str(schema_error)}")
+                    
+                    # Detectar si el error es por modelo no encontrado
                     if 'model' in error_message.lower() and ('not found' in error_message.lower() or 'try pulling' in error_message.lower()):
                         modelo = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
                         ollama_url = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL") or "http://ollama:11434"
@@ -779,6 +789,10 @@ class WeaviateService:
         # Asegurar que el schema esté configurado antes de buscar
         if not self._check_schema_exists():
             logger.warning("⚠️ Schema no existe, intentando crearlo...")
+            self._setup_schema()
+        elif not self._check_schema_has_vectorizer():
+            logger.warning("⚠️ Schema existe pero no tiene vectorizador, intentando recrearlo...")
+            self._delete_schema()
             self._setup_schema()
         
         try:

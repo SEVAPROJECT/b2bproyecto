@@ -326,7 +326,7 @@ async def _fallback_search_normal(query: str, limit: int):
             logger.info(f"✅ Fallback: {len(resultados)} resultados encontrados")
             return resultados
         finally:
-            await direct_db_service.return_connection(conn)
+            await direct_db_service.pool.release(conn)
     except Exception as e:
         logger.error(f"❌ Error en fallback: {str(e)}")
         return []
