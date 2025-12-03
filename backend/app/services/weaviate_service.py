@@ -298,12 +298,17 @@ class WeaviateService:
                 }
                 
                 # Agregar token de HuggingFace si está configurado
+                # NOTA: El token también debe estar como variable de entorno en el servicio Weaviate
                 hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
                 if hf_token:
                     module_config["text2vec-huggingface"]["token"] = hf_token
-                    logger.info(f"🔑 Token de HuggingFace configurado (longitud: {len(hf_token)} caracteres)")
+                    logger.info(f"🔑 Token de HuggingFace configurado en schema (longitud: {len(hf_token)} caracteres)")
+                    logger.warning(f"⚠️ NOTA: El token también debe estar en el servicio Weaviate como variable de entorno")
+                    logger.warning(f"   Configura en Railway (servicio Weaviate): HUGGINGFACE_API_TOKEN=tu_token")
                 else:
                     logger.warning(f"⚠️ HUGGINGFACE_API_TOKEN no configurado - puede causar error 401")
+                    logger.warning(f"   Configura en Railway (servicio Backend): HUGGINGFACE_API_TOKEN=tu_token")
+                    logger.warning(f"   Y también en Railway (servicio Weaviate): HUGGINGFACE_API_TOKEN=tu_token")
             else:
                 # Configuración para Ollama (fallback)
                 ollama_endpoint = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL")
@@ -791,6 +796,11 @@ class WeaviateService:
                                 self._delete_schema()
                                 self._setup_schema()
                                 logger.info(f"✅ Schema recreado con token. Intenta la búsqueda nuevamente.")
+                                logger.warning(f"")
+                                logger.warning(f"⚠️ IMPORTANTE: Si el error 401 persiste, el token también debe estar configurado")
+                                logger.warning(f"   como variable de entorno en el SERVICIO WEAVIATE en Railway:")
+                                logger.warning(f"   HUGGINGFACE_API_TOKEN=tu_token_aqui")
+                                logger.warning(f"")
                             except Exception as schema_error:
                                 logger.error(f"❌ Error al recrear schema: {str(schema_error)}")
                         else:
