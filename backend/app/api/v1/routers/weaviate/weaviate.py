@@ -8,6 +8,7 @@ from app.api.v1.dependencies.auth_user import get_current_user
 from app.schemas.auth_user import SupabaseUser
 from typing import List, Optional
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,48 @@ async def index_servicios(
     """Indexar servicios desde la base de datos a Weaviate"""
     try:
         logger.info(f"🔍 Iniciando indexación de servicios por usuario: {current_user.id}")
+        
+        success = await weaviate_service.index_servicios(limit=limit)
+        
+        if success:
+            return {
+                "message": "Servicios indexados exitosamente",
+                "limit": limit,
+                "status": "success"
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al indexar servicios"
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Error en indexación: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al indexar servicios: {str(e)}"
+        )
+
+@router.post(
+    "/index-servicios-public",
+    description="Indexar todos los servicios en Weaviate (público, sin autenticación - solo para inicialización)"
+)
+async def index_servicios_public(
+    limit: int = Query(1000, ge=1, le=10000),
+    secret_key: str = Query(..., description="Clave secreta para autorizar la indexación")
+):
+    """Indexar servicios desde la base de datos a Weaviate (endpoint público para inicialización)"""
+    # Verificar clave secreta (configurar en variables de entorno)
+    expected_key = os.getenv("WEAVIATE_INDEX_SECRET_KEY", "change-me-in-production")
+    
+    if secret_key != expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Clave secreta inválida"
+        )
+    
+    try:
+        logger.info(f"🔍 Iniciando indexación pública de servicios (límite: {limit})")
         
         success = await weaviate_service.index_servicios(limit=limit)
         
