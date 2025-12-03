@@ -801,54 +801,55 @@ const MarketplacePage: React.FC = () => {
         }
     }, [services, searchQuery, categoryFilter, ratingFilter, departmentFilter, cityFilter, currencyFilter, priceRange, dateFilter, customDateRange]);
 
-    // Paginación
+    // Paginación - SIEMPRE limitar a itemsPerPage (5 servicios)
     const paginatedServices = useMemo(() => {
         console.log('📄 paginatedServices useMemo ejecutándose');
         console.log('📊 Estado para paginación:', {
             servicesLength: services.length,
             totalServices: totalServices,
             currentPage: currentPage,
-            itemsPerPage: itemsPerPage
+            itemsPerPage: itemsPerPage,
+            isAISearchMode: isAISearchMode
         });
+        
+        let result: BackendService[] = [];
         
         // Si estamos en modo búsqueda con IA, paginar localmente los servicios
         if (isAISearchMode) {
             console.log('🤖 Modo IA - paginando localmente');
             const startIndex = (currentPage - 1) * itemsPerPage;
             const endIndex = startIndex + itemsPerPage;
-            const paginated = services.slice(startIndex, endIndex);
-            console.log('📄 Paginación IA - Total servicios:', services.length, 'Página:', currentPage, 'Índice inicio:', startIndex, 'Índice fin:', endIndex, 'Mostrando:', paginated.length);
-            
-            // Verificación de seguridad: asegurar que nunca se muestren más de itemsPerPage
-            if (paginated.length > itemsPerPage) {
-                console.warn(`⚠️ ERROR: Paginación IA devolvió ${paginated.length} servicios, limitando a ${itemsPerPage}`);
-                return paginated.slice(0, itemsPerPage);
-            }
-            
-            return paginated;
+            result = services.slice(startIndex, endIndex);
+            console.log('📄 Paginación IA - Total servicios:', services.length, 'Página:', currentPage, 'Índice inicio:', startIndex, 'Índice fin:', endIndex, 'Mostrando:', result.length);
         }
-        
-        // Si estamos usando el endpoint filtrado del servidor, verificar que respete itemsPerPage
-        // Los servicios ya vienen filtrados y paginados del servidor, pero aplicamos límite de seguridad
-        if (totalServices > 0) {
+        // Si estamos usando el endpoint filtrado del servidor
+        else if (totalServices > 0) {
             console.log('📄 Usando servicios filtrados del servidor');
             console.log('📊 Servicios del servidor:', services.length, 'Límite esperado:', itemsPerPage);
             
-            // Aplicar límite de seguridad: si el backend devuelve más de itemsPerPage, limitar
-            if (services.length > itemsPerPage) {
-                console.warn(`⚠️ Backend devolvió ${services.length} servicios, pero el límite es ${itemsPerPage}. Limitando...`);
-                return services.slice(0, itemsPerPage);
-            }
+            // El backend debería devolver exactamente itemsPerPage, pero aplicamos límite de seguridad
+            result = services.slice(0, itemsPerPage);
             
-            return services; // Usar directamente los servicios del servidor
+            if (services.length > itemsPerPage) {
+                console.warn(`⚠️ Backend devolvió ${services.length} servicios, pero el límite es ${itemsPerPage}. Limitando a ${itemsPerPage}...`);
+            }
+        }
+        // Fallback: Si no hay paginación del backend, usar filtros locales
+        else {
+            console.log('📄 Sin paginación del backend - usando filtros locales');
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            result = filteredServices.slice(startIndex, startIndex + itemsPerPage);
+            console.log('📄 Paginación local - Servicios filtrados:', filteredServices.length, 'Paginados:', result.length);
         }
         
-        // Fallback: Si no hay paginación del backend, usar filtros locales
-        console.log('📄 Sin paginación del backend - usando filtros locales');
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const paginated = filteredServices.slice(startIndex, startIndex + itemsPerPage);
-        console.log('📄 Paginación local - Servicios filtrados:', filteredServices.length, 'Paginados:', paginated.length);
-        return paginated;
+        // VERIFICACIÓN FINAL DE SEGURIDAD: NUNCA devolver más de itemsPerPage
+        if (result.length > itemsPerPage) {
+            console.error(`❌ ERROR CRÍTICO: Se intentó devolver ${result.length} servicios, limitando estrictamente a ${itemsPerPage}`);
+            result = result.slice(0, itemsPerPage);
+        }
+        
+        console.log('✅ Resultado final de paginación:', result.length, 'servicios');
+        return result;
     }, [services, filteredServices, currentPage, itemsPerPage, totalServices, isAISearchMode]);
 
     // Calcular total de páginas basado en servicios filtrados cuando hay filtros activos

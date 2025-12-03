@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List, Optional
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.api.v1.dependencies.database_supabase import get_async_db
 from app.models.servicio.service import ServicioModel
@@ -466,11 +469,22 @@ async def get_services_unified(
             base_query += f" LIMIT ${limit_param} OFFSET ${offset_param}"
             params.extend([limit, offset])
             
-            print(f"🔍 Consulta unificada: {base_query}")
-            print(f"📊 Parámetros: {params}")
+            logger.info(f"🔍 Consulta unificada - Límite: {limit}, Offset: {offset}")
+            logger.info(f"📊 Parámetros totales: {len(params)}")
+            
+            # Verificación de seguridad: asegurar que el límite no exceda 100
+            if limit > 100:
+                logger.warning(f"⚠️ Límite solicitado ({limit}) excede el máximo (100), limitando a 100")
+                limit = 100
+                params[-2] = 100  # Actualizar el parámetro limit en la lista
             
             # Ejecutar consulta principal
             services_data_tuples = await conn.fetch(base_query, *params)
+            
+            # Verificación de seguridad: asegurar que no se devuelvan más servicios de los solicitados
+            if len(services_data_tuples) > limit:
+                logger.warning(f"⚠️ La consulta devolvió {len(services_data_tuples)} servicios, pero el límite es {limit}. Limitando...")
+                services_data_tuples = services_data_tuples[:limit]
             
             if not services_data_tuples:
                 return build_empty_response(
@@ -583,6 +597,11 @@ async def get_filtered_services(
             
             # Ejecutar consulta principal
             services_data_tuples = await conn.fetch(base_query, *params)
+            
+            # Verificación de seguridad: asegurar que no se devuelvan más servicios de los solicitados
+            if len(services_data_tuples) > limit:
+                logger.warning(f"⚠️ La consulta devolvió {len(services_data_tuples)} servicios, pero el límite es {limit}. Limitando...")
+                services_data_tuples = services_data_tuples[:limit]
             
             if not services_data_tuples:
                 return build_empty_response(
