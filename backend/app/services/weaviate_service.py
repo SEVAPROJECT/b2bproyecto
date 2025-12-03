@@ -299,16 +299,19 @@ class WeaviateService:
                 
                 # Agregar token de HuggingFace si está configurado
                 # NOTA: El token también debe estar como variable de entorno en el servicio Weaviate
-                hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
+                # Weaviate puede usar HUGGINGFACE_APIKEY o HUGGINGFACE_API_TOKEN
+                hf_token = os.getenv("HUGGINGFACE_API_TOKEN") or os.getenv("HUGGINGFACE_APIKEY")
                 if hf_token:
                     module_config["text2vec-huggingface"]["token"] = hf_token
                     logger.info(f"🔑 Token de HuggingFace configurado en schema (longitud: {len(hf_token)} caracteres)")
                     logger.warning(f"⚠️ NOTA: El token también debe estar en el servicio Weaviate como variable de entorno")
-                    logger.warning(f"   Configura en Railway (servicio Weaviate): HUGGINGFACE_API_TOKEN=tu_token")
+                    logger.warning(f"   Configura en Railway (servicio Weaviate): HUGGINGFACE_APIKEY=tu_token")
+                    logger.warning(f"   O alternativamente: HUGGINGFACE_API_TOKEN=tu_token")
+                    logger.warning(f"   IMPORTANTE: Reinicia el servicio Weaviate después de agregar la variable")
                 else:
-                    logger.warning(f"⚠️ HUGGINGFACE_API_TOKEN no configurado - puede causar error 401")
+                    logger.warning(f"⚠️ HUGGINGFACE_API_TOKEN o HUGGINGFACE_APIKEY no configurado - puede causar error 401")
                     logger.warning(f"   Configura en Railway (servicio Backend): HUGGINGFACE_API_TOKEN=tu_token")
-                    logger.warning(f"   Y también en Railway (servicio Weaviate): HUGGINGFACE_API_TOKEN=tu_token")
+                    logger.warning(f"   Y también en Railway (servicio Weaviate): HUGGINGFACE_APIKEY=tu_token")
             else:
                 # Configuración para Ollama (fallback)
                 ollama_endpoint = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_URL")
@@ -783,10 +786,13 @@ class WeaviateService:
                             logger.error(f"❌ Error al recrear schema: {str(schema_error)}")
                     
                     # Detectar si el error es 401 (Unauthorized) de HuggingFace
-                    if '401' in error_message or 'unauthorized' in error_message.lower() or 'hugging face' in error_message.lower():
-                        hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
+                    if '401' in error_message or 'unauthorized' in error_message.lower() or \
+                       'invalid username or password' in error_message.lower() or \
+                       'hugging face' in error_message.lower():
+                        hf_token = os.getenv("HUGGINGFACE_API_TOKEN") or os.getenv("HUGGINGFACE_APIKEY")
                         logger.error(f"")
                         logger.error(f"🔴 PROBLEMA DETECTADO: Error 401 (Unauthorized) al acceder a HuggingFace")
+                        logger.error(f"   Mensaje: {error_message[:200]}")
                         logger.error(f"")
                         
                         if hf_token:
@@ -797,9 +803,14 @@ class WeaviateService:
                                 self._setup_schema()
                                 logger.info(f"✅ Schema recreado con token. Intenta la búsqueda nuevamente.")
                                 logger.warning(f"")
-                                logger.warning(f"⚠️ IMPORTANTE: Si el error 401 persiste, el token también debe estar configurado")
-                                logger.warning(f"   como variable de entorno en el SERVICIO WEAVIATE en Railway:")
-                                logger.warning(f"   HUGGINGFACE_API_TOKEN=tu_token_aqui")
+                                logger.warning(f"⚠️ IMPORTANTE: Si el error 401 persiste, verifica:")
+                                logger.warning(f"   1. El token está en el SERVICIO WEAVIATE como variable de entorno:")
+                                logger.warning(f"      HUGGINGFACE_APIKEY=tu_token (nombre recomendado)")
+                                logger.warning(f"      O: HUGGINGFACE_API_TOKEN=tu_token")
+                                logger.warning(f"   2. El servicio Weaviate fue REINICIADO después de agregar la variable")
+                                logger.warning(f"   3. El modelo requiere aceptar términos en HuggingFace:")
+                                logger.warning(f"      https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2")
+                                logger.warning(f"   4. El token es válido y tiene permisos de 'Read'")
                                 logger.warning(f"")
                             except Exception as schema_error:
                                 logger.error(f"❌ Error al recrear schema: {str(schema_error)}")
