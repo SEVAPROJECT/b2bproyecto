@@ -1,11 +1,10 @@
 # Configuración para el servicio Frontend
-# Este archivo debe estar en la raíz del repositorio
-# Root Directory en Railway debe estar VACÍO (/)
-# Este Dockerfile construye el frontend desde la raíz
+# Root Directory en Railway debe estar configurado como 'frontend'
+# Este Dockerfile construye el frontend desde el directorio frontend/
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "frontend/Dockerfile"
 
 [deploy]
 # NO especificar startCommand aquí - usar el CMD del Dockerfile
