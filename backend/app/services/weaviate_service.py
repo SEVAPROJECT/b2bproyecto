@@ -413,7 +413,23 @@ class WeaviateService:
             if response.status_code in [200, 201]:
                 logger.info(f"✅ Schema '{self.class_name}' creado exitosamente con {vectorizer}")
             else:
-                logger.error(f"❌ Error al crear schema: HTTP {response.status_code} - {response.text}")
+                error_text = response.text
+                logger.error(f"❌ Error al crear schema: HTTP {response.status_code} - {error_text}")
+                
+                # Si el error es porque el módulo no está presente y estamos usando Ollama
+                # pero HuggingFace no está configurado, sugerir configurar HuggingFace
+                if response.status_code == 422 and 'no module' in error_text.lower() and 'text2vec-ollama' in error_text.lower():
+                    logger.error(f"")
+                    logger.error(f"🔴 PROBLEMA DETECTADO: Weaviate no tiene el módulo 'text2vec-ollama' habilitado")
+                    logger.error(f"")
+                    logger.error(f"💡 SOLUCIÓN RECOMENDADA: Configurar HuggingFace en Railway")
+                    logger.error(f"   1. En el servicio Weaviate, agrega estas variables:")
+                    logger.error(f"      ENABLE_MODULES=text2vec-huggingface")
+                    logger.error(f"      HUGGINGFACE_MODEL=sentence-transformers/all-MiniLM-L6-v2")
+                    logger.error(f"   2. En el servicio Backend, agrega:")
+                    logger.error(f"      HUGGINGFACE_MODEL=sentence-transformers/all-MiniLM-L6-v2")
+                    logger.error(f"   3. Reinicia ambos servicios")
+                    logger.error(f"")
             
         except Exception as e:
             logger.error(f"❌ Error al configurar schema de Weaviate: {str(e)}")
@@ -715,10 +731,11 @@ class WeaviateService:
                     errors = data['errors']
                     logger.error(f"❌ Error en query GraphQL híbrida: {errors}")
                     
-                    # Detectar si el error es por falta de vectorizador
+                    # Detectar si el error es por falta de vectorizador o módulo no presente
                     error_message = str(errors)
-                    if 'vectorizer' in error_message.lower() and 'without vectorizer' in error_message.lower():
-                        logger.warning(f"⚠️ Schema no tiene vectorizador configurado. Intentando recrear schema...")
+                    if ('vectorizer' in error_message.lower() and 'without vectorizer' in error_message.lower()) or \
+                       ('no module' in error_message.lower() and 'present' in error_message.lower()):
+                        logger.warning(f"⚠️ Schema no tiene vectorizador configurado o módulo no presente. Intentando recrear schema...")
                         try:
                             self._delete_schema()
                             self._setup_schema()

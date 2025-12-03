@@ -308,7 +308,7 @@ async def _fallback_search_normal(query: str, limit: int):
                 FROM servicio s
                 LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
                 LEFT JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-                LEFT JOIN direccion d ON pe.id_perfil = d.id_perfil AND d.es_principal = true
+                LEFT JOIN direccion d ON pe.id_direccion = d.id_direccion
                 WHERE s.estado = true
                     AND (
                         s.nombre ILIKE $1 
