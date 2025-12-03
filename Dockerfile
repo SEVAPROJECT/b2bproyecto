@@ -12,7 +12,7 @@ RUN npm run build
 # Serve stage
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY frontend/nginx.conf /etc/nginx/nginx.conf.template
+COPY --from=builder /app/nginx.conf /etc/nginx/nginx.conf.template
 
 # Crear script de inicio que procesa el PORT
 RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
