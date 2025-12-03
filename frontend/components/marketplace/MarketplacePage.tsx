@@ -620,8 +620,10 @@ const MarketplacePage: React.FC = () => {
     // Función helper para realizar la búsqueda en Weaviate
     const searchWeaviate = useCallback(async (query: string) => {
         const weaviateSearchUrl = buildApiUrl('/weaviate/search-public');
-        // Aumentar límite a 100 para obtener más resultados (máximo permitido por el backend es 50, pero usamos 100 para intentar)
-        const response = await fetch(`${weaviateSearchUrl}?query=${encodeURIComponent(query)}&limit=100`, {
+        // Traer suficientes resultados para paginar (máximo 100 permitido por el backend)
+        // Pero respetar itemsPerPage para la paginación local
+        const maxResults = 100; // Máximo permitido por el backend
+        const response = await fetch(`${weaviateSearchUrl}?query=${encodeURIComponent(query)}&limit=${maxResults}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -814,11 +816,18 @@ const MarketplacePage: React.FC = () => {
             return paginated;
         }
         
-        // Si estamos usando el endpoint filtrado del servidor, NO aplicar filtros locales
-        // Los servicios ya vienen filtrados y paginados del servidor
+        // Si estamos usando el endpoint filtrado del servidor, verificar que respete itemsPerPage
+        // Los servicios ya vienen filtrados y paginados del servidor, pero aplicamos límite de seguridad
         if (totalServices > 0) {
-            console.log('📄 Usando servicios filtrados del servidor (sin filtros locales)');
-            console.log('📊 Servicios del servidor:', services.length);
+            console.log('📄 Usando servicios filtrados del servidor');
+            console.log('📊 Servicios del servidor:', services.length, 'Límite esperado:', itemsPerPage);
+            
+            // Aplicar límite de seguridad: si el backend devuelve más de itemsPerPage, limitar
+            if (services.length > itemsPerPage) {
+                console.warn(`⚠️ Backend devolvió ${services.length} servicios, pero el límite es ${itemsPerPage}. Limitando...`);
+                return services.slice(0, itemsPerPage);
+            }
+            
             return services; // Usar directamente los servicios del servidor
         }
         
