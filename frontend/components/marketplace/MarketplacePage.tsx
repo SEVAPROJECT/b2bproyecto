@@ -487,14 +487,29 @@ const MarketplacePage: React.FC = () => {
             const accessToken = getAccessToken(user);
             const filters = getBackendFiltersRef.current ? getBackendFiltersRef.current() : {};
             
+            console.log('🔍 Filtros que se enviarán al backend:', filters);
+            console.log('📊 Parámetros de paginación:', { limit: itemsPerPage, offset, page: pageToUse });
+            console.log('💰 Estado del filtro de precio:', { priceRange, sliderValue, filtersMaxPrice: filters.max_price });
+            
             const filteredResponse = await servicesAPI.getFilteredServices(itemsPerPage, offset, accessToken, filters);
             
             updateServicesAfterReload(filteredResponse, page);
             console.log(`📄 Datos filtrados recargados: ${filteredResponse.services.length} servicios, total: ${filteredResponse.pagination.total}`);
             
-        } catch (error) {
+        } catch (error: any) {
             console.error('❌ Error recargando datos filtrados:', error);
-            setError('Error aplicando filtros. Inténtalo de nuevo.');
+            console.error('📊 Detalles del error:', {
+                message: error?.message,
+                detail: error?.detail,
+                status: error?.status,
+                filters: getBackendFiltersRef.current ? getBackendFiltersRef.current() : {},
+                page: pageToUse,
+                offset: calculateOffset(pageToUse, itemsPerPage)
+            });
+            
+            // Mostrar un mensaje de error más descriptivo si está disponible
+            const errorMessage = error?.detail || error?.message || 'Error aplicando filtros. Inténtalo de nuevo.';
+            setError(errorMessage);
         } finally {
             clearLoadingState(showFullLoading);
         }
@@ -1394,7 +1409,8 @@ const MarketplacePage: React.FC = () => {
 
 
                         {/* Estados vacíos - más compactos */}
-                        {filteredServices.length === 0 && (
+                        {/* Usar safePaginatedServices en lugar de filteredServices para consistencia con lo que se renderiza */}
+                        {safePaginatedServices.length === 0 && !isLoading && !isLoadingPage && !isLoadingFilters && (
                             <div className="text-center py-8">
                                 <MagnifyingGlassIcon className="mx-auto h-10 w-10 text-primary-400" />
                                 <h3 className="mt-2 text-base font-semibold text-primary-800">

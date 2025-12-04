@@ -19,14 +19,35 @@ const applyCurrencyFilter = (filters: Record<string, any>, currencyFilter: strin
 };
 
 const applyPriceFilter = (filters: Record<string, any>, priceRange: [number, number]): void => {
-    const isPriceFilterActive = priceRange[0] > 0 || priceRange[1] < 1000000000;
+    // Validar que priceRange tenga valores válidos
+    if (!Array.isArray(priceRange) || priceRange.length !== 2) {
+        console.warn('⚠️ priceRange inválido:', priceRange);
+        return;
+    }
+    
+    const [minPrice, maxPrice] = priceRange;
+    
+    // Validar que los valores sean números válidos
+    if (typeof minPrice !== 'number' || typeof maxPrice !== 'number' || isNaN(minPrice) || isNaN(maxPrice)) {
+        console.warn('⚠️ Valores de precio inválidos:', { minPrice, maxPrice });
+        return;
+    }
+    
+    // Solo aplicar filtro si hay un rango activo (min > 0 o max < valor máximo)
+    const isPriceFilterActive = minPrice > 0 || maxPrice < 1000000000;
     if (!isPriceFilterActive) return;
 
-    if (priceRange[0] > 0) {
-        filters.min_price = priceRange[0];
+    // Solo agregar min_price si es mayor a 0
+    if (minPrice > 0 && minPrice < 1000000000) {
+        filters.min_price = minPrice;
     }
-    if (priceRange[1] < 1000000000) {
-        filters.max_price = priceRange[1];
+    
+    // Solo agregar max_price si es menor al valor máximo y mayor a 0
+    if (maxPrice < 1000000000 && maxPrice > 0) {
+        filters.max_price = maxPrice;
+        console.log('💰 Filtro de precio máximo aplicado:', { maxPrice, minPrice });
+    } else {
+        console.log('💰 Filtro de precio máximo NO aplicado:', { maxPrice, minPrice, razon: maxPrice >= 1000000000 ? 'maxPrice >= 1000000000' : 'maxPrice <= 0' });
     }
 };
 

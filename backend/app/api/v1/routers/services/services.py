@@ -29,25 +29,27 @@ class FilteredServicesResponse(BaseModel):
 
 # Funciones helper para get_filtered_services
 def build_currency_filter(currency: str, param_count: int) -> tuple[str, int, str]:
-    """Construye el filtro de moneda con condiciones complejas"""
+    """Construye el filtro de moneda usando id_moneda (más confiable, no depende del JOIN de moneda)"""
     currency_upper = currency.strip().upper()
-    param_count += 1
-    currency_conditions = []
     
-    # Condición para codigo_iso_moneda
-    currency_conditions.append(f"(m.codigo_iso_moneda IS NOT NULL AND TRIM(m.codigo_iso_moneda) = UPPER(${param_count}))")
-    
-    # Condición para id_moneda como respaldo
+    # Usar solo id_moneda para evitar problemas con el JOIN de moneda
+    # Esto es más confiable porque s.id_moneda siempre está disponible en la consulta base
     if currency_upper == 'GS':
-        currency_conditions.append("s.id_moneda = 1")
+        filter_condition = "s.id_moneda = 1"
     elif currency_upper == 'USD':
-        currency_conditions.append("s.id_moneda = 2")
+        filter_condition = "s.id_moneda = 2"
     elif currency_upper == 'BRL':
-        currency_conditions.append("s.id_moneda = 3")
+        filter_condition = "s.id_moneda = 3"
     elif currency_upper == 'ARS':
-        currency_conditions.append("(s.id_moneda = 4 OR s.id_moneda = 8)")
+        filter_condition = "(s.id_moneda = 4 OR s.id_moneda = 8)"
+    else:
+        # Si no coincide con ninguna moneda conocida, usar el código ISO si el JOIN está disponible
+        # Pero como fallback, intentar buscar por id_moneda = NULL (no debería pasar)
+        param_count += 1
+        filter_condition = f"(m.codigo_iso_moneda IS NOT NULL AND TRIM(m.codigo_iso_moneda) = UPPER(${param_count}))"
+        return filter_condition, param_count, currency_upper
     
-    filter_condition = f"({' OR '.join(currency_conditions)})"
+    # No necesitamos parámetros para id_moneda, así que no incrementamos param_count
     return filter_condition, param_count, currency_upper
 
 def build_dynamic_filters(
@@ -69,19 +71,35 @@ def build_dynamic_filters(
     if currency:
         filter_condition, param_count, currency_upper = build_currency_filter(currency, param_count)
         filters.append(filter_condition)
-        params.append(currency_upper)
+        # Solo agregar parámetro si se necesita (cuando no es una moneda conocida)
+        if currency_upper not in ['GS', 'USD', 'BRL', 'ARS']:
+            params.append(currency_upper)
     
     # Filtro por precio mínimo
     if min_price is not None:
         param_count += 1
-        filters.append(f"s.precio >= ${param_count}")
-        params.append(min_price)
+        # Asegurar que min_price sea un número válido
+        try:
+            min_price_float = float(min_price)
+            filters.append(f"s.precio >= ${param_count}")
+            params.append(min_price_float)
+            logger.info(f"💰 Filtro de precio mínimo aplicado: s.precio >= {min_price_float}")
+        except (ValueError, TypeError) as e:
+            logger.error(f"❌ Error convirtiendo min_price a float: {min_price}, error: {e}")
+            # No agregar el filtro si hay error de conversión
     
     # Filtro por precio máximo
     if max_price is not None:
         param_count += 1
-        filters.append(f"s.precio <= ${param_count}")
-        params.append(max_price)
+        # Asegurar que max_price sea un número válido
+        try:
+            max_price_float = float(max_price)
+            filters.append(f"s.precio <= ${param_count}")
+            params.append(max_price_float)
+            logger.info(f"💰 Filtro de precio máximo aplicado: s.precio <= {max_price_float} (tipo: {type(max_price_float).__name__})")
+        except (ValueError, TypeError) as e:
+            logger.error(f"❌ Error convirtiendo max_price a float: {max_price}, error: {e}")
+            # No agregar el filtro si hay error de conversión
     
     # Filtro por categoría
     if category_id:
@@ -443,12 +461,26 @@ async def get_services_unified(
                 department, city, search, min_rating
             )
             
+            # Log de filtros recibidos
+            logger.info(f"🔍 Filtros recibidos: currency={currency}, min_price={min_price}, max_price={max_price}, category_id={category_id}")
+            logger.info(f"📊 Filtros construidos: {filters}")
+            logger.info(f"📊 Parámetros construidos: {params}")
+            
             # Construir query base usando función helper
             base_query = get_base_query()
             
             # Aplicar filtros a la consulta
             if filters:
                 base_query += SQL_AND + SQL_AND.join(filters)
+            
+            # Log de la consulta completa para debugging (especialmente si hay filtro de precio)
+            if max_price is not None or min_price is not None:
+                logger.info(f"📝 Consulta SQL completa (con filtros de precio): {base_query}")
+                logger.info(f"📊 Parámetros: {params}")
+                logger.info(f"💰 Filtros de precio: min_price={min_price}, max_price={max_price}")
+            else:
+                logger.debug(f"📝 Consulta SQL completa: {base_query}")
+                logger.debug(f"📊 Parámetros: {params}")
             
             # Agregar ordenamiento y paginación
             base_query += " ORDER BY s.created_at DESC"
@@ -466,6 +498,18 @@ async def get_services_unified(
             logger.info(f"🔍 Consulta unificada - Límite: {limit}, Offset: {offset}")
             logger.info(f"📊 Parámetros totales: {len(params)}")
             
+            # Log de la consulta completa para debugging (solo si hay filtro de moneda)
+            if currency:
+                logger.debug(f"📝 Consulta SQL completa: {base_query}")
+                logger.debug(f"📊 Parámetros: {params}")
+                # Verificar que la consulta incluya el JOIN de moneda
+                if "moneda m" not in base_query and "LEFT JOIN moneda" not in base_query:
+                    logger.error("❌ ERROR: La consulta no incluye el JOIN de moneda pero se está usando el filtro de moneda")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Error en la construcción de la consulta: falta JOIN de moneda"
+                    )
+            
             # Verificación de seguridad: asegurar que el límite no exceda 100
             if limit > 100:
                 logger.warning(f"⚠️ Límite solicitado ({limit}) excede el máximo (100), limitando a 100")
@@ -473,7 +517,28 @@ async def get_services_unified(
                 params[-2] = 100  # Actualizar el parámetro limit en la lista
             
             # Ejecutar consulta principal
-            services_data_tuples = await conn.fetch(base_query, *params)
+            try:
+                # Log de la consulta final antes de ejecutar
+                logger.info(f"📝 Ejecutando consulta SQL final: {base_query}")
+                logger.info(f"📊 Parámetros finales: {params}")
+                
+                services_data_tuples = await conn.fetch(base_query, *params)
+                
+                # Log de resultados
+                logger.info(f"✅ Consulta ejecutada exitosamente. Resultados: {len(services_data_tuples)} servicios")
+                if max_price is not None and len(services_data_tuples) > 0:
+                    # Verificar que los precios de los servicios devueltos sean <= max_price
+                    precios = [row['precio'] for row in services_data_tuples if row.get('precio')]
+                    if precios:
+                        max_precio_encontrado = max(precios)
+                        logger.info(f"💰 Precio máximo en resultados: {max_precio_encontrado}, Filtro aplicado: <= {max_price}")
+                        if max_precio_encontrado > max_price:
+                            logger.warning(f"⚠️ ADVERTENCIA: Se encontró un servicio con precio {max_precio_encontrado} que excede el filtro máximo de {max_price}")
+            except Exception as e:
+                logger.error(f"❌ Error en get_services_unified: {str(e)}")
+                logger.error(f"📝 Consulta que falló: {base_query}")
+                logger.error(f"📊 Parámetros: {params}")
+                raise
             
             # Verificación de seguridad: asegurar que no se devuelvan más servicios de los solicitados
             if len(services_data_tuples) > limit:
@@ -494,6 +559,24 @@ async def get_services_unified(
 
             # Mapear servicios con tarifas usando función helper
             services = map_services_with_tarifas(services_data_tuples, tarifas_data)
+            
+            # Filtro adicional de seguridad: asegurar que los servicios devueltos respeten el filtro de precio máximo
+            if max_price is not None:
+                services_antes_filtro = len(services)
+                services = [s for s in services if s.precio <= max_price]
+                servicios_filtrados = services_antes_filtro - len(services)
+                if servicios_filtrados > 0:
+                    logger.warning(f"⚠️ Filtro de seguridad: Se eliminaron {servicios_filtrados} servicios que excedían el precio máximo de {max_price}")
+                    logger.warning(f"   Esto indica que el filtro SQL no se aplicó correctamente")
+            
+            # Filtro adicional de seguridad: asegurar que los servicios devueltos respeten el filtro de precio mínimo
+            if min_price is not None:
+                services_antes_filtro = len(services)
+                services = [s for s in services if s.precio >= min_price]
+                servicios_filtrados = services_antes_filtro - len(services)
+                if servicios_filtrados > 0:
+                    logger.warning(f"⚠️ Filtro de seguridad: Se eliminaron {servicios_filtrados} servicios que estaban por debajo del precio mínimo de {min_price}")
+                    logger.warning(f"   Esto indica que el filtro SQL no se aplicó correctamente")
             
             # Construir query de conteo usando función helper
             count_query = get_count_query()

@@ -884,8 +884,23 @@ const buildFilterParams = (
     }
 
     if (filters.currency) params.append('currency', filters.currency);
-    if (filters.min_price !== undefined) params.append('min_price', filters.min_price.toString());
-    if (filters.max_price !== undefined) params.append('max_price', filters.max_price.toString());
+    // Solo agregar min_price si es mayor a 0 y es un número válido
+    if (filters.min_price !== undefined && filters.min_price > 0 && !isNaN(filters.min_price)) {
+        params.append('min_price', filters.min_price.toString());
+    }
+    // Solo agregar max_price si es mayor a 0, menor a 1000000000 y es un número válido
+    if (filters.max_price !== undefined && filters.max_price > 0 && filters.max_price < 1000000000 && !isNaN(filters.max_price)) {
+        params.append('max_price', filters.max_price.toString());
+        console.log('📤 Enviando max_price al backend:', filters.max_price);
+    } else {
+        console.log('📤 NO se envía max_price:', { 
+            max_price: filters.max_price, 
+            razon: filters.max_price === undefined ? 'undefined' : 
+                   filters.max_price <= 0 ? '<= 0' : 
+                   filters.max_price >= 1000000000 ? '>= 1000000000' : 
+                   isNaN(filters.max_price) ? 'NaN' : 'otro' 
+        });
+    }
     if (filters.category_id) params.append('category_id', filters.category_id.toString());
     if (filters.department) params.append('department', filters.department);
     if (filters.city) params.append('city', filters.city);
