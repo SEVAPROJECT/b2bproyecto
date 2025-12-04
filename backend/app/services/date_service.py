@@ -134,7 +134,7 @@ class DateService:
         elif dt.tzinfo != cls.PARAGUAY_TIMEZONE:
             dt = dt.astimezone(cls.PARAGUAY_TIMEZONE)
         
-        return dt.strftime(FORMATO_FECHA_DD_MM_YYYY)
+        return dt.strftime("%d/%m/%Y")
     
     @classmethod
     def get_paraguay_timezone_info(cls) -> dict:
