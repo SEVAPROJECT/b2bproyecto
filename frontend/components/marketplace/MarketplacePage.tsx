@@ -519,8 +519,18 @@ const MarketplacePage: React.FC = () => {
         // Si estamos en modo búsqueda con IA, solo cambiar la página localmente
         if (isAISearchMode) {
             console.log('🤖 Modo IA activo - paginando localmente');
+            console.log('📊 Estado antes de cambiar página:', {
+                currentPage: currentPage,
+                nuevaPage: page,
+                totalServicios: services.length,
+                itemsPerPage: itemsPerPage
+            });
+            
+            // Cambiar la página - esto debería disparar el recálculo del useMemo
             setCurrentPage(page);
             setIsLoadingPage(false);
+            
+            console.log('✅ Página cambiada a:', page);
             return;
         }
         
@@ -817,10 +827,45 @@ const MarketplacePage: React.FC = () => {
         // Si estamos en modo búsqueda con IA, paginar localmente los servicios
         if (isAISearchMode) {
             console.log('🤖 Modo IA - paginando localmente');
+            console.log('📊 Datos para paginación:', {
+                totalServicios: services.length,
+                currentPage: currentPage,
+                itemsPerPage: itemsPerPage
+            });
+            
+            // Calcular índices de paginación
             const startIndex = (currentPage - 1) * itemsPerPage;
             const endIndex = startIndex + itemsPerPage;
-            result = services.slice(startIndex, endIndex);
-            console.log('📄 Paginación IA - Total servicios:', services.length, 'Página:', currentPage, 'Índice inicio:', startIndex, 'Índice fin:', endIndex, 'Mostrando:', result.length);
+            
+            console.log('📐 Cálculo de índices:', {
+                startIndex: startIndex,
+                endIndex: endIndex,
+                rango: `${startIndex} a ${endIndex} (exclusivo)`,
+                formula: `(${currentPage} - 1) * ${itemsPerPage} = ${startIndex}`
+            });
+            
+            // Asegurar que los índices sean válidos
+            const validStartIndex = Math.max(0, Math.min(startIndex, services.length));
+            const validEndIndex = Math.min(services.length, Math.max(endIndex, validStartIndex));
+            
+            // Aplicar slice con índices validados
+            result = services.slice(validStartIndex, validEndIndex);
+            
+            console.log('📄 Paginación IA - Resultado:', {
+                totalServicios: services.length,
+                pagina: currentPage,
+                indiceInicio: validStartIndex,
+                indiceFin: validEndIndex,
+                serviciosMostrados: result.length,
+                serviciosEsperados: Math.min(itemsPerPage, services.length - validStartIndex),
+                serviciosEnSlice: result.map(s => s.id_servicio).join(', ')
+            });
+            
+            // VERIFICACIÓN CRÍTICA: Si el resultado tiene más de itemsPerPage, hay un error
+            if (result.length > itemsPerPage) {
+                console.error(`❌ ERROR CRÍTICO EN PAGINACIÓN IA: Se calcularon ${result.length} servicios para la página ${currentPage}, limitando a ${itemsPerPage}`);
+                result = result.slice(0, itemsPerPage);
+            }
         }
         // Si estamos usando el endpoint filtrado del servidor
         else if (totalServices > 0) {
@@ -851,6 +896,27 @@ const MarketplacePage: React.FC = () => {
         console.log('✅ Resultado final de paginación:', result.length, 'servicios');
         return result;
     }, [services, filteredServices, currentPage, itemsPerPage, totalServices, isAISearchMode]);
+    
+    // Verificación adicional: SIEMPRE asegurar que paginatedServices nunca exceda itemsPerPage
+    const safePaginatedServices = useMemo(() => {
+        console.log('🔒 safePaginatedServices useMemo ejecutándose');
+        console.log('📊 Datos de entrada:', {
+            isAISearchMode: isAISearchMode,
+            paginatedServicesLength: paginatedServices.length,
+            itemsPerPage: itemsPerPage
+        });
+        
+        // SIEMPRE limitar a itemsPerPage, no solo en modo IA
+        if (paginatedServices.length > itemsPerPage) {
+            console.warn(`⚠️ paginatedServices tiene ${paginatedServices.length} servicios, limitando a ${itemsPerPage}`);
+            const limited = paginatedServices.slice(0, itemsPerPage);
+            console.log('✅ Servicios limitados:', limited.length);
+            return limited;
+        }
+        
+        console.log('✅ paginatedServices está dentro del límite:', paginatedServices.length);
+        return paginatedServices;
+    }, [paginatedServices, itemsPerPage, isAISearchMode]);
 
     // Calcular total de páginas basado en servicios filtrados cuando hay filtros activos
     const totalPages = useMemo(() => {
@@ -1201,7 +1267,7 @@ const MarketplacePage: React.FC = () => {
                             3. Diseño responsivo (diferente en móvil y desktop)
                             
                             Variables importantes:
-                            - paginatedServices.length: Servicios en la página actual
+                            - safePaginatedServices.length: Servicios en la página actual
                             - filteredServices.length: Total de servicios filtrados
                             - currentPage: Página actual (1, 2, 3...)
                             - totalPages: Total de páginas disponibles
@@ -1214,7 +1280,7 @@ const MarketplacePage: React.FC = () => {
                             <div className="flex items-center gap-4">
                                 <div className="text-center sm:text-left">
                                     <p className="text-xl sm:text-2xl font-bold text-primary-600">
-                                        {paginatedServices.length}
+                                        {safePaginatedServices.length}
                                     </p>
                                     <p className="text-sm text-primary-500 font-medium">servicios encontrados</p>
                                 </div>
@@ -1261,6 +1327,7 @@ const MarketplacePage: React.FC = () => {
                         {(() => {
                             console.log('🎨 Renderizando grid de servicios');
                             console.log('📊 Estado del renderizado:', {
+                                safePaginatedServicesLength: safePaginatedServices.length,
                                 paginatedServicesLength: paginatedServices.length,
                                 filteredServicesLength: filteredServices.length,
                                 servicesLength: services.length,
@@ -1269,13 +1336,13 @@ const MarketplacePage: React.FC = () => {
                                 isLoading: isLoading,
                                 error: error
                             });
-                            console.log('🔍 ¿Debe mostrar servicios?', paginatedServices.length > 0);
-                            return paginatedServices.length > 0;
+                            console.log('🔍 ¿Debe mostrar servicios?', safePaginatedServices.length > 0);
+                            return safePaginatedServices.length > 0;
                         })() && (
                             <>
                                 {/* Grid responsivo optimizado para más espacio */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
-                                    {paginatedServices.map(service => (
+                                    {safePaginatedServices.map(service => (
                                         <div key={service.id_servicio} className="transform transition-transform duration-200 hover:scale-[1.02]">
                                             <MarketplaceServiceCard 
                                                 service={service} 
