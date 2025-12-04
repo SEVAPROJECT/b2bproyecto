@@ -533,11 +533,20 @@ const MarketplacePage: React.FC = () => {
             }
             
             // Cambiar la página - esto debería disparar el recálculo del useMemo
-            setCurrentPage(page);
-            setIsLoadingPage(false);
+            // Usar una función de actualización para asegurar que se use el valor más reciente
+            setCurrentPage((prevPage) => {
+                console.log(`🔄 Cambiando página de ${prevPage} a ${page}`);
+                return page;
+            });
             
-            console.log('✅ Página cambiada a:', page);
-            console.log('📊 Después de cambiar página, el useMemo debería recalcularse automáticamente');
+            // Forzar un pequeño delay para asegurar que el estado se actualice antes de continuar
+            setIsLoadingPage(true);
+            setTimeout(() => {
+                setIsLoadingPage(false);
+                console.log('✅ Página cambiada a:', page);
+                console.log('📊 Después de cambiar página, el useMemo debería recalcularse automáticamente');
+            }, 50);
+            
             return;
         }
         
@@ -551,7 +560,7 @@ const MarketplacePage: React.FC = () => {
         } finally {
             setTimeout(() => setIsLoadingPage(false), 100);
         }
-    }, [currentPage, reloadFilteredData, isAISearchMode]);
+    }, [currentPage, reloadFilteredData, isAISearchMode, services.length, itemsPerPage]);
 
     useEffect(() => {
         console.log('🎯 useEffect ejecutándose - llamando loadInitialData');
@@ -633,6 +642,17 @@ const MarketplacePage: React.FC = () => {
             setIsSearching(false);
         });
     }, [reloadFilteredData]);
+
+    // Asegurar que isAISearchMode se mantenga al cambiar de página
+    useEffect(() => {
+        if (isAISearchMode && services.length > 0) {
+            console.log('🔍 Verificando modo IA después de cambio de estado:', {
+                isAISearchMode: isAISearchMode,
+                servicesLength: services.length,
+                currentPage: currentPage
+            });
+        }
+    }, [isAISearchMode, services.length, currentPage]);
 
     // Función helper para realizar la búsqueda en Weaviate
     const searchWeaviate = useCallback(async (query: string) => {
@@ -832,7 +852,7 @@ const MarketplacePage: React.FC = () => {
         let result: BackendService[] = [];
         
         // Si estamos en modo búsqueda con IA, paginar localmente los servicios
-        if (isAISearchMode) {
+        if (isAISearchMode && services.length > 0) {
             console.log('🤖 Modo IA - paginando localmente');
             console.log('📊 Datos para paginación:', {
                 totalServicios: services.length,
