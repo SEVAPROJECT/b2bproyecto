@@ -1424,19 +1424,33 @@ const MarketplacePage: React.FC = () => {
                                             console.error(`❌ ERROR EN RENDERIZADO: safePaginatedServices tiene ${safePaginatedServices.length} servicios, limitando a ${itemsPerPage} antes de renderizar`);
                                         }
                                         
+                                        // Log detallado para debugging
+                                        const idsParaRenderizar = serviciosParaRenderizar.map(s => s.id_servicio);
+                                        const idsSafePaginated = safePaginatedServices.map(s => s.id_servicio);
+                                        
                                         console.log('🎨 Renderizando servicios:', {
                                             cantidad: serviciosParaRenderizar.length,
                                             esperado: itemsPerPage,
                                             modoIA: isAISearchMode,
                                             pagina: currentPage,
-                                            idsServicios: serviciosParaRenderizar.map(s => s.id_servicio).join(', '),
+                                            idsServicios: idsParaRenderizar.join(', '),
                                             safePaginatedLength: safePaginatedServices.length,
-                                            safePaginatedIds: safePaginatedServices.map(s => s.id_servicio).join(', ')
+                                            safePaginatedIds: idsSafePaginated.join(', '),
+                                            primeros3Nombres: serviciosParaRenderizar.slice(0, 3).map(s => s.nombre).join(', ')
                                         });
                                         
+                                        // Verificar si los IDs son diferentes entre páginas
+                                        if (isAISearchMode && currentPage > 1) {
+                                            console.log('🔍 Verificación de cambio de página:', {
+                                                paginaActual: currentPage,
+                                                idsEnEstaPagina: idsParaRenderizar,
+                                                cantidadServicios: serviciosParaRenderizar.length
+                                            });
+                                        }
+                                        
                                         return serviciosParaRenderizar;
-                                    })().map(service => (
-                                        <div key={service.id_servicio} className="transform transition-transform duration-200 hover:scale-[1.02]">
+                                    })().map((service, index) => (
+                                        <div key={`${service.id_servicio}-${currentPage}-${index}`} className="transform transition-transform duration-200 hover:scale-[1.02]">
                                             <MarketplaceServiceCard 
                                                 service={service} 
                                                 category={categories.find(c => c.id_categoria === service.id_categoria)}
