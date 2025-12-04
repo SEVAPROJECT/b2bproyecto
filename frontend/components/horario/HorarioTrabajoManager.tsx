@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { buildApiUrl } from '../../config/api';
-import { formatISODateToDDMMYYYY } from '../../utils/dateUtils';
+import { formatISODateToDDMMYYYY, parseLocalDate, formatDateToDDMMYYYY } from '../../utils/dateUtils';
 import { 
   ClockIcon, 
   CalendarDaysIcon, 
@@ -64,6 +64,7 @@ const validateHorarioTimes = (horaInicio: string, horaFin: string): { isValid: b
   return { isValid: true, errorMessage: null };
 };
 
+
 const HorarioTrabajoManager: React.FC = () => {
   const { user } = useAuth();
   const [horarios, setHorarios] = useState<HorarioTrabajo[]>([]);
@@ -71,6 +72,7 @@ const HorarioTrabajoManager: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showExcepcionForm, setShowExcepcionForm] = useState(false);
+  const [showConfiguracionCompleta, setShowConfiguracionCompleta] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [errorHorario, setErrorHorario] = useState<string | null>(null);
   const [errorExcepcion, setErrorExcepcion] = useState<string | null>(null);
@@ -186,6 +188,12 @@ const HorarioTrabajoManager: React.FC = () => {
   const handleExcepcionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validar que se haya seleccionado una fecha
+    if (!excepcionData.fecha) {
+      setErrorExcepcion('Por favor, selecciona una fecha para la excepción.');
+      return;
+    }
+    
     // Validar horarios si es horario_especial
     if (excepcionData.tipo === 'horario_especial') {
       const validation = validateHorarioTimes(excepcionData.hora_inicio, excepcionData.hora_fin);
@@ -295,28 +303,43 @@ const HorarioTrabajoManager: React.FC = () => {
     }
   };
 
+  // Estado para la configuración completa
+  const [configuracionCompleta, setConfiguracionCompleta] = useState(
+    DIAS_SEMANA.map((nombreDia, index) => ({
+      dia_semana: index,
+      nombreDia: nombreDia,
+      hora_inicio: index < 5 ? '09:00' : index === 5 ? '10:00' : '09:00', // Lunes-Viernes 9:00, Sábado 10:00, Domingo 9:00
+      hora_fin: index < 5 ? '17:00' : index === 5 ? '14:00' : '17:00', // Lunes-Viernes 17:00, Sábado 14:00, Domingo 17:00
+      activo: index < 6 // Lunes a Sábado activos por defecto, Domingo inactivo
+    }))
+  );
+
+  const handleConfiguracionCompletaChange = (index: number, field: string, value: any) => {
+    const nuevaConfiguracion = [...configuracionCompleta];
+    nuevaConfiguracion[index] = {
+      ...nuevaConfiguracion[index],
+      [field]: value
+    };
+    setConfiguracionCompleta(nuevaConfiguracion);
+  };
+
+
   const configurarHorarioCompleto = async () => {
-    const horariosCompletos = [];
-    
-    // Crear horarios para toda la semana
-    for (let dia = 0; dia < 7; dia++) {
-      if (dia < 5) { // Lunes a Viernes
-        horariosCompletos.push({
-          dia_semana: dia,
-          hora_inicio: '09:00',
-          hora_fin: '17:00',
-          activo: true
-        });
-      } else if (dia === 5) { // Sábado
-        horariosCompletos.push({
-          dia_semana: dia,
-          hora_inicio: '10:00',
-          hora_fin: '14:00',
-          activo: true
-        });
+    // Validar todos los horarios antes de enviar
+    for (const horario of configuracionCompleta) {
+      if (horario.activo) {
+        const validation = validateHorarioTimes(horario.hora_inicio, horario.hora_fin);
+        if (!validation.isValid) {
+          alert(`Error en ${horario.nombreDia}: ${validation.errorMessage}`);
+          return;
+        }
       }
-      // Domingo no se agrega (no trabaja)
     }
+
+    // Filtrar solo los horarios activos
+    const horariosCompletos = configuracionCompleta
+      .filter(h => h.activo)
+      .map(({ nombreDia, ...horario }) => horario); // Remover nombreDia antes de enviar
 
     try {
       const response = await fetch(buildApiUrl('/horario-trabajo/configuracion-completa'), {
@@ -330,13 +353,16 @@ const HorarioTrabajoManager: React.FC = () => {
 
       if (response.ok) {
         await loadHorarios();
+        setShowConfiguracionCompleta(false);
         alert('Horario completo configurado exitosamente');
       } else {
         const errorData = await response.json();
+        alert(`Error al configurar horario completo: ${errorData.detail || 'Error desconocido'}`);
         console.error('Error al configurar horario completo:', errorData);
       }
     } catch (error) {
       console.error('Error al configurar horario completo:', error);
+      alert(`Error de conexión: ${error instanceof Error ? error.message : 'Error desconocido'}`);
     }
   };
 
@@ -358,7 +384,7 @@ const HorarioTrabajoManager: React.FC = () => {
         </div>
         <div className="flex space-x-2">
           <button
-            onClick={configurarHorarioCompleto}
+            onClick={() => setShowConfiguracionCompleta(true)}
             className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
           >
             <CheckIcon className="w-4 h-4" />
@@ -735,6 +761,88 @@ const HorarioTrabajoManager: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Modal de Configuración Completa */}
+      {showConfiguracionCompleta && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-900">Configurar Horario Completo</h3>
+              <button
+                onClick={() => setShowConfiguracionCompleta(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <span className="text-2xl">&times;</span>
+              </button>
+            </div>
+            
+            <p className="text-sm text-gray-600 mb-6">
+              Configura los horarios para todos los días de la semana. Los horarios inactivos no se crearán.
+            </p>
+
+            <div className="space-y-4">
+              {configuracionCompleta.map((horario, index) => (
+                <div key={index} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={horario.activo}
+                        onChange={(e) => handleConfiguracionCompletaChange(index, 'activo', e.target.checked)}
+                        className="w-4 h-4 text-blue-600 rounded"
+                      />
+                      <span className="font-medium text-gray-900">{horario.nombreDia}</span>
+                    </label>
+                  </div>
+                  
+                  {horario.activo && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Hora de Inicio
+                        </label>
+                        <input
+                          type="time"
+                          value={horario.hora_inicio}
+                          onChange={(e) => handleConfiguracionCompletaChange(index, 'hora_inicio', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Hora de Fin
+                        </label>
+                        <input
+                          type="time"
+                          value={horario.hora_fin}
+                          onChange={(e) => handleConfiguracionCompletaChange(index, 'hora_fin', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => setShowConfiguracionCompleta(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={configurarHorarioCompleto}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2"
+              >
+                <CheckIcon className="w-4 h-4" />
+                <span>Guardar Configuración</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

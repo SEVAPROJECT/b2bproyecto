@@ -117,11 +117,11 @@ async def crear_horario_trabajo(
                 detail=str(e)
             )
         
-        # Verificar que no existe ya un horario para este día
+        # Verificar que no existe ya un horario normal para este día
         logger.info(f"🔍 [POST /horario-trabajo/] Verificando horario existente para día {horario.dia_semana}...")
         verificar_query = """
-            SELECT id_horario FROM horario_trabajo 
-            WHERE id_proveedor = $1 AND dia_semana = $2
+            SELECT id_horario, hora_inicio, hora_fin FROM horario_trabajo 
+            WHERE id_proveedor = $1 AND dia_semana = $2 AND activo = true
         """
         horario_existente = await fetch_one_query(verificar_query, perfil_id, horario.dia_semana)
         logger.info(f"🔍 [POST /horario-trabajo/] Horario existente: {horario_existente}")
@@ -131,8 +131,21 @@ async def crear_horario_trabajo(
             logger.warning(f"❌ [POST /horario-trabajo/] Ya existe horario para día {nombre_dia} ({horario.dia_semana})")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ya existe un horario para el día {nombre_dia}. Actualiza el existente o elimínalo primero."
+                detail=f"Ya existe un horario normal para el día {nombre_dia}. Actualiza el existente o elimínalo primero."
             )
+        
+        # Verificar que no se solape con horarios especiales del mismo día
+        # Obtener todas las excepciones de tipo "horario_especial" para este día de la semana
+        # Necesitamos obtener todas las fechas que caen en este día de la semana y tienen horarios especiales
+        # Por ahora, verificamos solo las excepciones activas (sin fecha específica, solo día de semana)
+        # Nota: Las excepciones son por fecha específica, no por día de semana, así que necesitamos
+        # verificar todas las excepciones de horario_especial y ver si alguna fecha cae en este día de semana
+        # y se solapa con el horario normal que estamos creando.
+        # Por simplicidad, verificamos todas las excepciones de horario_especial del proveedor
+        # y comparamos si alguna se solapa (esto es una aproximación, ya que las excepciones son por fecha específica)
+        
+        # Por ahora, solo verificamos si hay un horario normal existente (ya hecho arriba)
+        # La validación de solapamiento con excepciones se hará al crear la excepción
         
         # Crear nuevo horario usando helper
         logger.info("🔍 [POST /horario-trabajo/] Creando nuevo horario en base de datos...")
@@ -419,13 +432,13 @@ async def configurar_horario_completo(
         perfil_id = await get_provider_profile_direct(current_user.id)
         logger.info(f"✅ [POST /configuracion-completa] Perfil encontrado: id_perfil = {perfil_id}")
     
-        # Eliminar horarios existentes usando direct_db_service
+        # Eliminar horarios existentes usando helper
         logger.info("🔍 [POST /configuracion-completa] Eliminando horarios existentes...")
         delete_horarios_query = """
             DELETE FROM horario_trabajo 
             WHERE id_proveedor = $1
         """
-        await direct_db_service.execute(delete_horarios_query, perfil_id)
+        await execute_query(delete_horarios_query, perfil_id)
         logger.info("✅ [POST /configuracion-completa] Horarios existentes eliminados")
         
         # Validar todos los horarios antes de crear
@@ -522,7 +535,7 @@ async def configurar_horario_completo(
         logger.error(f"❌ [POST /configuracion-completa] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al configurar el horario completo."
+            detail=f"Error al configurar el horario completo: {str(e)}"
         )
 
 # ===== EXCEPCIONES DE HORARIO =====

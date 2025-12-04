@@ -32,6 +32,8 @@ export interface Reserva {
     email_contacto: string | null;
     telefono_contacto: string | null;
     nombre_categoria: string | null;
+    simbolo_moneda?: string | null;
+    codigo_iso_moneda?: string | null;
     ya_calificado_por_cliente?: boolean;
     ya_calificado_por_proveedor?: boolean;
     calificacion_cliente?: Calificacion | null;
@@ -95,12 +97,21 @@ export const useReservations = () => {
 
     // Configurar pestaña inicial según el rol del usuario
     useEffect(() => {
-        if (user?.role === 'provider' && activeTab === 'mis-reservas') {
+        if (!user?.role) return; // Esperar a que el usuario esté cargado
+        
+        // Solo cambiar el tab si es necesario y no está ya en el correcto
+        if (user.role === 'provider' && activeTab === 'mis-reservas') {
+            console.log('🔍 [useReservations] Cambiando tab de mis-reservas a reservas-proveedor para proveedor');
             setActiveTab('reservas-proveedor');
-        } else if (user?.role !== 'provider' && activeTab !== 'mis-reservas') {
+            // Limpiar reservas cuando cambiamos el tab para evitar mostrar datos incorrectos
+            setReservas([]);
+        } else if (user.role !== 'provider' && activeTab !== 'mis-reservas') {
+            console.log('🔍 [useReservations] Cambiando tab a mis-reservas para cliente');
             setActiveTab('mis-reservas');
+            // Limpiar reservas cuando cambiamos el tab para evitar mostrar datos incorrectos
+            setReservas([]);
         }
-    }, [user?.role, activeTab]);
+    }, [user?.role, activeTab]); // Incluir activeTab para detectar cuando cambia
 
     // Cargar reservas
     const loadReservas = useCallback(async (page: number = 1) => {
@@ -109,11 +120,21 @@ export const useReservations = () => {
         try {
             setLoading(true);
             setError(null);
+            // Limpiar reservas antes de cargar nuevas para evitar mostrar datos mezclados
+            setReservas([]);
+
+            // Validar fechas antes de enviar
+            if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+                setError('La fecha "hasta" debe ser mayor o igual a la fecha "desde"');
+                setLoading(false);
+                return;
+            }
 
             // Construir query params
             const params = new URLSearchParams();
-            params.append('limit', pagination.limit.toString());
-            params.append('offset', ((page - 1) * pagination.limit).toString());
+            const limit = 20; // Usar valor fijo en lugar de pagination.limit
+            params.append('limit', limit.toString());
+            params.append('offset', ((page - 1) * limit).toString());
 
             if (searchFilter.trim()) params.append('search', searchFilter.trim());
             if (nombreServicio.trim()) params.append('nombre_servicio', nombreServicio.trim());
@@ -125,6 +146,21 @@ export const useReservations = () => {
             }
             if (nombreContacto.trim()) params.append('nombre_contacto', nombreContacto.trim());
 
+            // Validar que el tab sea correcto para el rol del usuario
+            if (user.role === 'provider' && activeTab === 'mis-reservas') {
+                console.log('🔍 [useReservations] ERROR: Proveedor intentando acceder a mis-reservas, cancelando carga');
+                setReservas([]);
+                setLoading(false);
+                return;
+            }
+            
+            if (user.role !== 'provider' && activeTab === 'reservas-proveedor') {
+                console.log('🔍 [useReservations] ERROR: Cliente intentando acceder a reservas-proveedor, cancelando carga');
+                setReservas([]);
+                setLoading(false);
+                return;
+            }
+            
             // Determinar qué endpoint usar según la pestaña activa
             let endpoint = '';
             if (activeTab === 'mis-reservas') {
@@ -139,6 +175,10 @@ export const useReservations = () => {
             }
 
             const urlConParams = `${buildApiUrl(endpoint)}?${params.toString()}`;
+            
+            console.log(`🔍 [useReservations] Cargando reservas desde: ${endpoint}`);
+            console.log(`🔍 [useReservations] ActiveTab: ${activeTab}, User Role: ${user?.role}`);
+            console.log(`🔍 [useReservations] URL: ${urlConParams}`);
 
             const response = await fetch(urlConParams, {
                 headers: getJsonHeaders(),
@@ -152,6 +192,13 @@ export const useReservations = () => {
 
             // Mapeo simplificado para el endpoint de prueba
             const reservasData = data.reservas || data || [];
+            
+            console.log(`🔍 [useReservations] Datos recibidos del backend:`, {
+                endpoint,
+                activeTab,
+                totalReservas: reservasData.length,
+                reservas: reservasData.map((r: any) => ({ id: r.id_reserva, servicio: r.nombre_servicio, empresa: r.nombre_empresa }))
+            });
             
             const reservasMapeadas = reservasData.map((reserva: any) => ({
                 id_reserva: reserva.id_reserva,
@@ -168,6 +215,8 @@ export const useReservations = () => {
                 precio_servicio: reserva.precio_servicio || reserva.servicio?.precio || 0,
                 imagen_servicio: reserva.imagen_servicio || reserva.servicio?.imagen,
                 nombre_categoria: reserva.nombre_categoria || reserva.servicio?.categoria || 'Sin categoría',
+                simbolo_moneda: reserva.simbolo_moneda || '₲',
+                codigo_iso_moneda: reserva.codigo_iso_moneda || 'GS',
                 ya_calificado_por_cliente: reserva.ya_calificado_por_cliente || false,
                 ya_calificado_por_proveedor: reserva.ya_calificado_por_proveedor || false,
                 calificacion_cliente: reserva.calificacion_cliente,
@@ -182,15 +231,17 @@ export const useReservations = () => {
                 updated_at: reserva.updated_at || ''
             }));
 
+            console.log(`🔍 [useReservations] Reservas mapeadas: ${reservasMapeadas.length}`);
             setReservas(reservasMapeadas);
+            const limitValue = data.pagination?.limit || 20;
             setPagination({
-                total: data.total || reservasData.length,
-                page: 1,
-                limit: 20,
-                offset: 0,
-                total_pages: 1,
-                has_next: false,
-                has_prev: false
+                total: data.pagination?.total || data.total || reservasData.length,
+                page: data.pagination?.page || page,
+                limit: limitValue,
+                offset: data.pagination?.offset || ((page - 1) * limitValue),
+                total_pages: data.pagination?.total_pages || Math.ceil((data.pagination?.total || data.total || reservasData.length) / limitValue),
+                has_next: data.pagination?.has_next || false,
+                has_prev: data.pagination?.has_prev || false
             });
         } catch (error) {
             console.error('Error al cargar reservas:', error);
@@ -198,12 +249,28 @@ export const useReservations = () => {
         } finally {
             setLoading(false);
         }
-    }, [user, searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, pagination.limit, activeTab]);
+    }, [user, searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, activeTab]);
 
     // Cargar al montar y cuando cambien filtros o pestaña
     useEffect(() => {
+        // Solo cargar si el usuario está autenticado y el tab es válido para su rol
+        if (!user?.accessToken) return;
+        
+        // Para proveedores, solo cargar si el tab es 'reservas-proveedor' o 'agenda'
+        if (user.role === 'provider' && activeTab === 'mis-reservas') {
+            console.log('🔍 [useReservations] Saltando carga: proveedor no debe ver mis-reservas');
+            return;
+        }
+        
+        // Para clientes, solo cargar si el tab es 'mis-reservas'
+        if (user.role !== 'provider' && activeTab !== 'mis-reservas') {
+            console.log('🔍 [useReservations] Saltando carga: cliente solo debe ver mis-reservas');
+            return;
+        }
+        
+        console.log(`🔍 [useReservations] Ejecutando loadReservas para tab: ${activeTab}, rol: ${user.role}`);
         loadReservas(1);
-    }, [searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, activeTab, loadReservas]);
+    }, [searchFilter, nombreServicio, nombreEmpresa, fechaDesde, fechaHasta, estadoFilter, nombreContacto, activeTab, loadReservas, user?.accessToken, user?.role]);
 
     // Limpiar filtros
     const handleClearFilters = useCallback(() => {

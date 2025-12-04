@@ -614,3 +614,61 @@ async def obtener_disponibilidades_disponibles_servicio(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error interno del servidor al obtener disponibilidades: {str(e)}"
         )
+
+@router.get(
+    "/servicio/{servicio_id}/excepciones",
+    summary="Obtener excepciones de horario para un servicio",
+    description="Obtiene las excepciones de horario (días cerrados y horarios especiales) para un servicio específico en un rango de fechas"
+)
+async def obtener_excepciones_servicio(
+    servicio_id: int,
+    fecha_inicio: Optional[date] = Query(None, description="Fecha de inicio (por defecto: hoy)"),
+    fecha_fin: Optional[date] = Query(None, description="Fecha de fin (por defecto: hoy + 30 días)")
+):
+    """
+    Obtiene las excepciones de horario para un servicio específico.
+    """
+    logger.info(f"🔍 [GET /disponibilidades/servicio/{servicio_id}/excepciones] Obteniendo excepciones...")
+    
+    try:
+        conn = await direct_db_service.get_connection()
+        try:
+            # Verificar que el servicio existe y obtener proveedor_id
+            servicio_info = await _verificar_servicio(conn, servicio_id)
+            proveedor_id = servicio_info['proveedor_id']
+            
+            # Establecer rango de fechas por defecto
+            if not fecha_inicio:
+                fecha_inicio = date.today()
+            if not fecha_fin:
+                fecha_fin = fecha_inicio + timedelta(days=30)
+            
+            # Obtener excepciones
+            excepciones_map = await _obtener_excepciones_horario(conn, proveedor_id, fecha_inicio, fecha_fin)
+            
+            # Convertir a lista de diccionarios con información formateada
+            excepciones_list = []
+            for fecha_excepcion, excepcion_data in excepciones_map.items():
+                excepcion_info = {
+                    "fecha": fecha_excepcion.isoformat(),
+                    "tipo": excepcion_data['tipo'],
+                    "hora_inicio": excepcion_data.get('hora_inicio').strftime('%H:%M') if excepcion_data.get('hora_inicio') else None,
+                    "hora_fin": excepcion_data.get('hora_fin').strftime('%H:%M') if excepcion_data.get('hora_fin') else None,
+                    "motivo": excepcion_data.get('motivo')
+                }
+                excepciones_list.append(excepcion_info)
+            
+            logger.info(f"✅ [GET /disponibilidades/servicio/{servicio_id}/excepciones] Retornando {len(excepciones_list)} excepciones")
+            return excepciones_list
+            
+        finally:
+            await direct_db_service.pool.release(conn)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [GET /disponibilidades/servicio/{servicio_id}/excepciones] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener excepciones: {str(e)}"
+        )

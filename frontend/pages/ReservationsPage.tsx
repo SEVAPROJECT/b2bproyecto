@@ -348,9 +348,22 @@ const FiltersPanel: React.FC<FiltersPanelProps> = ({
                     id="fecha-desde-filter"
                     type="date"
                     value={fechaDesde}
-                    onChange={(e) => onFechaDesdeChange(e.target.value)}
+                    max={fechaHasta || undefined}
+                    onChange={(e) => {
+                        const nuevaFechaDesde = e.target.value;
+                        onFechaDesdeChange(nuevaFechaDesde);
+                        // Si la fecha hasta es menor que la nueva fecha desde, limpiar fecha hasta
+                        if (fechaHasta && nuevaFechaDesde && fechaHasta < nuevaFechaDesde) {
+                            onFechaHastaChange('');
+                        }
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
+                {fechaDesde && fechaHasta && fechaDesde > fechaHasta && (
+                    <p className="mt-1 text-sm text-red-600">
+                        ⚠️ La fecha "desde" no puede ser mayor que la fecha "hasta"
+                    </p>
+                )}
             </div>
             <div>
                 <label htmlFor="fecha-hasta-filter" className="block text-sm font-medium text-gray-700 mb-1">
@@ -360,9 +373,22 @@ const FiltersPanel: React.FC<FiltersPanelProps> = ({
                     id="fecha-hasta-filter"
                     type="date"
                     value={fechaHasta}
-                    onChange={(e) => onFechaHastaChange(e.target.value)}
+                    min={fechaDesde || undefined}
+                    onChange={(e) => {
+                        const nuevaFechaHasta = e.target.value;
+                        if (fechaDesde && nuevaFechaHasta && nuevaFechaHasta < fechaDesde) {
+                            alert('⚠️ La fecha "hasta" debe ser mayor o igual a la fecha "desde"');
+                            return;
+                        }
+                        onFechaHastaChange(nuevaFechaHasta);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
+                {fechaDesde && fechaHasta && fechaHasta < fechaDesde && (
+                    <p className="mt-1 text-sm text-red-600">
+                        ⚠️ La fecha "hasta" debe ser mayor o igual a la fecha "desde"
+                    </p>
+                )}
             </div>
             <div>
                 <label htmlFor="estado-filter" className="block text-sm font-medium text-gray-700 mb-1">
@@ -623,7 +649,7 @@ const ReservationCard: React.FC<ReservationCardProps> = ({
                         <div>
                             <p className="text-sm font-medium text-gray-700 mb-1">💰 Precio</p>
                             <p className="text-sm font-bold text-gray-900">
-                                ${(reserva.precio_servicio || 0).toLocaleString('es-ES')}
+                                {reserva.simbolo_moneda || '₲'} {(reserva.precio_servicio || 0).toLocaleString('es-PY')}
                             </p>
                         </div>
                     </div>
@@ -754,14 +780,7 @@ const ClientReservationActions: React.FC<ClientReservationActionsProps> = ({
 }) => (
     <div className="mt-4 pt-4 border-t border-gray-200">
         <div className="flex space-x-3">
-            <ActionButton
-                onClick={() => onConfirmarReserva(reserva.id_reserva)}
-                disabled={isLoading}
-                className="bg-green-600 hover:bg-green-700"
-                loading={isLoading}
-            >
-                Confirmar
-            </ActionButton>
+            {/* Botón Confirmar oculto para clientes cuando estado = pendiente */}
             <ActionButton
                 onClick={() => onAccionReserva(reserva.id_reserva, 'cancelada')}
                 disabled={isLoading}

@@ -466,12 +466,22 @@ def build_where_conditions(
     if fecha_desde:
         param_count += 1
         where_conditions.append(f"r.fecha >= ${param_count}")
-        params.append(fecha_desde)
+        # Convertir string a date si es necesario
+        if isinstance(fecha_desde, str):
+            fecha_desde_date = datetime.strptime(fecha_desde, "%Y-%m-%d").date()
+            params.append(fecha_desde_date)
+        else:
+            params.append(fecha_desde)
     
     if fecha_hasta:
         param_count += 1
         where_conditions.append(f"r.fecha <= ${param_count}")
-        params.append(fecha_hasta)
+        # Convertir string a date si es necesario
+        if isinstance(fecha_hasta, str):
+            fecha_hasta_date = datetime.strptime(fecha_hasta, "%Y-%m-%d").date()
+            params.append(fecha_hasta_date)
+        else:
+            params.append(fecha_hasta)
     
     if estado and estado.strip():
         param_count += 1
@@ -508,6 +518,8 @@ def get_base_reservas_query() -> str:
             pe.razon_social,
             u.nombre_persona as nombre_contacto,
             c.nombre as nombre_categoria,
+            m.simbolo as simbolo_moneda,
+            m.codigo_iso_moneda,
             CASE WHEN cal_cliente.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_cliente,
             cal_cliente.puntaje as calificacion_cliente_puntaje,
             cal_cliente.comentario as calificacion_cliente_comentario,
@@ -519,6 +531,7 @@ def get_base_reservas_query() -> str:
         INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
         INNER JOIN users u ON pe.user_id = u.id
         LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+        LEFT JOIN moneda m ON s.id_moneda = m.id_moneda
         LEFT JOIN calificacion cal_cliente ON r.id_reserva = cal_cliente.id_reserva AND cal_cliente.rol_emisor = 'cliente'
         LEFT JOIN calificacion cal_proveedor ON r.id_reserva = cal_proveedor.id_reserva AND cal_proveedor.rol_emisor = 'proveedor'
         WHERE r.user_id = $1
@@ -561,6 +574,8 @@ def process_reserva_row(row: dict) -> dict:
         "email_contacto": None,
         "telefono_contacto": None,
         "nombre_categoria": row['nombre_categoria'],
+        "simbolo_moneda": row['simbolo_moneda'] or '₲',
+        "codigo_iso_moneda": row['codigo_iso_moneda'] or 'GS',
         "ya_calificado_por_cliente": ya_calificado,
         "calificacion_cliente": {
             "puntaje": row['calificacion_cliente_puntaje'],
@@ -609,6 +624,21 @@ async def obtener_mis_reservas_detalladas(
     """
     try:
         limit, offset = validate_pagination_params(limit, offset)
+        
+        # Validar fechas (convertir a date si son strings) - Solo validar si ambas están presentes
+        if fecha_desde and fecha_hasta:
+            fecha_desde_date = datetime.strptime(fecha_desde, "%Y-%m-%d").date() if isinstance(fecha_desde, str) else fecha_desde
+            fecha_hasta_date = datetime.strptime(fecha_hasta, "%Y-%m-%d").date() if isinstance(fecha_hasta, str) else fecha_hasta
+            if fecha_desde_date > fecha_hasta_date:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="La fecha 'hasta' debe ser mayor o igual a la fecha 'desde'"
+                )
+            logger.info(f"🔍 [GET /mis-reservas] Rango de fechas válido: {fecha_desde_date} a {fecha_hasta_date}")
+        elif fecha_desde:
+            logger.info(f"🔍 [GET /mis-reservas] Filtrando solo por fecha desde: {fecha_desde}")
+        elif fecha_hasta:
+            logger.info(f"🔍 [GET /mis-reservas] Filtrando solo por fecha hasta: {fecha_hasta}")
         
         conn = await direct_db_service.get_connection()
         
@@ -696,6 +726,8 @@ def build_where_conditions_proveedor(
     search: Optional[str],
     nombre_servicio: Optional[str],
     nombre_cliente: Optional[str],
+    nombre_empresa: Optional[str],
+    nombre_contacto: Optional[str],
     fecha_desde: Optional[str],
     fecha_hasta: Optional[str],
     estado: Optional[str]
@@ -705,12 +737,16 @@ def build_where_conditions_proveedor(
     params = []
     param_count = 1  # Empezamos en 1 porque $1 es para proveedor_id
     
+    logger.info(f"🔍 [build_where_conditions_proveedor] Filtros recibidos - fecha_desde: {fecha_desde}, fecha_hasta: {fecha_hasta}")
+    
     if search and search.strip():
         param_count += 1
         where_conditions.append(f"""
             (LOWER(s.nombre) LIKE LOWER(${param_count}) 
             OR LOWER(u.nombre_persona) LIKE LOWER(${param_count})
-            OR LOWER(r.descripcion) LIKE LOWER(${param_count}))
+            OR LOWER(r.descripcion) LIKE LOWER(${param_count})
+            OR LOWER(pe.nombre_fantasia) LIKE LOWER(${param_count})
+            OR LOWER(pe.razon_social) LIKE LOWER(${param_count}))
         """)
         params.append(f"%{search.strip()}%")
     
@@ -724,20 +760,65 @@ def build_where_conditions_proveedor(
         where_conditions.append(f"LOWER(u.nombre_persona) LIKE LOWER(${param_count})")
         params.append(f"%{nombre_cliente.strip()}%")
     
+    if nombre_empresa and nombre_empresa.strip():
+        param_count += 1
+        where_conditions.append(f"""
+            (LOWER(pe.nombre_fantasia) LIKE LOWER(${param_count}) 
+            OR LOWER(pe.razon_social) LIKE LOWER(${param_count}))
+        """)
+        params.append(f"%{nombre_empresa.strip()}%")
+    
+    if nombre_contacto and nombre_contacto.strip():
+        param_count += 1
+        where_conditions.append(f"LOWER(u.nombre_persona) LIKE LOWER(${param_count})")
+        params.append(f"%{nombre_contacto.strip()}%")
+    
     if fecha_desde:
         param_count += 1
         where_conditions.append(f"r.fecha >= ${param_count}")
-        params.append(fecha_desde)
+        # Convertir string a date si es necesario
+        if isinstance(fecha_desde, str):
+            try:
+                fecha_desde_date = datetime.strptime(fecha_desde, "%Y-%m-%d").date()
+                params.append(fecha_desde_date)
+                logger.info(f"🔍 [build_where_conditions_proveedor] Fecha desde convertida: '{fecha_desde}' -> {fecha_desde_date} (tipo: {type(fecha_desde_date)})")
+            except ValueError as e:
+                logger.error(f"❌ [build_where_conditions_proveedor] Error al convertir fecha_desde '{fecha_desde}': {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Formato de fecha 'desde' inválido: {fecha_desde}. Use formato YYYY-MM-DD"
+                )
+        else:
+            params.append(fecha_desde)
+            logger.info(f"🔍 [build_where_conditions_proveedor] Fecha desde (ya es date): {fecha_desde}")
     
     if fecha_hasta:
         param_count += 1
         where_conditions.append(f"r.fecha <= ${param_count}")
-        params.append(fecha_hasta)
+        # Convertir string a date si es necesario
+        if isinstance(fecha_hasta, str):
+            try:
+                fecha_hasta_date = datetime.strptime(fecha_hasta, "%Y-%m-%d").date()
+                params.append(fecha_hasta_date)
+                logger.info(f"🔍 [build_where_conditions_proveedor] Fecha hasta convertida: '{fecha_hasta}' -> {fecha_hasta_date} (tipo: {type(fecha_hasta_date)})")
+            except ValueError as e:
+                logger.error(f"❌ [build_where_conditions_proveedor] Error al convertir fecha_hasta '{fecha_hasta}': {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Formato de fecha 'hasta' inválido: {fecha_hasta}. Use formato YYYY-MM-DD"
+                )
+        else:
+            params.append(fecha_hasta)
+            logger.info(f"🔍 [build_where_conditions_proveedor] Fecha hasta (ya es date): {fecha_hasta}")
     
     if estado and estado.strip():
         param_count += 1
         where_conditions.append(f"r.estado = ${param_count}")
         params.append(estado.strip().lower())
+    
+    logger.info(f"🔍 [build_where_conditions_proveedor] Condiciones WHERE construidas: {where_conditions}")
+    logger.info(f"🔍 [build_where_conditions_proveedor] Parámetros: {params}")
+    logger.info(f"🔍 [build_where_conditions_proveedor] param_count final: {param_count}")
     
     return where_conditions, params, param_count
 
@@ -747,6 +828,7 @@ def build_count_query(where_conditions: list[str]) -> str:
         SELECT COUNT(*) as total
         FROM reserva r
         INNER JOIN servicio s ON r.id_servicio = s.id_servicio
+        INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
         INNER JOIN users u ON r.user_id = u.id
         WHERE s.id_perfil = $1
     """
@@ -780,6 +862,8 @@ def build_base_query(where_conditions: list[str], param_count: int) -> str:
             u.nombre_persona as nombre_cliente,
             u.nombre_persona as nombre_contacto,
             c.nombre as nombre_categoria,
+            m.simbolo as simbolo_moneda,
+            m.codigo_iso_moneda,
             CASE WHEN cal_proveedor.id_calificacion IS NOT NULL THEN true ELSE false END as ya_calificado_por_proveedor,
             cal_cliente.puntaje as calificacion_cliente_puntaje,
             cal_cliente.comentario as calificacion_cliente_comentario,
@@ -791,6 +875,7 @@ def build_base_query(where_conditions: list[str], param_count: int) -> str:
         INNER JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
         INNER JOIN users u ON r.user_id = u.id
         LEFT JOIN categoria c ON s.id_categoria = c.id_categoria
+        LEFT JOIN moneda m ON s.id_moneda = m.id_moneda
         LEFT JOIN calificacion cal_cliente ON r.id_reserva = cal_cliente.id_reserva AND cal_cliente.rol_emisor = 'cliente'
         LEFT JOIN calificacion cal_proveedor ON r.id_reserva = cal_proveedor.id_reserva AND cal_proveedor.rol_emisor = 'proveedor'
         WHERE s.id_perfil = $1
@@ -833,6 +918,8 @@ def process_reservas_results(reservas_result) -> list[dict]:
             "nombre_cliente": row['nombre_cliente'],
             "nombre_contacto": row['nombre_contacto'],
             "nombre_categoria": row['nombre_categoria'],
+            "simbolo_moneda": row['simbolo_moneda'] or '₲',
+            "codigo_iso_moneda": row['codigo_iso_moneda'] or 'GS',
             "ya_calificado_por_proveedor": ya_calificado,
             "calificacion_cliente": {
                 "puntaje": row['calificacion_cliente_puntaje'],
@@ -872,6 +959,8 @@ async def obtener_reservas_proveedor(
     search: Optional[str] = Query(None),
     nombre_servicio: Optional[str] = Query(None),
     nombre_cliente: Optional[str] = Query(None),
+    nombre_empresa: Optional[str] = Query(None),
+    nombre_contacto: Optional[str] = Query(None),
     fecha_desde: Optional[str] = Query(None),
     fecha_hasta: Optional[str] = Query(None),
     estado: Optional[str] = Query(None),
@@ -893,9 +982,27 @@ async def obtener_reservas_proveedor(
             perfil_result = await get_provider_profile(conn, current_user.id)
             proveedor_id = perfil_result['id_perfil']
             
+            logger.info(f"🔍 [GET /reservas-proveedor] Proveedor ID: {proveedor_id}, User ID: {current_user.id}")
+            logger.info(f"🔍 [GET /reservas-proveedor] Filtros de fecha - Desde: {fecha_desde}, Hasta: {fecha_hasta}")
+            
+            # Validar fechas (convertir a date si son strings) - Solo validar si ambas están presentes
+            if fecha_desde and fecha_hasta:
+                fecha_desde_date = datetime.strptime(fecha_desde, "%Y-%m-%d").date() if isinstance(fecha_desde, str) else fecha_desde
+                fecha_hasta_date = datetime.strptime(fecha_hasta, "%Y-%m-%d").date() if isinstance(fecha_hasta, str) else fecha_hasta
+                if fecha_desde_date > fecha_hasta_date:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="La fecha 'hasta' debe ser mayor o igual a la fecha 'desde'"
+                    )
+                logger.info(f"🔍 [GET /reservas-proveedor] Rango de fechas válido: {fecha_desde_date} a {fecha_hasta_date}")
+            elif fecha_desde:
+                logger.info(f"🔍 [GET /reservas-proveedor] Filtrando solo por fecha desde: {fecha_desde}")
+            elif fecha_hasta:
+                logger.info(f"🔍 [GET /reservas-proveedor] Filtrando solo por fecha hasta: {fecha_hasta}")
+            
             # Construir condiciones WHERE dinámicas
             where_conditions, where_params, param_count = build_where_conditions_proveedor(
-                search, nombre_servicio, nombre_cliente, fecha_desde, fecha_hasta, estado
+                search, nombre_servicio, nombre_cliente, nombre_empresa, nombre_contacto, fecha_desde, fecha_hasta, estado
             )
             
             # Preparar parámetros completos (proveedor_id + condiciones WHERE)
@@ -903,13 +1010,23 @@ async def obtener_reservas_proveedor(
             
             # Construir y ejecutar query de conteo
             count_query = build_count_query(where_conditions)
+            logger.info(f"🔍 [GET /reservas-proveedor] Count query: {count_query}")
+            logger.info(f"🔍 [GET /reservas-proveedor] Count params: {params}")
+            logger.info(f"🔍 [GET /reservas-proveedor] Count params tipos: {[type(p).__name__ for p in params]}")
             total_result = await conn.fetchrow(count_query, *params)
             total_count = total_result['total'] if total_result else 0
+            logger.info(f"🔍 [GET /reservas-proveedor] Total count: {total_count}")
             
             # Construir y ejecutar query principal
             base_query = build_base_query(where_conditions, param_count)
             params.extend([limit, offset])
+            logger.info(f"🔍 [GET /reservas-proveedor] Base query: {base_query}")
+            logger.info(f"🔍 [GET /reservas-proveedor] Base params: {params}")
+            logger.info(f"🔍 [GET /reservas-proveedor] Base params tipos: {[type(p).__name__ for p in params]}")
             reservas_result = await conn.fetch(base_query, *params)
+            logger.info(f"🔍 [GET /reservas-proveedor] Reservas encontradas: {len(reservas_result)}")
+            if len(reservas_result) > 0:
+                logger.info(f"🔍 [GET /reservas-proveedor] Fechas de las reservas encontradas: {[str(r['fecha']) for r in reservas_result]}")
             
             # Procesar resultados
             reservas_list = process_reservas_results(reservas_result)
@@ -1934,5 +2051,59 @@ async def confirmar_reserva(
         )
     finally:
         await direct_db_service.pool.release(conn)
+
+@router.get(
+    "/servicio/{servicio_id}/confirmadas",
+    description="Obtiene las reservas confirmadas de un servicio para verificar disponibilidad de horarios"
+)
+async def obtener_reservas_confirmadas_servicio(
+    servicio_id: int
+):
+    """
+    Endpoint público para obtener las reservas confirmadas de un servicio.
+    Útil para filtrar horarios no disponibles en el calendario de reservas.
+    """
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            # Obtener reservas confirmadas del servicio
+            reservas_query = """
+                SELECT 
+                    fecha,
+                    hora_inicio,
+                    hora_fin
+                FROM reserva
+                WHERE id_servicio = $1 
+                AND estado = 'confirmada'
+                AND fecha >= CURRENT_DATE
+                ORDER BY fecha, hora_inicio
+            """
+            
+            reservas_result = await conn.fetch(reservas_query, servicio_id)
+            
+            # Formatear resultado
+            reservas = []
+            for reserva in reservas_result:
+                reservas.append({
+                    "fecha": str(reserva['fecha']),
+                    "hora_inicio": str(reserva['hora_inicio']) if reserva['hora_inicio'] else None,
+                    "hora_fin": str(reserva['hora_fin']) if reserva['hora_fin'] else None
+                })
+            
+            logger.info(f"🔍 [GET /reservas/servicio/{servicio_id}/confirmadas] {len(reservas)} reservas confirmadas encontradas")
+            
+            return {"reservas": reservas}
+            
+        finally:
+            await direct_db_service.pool.release(conn)
+            
+    except Exception as e:
+        logger.error(f"❌ [GET /reservas/servicio/{servicio_id}/confirmadas] Error: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener reservas confirmadas: {str(e)}"
+        )
 
 

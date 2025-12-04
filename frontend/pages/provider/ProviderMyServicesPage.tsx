@@ -260,6 +260,23 @@ const ProviderMyServicesPage: React.FC = () => {
     // Aplicar filtros cuando cambien
     useEffect(() => {
         const filtered = filterServices(services, filters);
+        console.log('🔍 ProviderMyServicesPage - Aplicando filtros:', {
+            totalServicios: services.length,
+            serviciosFiltrados: filtered.length,
+            filtros: filters
+        });
+        // Verificar si el servicio ID 32 está en los servicios filtrados
+        const servicio32Filtrado = filtered.find((s: any) => s.id_servicio === 32);
+        if (servicio32Filtrado) {
+            console.log('✅ Servicio ID 32 está en los servicios filtrados:', servicio32Filtrado);
+        } else {
+            console.log('❌ Servicio ID 32 NO está en los servicios filtrados');
+            // Verificar si está en los servicios sin filtrar
+            const servicio32SinFiltrar = services.find((s: any) => s.id_servicio === 32);
+            if (servicio32SinFiltrar) {
+                console.log('⚠️ Servicio ID 32 está en servicios sin filtrar pero fue filtrado:', servicio32SinFiltrar);
+            }
+        }
         setFilteredServices(filtered);
     }, [services, filters]);
 
@@ -276,6 +293,16 @@ const ProviderMyServicesPage: React.FC = () => {
                 providerServicesAPI.getRateTypes(accessToken),
                 categoriesAPI.getCategories(accessToken)
             ]);
+
+            console.log('📋 ProviderMyServicesPage - Servicios recibidos:', servicesData.length);
+            console.log('📋 ProviderMyServicesPage - Servicios:', servicesData);
+            // Verificar si el servicio ID 32 está en la lista
+            const servicio32 = servicesData.find((s: any) => s.id_servicio === 32);
+            if (servicio32) {
+                console.log('✅ Servicio ID 32 encontrado en la respuesta:', servicio32);
+            } else {
+                console.log('❌ Servicio ID 32 NO encontrado en la respuesta');
+            }
 
             setServices(servicesData);
             setCurrencies(currenciesData);
