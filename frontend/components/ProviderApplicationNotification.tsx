@@ -76,7 +76,7 @@ const ProviderApplicationNotification: React.FC = () => {
                             <Button 
                                 variant="primary" 
                                 size="sm" 
-                                onClick={() => navigate('/dashboard/become-provider')}
+                                onClick={() => navigate('/dashboard/become-provider', { state: { loadPreviousData: true } })}
                             >
                                 Corregir y reenviar
                             </Button>

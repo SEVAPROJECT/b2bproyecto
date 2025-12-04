@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../../components/ui';
 import { ClockIcon, CheckCircleIcon } from '../../components/icons';
@@ -724,6 +724,7 @@ const ProviderOnboardingPage: React.FC = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { user, providerStatus, submitProviderApplication, resubmitProviderApplication } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
 
     // Función helper para mapear documentos del backend
     const mapDocumentsFromBackend = (documentos: any[], documentosMapeados: any): any => {
@@ -766,14 +767,34 @@ const ProviderOnboardingPage: React.FC = () => {
     // Estado para controlar si los datos ya se cargaron
     const [dataLoaded, setDataLoaded] = useState(false);
     const [loadingPreviousData, setLoadingPreviousData] = useState(false);
+    
+    // Usar useRef para rastrear si ya se procesó la navegación desde "Corregir y reenviar"
+    const hasProcessedNavigationRef = React.useRef(false);
+    
+    // Capturar el valor inicial de location.state (solo una vez al montar)
+    const shouldLoadPreviousDataRef = React.useRef(location.state?.loadPreviousData === true);
 
     // Cargar datos previos si es una solicitud rechazada - Mejorado para recargar automáticamente
     useEffect(() => {
         const loadRejectedData = async () => {
+            // Si se navegó desde "Corregir y reenviar" y aún no se ha procesado, resetear dataLoaded
+            if (shouldLoadPreviousDataRef.current && !hasProcessedNavigationRef.current) {
+                console.log('🔄 Navegación desde "Corregir y reenviar" detectada, reseteando dataLoaded');
+                setDataLoaded(false);
+                hasProcessedNavigationRef.current = true; // Marcar como procesado
+                // Salir aquí para que el efecto se vuelva a ejecutar con dataLoaded = false
+                return;
+            }
+            
             // Cargar datos si:
-            // 1. El estado es 'rejected' Y aún no se han cargado los datos
-            // 2. O si hay un token de acceso disponible (para recargar si es necesario)
-            if ((providerStatus === 'rejected' || providerStatus === 'pending') && user?.accessToken && !dataLoaded) {
+            // 1. El estado es 'rejected' o 'pending'
+            // 2. Hay un token de acceso disponible
+            // 3. Aún no se han cargado los datos
+            const shouldLoad = (providerStatus === 'rejected' || providerStatus === 'pending') && 
+                              user?.accessToken && 
+                              !dataLoaded;
+            
+            if (shouldLoad) {
                 try {
                     setLoadingPreviousData(true);
                     console.log('🔄 Cargando datos de solicitud previa...');
@@ -885,11 +906,12 @@ const ProviderOnboardingPage: React.FC = () => {
         };
 
         loadRejectedData();
-    }, [providerStatus, user, dataLoaded]);
+    }, [providerStatus, user?.accessToken, dataLoaded]);
 
     // Resetear el flag de carga cuando cambia el estado del proveedor (nueva solicitud rechazada)
+    // Pero solo si no se está procesando una navegación desde "Corregir y reenviar"
     useEffect(() => {
-        if (providerStatus === 'rejected') {
+        if (providerStatus === 'rejected' && !shouldLoadPreviousDataRef.current && !hasProcessedNavigationRef.current) {
             setDataLoaded(false);
         }
     }, [providerStatus]);

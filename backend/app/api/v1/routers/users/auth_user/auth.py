@@ -1210,7 +1210,7 @@ async def get_documentos_data(id_verificacion: int) -> list[dict]:
                 d.fecha_verificacion,
                 d.observacion,
                 d.created_at,
-                td.nombre as tipo_documento_nombre,
+                td.tipo_documento as tipo_documento_nombre,
                 td.es_requerido
             FROM documento d
             LEFT JOIN tipo_documento td ON d.id_tip_documento = td.id_tip_documento
