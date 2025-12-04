@@ -1496,12 +1496,21 @@ const MarketplacePage: React.FC = () => {
 
             {/* Modal de filtros avanzados */}
             {showAdvancedFilters && (
+                <div
+                    className="fixed inset-0 z-50 flex items-start justify-center pt-8 sm:pt-16 px-4 overflow-y-auto"
+                    style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setShowAdvancedFilters(false);
+                        }
+                    }}
+                >
                 <dialog
                     ref={advancedFiltersDialogRef}
                     open
                     aria-modal="true"
                     aria-labelledby="filtros-avanzados-title"
-                    className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border-0 p-0 backdrop:bg-black backdrop:bg-opacity-50"
+                    className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto border-0 p-0 shadow-2xl relative"
                     onCancel={(e) => {
                         e.preventDefault();
                         setShowAdvancedFilters(false);
@@ -1585,6 +1594,7 @@ const MarketplacePage: React.FC = () => {
                             </div>
                         </div>
                     </dialog>
+                </div>
             )}
 
             {/* Modal de reserva del servicio */}

@@ -132,7 +132,7 @@ def get_base_query() -> str:
         LEFT JOIN ciudad c ON dir.id_ciudad = c.id_ciudad
         LEFT JOIN barrio b ON dir.id_barrio = b.id_barrio
         LEFT JOIN moneda m ON s.id_moneda = m.id_moneda
-        WHERE s.estado = true AND pe.verificado = true
+        WHERE s.estado = true AND pe.verificado = true AND s.precio > 0
     """
 
 def get_count_query() -> str:
@@ -141,13 +141,7 @@ def get_count_query() -> str:
         SELECT COUNT(*) as total
         FROM servicio s
         JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
-        JOIN users u ON pe.user_id = u.id
-        LEFT JOIN direccion dir ON pe.id_direccion = dir.id_direccion
-        LEFT JOIN departamento d ON dir.id_departamento = d.id_departamento
-        LEFT JOIN ciudad c ON dir.id_ciudad = c.id_ciudad
-        LEFT JOIN barrio b ON dir.id_barrio = b.id_barrio
-        LEFT JOIN moneda m ON s.id_moneda = m.id_moneda
-        WHERE s.estado = true AND pe.verificado = true
+        WHERE s.estado = true AND pe.verificado = true AND s.precio > 0
     """
 
 async def fetch_tarifas_for_services(conn, service_ids: list) -> list:
@@ -674,7 +668,7 @@ async def get_services_by_category(
                     s.id_servicio, s.id_categoria, s.id_perfil, s.id_moneda, 
                     s.nombre, s.descripcion, s.precio, s.imagen, s.estado, s.created_at
                 FROM servicio s
-                WHERE s.estado = true AND s.id_categoria = $1
+                WHERE s.estado = true AND s.id_categoria = $1 AND s.precio > 0
                 ORDER BY s.created_at DESC
             """
             

@@ -209,7 +209,10 @@ const matchesDateFilter = (service: BackendService, dateFilter: string, customDa
 };
 
 const hasValidPrice = (service: BackendService): boolean => {
-    return service.precio !== null && service.precio !== undefined;
+    // Excluir servicios con precio null, undefined o igual a 0
+    return service.precio !== null && 
+           service.precio !== undefined && 
+           service.precio > 0;
 };
 
 export const filterServices = (services: BackendService[], params: FilterParams): BackendService[] => {
