@@ -530,22 +530,21 @@ const MarketplacePage: React.FC = () => {
             // Verificar que isAISearchMode sigue activo
             if (!isAISearchMode) {
                 console.error('❌ ERROR: isAISearchMode es false cuando debería ser true');
+                return;
             }
             
-            // Cambiar la página - esto debería disparar el recálculo del useMemo
-            // Usar una función de actualización para asegurar que se use el valor más reciente
-            setCurrentPage((prevPage) => {
-                console.log(`🔄 Cambiando página de ${prevPage} a ${page}`);
-                return page;
-            });
+            // Verificar que hay servicios para paginar
+            if (services.length === 0) {
+                console.warn('⚠️ No hay servicios para paginar');
+                return;
+            }
             
-            // Forzar un pequeño delay para asegurar que el estado se actualice antes de continuar
-            setIsLoadingPage(true);
-            setTimeout(() => {
-                setIsLoadingPage(false);
-                console.log('✅ Página cambiada a:', page);
-                console.log('📊 Después de cambiar página, el useMemo debería recalcularse automáticamente');
-            }, 50);
+            // Cambiar la página directamente - React debería detectar el cambio y recalcular el useMemo
+            setCurrentPage(page);
+            setIsLoadingPage(false);
+            
+            console.log('✅ Página cambiada a:', page);
+            console.log('📊 Después de cambiar página, el useMemo debería recalcularse automáticamente');
             
             return;
         }
@@ -586,6 +585,12 @@ const MarketplacePage: React.FC = () => {
             return;
         }
         
+        // NO ejecutar si estamos en modo búsqueda con IA - la paginación se maneja localmente
+        if (isAISearchMode) {
+            console.log('⏭️ Saltando recarga de filtros - modo IA activo (paginación local)');
+            return;
+        }
+        
         // Verificar que reloadFilteredDataRef esté disponible
         if (!reloadFilteredDataRef.current) {
             console.log('⏭️ reloadFilteredDataRef no está disponible aún, saltando...');
@@ -610,7 +615,7 @@ const MarketplacePage: React.FC = () => {
         
         return () => clearTimeout(timeoutId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currencyFilter, priceRange, categoryFilter, departmentFilter, cityFilter, searchQuery, dateFilter, ratingFilter]);
+    }, [currencyFilter, priceRange, categoryFilter, departmentFilter, cityFilter, searchQuery, dateFilter, ratingFilter, isAISearchMode]);
 
     // Aplicar filtros automáticamente cuando cambien
     // TEMPORALMENTE DESHABILITADO PARA EVITAR BUCLE INFINITO
@@ -816,8 +821,15 @@ const MarketplacePage: React.FC = () => {
             console.log('📊 Estado actual:', {
                 servicesLength: services.length,
                 totalServices: totalServices,
-                itemsPerPage: itemsPerPage
+                itemsPerPage: itemsPerPage,
+                isAISearchMode: isAISearchMode
             });
+            
+            // En modo IA, no aplicar filtros locales - los resultados de IA ya están filtrados
+            if (isAISearchMode) {
+                console.log('🤖 Modo IA - saltando filtros locales, usando servicios directamente');
+                return services;
+            }
             
             // Usar función helper para filtrar servicios
             return filterServices(services, {
@@ -836,7 +848,7 @@ const MarketplacePage: React.FC = () => {
             // En caso de error, retornar servicios sin filtrar
             return services;
         }
-    }, [services, searchQuery, categoryFilter, ratingFilter, departmentFilter, cityFilter, currencyFilter, priceRange, dateFilter, customDateRange]);
+    }, [services, searchQuery, categoryFilter, ratingFilter, departmentFilter, cityFilter, currencyFilter, priceRange, dateFilter, customDateRange, isAISearchMode]);
 
     // Paginación - SIEMPRE limitar a itemsPerPage (5 servicios)
     const paginatedServices = useMemo(() => {
@@ -890,7 +902,8 @@ const MarketplacePage: React.FC = () => {
                     indiceFin: endIndex,
                     serviciosEnSlice: sliceResult.length,
                     primeros3IDs: sliceResult.slice(0, 3).map(s => s.id_servicio).join(', '),
-                    todosLosIDs: sliceResult.map(s => s.id_servicio).join(', ')
+                    todosLosIDs: sliceResult.map(s => s.id_servicio).join(', '),
+                    todosLosNombres: sliceResult.map(s => s.nombre).slice(0, 5).join(', ')
                 });
                 
                 // VERIFICACIÓN CRÍTICA: NUNCA devolver más de itemsPerPage
@@ -1415,7 +1428,10 @@ const MarketplacePage: React.FC = () => {
                                             cantidad: serviciosParaRenderizar.length,
                                             esperado: itemsPerPage,
                                             modoIA: isAISearchMode,
-                                            pagina: currentPage
+                                            pagina: currentPage,
+                                            idsServicios: serviciosParaRenderizar.map(s => s.id_servicio).join(', '),
+                                            safePaginatedLength: safePaginatedServices.length,
+                                            safePaginatedIds: safePaginatedServices.map(s => s.id_servicio).join(', ')
                                         });
                                         
                                         return serviciosParaRenderizar;
