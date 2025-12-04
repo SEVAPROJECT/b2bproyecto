@@ -709,12 +709,30 @@ const MarketplacePage: React.FC = () => {
 
             if (data.results && data.results.length > 0) {
                 const aiServices = convertAIResultsToServices(data.results);
-                updateServicesWithAIResults(aiServices);
-                console.log('✅ Búsqueda con IA completada:', aiServices.length, 'servicios encontrados');
+                
+                // Filtrar servicios con precio > 0 (igual que en búsqueda normal)
+                const validServices = aiServices.filter(service => {
+                    return service.precio !== null && 
+                           service.precio !== undefined && 
+                           service.precio > 0;
+                });
+                
+                console.log(`🤖 Servicios filtrados por precio: ${aiServices.length} -> ${validServices.length} (eliminados ${aiServices.length - validServices.length} con precio <= 0)`);
+                
+                if (validServices.length > 0) {
+                    updateServicesWithAIResults(validServices);
+                    console.log('✅ Búsqueda con IA completada:', validServices.length, 'servicios encontrados (con precio > 0)');
+                } else {
+                    console.log('⚠️ No se encontraron servicios con precio > 0 después de la búsqueda con IA');
+                    setServices([]);
+                    setTotalServices(0);
+                    setIsAISearchMode(false);
+                }
             } else {
                 console.log('⚠️ No se encontraron resultados con IA');
                 setServices([]);
                 setTotalServices(0);
+                setIsAISearchMode(false);
             }
 
         } catch (error) {
