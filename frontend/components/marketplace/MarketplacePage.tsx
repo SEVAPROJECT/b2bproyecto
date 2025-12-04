@@ -523,14 +523,21 @@ const MarketplacePage: React.FC = () => {
                 currentPage: currentPage,
                 nuevaPage: page,
                 totalServicios: services.length,
-                itemsPerPage: itemsPerPage
+                itemsPerPage: itemsPerPage,
+                isAISearchMode: isAISearchMode
             });
+            
+            // Verificar que isAISearchMode sigue activo
+            if (!isAISearchMode) {
+                console.error('❌ ERROR: isAISearchMode es false cuando debería ser true');
+            }
             
             // Cambiar la página - esto debería disparar el recálculo del useMemo
             setCurrentPage(page);
             setIsLoadingPage(false);
             
             console.log('✅ Página cambiada a:', page);
+            console.log('📊 Después de cambiar página, el useMemo debería recalcularse automáticamente');
             return;
         }
         
@@ -833,38 +840,53 @@ const MarketplacePage: React.FC = () => {
                 itemsPerPage: itemsPerPage
             });
             
-            // Calcular índices de paginación
+            // Calcular índices de paginación de forma simple y directa
             const startIndex = (currentPage - 1) * itemsPerPage;
             const endIndex = startIndex + itemsPerPage;
             
             console.log('📐 Cálculo de índices:', {
+                currentPage: currentPage,
+                itemsPerPage: itemsPerPage,
                 startIndex: startIndex,
                 endIndex: endIndex,
+                totalServicios: services.length,
                 rango: `${startIndex} a ${endIndex} (exclusivo)`,
                 formula: `(${currentPage} - 1) * ${itemsPerPage} = ${startIndex}`
             });
             
-            // Asegurar que los índices sean válidos
-            const validStartIndex = Math.max(0, Math.min(startIndex, services.length));
-            const validEndIndex = Math.min(services.length, Math.max(endIndex, validStartIndex));
-            
-            // Aplicar slice con índices validados
-            result = services.slice(validStartIndex, validEndIndex);
-            
-            console.log('📄 Paginación IA - Resultado:', {
-                totalServicios: services.length,
-                pagina: currentPage,
-                indiceInicio: validStartIndex,
-                indiceFin: validEndIndex,
-                serviciosMostrados: result.length,
-                serviciosEsperados: Math.min(itemsPerPage, services.length - validStartIndex),
-                serviciosEnSlice: result.map(s => s.id_servicio).join(', ')
-            });
-            
-            // VERIFICACIÓN CRÍTICA: Si el resultado tiene más de itemsPerPage, hay un error
-            if (result.length > itemsPerPage) {
-                console.error(`❌ ERROR CRÍTICO EN PAGINACIÓN IA: Se calcularon ${result.length} servicios para la página ${currentPage}, limitando a ${itemsPerPage}`);
-                result = result.slice(0, itemsPerPage);
+            // Validar que los índices estén dentro del rango válido
+            if (startIndex >= services.length) {
+                // Si el índice de inicio está fuera del rango, devolver array vacío
+                console.warn(`⚠️ startIndex (${startIndex}) >= services.length (${services.length}), devolviendo array vacío`);
+                result = [];
+            } else {
+                // Aplicar slice directamente - slice ya maneja automáticamente índices fuera de rango
+                const sliceResult = services.slice(startIndex, endIndex);
+                
+                console.log('📄 Paginación IA - Resultado del slice:', {
+                    totalServicios: services.length,
+                    pagina: currentPage,
+                    indiceInicio: startIndex,
+                    indiceFin: endIndex,
+                    serviciosEnSlice: sliceResult.length,
+                    primeros3IDs: sliceResult.slice(0, 3).map(s => s.id_servicio).join(', '),
+                    todosLosIDs: sliceResult.map(s => s.id_servicio).join(', ')
+                });
+                
+                // VERIFICACIÓN CRÍTICA: NUNCA devolver más de itemsPerPage
+                if (sliceResult.length > itemsPerPage) {
+                    console.error(`❌ ERROR CRÍTICO: El slice devolvió ${sliceResult.length} servicios para la página ${currentPage}`);
+                    console.error(`   Esto NO debería pasar. Limitando a ${itemsPerPage}`);
+                    result = sliceResult.slice(0, itemsPerPage);
+                } else {
+                    result = sliceResult;
+                }
+                
+                console.log('📄 Paginación IA - Resultado DESPUÉS de verificación:', {
+                    serviciosFinales: result.length,
+                    esperado: itemsPerPage,
+                    esCorrecto: result.length <= itemsPerPage
+                });
             }
         }
         // Si estamos usando el endpoint filtrado del servidor
@@ -890,10 +912,25 @@ const MarketplacePage: React.FC = () => {
         // VERIFICACIÓN FINAL DE SEGURIDAD: NUNCA devolver más de itemsPerPage
         if (result.length > itemsPerPage) {
             console.error(`❌ ERROR CRÍTICO: Se intentó devolver ${result.length} servicios, limitando estrictamente a ${itemsPerPage}`);
+            console.error(`   Modo IA: ${isAISearchMode}, Página: ${currentPage}, Total servicios: ${services.length}`);
             result = result.slice(0, itemsPerPage);
         }
         
-        console.log('✅ Resultado final de paginación:', result.length, 'servicios');
+        // Verificación adicional: en modo IA, asegurar que el resultado tenga exactamente lo esperado
+        if (isAISearchMode && result.length > itemsPerPage) {
+            console.error(`❌ ERROR EN MODO IA: Resultado tiene ${result.length} servicios después de todas las verificaciones`);
+            console.error(`   Forzando límite a ${itemsPerPage}`);
+            result = result.slice(0, itemsPerPage);
+        }
+        
+        console.log('✅ Resultado final de paginación:', {
+            cantidad: result.length,
+            modoIA: isAISearchMode,
+            pagina: currentPage,
+            esperado: itemsPerPage,
+            esCorrecto: result.length <= itemsPerPage
+        });
+        
         return result;
     }, [services, filteredServices, currentPage, itemsPerPage, totalServices, isAISearchMode]);
     
@@ -903,20 +940,22 @@ const MarketplacePage: React.FC = () => {
         console.log('📊 Datos de entrada:', {
             isAISearchMode: isAISearchMode,
             paginatedServicesLength: paginatedServices.length,
-            itemsPerPage: itemsPerPage
+            itemsPerPage: itemsPerPage,
+            currentPage: currentPage
         });
         
-        // SIEMPRE limitar a itemsPerPage, no solo en modo IA
+        // SIEMPRE limitar a itemsPerPage, sin excepciones
         if (paginatedServices.length > itemsPerPage) {
-            console.warn(`⚠️ paginatedServices tiene ${paginatedServices.length} servicios, limitando a ${itemsPerPage}`);
+            console.error(`❌ ERROR CRÍTICO: paginatedServices tiene ${paginatedServices.length} servicios, limitando a ${itemsPerPage}`);
+            console.error(`   Modo IA: ${isAISearchMode}, Página: ${currentPage}`);
             const limited = paginatedServices.slice(0, itemsPerPage);
-            console.log('✅ Servicios limitados:', limited.length);
+            console.log('✅ Servicios limitados de', paginatedServices.length, 'a', limited.length);
             return limited;
         }
         
-        console.log('✅ paginatedServices está dentro del límite:', paginatedServices.length);
+        console.log('✅ paginatedServices está dentro del límite:', paginatedServices.length, 'servicios');
         return paginatedServices;
-    }, [paginatedServices, itemsPerPage, isAISearchMode]);
+    }, [paginatedServices, itemsPerPage, isAISearchMode, currentPage]);
 
     // Calcular total de páginas basado en servicios filtrados cuando hay filtros activos
     const totalPages = useMemo(() => {
@@ -1342,7 +1381,25 @@ const MarketplacePage: React.FC = () => {
                             <>
                                 {/* Grid responsivo optimizado para más espacio */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
-                                    {safePaginatedServices.map(service => (
+                                    {/* Verificación final antes de renderizar - NUNCA mostrar más de itemsPerPage */}
+                                    {(() => {
+                                        const serviciosParaRenderizar = safePaginatedServices.length > itemsPerPage 
+                                            ? safePaginatedServices.slice(0, itemsPerPage)
+                                            : safePaginatedServices;
+                                        
+                                        if (safePaginatedServices.length > itemsPerPage) {
+                                            console.error(`❌ ERROR EN RENDERIZADO: safePaginatedServices tiene ${safePaginatedServices.length} servicios, limitando a ${itemsPerPage} antes de renderizar`);
+                                        }
+                                        
+                                        console.log('🎨 Renderizando servicios:', {
+                                            cantidad: serviciosParaRenderizar.length,
+                                            esperado: itemsPerPage,
+                                            modoIA: isAISearchMode,
+                                            pagina: currentPage
+                                        });
+                                        
+                                        return serviciosParaRenderizar;
+                                    })().map(service => (
                                         <div key={service.id_servicio} className="transform transition-transform duration-200 hover:scale-[1.02]">
                                             <MarketplaceServiceCard 
                                                 service={service} 
