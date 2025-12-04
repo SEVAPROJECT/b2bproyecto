@@ -2880,23 +2880,53 @@ async def get_reporte_proveedores_verificados(
         raise HTTPException(status_code=500, detail="Error generando reporte de proveedores verificados")
 
 # Funciones helper para get_reporte_solicitudes_proveedores
-async def get_all_verification_requests(db: AsyncSession) -> list[VerificacionSolicitud]:
-    """Obtiene todas las solicitudes de verificación ordenadas por fecha"""
-    solicitudes_query = select(VerificacionSolicitud).order_by(VerificacionSolicitud.created_at.desc())
-    solicitudes_result = await db.execute(solicitudes_query)
-    return solicitudes_result.scalars().all()
+async def get_all_verification_requests(conn) -> list[dict]:
+    """Obtiene todas las solicitudes de verificación ordenadas por fecha usando direct_db_service"""
+    solicitudes_query = """
+        SELECT 
+            id_solicitud,
+            id_perfil,
+            estado,
+            comentario,
+            created_at,
+            fecha_revision
+        FROM verificacion_solicitud
+        ORDER BY created_at DESC
+    """
+    rows = await conn.fetch(solicitudes_query)
+    return [dict(row) for row in rows]
 
-async def get_empresa_by_perfil_id_for_report(db: AsyncSession, perfil_id: int) -> Optional[PerfilEmpresa]:
-    """Obtiene la empresa por ID de perfil para el reporte"""
-    empresa_query = select(PerfilEmpresa).where(PerfilEmpresa.id_perfil == perfil_id)
-    empresa_result = await db.execute(empresa_query)
-    return empresa_result.scalars().first()
+async def get_empresa_by_perfil_id_for_report(conn, perfil_id: int) -> Optional[dict]:
+    """Obtiene la empresa por ID de perfil para el reporte usando direct_db_service"""
+    empresa_query = """
+        SELECT 
+            id_perfil,
+            user_id,
+            razon_social,
+            nombre_fantasia,
+            estado,
+            verificado
+        FROM perfil_empresa
+        WHERE id_perfil = $1
+    """
+    row = await conn.fetchrow(empresa_query, perfil_id)
+    return dict(row) if row else None
 
-async def get_user_by_id_from_db(db: AsyncSession, user_id: uuid.UUID) -> Optional[UserModel]:
-    """Obtiene el usuario por ID desde la base de datos"""
-    user_query = select(UserModel).where(UserModel.id == user_id)
-    user_result = await db.execute(user_query)
-    return user_result.scalars().first()
+async def get_user_by_id_from_db(conn, user_id: uuid.UUID) -> Optional[dict]:
+    """Obtiene el usuario por ID desde la base de datos usando direct_db_service"""
+    user_query = """
+        SELECT 
+            id,
+            nombre_persona,
+            nombre_empresa,
+            ruc,
+            estado,
+            foto_perfil
+        FROM users
+        WHERE id = $1
+    """
+    row = await conn.fetchrow(user_query, user_id)
+    return dict(row) if row else None
 
 def get_user_email_from_supabase_auth(user_id: uuid.UUID) -> str:
     """Obtiene el email del usuario desde Supabase Auth"""
@@ -2908,19 +2938,19 @@ def get_user_email_from_supabase_auth(user_id: uuid.UUID) -> str:
         pass
     return VALOR_DEFAULT_NO_DISPONIBLE
 
-async def get_user_contact_info_for_report(db: AsyncSession, empresa: Optional[PerfilEmpresa]) -> tuple[str, str]:
-    """Obtiene el nombre y email del usuario de contacto"""
+async def get_user_contact_info_for_report(conn, empresa: Optional[dict]) -> tuple[str, str]:
+    """Obtiene el nombre y email del usuario de contacto usando direct_db_service"""
     user_nombre = VALOR_DEFAULT_NO_DISPONIBLE
     user_email = VALOR_DEFAULT_NO_DISPONIBLE
     
-    if not empresa or not empresa.user_id:
+    if not empresa or not empresa.get('user_id'):
         return user_nombre, user_email
     
-    user = await get_user_by_id_from_db(db, empresa.user_id)
+    user = await get_user_by_id_from_db(conn, empresa['user_id'])
     
     if user:
-        user_nombre = user.nombre_persona or VALOR_DEFAULT_NO_DISPONIBLE
-        user_email = get_user_email_from_supabase_auth(empresa.user_id)
+        user_nombre = user.get('nombre_persona') or VALOR_DEFAULT_NO_DISPONIBLE
+        user_email = get_user_email_from_supabase_auth(empresa['user_id'])
     
     return user_nombre, user_email
 
@@ -2928,27 +2958,27 @@ def format_solicitud_date(date_value) -> Optional[str]:
     """Formatea una fecha de solicitud a DD/MM/YYYY (alias para compatibilidad)"""
     return format_date_dd_mm_yyyy(date_value)
 
-async def process_solicitud_data(db: AsyncSession, solicitud: VerificacionSolicitud) -> dict:
-    """Procesa una solicitud y retorna su diccionario para el reporte"""
-    empresa = await get_empresa_by_perfil_id_for_report(db, solicitud.id_perfil)
-    user_nombre, user_email = await get_user_contact_info_for_report(db, empresa)
+async def process_solicitud_data(conn, solicitud: dict) -> dict:
+    """Procesa una solicitud y retorna su diccionario para el reporte usando direct_db_service"""
+    empresa = await get_empresa_by_perfil_id_for_report(conn, solicitud['id_perfil'])
+    user_nombre, user_email = await get_user_contact_info_for_report(conn, empresa)
     
     return {
-        "razon_social": empresa.razon_social if empresa else VALOR_DEFAULT_NO_DISPONIBLE,
-        "nombre_fantasia": empresa.nombre_fantasia if empresa else VALOR_DEFAULT_NO_DISPONIBLE,
+        "razon_social": empresa.get('razon_social') if empresa else VALOR_DEFAULT_NO_DISPONIBLE,
+        "nombre_fantasia": empresa.get('nombre_fantasia') if empresa else VALOR_DEFAULT_NO_DISPONIBLE,
         "nombre_contacto": user_nombre,
         "email_contacto": user_email,
-        "estado": solicitud.estado,
-        "fecha_solicitud": format_solicitud_date(solicitud.created_at),
-        "fecha_revision": format_solicitud_date(solicitud.fecha_revision),
-        "comentario": solicitud.comentario
+        "estado": solicitud.get('estado'),
+        "fecha_solicitud": format_solicitud_date(solicitud.get('created_at')),
+        "fecha_revision": format_solicitud_date(solicitud.get('fecha_revision')),
+        "comentario": solicitud.get('comentario')
     }
 
-async def process_all_solicitudes(db: AsyncSession, solicitudes: list[VerificacionSolicitud]) -> list[dict]:
-    """Procesa todas las solicitudes y retorna la lista completa"""
+async def process_all_solicitudes(conn, solicitudes: list[dict]) -> list[dict]:
+    """Procesa todas las solicitudes y retorna la lista completa usando direct_db_service"""
     solicitudes_detalladas = []
     for solicitud in solicitudes:
-        solicitud_data = await process_solicitud_data(db, solicitud)
+        solicitud_data = await process_solicitud_data(conn, solicitud)
         solicitudes_detalladas.append(solicitud_data)
     return solicitudes_detalladas
 
@@ -2965,17 +2995,25 @@ def build_solicitudes_report_response(solicitudes_detalladas: list[dict]) -> dic
     description="Genera reporte de solicitudes para ser proveedores"
 )
 async def get_reporte_solicitudes_proveedores(
-    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_db)
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user)
 ):
-    """Genera reporte de solicitudes para ser proveedores"""
+    """Genera reporte de solicitudes para ser proveedores usando DirectDBService para evitar problemas con PgBouncer"""
     try:
-        solicitudes = await get_all_verification_requests(db)
-        solicitudes_detalladas = await process_all_solicitudes(db, solicitudes)
-        return build_solicitudes_report_response(solicitudes_detalladas)
+        from app.services.direct_db_service import direct_db_service
+        
+        conn = await direct_db_service.get_connection()
+        
+        try:
+            solicitudes = await get_all_verification_requests(conn)
+            solicitudes_detalladas = await process_all_solicitudes(conn, solicitudes)
+            return build_solicitudes_report_response(solicitudes_detalladas)
+        finally:
+            await direct_db_service.pool.release(conn)
     except Exception as e:
         print(f"Error generando reporte de solicitudes: {e}")
-        raise HTTPException(status_code=500, detail="Error generando reporte")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generando reporte: {str(e)}")
 
 @router.get(
     "/reports/categorias",
