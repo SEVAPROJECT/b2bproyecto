@@ -2,7 +2,6 @@
 
 from datetime import datetime
 import httpx
-import os
 import mimetypes
 import traceback
 import secrets
@@ -28,8 +27,6 @@ from app.models.servicio.service import ServicioModel
 from app.schemas.empresa.verificacion_solicitud import VerificacionSolicitudOut
 from app.schemas.user import UserProfileAndRolesOut
 from app.api.v1.dependencies.auth_user import get_admin_user, get_current_user
-from sqlalchemy import delete
-from sqlalchemy import or_, and_, func
 from app.services.direct_db_service import direct_db_service
 from app.services.date_service import DateService
 from app.supabase.auth_service import supabase_admin, supabase_auth
@@ -548,7 +545,7 @@ async def aprobar_solicitud(
         print(f"🔄 Actualizando rol del usuario {perfil_empresa.user_id} de cliente a proveedor...")
         
         # Buscar el rol de proveedor
-        print(f"🔍 Buscando rol de proveedor en la base de datos...")
+        print("🔍 Buscando rol de proveedor en la base de datos...")
         rol_proveedor_query = select(RolModel).where(RolModel.nombre.ilike('%proveedor%'))
         rol_proveedor_result = await db.execute(rol_proveedor_query)
         rol_proveedor = rol_proveedor_result.scalars().first()
@@ -587,7 +584,7 @@ async def aprobar_solicitud(
         else:
             print(f"✅ Usuario {perfil_empresa.user_id} ya tiene el rol de proveedor")
 
-        print(f"🔄 Realizando commit de los cambios...")
+        print("🔄 Realizando commit de los cambios...")
 
         # Commit de los cambios
         await db.commit()
@@ -646,7 +643,7 @@ async def rechazar_solicitud(
         solicitud.fecha_revision = DateService.now_for_database()
         solicitud.comentario = decision.comentario
 
-        print(f"🔄 Realizando commit de los cambios...")
+        print("🔄 Realizando commit de los cambios...")
 
         # Commit de los cambios
         await db.commit()
@@ -909,12 +906,6 @@ async def get_documento_by_ids(db: AsyncSession, solicitud_id: int, documento_id
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado.")
     return documento
 
-async def get_tipo_documento_by_id(db: AsyncSession, id_tip_documento: int) -> Optional[TipoDocumento]:
-    """Obtiene el tipo de documento por ID"""
-    tipo_doc_query = select(TipoDocumento).where(TipoDocumento.id_tip_documento == id_tip_documento)
-    tipo_doc_result = await db.execute(tipo_doc_query)
-    return tipo_doc_result.scalars().first()
-
 def generate_filename(tipo_doc: Optional[TipoDocumento], documento_id: int, url_archivo: str) -> str:
     """Genera el nombre de archivo basado en el tipo de documento y la extensión de la URL"""
     extension = '.pdf'  # Por defecto
@@ -1090,7 +1081,7 @@ async def servir_documento(
     """Sirve directamente el archivo desde el backend"""
     await verify_admin_token(token, db)
     
-    solicitud = await get_solicitud_by_id(db, solicitud_id)
+    await get_solicitud_by_id(db, solicitud_id)
     documento = await get_documento_by_ids(db, solicitud_id, documento_id)
     tipo_doc = await get_tipo_documento_by_id(db, documento.id_tip_documento)
     
@@ -1141,14 +1132,13 @@ async def get_users_emails_only(
                     }
                 else:
                     return {"emails": {}, "total": 0}
-            except Exception as e:
+            except Exception:
                 return {"emails": {}, "total": 0}
         
         # Si no se proporciona user_id, obtener todos los usuarios (comportamiento original)
         # OPTIMIZACIÓN: Solo obtener IDs de usuarios (consulta ultra simple)
         query = select(UserModel.id)
-        result = await db.execute(query)
-        user_ids = [str(row.id) for row in result.all()]
+        await db.execute(query)
         
         # Obtener emails de Supabase
         auth_users = supabase_admin.auth.admin.list_users()
@@ -1436,7 +1426,7 @@ def get_emails_from_supabase_auth() -> dict:
     
     return emails_dict
 
-def get_user_email_and_access(user_id: str, emails_dict: dict) -> tuple[str, Optional]:
+def get_user_email_and_access(user_id: str, emails_dict: dict) -> tuple[str, Optional[datetime]]:
     """Obtiene el email y último acceso de un usuario"""
     if user_id in emails_dict:
         return emails_dict[user_id]["email"], emails_dict[user_id]["ultimo_acceso"]
@@ -1507,7 +1497,6 @@ async def get_all_users(
         
         # Mapear filtro de rol del frontend al nombre en BD
         role_name_bd = mapear_filtro_rol_a_nombre_bd(filter_role)
-        has_role_filter = role_name_bd is not None
         
         conn = await direct_db_service.get_connection()
         
@@ -1960,7 +1949,7 @@ async def deactivate_user(
         #     print(f"✅ Fecha_fin actualizada en perfil_empresa para usuario {user_id}")
         # else:
         #     print(f"ℹ️ No se encontró perfil_empresa para usuario {user_id} o ya estaba desactivado")
-        print(f"ℹ️ Funcionalidad de perfil_empresa temporalmente deshabilitada para evitar importación circular")
+        print("ℹ️ Funcionalidad de perfil_empresa temporalmente deshabilitada para evitar importación circular")
 
         # Desactivar en Supabase Auth usando el cliente admin
         supabase_success = False
@@ -1975,7 +1964,7 @@ async def deactivate_user(
                 print(f"🔍 Intentando desactivar en Supabase para usuario {user_id}")
 
                 # Marcar como desactivado en Supabase
-                result = supabase_admin.auth.admin.update_user_by_id(
+                supabase_admin.auth.admin.update_user_by_id(
                     str(user.id),
                     {
                         "user_metadata": {"status": "inactive"},
@@ -2369,7 +2358,7 @@ def determine_status_action(current_status: Optional[str]) -> tuple[str, str]:
 
 def update_perfil_empresa_status(db: AsyncSession, user_id: str, action: str) -> bool:
     """Actualiza el estado en perfil_empresa (temporalmente deshabilitado)"""
-    print(f"ℹ️ Funcionalidad de perfil_empresa temporalmente deshabilitada para evitar importación circular")
+    print("ℹ️ Funcionalidad de perfil_empresa temporalmente deshabilitada para evitar importación circular")
     return False  # Temporalmente deshabilitado
 
 def update_supabase_user_status(user_id: str, new_status: str) -> bool:
@@ -2494,7 +2483,7 @@ async def activate_user(
         supabase_success = False
         try:
             if supabase_admin:
-                result = supabase_admin.auth.admin.update_user_by_id(
+                supabase_admin.auth.admin.update_user_by_id(
                     str(user.id),
                     {
                         "user_metadata": {"status": "active"},
@@ -2884,12 +2873,13 @@ async def get_all_verification_requests(conn) -> list[dict]:
     """Obtiene todas las solicitudes de verificación ordenadas por fecha usando direct_db_service"""
     solicitudes_query = """
         SELECT 
-            id_solicitud,
+            id_verificacion,
             id_perfil,
             estado,
             comentario,
             created_at,
-            fecha_revision
+            fecha_revision,
+            fecha_solicitud
         FROM verificacion_solicitud
         ORDER BY created_at DESC
     """
@@ -2958,7 +2948,7 @@ def format_solicitud_date(date_value) -> Optional[str]:
     """Formatea una fecha de solicitud a DD/MM/YYYY (alias para compatibilidad)"""
     return format_date_dd_mm_yyyy(date_value)
 
-async def process_solicitud_data(conn, solicitud: dict) -> dict:
+async def process_solicitud_data_for_report(conn, solicitud: dict) -> dict:
     """Procesa una solicitud y retorna su diccionario para el reporte usando direct_db_service"""
     empresa = await get_empresa_by_perfil_id_for_report(conn, solicitud['id_perfil'])
     user_nombre, user_email = await get_user_contact_info_for_report(conn, empresa)
@@ -2978,7 +2968,7 @@ async def process_all_solicitudes(conn, solicitudes: list[dict]) -> list[dict]:
     """Procesa todas las solicitudes y retorna la lista completa usando direct_db_service"""
     solicitudes_detalladas = []
     for solicitud in solicitudes:
-        solicitud_data = await process_solicitud_data(conn, solicitud)
+        solicitud_data = await process_solicitud_data_for_report(conn, solicitud)
         solicitudes_detalladas.append(solicitud_data)
     return solicitudes_detalladas
 
@@ -3865,7 +3855,7 @@ async def get_user_roles_data(db: AsyncSession, user_id: uuid.UUID) -> list[dict
             })
     return roles_data
 
-def get_auth_user_data(user_id: uuid.UUID) -> Optional:
+def get_auth_user_data(user_id: uuid.UUID) -> Optional[dict]:
     """Obtiene los datos del usuario desde Supabase Auth"""
     try:
         return supabase_auth.auth.admin.get_user_by_id(str(user_id))
