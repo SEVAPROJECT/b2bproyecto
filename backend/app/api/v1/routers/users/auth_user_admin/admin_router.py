@@ -1,6 +1,6 @@
 # app/api/v1/routers/admin_router.py
 
-from datetime import datetime
+from datetime import datetime, timezone
 import httpx
 import mimetypes
 import traceback
@@ -2948,7 +2948,19 @@ def format_solicitud_date(date_value) -> Optional[str]:
     """Formatea una fecha de solicitud a DD/MM/YYYY con conversión de zona horaria a Paraguay (GMT-3)"""
     if not date_value:
         return None
-    # Usar DateService para convertir de UTC a zona horaria de Paraguay antes de formatear
+    
+    # Las fechas de asyncpg pueden venir como naive datetime (sin tzinfo)
+    # Necesitamos asegurarnos de que se traten como UTC antes de convertir
+    if isinstance(date_value, datetime):
+        # Si es naive datetime (sin tzinfo), asumir que es UTC (como viene de PostgreSQL)
+        if date_value.tzinfo is None:
+            date_value = date_value.replace(tzinfo=timezone.utc)
+        # Convertir a zona horaria de Paraguay
+        date_value = DateService.to_paraguay_timezone(date_value)
+        # Formatear solo la fecha (sin hora)
+        return date_value.strftime("%d/%m/%Y")
+    
+    # Si no es datetime, intentar convertir
     return DateService.format_paraguay_date(date_value)
 
 async def process_solicitud_data_for_report(conn, solicitud: dict) -> dict:
