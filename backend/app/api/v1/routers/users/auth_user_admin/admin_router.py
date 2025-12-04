@@ -2945,8 +2945,11 @@ async def get_user_contact_info_for_report(conn, empresa: Optional[dict]) -> tup
     return user_nombre, user_email
 
 def format_solicitud_date(date_value) -> Optional[str]:
-    """Formatea una fecha de solicitud a DD/MM/YYYY (alias para compatibilidad)"""
-    return format_date_dd_mm_yyyy(date_value)
+    """Formatea una fecha de solicitud a DD/MM/YYYY con conversión de zona horaria a Paraguay (GMT-3)"""
+    if not date_value:
+        return None
+    # Usar DateService para convertir de UTC a zona horaria de Paraguay antes de formatear
+    return DateService.format_paraguay_date(date_value)
 
 async def process_solicitud_data_for_report(conn, solicitud: dict) -> dict:
     """Procesa una solicitud y retorna su diccionario para el reporte usando direct_db_service"""
