@@ -89,6 +89,9 @@ const AdminCategoriesPage: React.FC = () => {
             return;
         }
 
+        // Guardar el nombre original para poder revertir si falla
+        const originalName = currentCategory?.nombre || '';
+
         try {
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) {
@@ -97,6 +100,15 @@ const AdminCategoriesPage: React.FC = () => {
                 return;
             }
 
+            // Actualizar optimísticamente el estado local (sin recargar toda la página)
+            setCategories(prevCategories =>
+                prevCategories.map(cat =>
+                    cat.id_categoria === editingCategoryId
+                        ? { ...cat, nombre: editingCategoryName.trim() }
+                        : cat
+                )
+            );
+
             await categoriesAPI.updateCategory(editingCategoryId, {
                 nombre: editingCategoryName.trim()
             }, accessToken);
@@ -104,10 +116,22 @@ const AdminCategoriesPage: React.FC = () => {
             setSuccess('Categoría actualizada exitosamente');
             setEditingCategoryId(null);
             setEditingCategoryName('');
-            loadCategories();
+            // No recargar todas las categorías, ya actualizamos el estado local
             setTimeout(() => setSuccess(null), 5000);
         } catch (err: any) {
             console.error('Error actualizando categoría:', err);
+            
+            // Revertir el cambio optimista si la API falla
+            if (editingCategoryId && originalName) {
+                setCategories(prevCategories =>
+                    prevCategories.map(cat =>
+                        cat.id_categoria === editingCategoryId
+                            ? { ...cat, nombre: originalName }
+                            : cat
+                    )
+                );
+            }
+            
             const errorMessage = err.detail || err.message || 'Error al actualizar categoría';
             setError(errorMessage);
             setTimeout(() => setError(null), 5000);

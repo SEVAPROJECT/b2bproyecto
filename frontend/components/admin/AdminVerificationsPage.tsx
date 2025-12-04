@@ -826,12 +826,35 @@ const AdminVerificationsPage: React.FC = () => {
                                                                     if (user?.accessToken) {
                                                                         const authUrl = buildDocumentUrl(selectedSolicitud.id_verificacion, doc.id_documento);
                                                                         
+                                                                        // Mostrar indicador de carga
+                                                                        const button = e.currentTarget;
+                                                                        const originalText = button.textContent;
+                                                                        button.textContent = '⏳ Descargando...';
+                                                                        button.disabled = true;
+                                                                        
+                                                                        // Hacer fetch del archivo con autenticación
+                                                                        const response = await fetch(authUrl, {
+                                                                            method: 'GET',
+                                                                            headers: {
+                                                                                'Authorization': `Bearer ${user.accessToken}`
+                                                                            }
+                                                                        });
+                                                                        
+                                                                        if (!response.ok) {
+                                                                            throw new Error(`Error al descargar: ${response.status} ${response.statusText}`);
+                                                                        }
+                                                                        
+                                                                        // Convertir respuesta a blob
+                                                                        const blob = await response.blob();
+                                                                        
+                                                                        // Crear URL del blob
+                                                                        const blobUrl = window.URL.createObjectURL(blob);
+                                                                        
                                                                         // Crear enlace de descarga
                                                                         const link = document.createElement('a');
-                                                                        link.href = authUrl;
+                                                                        link.href = blobUrl;
                                                                         link.download = `${doc.tipo_documento}_${doc.id_documento}.pdf`;
-                                                                        link.target = '_blank';
-                                                                        link.rel = 'noopener noreferrer';
+                                                                        link.style.display = 'none';
                                                                         
                                                                         // Agregar al DOM temporalmente
                                                                         document.body.appendChild(link);
@@ -840,16 +863,24 @@ const AdminVerificationsPage: React.FC = () => {
                                                                         // Limpiar después de un delay
                                                                         setTimeout(() => {
                                                                             link.remove();
+                                                                            window.URL.revokeObjectURL(blobUrl);
+                                                                            button.textContent = originalText;
+                                                                            button.disabled = false;
                                                                         }, 100);
                                                                         
-                                                                        console.log('✅ Documento descargado desde backend');
+                                                                        console.log('✅ Documento descargado exitosamente');
                                                                     }
                                                                 } catch (error: any) {
                                                                     console.error('❌ Error descargando documento:', error);
                                                                     handleDocumentError(error, 'descarga');
+                                                                    
+                                                                    // Restaurar botón en caso de error
+                                                                    const button = e.currentTarget;
+                                                                    button.textContent = '📥 Descargar';
+                                                                    button.disabled = false;
                                                                 }
                                                             }}
-                                                            className="text-green-600 hover:text-green-800 text-xs underline"
+                                                            className="text-green-600 hover:text-green-800 text-xs underline disabled:opacity-50 disabled:cursor-not-allowed"
                                                         >
                                                             📥 Descargar
                                                         </button>

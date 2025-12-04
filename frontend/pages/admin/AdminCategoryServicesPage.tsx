@@ -37,7 +37,11 @@ const AdminCategoryServicesPage: React.FC = () => {
             estado: service.estado,
             imagen: service.imagen
         });
-        setImagePreview(service.imagen ? `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}` : null);
+        setImagePreview(service.imagen 
+            ? (service.imagen.startsWith('http') 
+                ? service.imagen 
+                : `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`)
+            : null);
         setSelectedImage(null);
         setShowEditModal(true);
     };
@@ -48,6 +52,10 @@ const AdminCategoryServicesPage: React.FC = () => {
         try {
             const accessToken = localStorage.getItem('access_token');
             if (!accessToken) return;
+
+            // Guardar el servicio original para poder revertir si falla
+            const originalService = services.find(s => s.id_servicio === editingServiceId);
+            if (!originalService) return;
 
             // Preparar datos del servicio
             const serviceData: any = {
@@ -89,6 +97,22 @@ const AdminCategoryServicesPage: React.FC = () => {
                 serviceData.imagen = null;
             }
 
+            // Actualizar optimísticamente el estado local (sin recargar toda la página)
+            setServices(prevServices =>
+                prevServices.map(service =>
+                    service.id_servicio === editingServiceId
+                        ? {
+                            ...service,
+                            nombre: serviceData.nombre,
+                            descripcion: serviceData.descripcion || '',
+                            precio: serviceData.precio || 0,
+                            estado: serviceData.estado || false,
+                            imagen: serviceData.imagen !== undefined ? serviceData.imagen : service.imagen
+                        }
+                        : service
+                )
+            );
+
             await servicesAPI.updateService(editingServiceId, serviceData, accessToken);
 
             setSuccess('Servicio actualizado exitosamente');
@@ -97,9 +121,20 @@ const AdminCategoryServicesPage: React.FC = () => {
             setEditingService({});
             setSelectedImage(null);
             setImagePreview(null);
-            loadServices();
+            // No recargar todos los servicios, ya actualizamos el estado local
             setTimeout(() => setSuccess(null), 3000);
         } catch (err: any) {
+            // Revertir el cambio optimista si la API falla
+            if (originalService) {
+                setServices(prevServices =>
+                    prevServices.map(service =>
+                        service.id_servicio === editingServiceId
+                            ? originalService
+                            : service
+                    )
+                );
+            }
+            
             setError(err.detail || 'Error al actualizar servicio');
             setTimeout(() => setError(null), 3000);
         }
@@ -249,10 +284,19 @@ const AdminCategoryServicesPage: React.FC = () => {
                                     <div className="flex-shrink-0 w-20 h-20 bg-gray-100 rounded-xl border-2 border-gray-200 flex items-center justify-center overflow-hidden">
                                         {service.imagen ? (
                                             <img
-                                                src={`${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
+                                                src={service.imagen.startsWith('http') 
+                                                    ? service.imagen 
+                                                    : `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`}
                                                 alt={`Imagen de ${service.nombre}`}
                                                 className="w-full h-full object-cover"
                                                 onError={(e) => {
+                                                    console.error('❌ Error cargando imagen del servicio:', {
+                                                        servicioId: service.id_servicio,
+                                                        imagen: service.imagen,
+                                                        urlCompleta: service.imagen.startsWith('http') 
+                                                            ? service.imagen 
+                                                            : `${API_CONFIG.BASE_URL.replace('/api/v1', '')}${service.imagen}`
+                                                    });
                                                     const target = e.target as HTMLImageElement;
                                                     target.style.display = 'none';
                                                     const placeholder = target.parentElement;

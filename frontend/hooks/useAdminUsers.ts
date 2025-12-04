@@ -47,7 +47,7 @@ export const useAdminUsers = () => {
     const [searchEmpresa, setSearchEmpresa] = useState('');
     const [filterRole, setFilterRole] = useState('all');
     const [filterStatus, setFilterStatus] = useState('all');
-    const [currentPage, setCurrentPage] = useState(1);
+    const [currentPage, setCurrentPageState] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalUsers, setTotalUsers] = useState(0);
     
@@ -63,7 +63,7 @@ export const useAdminUsers = () => {
     const [resetPasswordData, setResetPasswordData] = useState<{user: BackendUser | null, newPassword: string | null}>({user: null, newPassword: null});
     const [isResettingPassword, setIsResettingPassword] = useState(false);
 
-    const itemsPerPage = 12;
+    const itemsPerPage = 20;
 
     // Función helper para mostrar notificaciones
     const showNotification = useCallback((type: 'success' | 'error' | 'info', message: string, duration: number = 3000) => {
@@ -105,7 +105,7 @@ export const useAdminUsers = () => {
     const buildUsersUrl = useCallback((page: number, searchEmpresaParam?: string, searchNombreParam?: string, filterRoleParam?: string): string => {
         const urlParams = new URLSearchParams();
         urlParams.append('page', page.toString());
-        urlParams.append('limit', '100');
+        urlParams.append('limit', '20');
         
         if (searchEmpresaParam?.trim()) {
             urlParams.append('search_empresa', searchEmpresaParam.trim());
@@ -154,7 +154,9 @@ export const useAdminUsers = () => {
         console.log('📊 Total establecido:', totalValue);
         setTotalUsers(totalValue);
         setTotalPages(data.total_pages || 1);
-        setCurrentPage(data.page || 1);
+        // Usar setCurrentPageState directamente para evitar bucle infinito
+        // (setCurrentPage llamaría a loadUsers nuevamente)
+        setCurrentPageState(data.page || 1);
         
         isInitialLoadRef.current = false;
     }, []);
@@ -287,6 +289,15 @@ export const useAdminUsers = () => {
     useEffect(() => {
         loadUsersRef.current = loadUsers;
     }, [loadUsers]);
+
+    // Wrapper para setCurrentPage que también carga los usuarios de la nueva página
+    // IMPORTANTE: Debe estar después de loadUsers para evitar "Cannot access before initialization"
+    const setCurrentPage = useCallback((page: number) => {
+        console.log(`📄 Cambiando a página ${page}`);
+        setCurrentPageState(page);
+        // Cargar usuarios de la nueva página desde el servidor
+        loadUsers(page, searchEmpresa, searchQuery, filterRole);
+    }, [loadUsers, searchEmpresa, searchQuery, filterRole]);
 
     // Función para cargar roles
     const loadRoles = useCallback(async () => {
@@ -482,7 +493,9 @@ export const useAdminUsers = () => {
         setSearchEmpresa('');
         setFilterRole('all');
         setFilterStatus('all');
-        setCurrentPage(1);
+        // Usar setCurrentPageState directamente para evitar bucle infinito
+        // (clearFilters ya llama a loadUsers directamente)
+        setCurrentPageState(1);
         loadUsers(1, '', '');
         showNotification('info', 'Filtros limpiados');
     }, [loadUsers, showNotification]);
@@ -679,10 +692,26 @@ export const useAdminUsers = () => {
         }
     }, []);
 
-    // Paginación
+    // Paginación: El backend debería devolver solo los usuarios de la página actual
+    // Pero si devuelve más, hacemos paginación local como fallback
     const paginatedUsers = useMemo(() => {
+        console.log(`📄 [paginatedUsers] currentPage: ${currentPage}, filteredUsers.length: ${filteredUsers.length}, itemsPerPage: ${itemsPerPage}`);
+        
+        // Si el backend devolvió más usuarios de los esperados (más que itemsPerPage),
+        // hacer paginación local como fallback
+        if (filteredUsers.length > itemsPerPage) {
+            console.warn(`⚠️ Backend devolvió ${filteredUsers.length} usuarios, pero el límite es ${itemsPerPage}. Aplicando paginación local.`);
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const sliced = filteredUsers.slice(startIndex, endIndex);
+            console.log(`📄 [paginatedUsers] Paginación local: ${startIndex} a ${endIndex}, resultado: ${sliced.length} usuarios`);
+            return sliced;
+        }
+        
+        // Normalmente el backend devuelve solo los usuarios de la página actual
+        console.log(`✅ [paginatedUsers] Usando usuarios del backend directamente: ${filteredUsers.length}`);
         return filteredUsers;
-    }, [filteredUsers]);
+    }, [filteredUsers, currentPage, itemsPerPage]);
 
     return {
         // Estados

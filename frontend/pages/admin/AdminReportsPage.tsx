@@ -767,8 +767,9 @@ const AdminReportsPage: React.FC = () => {
                                     nombre_contacto: s.nombre_contacto || 'Sin especificar',
                                     email_contacto: s.email_contacto || 'Sin especificar',
                                     estado_solicitud: s.estado || 'pendiente',
-                                    fecha_solicitud: s.fecha_solicitud || 'Sin fecha',
-                                    fecha_revision: s.fecha_revision || null,
+                                    // Formatear fechas con zona horaria correcta (igual que en reporte de usuarios)
+                                    fecha_solicitud: s.fecha_solicitud ? formatArgentinaDateTime(s.fecha_solicitud) : 'Sin fecha',
+                                    fecha_revision: s.fecha_revision ? formatArgentinaDateTime(s.fecha_revision) : null,
                                     comentario_admin: s.comentario || ''
                                 }));
                                 

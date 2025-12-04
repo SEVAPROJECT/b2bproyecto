@@ -1442,13 +1442,21 @@ def get_user_email_and_access(user_id: str, emails_dict: dict) -> tuple[str, Opt
         return emails_dict[user_id]["email"], emails_dict[user_id]["ultimo_acceso"]
     return VALOR_DEFAULT_NO_DISPONIBLE, None
 
-async def process_user_row_for_list(conn, row: dict, emails_dict: dict) -> dict:
-    """Procesa una fila de usuario y retorna su diccionario con roles reales"""
+async def process_user_row_for_list(conn, row: dict, emails_dict: dict, roles_dict: dict = None) -> dict:
+    """
+    Procesa una fila de usuario y retorna su diccionario con roles reales.
+    Si se proporciona roles_dict, usa ese diccionario en lugar de hacer query individual (optimización).
+    """
     user_id = str(row['id'])
     email, ultimo_acceso = get_user_email_and_access(user_id, emails_dict)
     
-    # Obtener roles reales del usuario
-    roles = await get_user_roles(conn, user_id)
+    # Obtener roles: usar diccionario si está disponible, sino hacer query individual (fallback)
+    if roles_dict is not None:
+        roles = roles_dict.get(user_id, [])
+    else:
+        # Fallback: query individual (para compatibilidad con código existente)
+        roles = await get_user_roles(conn, user_id)
+    
     rol_principal = determine_main_role(roles) if roles else "client"
     
     return {
@@ -1519,12 +1527,31 @@ async def get_all_users(
             # Crear una copia de params para la query de usuarios (con limit y offset)
             users_params = params.copy()
             users_params.extend([limit, offset])
+            print(f"🔍 DEBUG: [get_all_users] page={page}, limit={limit}, offset={offset}")
+            print(f"🔍 DEBUG: [get_all_users] Query params: {users_params}")
             users_data = await conn.fetch(users_query, *users_params)
+            print(f"🔍 DEBUG: [get_all_users] Usuarios obtenidos de DB: {len(users_data)} (esperado: máximo {limit})")
             
-            emails_dict = get_emails_from_supabase_auth()
+            # OPTIMIZACIÓN: Obtener emails y roles en batch (Solución 1 + Solución 2)
+            # Esto reduce de N queries a 2 queries totales (1 para emails, 1 para roles)
+            user_ids = [str(row['id']) for row in users_data]
+            
+            print(f"🔍 [get_all_users] Obteniendo datos en batch para {len(user_ids)} usuarios")
+            
+            # Solución 2: Obtener emails en batch usando SQL directo (mucho más rápido que Supabase Auth API)
+            # Reemplaza get_emails_from_supabase_auth() que hacía llamada HTTP lenta
+            emails_dict = await get_emails_batch_from_auth(conn, user_ids)
+            print(f"✅ [get_all_users] Emails obtenidos: {len(emails_dict)} de {len(user_ids)} usuarios")
+            
+            # Solución 1: Obtener roles en batch (una sola query para todos los usuarios)
+            # Reemplaza N queries individuales (una por usuario) por 1 query batch
+            roles_dict = await get_all_users_roles_batch(conn, user_ids)
+            print(f"✅ [get_all_users] Roles obtenidos para {len(roles_dict)} usuarios")
+            
+            # Procesar usuarios usando los diccionarios pre-cargados (sin queries adicionales)
             users_list = []
             for row in users_data:
-                user_data = await process_user_row_for_list(conn, row, emails_dict)
+                user_data = await process_user_row_for_list(conn, row, emails_dict, roles_dict)
                 users_list.append(user_data)
             
             response_data = build_users_response(users_list, total_users, page, limit)
@@ -2611,6 +2638,51 @@ async def get_user_roles(conn, user_id: str) -> list[str]:
     roles_data = await conn.fetch(roles_query, user_id)
     return [row['nombre'] for row in roles_data]
 
+async def get_all_users_roles_batch(conn, user_ids: List[str]) -> Dict[str, List[str]]:
+    """
+    Obtiene los roles de múltiples usuarios en una sola query (optimización para evitar N+1)
+    Retorna un diccionario: {user_id: [lista_de_roles]}
+    """
+    if not user_ids:
+        return {}
+    
+    try:
+        # Crear placeholders para la query IN
+        placeholders = ','.join([f'${i+1}' for i in range(len(user_ids))])
+        roles_query = f"""
+            SELECT 
+                ur.id_usuario::text as user_id,
+                r.nombre as rol_nombre
+            FROM usuario_rol ur
+            JOIN rol r ON ur.id_rol = r.id
+            WHERE ur.id_usuario::text IN ({placeholders})
+            ORDER BY ur.id_usuario, r.nombre
+        """
+        
+        roles_data = await conn.fetch(roles_query, *user_ids)
+        
+        # Agrupar roles por usuario
+        roles_dict: Dict[str, List[str]] = {}
+        for row in roles_data:
+            user_id = str(row['user_id'])
+            rol_nombre = row['rol_nombre']
+            
+            if user_id not in roles_dict:
+                roles_dict[user_id] = []
+            roles_dict[user_id].append(rol_nombre)
+        
+        # Asegurar que todos los user_ids tengan al menos una lista vacía
+        for user_id in user_ids:
+            if user_id not in roles_dict:
+                roles_dict[user_id] = []
+        
+        return roles_dict
+    except Exception as e:
+        print(f"❌ Error obteniendo roles en batch: {e}")
+        traceback.print_exc()
+        # Retornar diccionario vacío en caso de error
+        return {user_id: [] for user_id in user_ids}
+
 def determine_main_role(roles: list[str]) -> str:
     """Determina el rol principal basado en los roles del usuario"""
     normalized_roles = [rol.lower().strip() for rol in roles]
@@ -3064,25 +3136,53 @@ async def get_cliente_email_from_auth(conn, cliente_user_id: uuid.UUID) -> str:
         print(f"Error obteniendo email del cliente {cliente_user_id}: {e}")
     return VALOR_DEFAULT_NO_DISPONIBLE
 
-async def get_emails_batch_from_auth(conn, user_ids: List[uuid.UUID]) -> Dict[uuid.UUID, str]:
-    """Obtiene los emails de múltiples usuarios en una sola consulta"""
+async def get_emails_batch_from_auth(conn, user_ids: List[str]) -> Dict[str, Dict[str, any]]:
+    """
+    Obtiene los emails, último acceso y created_at de múltiples usuarios en una sola consulta.
+    Optimización: usa SQL directo en lugar de Supabase Auth API (mucho más rápido).
+    
+    Args:
+        conn: Conexión a la base de datos
+        user_ids: Lista de user_ids como strings
+    
+    Returns:
+        Dict con formato: {user_id: {"email": str, "ultimo_acceso": datetime, "created_at": datetime}}
+    """
     if not user_ids:
         return {}
     
     try:
-        # Crear una lista de placeholders para la consulta IN
-        placeholders = ','.join([f'${i+1}' for i in range(len(user_ids))])
-        email_query = f"SELECT id, email FROM auth.users WHERE id IN ({placeholders})"
-        email_results = await conn.fetch(email_query, *user_ids)
+        # Convertir strings a UUID para la query
+        user_ids_uuid = [uuid.UUID(uid) for uid in user_ids]
         
-        # Crear un diccionario de user_id -> email
+        # Crear una lista de placeholders para la consulta IN
+        placeholders = ','.join([f'${i+1}' for i in range(len(user_ids_uuid))])
+        email_query = f"""
+            SELECT 
+                id, 
+                email, 
+                last_sign_in_at as ultimo_acceso,
+                created_at
+            FROM auth.users 
+            WHERE id IN ({placeholders})
+        """
+        email_results = await conn.fetch(email_query, *user_ids_uuid)
+        
+        # Crear un diccionario con formato completo
         emails_dict = {}
         for row in email_results:
-            emails_dict[row['id']] = row['email']
+            user_id_str = str(row['id'])
+            emails_dict[user_id_str] = {
+                "email": row['email'],
+                "ultimo_acceso": row['ultimo_acceso'],
+                "created_at": row['created_at']
+            }
         
+        print(f"✅ [get_emails_batch_from_auth] Emails obtenidos: {len(emails_dict)} de {len(user_ids)} usuarios")
         return emails_dict
     except Exception as e:
-        print(f"Error obteniendo emails en batch: {e}")
+        print(f"❌ [get_emails_batch_from_auth] Error obteniendo emails en batch: {e}")
+        traceback.print_exc()
         return {}
 
 def format_reserva_datetime(date_value) -> Optional[str]:

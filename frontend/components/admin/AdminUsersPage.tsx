@@ -754,6 +754,7 @@ interface PaginationProps {
     itemsPerPage: number;
     filteredUsers: BackendUser[];
     setCurrentPage: (page: number) => void;
+    isLoading?: boolean;
 }
 
 const Pagination: React.FC<PaginationProps> = ({
@@ -761,91 +762,82 @@ const Pagination: React.FC<PaginationProps> = ({
     totalPages,
     itemsPerPage,
     filteredUsers,
-    setCurrentPage
+    setCurrentPage,
+    isLoading = false
 }) => {
     if (totalPages <= 1) return null;
 
-    const getPageNumbers = () => {
-        const pages: (number | null)[] = [];
-        const maxVisible = 5;
-        const startPage = Math.max(1, Math.min(totalPages - maxVisible + 1, currentPage - 2));
-        
-        for (let i = 0; i < maxVisible; i++) {
-            const pageNum = startPage + i;
-            if (pageNum <= totalPages) {
-                pages.push(pageNum);
-            }
-        }
-        return pages;
-    };
-
     return (
-        <div className="bg-white px-4 py-3 border-t border-slate-200 sm:px-6">
-            <div className="flex items-center justify-between">
-                <div className="flex-1 flex justify-between sm:hidden">
+        <div className="mt-6 sm:mt-8">
+            {/* Paginación completa para desktop */}
+            <div className="hidden sm:flex justify-center">
+                <nav className="flex items-center gap-3">
                     <button
                         onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                        disabled={currentPage === 1}
-                        className="relative inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={currentPage === 1 || isLoading}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
                     >
-                        Anterior
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        {isLoading ? '⏳' : 'Anterior'}
                     </button>
+                    
+                    <div className="flex items-center gap-2">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+                            if (pageNum > totalPages) return null;
+                            
+                            return (
+                                <button
+                                    key={pageNum}
+                                    onClick={() => setCurrentPage(pageNum)}
+                                    disabled={isLoading}
+                                    className={`px-4 py-2 text-sm font-medium border rounded-lg transition-all duration-150 min-w-[44px] disabled:opacity-50 disabled:cursor-not-allowed ${
+                                        currentPage === pageNum
+                                            ? 'bg-primary-600 text-white border-primary-600 shadow-md'
+                                            : 'text-slate-600 border-slate-300 hover:bg-slate-50 hover:border-slate-400'
+                                    }`}
+                                >
+                                    {isLoading && currentPage === pageNum ? '⏳' : pageNum}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    
                     <button
                         onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                        disabled={currentPage === totalPages}
-                        className="ml-3 relative inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={currentPage === totalPages || isLoading}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
                     >
-                        Siguiente
+                        {isLoading ? '⏳' : 'Siguiente'}
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                     </button>
-                </div>
-                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                    <div>
-                        <p className="text-sm text-slate-700">
-                            Mostrando{' '}
-                            <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span>
-                            {' '}a{' '}
-                            <span className="font-medium">
-                                {Math.min(currentPage * itemsPerPage, filteredUsers.length)}
-                            </span>
-                            {' '}de{' '}
-                            <span className="font-medium">{filteredUsers.length}</span>
-                            {' '}resultados
-                        </p>
+                </nav>
+            </div>
+
+            {/* Paginación simplificada para móviles */}
+            <div className="sm:hidden flex justify-center">
+                <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg p-2 shadow-sm">
+                    <button
+                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1 || isLoading}
+                        className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    >
+                        {isLoading ? '⏳' : '←'}
+                    </button>
+                    <div className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-50 rounded-md min-w-[80px] text-center">
+                        {isLoading ? 'Cargando...' : `${currentPage} de ${totalPages}`}
                     </div>
-                    <div>
-                        <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                            <button
-                                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                                disabled={currentPage === 1}
-                                className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-slate-300 bg-white text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Anterior
-                            </button>
-                            {getPageNumbers().map((pageNum) => {
-                                if (pageNum === null) return null;
-                                return (
-                                    <button
-                                        key={pageNum}
-                                        onClick={() => setCurrentPage(pageNum)}
-                                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                                            currentPage === pageNum
-                                                ? 'z-10 bg-primary-50 border-primary-500 text-primary-600'
-                                                : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-50'
-                                        }`}
-                                    >
-                                        {pageNum}
-                                    </button>
-                                );
-                            })}
-                            <button
-                                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                                disabled={currentPage === totalPages}
-                                className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-slate-300 bg-white text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Siguiente
-                            </button>
-                        </nav>
-                    </div>
+                    <button
+                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage === totalPages || isLoading}
+                        className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    >
+                        {isLoading ? '⏳' : '→'}
+                    </button>
                 </div>
             </div>
         </div>
@@ -1001,6 +993,7 @@ const AdminUsersPage: React.FC = () => {
                             itemsPerPage={itemsPerPage}
                             filteredUsers={filteredUsers}
                             setCurrentPage={setCurrentPage}
+                            isLoading={isSearching}
                         />
                     </div>
 
