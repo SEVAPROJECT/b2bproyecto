@@ -358,16 +358,18 @@ const AdminReportsPage: React.FC = () => {
         }
     };
 
-    // Función helper para formatear fecha/hora con zona horaria de Argentina
+    // Función helper para formatear fecha/hora con zona horaria de Paraguay (GMT-3)
     const formatArgentinaDateTime = (dateString: string): string => {
         try {
             const date = new Date(dateString);
-            return date.toLocaleString('es-AR', {
-                timeZone: 'America/Argentina/Buenos_Aires',
+            // Usar zona horaria de Paraguay (America/Asuncion) en lugar de Argentina
+            // para evitar desfases de hora
+            return date.toLocaleString('es-PY', {
+                timeZone: 'America/Asuncion',
                 hour12: false,
             });
         } catch (error) {
-            console.error('Error formateando fecha Argentina:', error);
+            console.error('Error formateando fecha Paraguay:', error);
             return dateString;
         }
     };
@@ -767,9 +769,9 @@ const AdminReportsPage: React.FC = () => {
                                     nombre_contacto: s.nombre_contacto || 'Sin especificar',
                                     email_contacto: s.email_contacto || 'Sin especificar',
                                     estado_solicitud: s.estado || 'pendiente',
-                                    // Formatear fechas con zona horaria correcta (igual que en reporte de usuarios)
-                                    fecha_solicitud: s.fecha_solicitud ? formatArgentinaDateTime(s.fecha_solicitud) : 'Sin fecha',
-                                    fecha_revision: s.fecha_revision ? formatArgentinaDateTime(s.fecha_revision) : null,
+                                    // Formatear fechas - si ya vienen como DD/MM/YYYY, dejarlas así (igual que reporte de usuarios)
+                                    fecha_solicitud: s.fecha_solicitud ? formatDateValue(s.fecha_solicitud, 'fecha_solicitud') : 'Sin fecha',
+                                    fecha_revision: s.fecha_revision ? formatDateValue(s.fecha_revision, 'fecha_revision') : null,
                                     comentario_admin: s.comentario || ''
                                 }));
                                 
