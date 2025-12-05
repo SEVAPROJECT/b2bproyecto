@@ -729,37 +729,118 @@ const ProviderOnboardingPage: React.FC = () => {
     // Función helper para mapear documentos del backend
     const mapDocumentsFromBackend = (documentos: any[], documentosMapeados: any): any => {
         if (!documentos || !Array.isArray(documentos)) {
+            console.log('⚠️ No hay documentos para mapear o no es un array');
             return documentosMapeados;
         }
 
         console.log('📄 Procesando documentos del backend (manual):', documentos.length);
+        console.log('📄 Documentos recibidos:', documentos.map(d => ({
+            id: d.id_documento,
+            tipo: d.tipo_documento,
+            url: d.url_archivo
+        })));
+        
+        // Mapeo exacto según los nombres en la base de datos
+        const tipoDocumentoMap: Record<string, string> = {
+            // Nombres exactos de la base de datos (case-insensitive)
+            'constancia de ruc': 'ruc',
+            'constancia ruc': 'ruc',
+            'ruc': 'ruc',
+            'cédula mipymes': 'cedula',
+            'cedula mipymes': 'cedula',
+            'cédula mipyme': 'cedula',
+            'cedula mipyme': 'cedula',
+            'cedula': 'cedula',
+            'cédula': 'cedula',
+            'certificado de cumplimiento tributario': 'certificado',
+            'certificado cumplimiento tributario': 'certificado',
+            'certificado tributario': 'certificado',
+            'certificado de cumplimiento': 'certificado',
+            'certificados del rubro': 'certificados_rubro',
+            'certificados rubro': 'certificados_rubro',
+            'certificaciones del rubro': 'certificados_rubro'
+        };
         
         for (const doc of documentos) {
             console.log('📄 Procesando documento individual (manual):', {
                 id: doc.id_documento,
                 tipo: doc.tipo_documento,
-                url: doc.url_archivo
+                tipo_original: doc.tipo_documento, // Mantener original para debug
+                url: doc.url_archivo,
+                observacion: doc.observacion
             });
 
-            const tipoDoc = doc.tipo_documento?.toLowerCase();
+            if (!doc.tipo_documento) {
+                console.log('⚠️ Documento sin tipo_documento, saltando:', doc);
+                continue;
+            }
+
+            const tipoDoc = doc.tipo_documento.toLowerCase().trim();
             let docKey = '';
 
-            // Mapear tipos de documento a las claves del formulario
-            if (tipoDoc?.includes('constancia') && tipoDoc?.includes('ruc')) docKey = 'ruc';
-            else if (tipoDoc?.includes('cédula') && tipoDoc?.includes('MiPymes')) docKey = 'cedula';
-            else if (tipoDoc?.includes('certificado') && tipoDoc?.includes('cumplimiento') && tipoDoc?.includes('tributario')) docKey = 'certificado';
-            else if (tipoDoc?.includes('certificaciones') && tipoDoc?.includes('rubro')) docKey = 'certificados_rubro';
+            // Estrategia 1: Búsqueda exacta en el mapa (prioridad)
+            if (tipoDocumentoMap[tipoDoc]) {
+                docKey = tipoDocumentoMap[tipoDoc];
+                console.log(`✅ Mapeo exacto encontrado: "${doc.tipo_documento}" -> "${docKey}"`);
+            } else {
+                // Estrategia 2: Búsqueda por palabras clave (fallback)
+                // Constancia de RUC
+                if (tipoDoc.includes('constancia') && tipoDoc.includes('ruc')) {
+                    docKey = 'ruc';
+                }
+                // Cédula MiPymes
+                else if ((tipoDoc.includes('cédula') || tipoDoc.includes('cedula')) && 
+                         (tipoDoc.includes('mipymes') || tipoDoc.includes('mipyme'))) {
+                    docKey = 'cedula';
+                }
+                // Certificado de Cumplimiento Tributario
+                else if (tipoDoc.includes('certificado') && 
+                        (tipoDoc.includes('cumplimiento') || tipoDoc.includes('tributario'))) {
+                    docKey = 'certificado';
+                }
+                // Certificados del Rubro
+                else if ((tipoDoc.includes('certificados') || tipoDoc.includes('certificaciones')) && 
+                         tipoDoc.includes('rubro')) {
+                    docKey = 'certificados_rubro';
+                }
+                
+                if (docKey) {
+                    console.log(`✅ Mapeo por palabras clave: "${doc.tipo_documento}" -> "${docKey}"`);
+                } else {
+                    console.log(`⚠️ No se pudo mapear el documento: "${doc.tipo_documento}" (normalizado: "${tipoDoc}")`);
+                }
+            }
 
             if (docKey && documentosMapeados[docKey]) {
+                console.log(`🔍 Antes de mapear documento ${docKey}:`, {
+                    url_archivo_original: doc.url_archivo,
+                    url_archivo_tipo: typeof doc.url_archivo,
+                    url_archivo_existe: !!doc.url_archivo
+                });
+                
                 documentosMapeados[docKey] = {
                     ...documentosMapeados[docKey],
                     status: 'uploaded',
                     url: doc.url_archivo,
                     rejectionReason: doc.observacion || undefined
                 };
-                console.log(`📄 Documento ${docKey} mapeado como subido:`, doc.url_archivo);
+                
+                console.log(`✅ Documento ${docKey} mapeado como subido:`, {
+                    url_asignada: documentosMapeados[docKey].url,
+                    status_final: documentosMapeados[docKey].status,
+                    tiene_url: !!documentosMapeados[docKey].url
+                });
+            } else if (docKey) {
+                console.log(`⚠️ Documento mapeado a "${docKey}" pero no existe en documentosMapeados`);
             }
         }
+
+        console.log('📄 Documentos mapeados finales:', Object.entries(documentosMapeados).map(([key, doc]: [string, any]) => ({
+            key,
+            name: doc.name,
+            status: doc.status,
+            hasUrl: !!doc.url
+        })));
 
         return documentosMapeados;
     };
@@ -815,6 +896,9 @@ const ProviderOnboardingPage: React.FC = () => {
                     console.log('📋 Estructura completa de datosRechazados:', JSON.stringify(datosRechazados, null, 2));
                     console.log('🔍 Verificando success:', datosRechazados.success);
                     console.log('🔍 Verificando empresa:', datosRechazados.empresa);
+                    console.log('📄 Documentos recibidos del endpoint:', datosRechazados.documentos);
+                    console.log('📄 Nombres exactos de tipos de documento:', 
+                        datosRechazados.documentos?.map((d: any) => d.tipo_documento) || []);
                     console.log('🏢 Datos de sucursal en empresa:', {
                         nombre_sucursal: datosRechazados.empresa?.nombre_sucursal,
                         nombre_fantasia: datosRechazados.empresa?.nombre_fantasia,
@@ -884,6 +968,13 @@ const ProviderOnboardingPage: React.FC = () => {
                         };
 
                         console.log('📄 Documentos mapeados correctamente');
+                        console.log('📄 Estado final de documentos:', Object.entries(datosFormulario.documents).map(([key, doc]: [string, any]) => ({
+                            key,
+                            name: doc.name,
+                            status: doc.status,
+                            hasUrl: !!doc.url,
+                            url: doc.url
+                        })));
                         setData(datosFormulario);
                         setDataLoaded(true); // Marcar que los datos se cargaron
                         console.log('✅ Formulario cargado con datos de solicitud rechazada');
@@ -921,21 +1012,30 @@ const ProviderOnboardingPage: React.FC = () => {
     
 
     const handleSubmit = async () => {
-        if (isSubmitting) return; // Prevenir múltiples envíos
+        console.log('🔘 handleSubmit llamado');
+        console.log('📊 Estado actual:', { isSubmitting, providerStatus });
+        
+        if (isSubmitting) {
+            console.log('⚠️ Ya se está enviando, ignorando clic');
+            return; // Prevenir múltiples envíos
+        }
         
         try {
+            console.log('✅ Iniciando envío de solicitud...');
             setIsSubmitting(true);
             
             if (providerStatus === 'rejected') {
+                console.log('🔄 Reenviando solicitud rechazada...');
                 await resubmitProviderApplication(data);
                 alert("¡Gracias! Tu solicitud corregida ha sido enviada para revisión. Te notificaremos en un plazo máximo de 3 días hábiles.");
             } else {
+                console.log('📤 Enviando nueva solicitud...');
                 await submitProviderApplication(data);
                 alert("¡Gracias! Tu perfil de proveedor está en revisión. Te notificaremos en un plazo máximo de 3 días hábiles.");
             }
             navigate('/dashboard');
         } catch (error) {
-            console.error('Error al enviar la solicitud:', error);
+            console.error('❌ Error al enviar la solicitud:', error);
             const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
             alert(`Error al enviar la solicitud: ${errorMessage}. Por favor, inténtalo nuevamente.`);
         } finally {
@@ -962,6 +1062,10 @@ const ProviderOnboardingPage: React.FC = () => {
     };
     
     const allRequiredDocsUploaded = Object.values(data.documents).every((doc) => doc.isOptional || doc.status === 'uploaded');
+    
+    // Para solicitudes rechazadas que se están reenviando, permitir reenviar incluso si faltan algunos documentos
+    // ya que los documentos que ya estaban subidos se mantienen
+    const canSubmit = providerStatus === 'rejected' ? true : allRequiredDocsUploaded;
 
     // Pantalla de carga al enviar solicitud
     if (isSubmitting) {
@@ -974,8 +1078,8 @@ const ProviderOnboardingPage: React.FC = () => {
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
                     </div>
-                    <h2 className="text-xl font-semibold text-slate-800 mb-2">Espere por favor</h2>
-                    <p className="text-slate-600 mb-4">Se está enviando la solicitud. No salga de esta pantalla.</p>
+                    <h2 className="text-xl font-semibold text-slate-800 mb-2">Procesando su solicitud</h2>
+                    <p className="text-slate-600 mb-4">Estamos procesando su solicitud, espere un momento por favor.</p>
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <p className="text-sm text-blue-700">
                             <strong>No cierres esta ventana</strong> hasta que se complete el proceso.
@@ -1086,7 +1190,7 @@ const ProviderOnboardingPage: React.FC = () => {
                     <div className="space-x-4">
                         <Button variant="ghost" onClick={() => alert('¡Borrador guardado!')}>Guardar borrador</Button>
                         {step < 5 && <Button variant="primary" onClick={nextStep}>Siguiente</Button>}
-                        {step === 5 && <Button variant="primary" onClick={handleSubmit} disabled={!allRequiredDocsUploaded || isSubmitting}>
+                        {step === 5 && <Button variant="primary" onClick={handleSubmit} disabled={!canSubmit || isSubmitting}>
                             {isSubmitting ? (
                                 <div className="flex items-center">
                                     <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

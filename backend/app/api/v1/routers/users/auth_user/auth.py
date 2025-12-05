@@ -1239,6 +1239,61 @@ async def get_documentos_data(id_verificacion: int) -> list[dict]:
         if conn:
             await direct_db_service.pool.release(conn)
 
+async def get_all_documentos_by_perfil(id_perfil: int) -> list[dict]:
+    """
+    Obtiene todos los documentos del perfil, buscando el más reciente de cada tipo
+    de documento de todas las solicitudes de verificación del perfil.
+    Usa direct_db_service para evitar problemas con PgBouncer.
+    """
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        
+        # Obtener el documento más reciente de cada tipo para este perfil
+        documentos_query = """
+            SELECT DISTINCT ON (d.id_tip_documento)
+                d.id_documento,
+                d.id_verificacion,
+                d.id_tip_documento,
+                d.estado_revision,
+                d.url_archivo,
+                d.fecha_verificacion,
+                d.observacion,
+                d.created_at,
+                td.tipo_documento as tipo_documento_nombre,
+                td.es_requerido
+            FROM documento d
+            LEFT JOIN tipo_documento td ON d.id_tip_documento = td.id_tip_documento
+            JOIN verificacion_solicitud vs ON d.id_verificacion = vs.id_verificacion
+            WHERE vs.id_perfil = $1
+            ORDER BY d.id_tip_documento, d.created_at DESC
+        """
+        documentos_rows = await conn.fetch(documentos_query, id_perfil)
+        
+        documentos_data = []
+        for row in documentos_rows:
+            tipo_doc_nombre = row['tipo_documento_nombre'] if row['tipo_documento_nombre'] else f"Tipo {row['id_tip_documento']}"
+            es_requerido = row['es_requerido'] if row['es_requerido'] is not None else False
+            documentos_data.append({
+                "id_documento": row['id_documento'],
+                "tipo_documento": tipo_doc_nombre,
+                "es_requerido": es_requerido,
+                "estado_revision": row['estado_revision'],
+                "url_archivo": row['url_archivo'],
+                "fecha_verificacion": row['fecha_verificacion'],
+                "observacion": row['observacion'],
+                "created_at": row['created_at']
+            })
+        
+        print(f"📄 Documentos recuperados para perfil {id_perfil}: {len(documentos_data)}")
+        for doc in documentos_data:
+            print(f"  - {doc['tipo_documento']}: {doc['url_archivo'] if doc['url_archivo'] else 'Sin URL'}")
+        
+        return documentos_data
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
+
 def build_empresa_dict(empresa: dict, direccion_data: Optional[dict], sucursal_data: Optional[dict]) -> dict:
     """Construye el diccionario de datos de empresa"""
     return {
@@ -1320,10 +1375,10 @@ async def get_verificacion_datos(
         # Obtener datos de sucursal
         sucursal_data = await get_sucursal_data(empresa["id_perfil"])
         
-        # Obtener documentos (solo si hay solicitud)
+        # Obtener documentos de todas las solicitudes del perfil (el más reciente de cada tipo)
         documentos_data = []
-        if solicitud:
-            documentos_data = await get_documentos_data(solicitud["id_verificacion"])
+        if empresa.get("id_perfil"):
+            documentos_data = await get_all_documentos_by_perfil(empresa["id_perfil"])
         
         # Construir diccionarios de respuesta
         empresa_dict = build_empresa_dict(empresa, direccion_data, sucursal_data)

@@ -2945,23 +2945,31 @@ async def get_user_contact_info_for_report(conn, empresa: Optional[dict]) -> tup
     return user_nombre, user_email
 
 def format_solicitud_date(date_value) -> Optional[str]:
-    """Formatea una fecha de solicitud a DD/MM/YYYY con conversión de zona horaria a Paraguay (GMT-3)"""
+    """Formatea una fecha de solicitud a DD/MM/YYYY (igual que format_date_dd_mm_yyyy para consistencia)"""
     if not date_value:
         return None
     
-    # Las fechas de asyncpg pueden venir como naive datetime (sin tzinfo)
-    # Necesitamos asegurarnos de que se traten como UTC antes de convertir
+    # Usar el mismo formato que el reporte de usuarios para consistencia
+    # Las fechas de asyncpg vienen como naive datetime, simplemente formatearlas sin conversión
+    # ya que el reporte de usuarios funciona correctamente así
     if isinstance(date_value, datetime):
-        # Si es naive datetime (sin tzinfo), asumir que es UTC (como viene de PostgreSQL)
-        if date_value.tzinfo is None:
-            date_value = date_value.replace(tzinfo=timezone.utc)
-        # Convertir a zona horaria de Paraguay
-        date_value = DateService.to_paraguay_timezone(date_value)
-        # Formatear solo la fecha (sin hora)
+        # Formatear solo la fecha (sin hora) - igual que format_date_dd_mm_yyyy
         return date_value.strftime("%d/%m/%Y")
     
-    # Si no es datetime, intentar convertir
-    return DateService.format_paraguay_date(date_value)
+    # Si es string, intentar convertir primero
+    if isinstance(date_value, str):
+        try:
+            if date_value.endswith('Z'):
+                date_value = date_value.replace('Z', '+00:00')
+            elif '+' not in date_value and 'T' in date_value:
+                date_value = date_value + '+00:00'
+            date_obj = datetime.fromisoformat(date_value)
+            return date_obj.strftime("%d/%m/%Y")
+        except Exception:
+            pass
+    
+    # Fallback: usar format_date_dd_mm_yyyy
+    return format_date_dd_mm_yyyy(date_value)
 
 async def process_solicitud_data_for_report(conn, solicitud: dict) -> dict:
     """Procesa una solicitud y retorna su diccionario para el reporte usando direct_db_service"""

@@ -537,7 +537,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
 
     const submitProviderApplication = async (data: ProviderOnboardingData) => {
         if (user?.role === 'client') {
-            setIsLoading(true);
+            // No usar setIsLoading aquí - el componente maneja su propio estado isSubmitting
             try {
                 const accessToken = localStorage.getItem('access_token');
                 if (!accessToken) {
@@ -562,8 +562,6 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
             } catch (error) {
                 console.error('Error enviando solicitud:', error);
                 throw error;
-            } finally {
-                setIsLoading(false);
             }
         }
     };
@@ -654,7 +652,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
 
     const resubmitProviderApplication = async (data: ProviderOnboardingData) => {
         if (user?.role === 'client') {
-            setIsLoading(true);
+            // No usar setIsLoading aquí - el componente maneja su propio estado isSubmitting
             try {
                 const accessToken = getAccessTokenForSubmission();
                 const { documentos, nombres_tip_documento } = processUploadedDocuments(data.documents);
@@ -672,8 +670,6 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
             } catch (error) {
                 console.error('Error reenviando solicitud:', error);
                 throw error;
-            } finally {
-                setIsLoading(false);
             }
         }
     };
