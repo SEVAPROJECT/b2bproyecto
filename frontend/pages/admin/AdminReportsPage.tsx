@@ -787,7 +787,7 @@ const AdminReportsPage: React.FC = () => {
                                 const rechazadas = solicitudes_proveedores.filter((s: any) => s.estado_solicitud === 'rechazada').length;
                                 
                                 return {
-                                    fecha_generacion: data.fecha_generacion || getArgentinaDateISO(),
+                                    fecha_generacion: getArgentinaDateISO() || data.fecha_generacion,
                                     total_solicitudes: data.total_solicitudes || solicitudes_proveedores.length,
                                     solicitudes_proveedores: solicitudes_proveedores,
                                     pendientes: pendientes,
