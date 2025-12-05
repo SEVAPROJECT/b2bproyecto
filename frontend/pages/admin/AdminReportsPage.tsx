@@ -358,18 +358,24 @@ const AdminReportsPage: React.FC = () => {
         }
     };
 
-    // Función helper para formatear fecha/hora con zona horaria de Paraguay (GMT-3)
+    // Función helper para formatear fecha/hora - igual que el reporte de usuarios
+    // No convierte zona horaria, solo formatea la fecha/hora tal como viene del servidor
     const formatArgentinaDateTime = (dateString: string): string => {
         try {
             const date = new Date(dateString);
-            // Usar zona horaria de Paraguay (America/Asuncion) en lugar de Argentina
-            // para evitar desfases de hora
-            return date.toLocaleString('es-PY', {
-                timeZone: 'America/Asuncion',
+            // Formatear sin conversión de zona horaria - igual que el reporte de usuarios
+            // El servidor ya envía la fecha en el formato correcto
+            return date.toLocaleString('es-ES', {
                 hour12: false,
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
             });
         } catch (error) {
-            console.error('Error formateando fecha Paraguay:', error);
+            console.error('Error formateando fecha:', error);
             return dateString;
         }
     };
