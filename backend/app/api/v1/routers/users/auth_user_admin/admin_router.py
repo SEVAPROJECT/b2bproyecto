@@ -3274,10 +3274,15 @@ def format_estado_reserva(estado: str) -> dict:
         'color': 'gray'
     })
 
-async def process_reserva_row(conn, row: dict, emails_dict: Dict[uuid.UUID, str]) -> dict:
+async def process_reserva_row(conn, row: dict, emails_dict: Dict[str, Dict[str, any]]) -> dict:
     """Procesa una fila de reserva y retorna su diccionario"""
     cliente_user_id = row['cliente_user_id']
-    cliente_email = emails_dict.get(cliente_user_id, VALOR_DEFAULT_NO_DISPONIBLE)
+    cliente_user_id_str = str(cliente_user_id)
+    cliente_email_data = emails_dict.get(cliente_user_id_str)
+    if cliente_email_data and isinstance(cliente_email_data, dict):
+        cliente_email = cliente_email_data.get("email", VALOR_DEFAULT_NO_DISPONIBLE)
+    else:
+        cliente_email = VALOR_DEFAULT_NO_DISPONIBLE
     estado_formateado = format_estado_reserva(row['estado'])
     
     return {
@@ -3320,9 +3325,12 @@ async def process_all_reservas(conn, reservas_data: list) -> list[dict]:
     # Obtener todos los user_ids únicos de clientes
     cliente_user_ids = list(set(row['cliente_user_id'] for row in reservas_data if row.get('cliente_user_id')))
     
+    # Convertir UUIDs a strings para la función get_emails_batch_from_auth
+    cliente_user_ids_str = [str(uid) for uid in cliente_user_ids]
+    
     # Obtener todos los emails en una sola consulta
-    print(f"🔍 Obteniendo emails para {len(cliente_user_ids)} clientes únicos...")
-    emails_dict = await get_emails_batch_from_auth(conn, cliente_user_ids)
+    print(f"🔍 Obteniendo emails para {len(cliente_user_ids_str)} clientes únicos...")
+    emails_dict = await get_emails_batch_from_auth(conn, cliente_user_ids_str)
     print(f"✅ Emails obtenidos: {len(emails_dict)} de {len(cliente_user_ids)}")
     
     # Procesar todas las reservas usando el diccionario de emails
