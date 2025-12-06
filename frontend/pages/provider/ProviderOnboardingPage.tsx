@@ -857,6 +857,14 @@ const ProviderOnboardingPage: React.FC = () => {
 
     // Cargar datos previos si es una solicitud rechazada - Mejorado para recargar automáticamente
     useEffect(() => {
+        console.log('🔍 [useEffect loadRejectedData] Efecto ejecutado', {
+            providerStatus,
+            hasAccessToken: !!user?.accessToken,
+            dataLoaded,
+            shouldLoadPreviousData: shouldLoadPreviousDataRef.current,
+            hasProcessedNavigation: hasProcessedNavigationRef.current
+        });
+        
         const loadRejectedData = async () => {
             console.log('🔍 [loadRejectedData] Iniciando carga de datos rechazados', {
                 providerStatus,
@@ -866,23 +874,22 @@ const ProviderOnboardingPage: React.FC = () => {
                 hasProcessedNavigation: hasProcessedNavigationRef.current
             });
             
-            // Si se navegó desde "Corregir y reenviar" y aún no se ha procesado, resetear dataLoaded
+            // Si se navegó desde "Corregir y reenviar" y aún no se ha procesado, forzar carga inmediata
+            let forceLoad = false;
             if (shouldLoadPreviousDataRef.current && !hasProcessedNavigationRef.current) {
-                console.log('🔄 Navegación desde "Corregir y reenviar" detectada, reseteando dataLoaded');
+                console.log('🔄 Navegación desde "Corregir y reenviar" detectada, forzando carga de datos');
                 setDataLoaded(false);
                 hasProcessedNavigationRef.current = true; // Marcar como procesado
-                // Salir aquí para que el efecto se vuelva a ejecutar con dataLoaded = false
-                return;
+                forceLoad = true; // Forzar carga inmediata
             }
             
             // Cargar datos si:
             // 1. El estado es 'rejected' o 'pending'
             // 2. Hay un token de acceso disponible
-            // 3. Aún no se han cargado los datos
-            // NOTA: No importa si hasProcessedNavigationRef está en true, si dataLoaded es false, debemos cargar
+            // 3. Aún no se han cargado los datos O se está forzando la carga desde navegación
             const shouldLoad = (providerStatus === 'rejected' || providerStatus === 'pending') && 
                               user?.accessToken && 
-                              !dataLoaded;
+                              (!dataLoaded || forceLoad);
             
             console.log('🔍 [loadRejectedData] Evaluando shouldLoad:', {
                 shouldLoad,
