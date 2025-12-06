@@ -498,12 +498,25 @@ class WeaviateService:
             result = await conn.fetch(query, limit)
             logger.info(f"📊 Servicios encontrados: {len(result)}")
             
-            # Indexar cada servicio
-            for servicio in result:
-                self._index_servicio(servicio)
+            # Indexar cada servicio con logging de progreso
+            total_servicios = len(result)
+            servicios_indexados = 0
+            servicios_fallidos = 0
+            
+            for idx, servicio in enumerate(result, 1):
+                success = self._index_servicio(servicio)
+                if success:
+                    servicios_indexados += 1
+                else:
+                    servicios_fallidos += 1
+                
+                # Log de progreso cada 50 servicios o cada 10% del total
+                if idx % 50 == 0 or idx % max(1, total_servicios // 10) == 0:
+                    porcentaje = (idx / total_servicios) * 100
+                    logger.info(f"📊 Progreso: {idx}/{total_servicios} servicios indexados ({porcentaje:.1f}%) - Exitosos: {servicios_indexados}, Fallidos: {servicios_fallidos}")
             
             await direct_db_service.pool.release(conn)
-            logger.info("✅ Indexación de servicios completada")
+            logger.info(f"✅ Indexación de servicios completada: {servicios_indexados} exitosos, {servicios_fallidos} fallidos de {total_servicios} totales")
             return True
             
         except Exception as e:
@@ -537,7 +550,8 @@ class WeaviateService:
             headers = self._build_search_headers()
             headers['Content-Type'] = 'application/json'
             
-            response = requests.post(url, json=servicio_data, headers=headers, timeout=30)
+            # Aumentar timeout para modelo multilingüe que es más lento
+            response = requests.post(url, json=servicio_data, headers=headers, timeout=60)
             
             if response.status_code in [200, 201]:
                 logger.debug(f"✅ Servicio {servicio.get('id_servicio', 'unknown')} indexado exitosamente")
@@ -955,12 +969,20 @@ class WeaviateService:
             # Si Weaviate dice que es relevante (score alto), lo aceptamos
             # Si Weaviate dice que no es relevante (score bajo), lo filtramos
             if relevance_score is not None and relevance_score < min_relevance_score:
-                logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{result.get('nombre', '')[:50]}' filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score} (distance={distance}, score={score})")
+                # Log detallado para servicios filtrados relacionados con PC/mantenimiento
+                nombre_servicio = result.get('nombre', '')[:50]
+                if query and ('reparar' in query.lower() or 'mantenimiento' in query.lower() or 'pc' in query.lower() or 'computadora' in query.lower()):
+                    if 'pc' in nombre_servicio.lower() or 'computadora' in nombre_servicio.lower() or 'mantenimiento' in nombre_servicio.lower() or 'reparar' in nombre_servicio.lower():
+                        logger.warning(f"⚠️ [FILTRADO] Servicio relacionado con PC/mantenimiento filtrado: '{nombre_servicio}' - relevancia: {relevance_score:.3f} < {min_relevance_score}")
+                logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{nombre_servicio}' filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score} (distance={distance}, score={score})")
                 continue
             
             # Log detallado para debugging de búsquedas problemáticas
             if query and ('reparar' in query.lower() or 'mantenimiento' in query.lower() or 'pc' in query.lower() or 'computadora' in query.lower()):
-                logger.info(f"🔍 [DEBUG] Servicio incluido: '{result.get('nombre', '')[:50]}' - relevancia: {relevance_score:.3f}, distance: {distance}, score: {score}")
+                nombre_servicio = result.get('nombre', '')[:50]
+                descripcion_servicio = result.get('descripcion', '')[:100] if result.get('descripcion') else ''
+                logger.info(f"🔍 [DEBUG] Servicio incluido: '{nombre_servicio}' - relevancia: {relevance_score:.3f}, distance: {distance}, score: {score}")
+                logger.info(f"   Descripción: {descripcion_servicio}")
             
             servicio = {
                 "id_servicio": result.get("id_servicio"),
