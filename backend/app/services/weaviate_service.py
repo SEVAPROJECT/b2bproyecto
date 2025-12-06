@@ -1015,6 +1015,40 @@ class WeaviateService:
                 logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{nombre_servicio}' filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score} (distance={distance}, score={score})")
                 continue
             
+            # Filtro adicional: Para queries muy específicas, verificar que el servicio tenga palabras clave relacionadas
+            # Esto ayuda a filtrar resultados que Weaviate considera relevantes pero que no lo son realmente
+            if query and relevance_score is not None:
+                query_lower = query.lower().strip()
+                nombre_servicio = result.get('nombre', '').lower()
+                descripcion_servicio = result.get('descripcion', '').lower()
+                categoria_servicio = result.get('categoria', '').lower()
+                
+                # Palabras clave específicas y sus sinónimos
+                keyword_groups = {
+                    'peluquero': ['peluquero', 'peluquería', 'peluquera', 'corte', 'cabello', 'peinado', 'estilista', 'barbero', 'barbería'],
+                    'reparar': ['reparar', 'reparación', 'arreglar', 'arreglo', 'mantenimiento', 'soporte técnico'],
+                    'pc': ['pc', 'computadora', 'ordenador', 'laptop', 'notebook', 'computador'],
+                    'limpieza': ['limpieza', 'limpiar', 'aseo', 'sanitización', 'desinfección']
+                }
+                
+                # Verificar si la query contiene palabras clave específicas
+                query_keywords = None
+                for keyword, synonyms in keyword_groups.items():
+                    if keyword in query_lower or any(syn in query_lower for syn in synonyms):
+                        query_keywords = synonyms
+                        break
+                
+                # Si encontramos palabras clave específicas, verificar que el servicio las contenga
+                if query_keywords:
+                    servicio_text = f"{nombre_servicio} {descripcion_servicio} {categoria_servicio}"
+                    has_keyword = any(kw in servicio_text for kw in query_keywords)
+                    
+                    # Si el servicio no tiene palabras clave relacionadas Y la relevancia es baja-media (< 0.5)
+                    # entonces filtrarlo (a menos que tenga relevancia muy alta >= 0.7)
+                    if not has_keyword and relevance_score < 0.5:
+                        logger.debug(f"⚠️ [FILTRADO] Servicio sin palabras clave relacionadas: '{result.get('nombre', '')[:50]}' - relevancia: {relevance_score:.3f}, query: '{query}'")
+                        continue
+            
             # Log detallado para debugging de búsquedas problemáticas
             if query and ('reparar' in query.lower() or 'mantenimiento' in query.lower() or 'pc' in query.lower() or 'computadora' in query.lower()):
                 nombre_servicio = result.get('nombre', '')[:50]
@@ -1042,7 +1076,7 @@ class WeaviateService:
         logger.info(f"📊 Resultados procesados: {len(servicios)} servicios con relevancia >= {min_relevance_score} y palabras clave válidas")
         return servicios
     
-    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.3) -> List[Dict[str, Any]]:
+    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.4) -> List[Dict[str, Any]]:
         """
         Buscar servicios usando búsqueda nativa de Weaviate (REST API v1)
         
