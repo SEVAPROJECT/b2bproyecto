@@ -999,9 +999,14 @@ class WeaviateService:
                 relevance_score = float(score)
             elif distance is not None:
                 # Convertir distance a score (distance menor = score mayor)
-                # Distance típicamente va de 0 a 2, donde 0 = perfecto
-                # Convertimos: score = 1 - (distance / 2), pero limitamos a 0-1
-                relevance_score = max(0.0, min(1.0, 1.0 - (float(distance) / 2.0)))
+                # Para búsqueda vectorial con cosine distance:
+                # - distance 0.0 = perfecto (score 1.0)
+                # - distance 0.5 = muy bueno (score ~0.75)
+                # - distance 1.0 = bueno (score ~0.5)
+                # - distance 1.5+ = malo (score <0.25)
+                # Usamos una fórmula más estricta: score = 1 - distance (limitado a 0-1)
+                # Esto es más conservador y filtra mejor resultados irrelevantes
+                relevance_score = max(0.0, min(1.0, 1.0 - float(distance)))
             
             # Filtrar por relevancia mínima - confiamos completamente en Weaviate para la semántica
             # Si Weaviate dice que es relevante (score alto), lo aceptamos
