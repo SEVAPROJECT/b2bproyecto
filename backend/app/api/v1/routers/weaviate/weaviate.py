@@ -196,18 +196,58 @@ async def migrate_model(
         # Determinar si necesita reindexación:
         # 1. Si no hay servicios indexados (total_objects == 0)
         # 2. Si hay muy pocos servicios indexados comparado con la BD (menos del 10% o menos de 50)
+        # 3. Si hay MÁS servicios indexados que en la BD (indica duplicados o datos inconsistentes)
         needs_reindex = total_objects == 0
+        has_duplicates = False
+        
         if not needs_reindex and total_servicios_db > 0:
             porcentaje_indexado = (total_objects / total_servicios_db) * 100
+            
+            # Detectar si hay MÁS servicios indexados que en la BD (duplicados)
+            if total_objects > total_servicios_db * 1.2:  # Más del 20% de diferencia
+                has_duplicates = True
+                needs_reindex = True
+                logger.warning(f"⚠️ Detectados posibles duplicados: {total_objects} indexados vs {total_servicios_db} en BD ({porcentaje_indexado:.1f}%)")
+                logger.warning(f"⚠️ Se limpiará y reindexará para eliminar duplicados")
             # Reindexar si hay menos del 10% indexado O menos de 50 servicios indexados
-            needs_reindex = porcentaje_indexado < 10.0 or total_objects < 50
-            if needs_reindex:
+            elif porcentaje_indexado < 10.0 or total_objects < 50:
+                needs_reindex = True
                 logger.warning(f"⚠️ Pocos servicios indexados: {total_objects}/{total_servicios_db} ({porcentaje_indexado:.1f}%)")
         
         # Si no hay cambio y no se fuerza, pero necesita reindexación, reindexar
         if not model_changed and not force:
             if needs_reindex:
-                logger.warning(f"⚠️ El modelo está actualizado pero hay pocos servicios indexados (total_objects: {total_objects}, total_BD: {total_servicios_db})")
+                if has_duplicates:
+                    # Si hay duplicados, eliminar el schema y recrearlo para limpiar todo
+                    logger.warning(f"⚠️ Detectados duplicados: {total_objects} indexados vs {total_servicios_db} en BD")
+                    logger.info("🗑️ Eliminando schema para limpiar duplicados...")
+                    
+                    if weaviate_service._check_schema_exists():
+                        schema_deleted = weaviate_service._delete_schema()
+                        if not schema_deleted and weaviate_service._check_schema_exists():
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail="Error al eliminar el schema para limpiar duplicados"
+                            )
+                    
+                    # Recrear schema
+                    logger.info("🔨 Recreando schema limpio...")
+                    weaviate_service._setup_schema()
+                    
+                    # Verificar que se creó correctamente
+                    schema_exists = weaviate_service._check_schema_exists()
+                    has_vectorizer = weaviate_service._check_schema_has_vectorizer()
+                    
+                    if not schema_exists or not has_vectorizer:
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Error al recrear el schema después de limpiar duplicados"
+                        )
+                    
+                    logger.info("✅ Schema recreado, iniciando reindexación limpia...")
+                else:
+                    logger.warning(f"⚠️ El modelo está actualizado pero hay pocos servicios indexados (total_objects: {total_objects}, total_BD: {total_servicios_db})")
+                
                 logger.info(f"📦 Reindexando servicios (límite: {limit})...")
                 index_success = await weaviate_service.index_servicios(limit=limit)
                 
@@ -220,11 +260,12 @@ async def migrate_model(
                 logger.info("✅ Reindexación completada exitosamente")
                 
                 return {
-                    "message": "Servicios reindexados exitosamente (el modelo ya estaba actualizado)",
+                    "message": "Servicios reindexados exitosamente (el modelo ya estaba actualizado)" + (" - Duplicados eliminados" if has_duplicates else ""),
                     "current_model": current_model,
                     "expected_model": expected_model,
                     "model_changed": False,
                     "services_reindexed": True,
+                    "duplicates_cleaned": has_duplicates,
                     "reindex_limit": limit,
                     "total_objects_before": total_objects,
                     "total_servicios_db": total_servicios_db,
