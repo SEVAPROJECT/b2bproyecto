@@ -1007,22 +1007,19 @@ class WeaviateService:
             # Si Weaviate dice que es relevante (score alto), lo aceptamos
             # Si Weaviate dice que no es relevante (score bajo), lo filtramos
             if relevance_score is not None and relevance_score < min_relevance_score:
-                # Log detallado para servicios filtrados relacionados con PC/mantenimiento
                 nombre_servicio = result.get('nombre', '')[:50]
-                if query and ('reparar' in query.lower() or 'mantenimiento' in query.lower() or 'pc' in query.lower() or 'computadora' in query.lower()):
-                    if 'pc' in nombre_servicio.lower() or 'computadora' in nombre_servicio.lower() or 'mantenimiento' in nombre_servicio.lower() or 'reparar' in nombre_servicio.lower():
-                        logger.warning(f"⚠️ [FILTRADO] Servicio relacionado con PC/mantenimiento filtrado: '{nombre_servicio}' - relevancia: {relevance_score:.3f} < {min_relevance_score}")
                 logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{nombre_servicio}' filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score} (distance={distance}, score={score})")
                 continue
             
             # Confiamos completamente en Weaviate para la semántica
             # No usamos diccionarios de sinónimos ni filtros adicionales basados en palabras clave
             # El score de relevancia de Weaviate es suficiente para determinar la relevancia
-            # Log detallado para debugging de búsquedas problemáticas
-            if query and ('reparar' in query.lower() or 'mantenimiento' in query.lower() or 'pc' in query.lower() or 'computadora' in query.lower()):
-                nombre_servicio = result.get('nombre', '')[:50]
-                descripcion_servicio = result.get('descripcion', '')[:100] if result.get('descripcion') else ''
-                logger.info(f"🔍 [DEBUG] Servicio incluido: '{nombre_servicio}' - relevancia: {relevance_score:.3f}, distance: {distance}, score: {score}")
+            
+            # Log detallado para todos los servicios que pasan el filtro (para debugging)
+            nombre_servicio = result.get('nombre', '')[:50]
+            descripcion_servicio = result.get('descripcion', '')[:80] if result.get('descripcion') else ''
+            logger.info(f"✅ Servicio incluido: '{nombre_servicio}' - relevancia: {relevance_score:.3f}, distance: {distance}, score: {score}")
+            if descripcion_servicio:
                 logger.info(f"   Descripción: {descripcion_servicio}")
             
             servicio = {
@@ -1045,7 +1042,7 @@ class WeaviateService:
         logger.info(f"📊 Resultados procesados: {len(servicios)} servicios con relevancia >= {min_relevance_score} y palabras clave válidas")
         return servicios
     
-    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.4) -> List[Dict[str, Any]]:
+    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.5) -> List[Dict[str, Any]]:
         """
         Buscar servicios usando búsqueda nativa de Weaviate (REST API v1)
         
