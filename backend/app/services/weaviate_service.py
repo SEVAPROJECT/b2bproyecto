@@ -902,8 +902,12 @@ class WeaviateService:
             # Si Weaviate dice que es relevante (score alto), lo aceptamos
             # Si Weaviate dice que no es relevante (score bajo), lo filtramos
             if relevance_score is not None and relevance_score < min_relevance_score:
-                logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{result.get('nombre', '')[:50]}' filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score}")
+                logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{result.get('nombre', '')[:50]}' filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score} (distance={distance}, score={score})")
                 continue
+            
+            # Log detallado para debugging de búsquedas problemáticas
+            if query and ('reparar' in query.lower() or 'mantenimiento' in query.lower() or 'pc' in query.lower() or 'computadora' in query.lower()):
+                logger.info(f"🔍 [DEBUG] Servicio incluido: '{result.get('nombre', '')[:50]}' - relevancia: {relevance_score:.3f}, distance: {distance}, score: {score}")
             
             servicio = {
                 "id_servicio": result.get("id_servicio"),
@@ -925,7 +929,7 @@ class WeaviateService:
         logger.info(f"📊 Resultados procesados: {len(servicios)} servicios con relevancia >= {min_relevance_score} y palabras clave válidas")
         return servicios
     
-    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.5) -> List[Dict[str, Any]]:
+    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.3) -> List[Dict[str, Any]]:
         """
         Buscar servicios usando búsqueda nativa de Weaviate (REST API v1)
         
