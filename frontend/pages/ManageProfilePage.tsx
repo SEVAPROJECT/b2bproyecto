@@ -22,6 +22,8 @@ const ManageProfilePage: React.FC = () => {
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const [showDeactivateModal, setShowDeactivateModal] = useState(false);
     const [isDeactivating, setIsDeactivating] = useState(false);
+    const [isMigratingModel, setIsMigratingModel] = useState(false);
+    const [migrationResult, setMigrationResult] = useState<any>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Sincronizar formData cuando el usuario se carga
@@ -242,6 +244,44 @@ const ManageProfilePage: React.FC = () => {
         }
     };
 
+    const handleMigrateModel = async () => {
+        if (!user || user.role !== 'admin') return;
+
+        if (!window.confirm(
+            '⚠️ ¿Estás seguro de que quieres migrar el modelo de embeddings?\n\n' +
+            'Esto eliminará todos los servicios indexados y los reindexará con el nuevo modelo.\n' +
+            'El proceso puede tardar varios minutos.\n\n' +
+            '¿Deseas continuar?'
+        )) {
+            return;
+        }
+
+        setIsMigratingModel(true);
+        setError(null);
+        setSuccess(null);
+        setMigrationResult(null);
+
+        try {
+            const accessToken = localStorage.getItem('access_token');
+            if (!accessToken) {
+                throw new Error('No se encontró el token de acceso');
+            }
+
+            console.log('🔄 Iniciando migración de modelo de Weaviate...');
+            const result = await adminAPI.migrateWeaviateModel(accessToken, 1000);
+            console.log('✅ Migración completada:', result);
+
+            setMigrationResult(result);
+            setSuccess('Migración de modelo completada exitosamente. Revisa los detalles abajo.');
+
+        } catch (err: any) {
+            console.error('❌ Error en migración de modelo:', err);
+            setError(err.detail || err.message || 'Error al migrar el modelo de embeddings');
+        } finally {
+            setIsMigratingModel(false);
+        }
+    };
+
     return (
         <div className="p-4 sm:p-6">
             <div className="max-w-4xl mx-auto">
@@ -439,6 +479,58 @@ const ManageProfilePage: React.FC = () => {
                                 <p className="text-xs sm:text-sm text-blue-800">
                                     <strong>📸 Foto de perfil:</strong> Puedes subir una imagen en formato PNG o JPG (máximo 5MB)
                                 </p>
+                            </div>
+                        )}
+
+                        {/* Sección de herramientas de administrador */}
+                        {!isEditing && user?.role === 'admin' && (
+                            <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-200">
+                                <h3 className="text-sm font-medium text-gray-900 mb-4">Herramientas de Administrador</h3>
+                                
+                                {/* Botón de migración de modelo */}
+                                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                            <h4 className="text-sm font-medium text-yellow-900 mb-1">
+                                                Migrar Modelo de Embeddings (Weaviate)
+                                            </h4>
+                                            <p className="text-xs text-yellow-700 mb-3">
+                                                Migra el modelo de embeddings de Weaviate al modelo configurado en HUGGINGFACE_MODEL.
+                                                Esto eliminará todos los servicios indexados y los reindexará con el nuevo modelo.
+                                            </p>
+                                            {migrationResult && (
+                                                <div className="mt-3 p-3 bg-white rounded border border-yellow-300">
+                                                    <p className="text-xs font-medium text-gray-900 mb-2">Resultado de la migración:</p>
+                                                    <div className="text-xs text-gray-600 space-y-1">
+                                                        {migrationResult.previous_model && (
+                                                            <p><strong>Modelo anterior:</strong> {migrationResult.previous_model}</p>
+                                                        )}
+                                                        {migrationResult.new_model && (
+                                                            <p><strong>Modelo nuevo:</strong> {migrationResult.new_model}</p>
+                                                        )}
+                                                        {migrationResult.reindex_limit && (
+                                                            <p><strong>Servicios reindexados:</strong> {migrationResult.reindex_limit}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={handleMigrateModel}
+                                        disabled={isMigratingModel}
+                                        className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        {isMigratingModel ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                                Migrando modelo...
+                                            </>
+                                        ) : (
+                                            '🔄 Migrar Modelo de Embeddings'
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         )}
 

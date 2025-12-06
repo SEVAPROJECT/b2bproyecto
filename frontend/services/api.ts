@@ -816,6 +816,20 @@ export const adminAPI = {
         } catch (error) {
             handleCatchError(error, 'getDashboardStats');
         }
+    },
+
+    // Migrar modelo de embeddings de Weaviate
+    async migrateWeaviateModel(accessToken: string, limit: number = 1000): Promise<any> {
+        try {
+            console.log('🔄 Iniciando migración de modelo de Weaviate...');
+            const endpoint = buildApiUrl(`/weaviate/migrate-model?limit=${limit}`);
+            const result = await performPostRequest<any>(endpoint, {}, accessToken, 'migrateWeaviateModel');
+            console.log('✅ Migración de modelo completada:', result);
+            return result;
+        } catch (error) {
+            handleCatchError(error, 'migrateWeaviateModel');
+            throw error;
+        }
     }
 };
 

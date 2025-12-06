@@ -95,6 +95,133 @@ async def setup_schema(
         )
 
 @router.post(
+    "/migrate-model",
+    description="Migrar a un nuevo modelo de embeddings: detecta cambio, elimina schema, recrea schema y reindexa servicios"
+)
+async def migrate_model(
+    limit: int = Query(1000, ge=1, le=10000, description="Límite de servicios a reindexar"),
+    force: bool = Query(False, description="Forzar migración aunque no se detecte cambio de modelo"),
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Migrar a un nuevo modelo de embeddings.
+    
+    Este endpoint:
+    1. Detecta si el modelo configurado en HUGGINGFACE_MODEL difiere del modelo en el schema
+    2. Si hay cambio (o force=True), elimina el schema (y todos los objetos indexados)
+    3. Recrea el schema con el nuevo modelo
+    4. Reindexa todos los servicios con el nuevo modelo
+    """
+    try:
+        logger.info(f"🔄 Iniciando migración de modelo por usuario: {current_user.id}")
+        
+        # Paso 1: Detectar cambio de modelo
+        huggingface_model = os.getenv("HUGGINGFACE_MODEL")
+        model_changed = False
+        current_model = None
+        expected_model = None
+        
+        if huggingface_model:
+            # Verificar si el schema existe y obtener el modelo actual
+            if weaviate_service._check_schema_exists():
+                schema_actual = weaviate_service._get_schema_config()
+                if schema_actual:
+                    config_hf = schema_actual.get('moduleConfig', {}).get('text2vec-huggingface', {})
+                    current_model = config_hf.get('model', '')
+                    expected_model = huggingface_model.strip()
+                    
+                    if current_model != expected_model:
+                        model_changed = True
+                        logger.info(f"🔍 Cambio de modelo detectado:")
+                        logger.info(f"   Modelo actual: {current_model}")
+                        logger.info(f"   Modelo esperado: {expected_model}")
+                    else:
+                        logger.info(f"✅ El modelo ya está actualizado: {expected_model}")
+            else:
+                # No hay schema, necesitamos crearlo
+                model_changed = True
+                expected_model = huggingface_model.strip()
+                logger.info(f"🔍 No existe schema, se creará con modelo: {expected_model}")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="HUGGINGFACE_MODEL no está configurado. Configura la variable de entorno primero."
+            )
+        
+        # Si no hay cambio y no se fuerza, retornar
+        if not model_changed and not force:
+            return {
+                "message": "No se detectó cambio de modelo. El schema ya está actualizado.",
+                "current_model": current_model,
+                "expected_model": expected_model,
+                "migration_skipped": True
+            }
+        
+        # Paso 2: Eliminar schema (esto elimina todos los objetos automáticamente)
+        if model_changed or force:
+            if weaviate_service._check_schema_exists():
+                logger.info("🗑️ Eliminando schema existente (esto eliminará todos los objetos indexados)...")
+                schema_deleted = weaviate_service._delete_schema()
+                
+                if not schema_deleted and weaviate_service._check_schema_exists():
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Error al eliminar el schema existente"
+                    )
+            else:
+                logger.info("ℹ️ No existe schema previo, se creará uno nuevo")
+        
+        # Paso 3: Recrear schema con el nuevo modelo
+        logger.info(f"🔨 Recreando schema con modelo: {expected_model}")
+        weaviate_service._setup_schema()
+        
+        # Verificar que se creó correctamente
+        schema_exists = weaviate_service._check_schema_exists()
+        has_vectorizer = weaviate_service._check_schema_has_vectorizer()
+        
+        if not schema_exists or not has_vectorizer:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al recrear el schema con el nuevo modelo"
+            )
+        
+        logger.info("✅ Schema recreado exitosamente")
+        
+        # Paso 4: Reindexar todos los servicios
+        logger.info(f"📦 Reindexando servicios (límite: {limit})...")
+        index_success = await weaviate_service.index_servicios(limit=limit)
+        
+        if not index_success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al reindexar servicios"
+            )
+        
+        logger.info("✅ Migración completada exitosamente")
+        
+        return {
+            "message": "Migración de modelo completada exitosamente",
+            "model_changed": model_changed,
+            "previous_model": current_model,
+            "new_model": expected_model,
+            "schema_recreated": True,
+            "services_reindexed": True,
+            "reindex_limit": limit,
+            "status": "success"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error en migración de modelo: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error en migración de modelo: {str(e)}"
+        )
+
+@router.post(
     "/index-servicios",
     description="Indexar todos los servicios en Weaviate"
 )

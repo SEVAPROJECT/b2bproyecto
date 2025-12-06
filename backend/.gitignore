@@ -27,6 +27,13 @@ alembic/versions/
 .idea/
 *.swp
 
+# Documentación temporal y archivos .md (no subir a producción)
+*.md
+!README.md
+!CHANGELOG.md
+!LICENSE.md
+app/api/v1/routers/providers/*.md
+
 # -------------------
 # 📁 FRONTEND (React)
 # -------------------

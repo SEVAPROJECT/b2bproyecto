@@ -877,10 +877,6 @@ class WeaviateService:
         import re
         
         servicios = []
-        query_lower = query.lower().strip() if query else ""
-        # Extraer palabras clave significativas de la query (excluir palabras comunes)
-        palabras_comunes = {'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'en', 'con', 'por', 'para', 'mi', 'tu', 'su', 'quiero', 'necesito'}
-        palabras_clave = [p for p in query_lower.split() if p not in palabras_comunes and len(p) > 2]
         
         for result in results:
             # Obtener métricas de relevancia
@@ -902,29 +898,12 @@ class WeaviateService:
                 # Convertimos: score = 1 - (distance / 2), pero limitamos a 0-1
                 relevance_score = max(0.0, min(1.0, 1.0 - (float(distance) / 2.0)))
             
-            # Filtrar por relevancia mínima
+            # Filtrar por relevancia mínima - confiamos completamente en Weaviate para la semántica
+            # Si Weaviate dice que es relevante (score alto), lo aceptamos
+            # Si Weaviate dice que no es relevante (score bajo), lo filtramos
             if relevance_score is not None and relevance_score < min_relevance_score:
                 logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{result.get('nombre', '')[:50]}' filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score}")
                 continue
-            
-            # Validación adicional: verificar que al menos una palabra clave aparezca en nombre/descripción
-            # Esto ayuda a filtrar resultados que pasaron el umbral pero no son realmente relevantes
-            nombre = result.get("nombre", "").lower()
-            descripcion = result.get("descripcion", "").lower()
-            texto_completo = f"{nombre} {descripcion}"
-            
-            if palabras_clave:
-                tiene_palabra_clave = False
-                for palabra in palabras_clave:
-                    # Buscar palabra completa (no substring)
-                    pattern = r'\b' + re.escape(palabra) + r'\b'
-                    if re.search(pattern, texto_completo, re.IGNORECASE):
-                        tiene_palabra_clave = True
-                        break
-                
-                if not tiene_palabra_clave:
-                    logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{result.get('nombre', '')[:50]}' filtrado: no contiene palabras clave de la búsqueda (relevancia: {relevance_score:.3f})")
-                    continue
             
             servicio = {
                 "id_servicio": result.get("id_servicio"),
@@ -1039,32 +1018,64 @@ class WeaviateService:
     # Si necesitas búsqueda semántica, confía en la búsqueda vectorial de Weaviate.
     
     def get_servicio_by_id(self, id_servicio: int) -> Optional[Dict[str, Any]]:
-        """Obtener un servicio específico por ID"""
-        if not self.client:
+        """Obtener un servicio específico por ID usando API REST de Weaviate"""
+        if not self.connected:
+            logger.error("❌ Conexión a Weaviate no disponible")
             return None
         
         try:
-            # Obtener la colección
-            collection = self.client.collections.get(self.class_name)
+            # Usar GraphQL para buscar por id_servicio
+            graphql_query = {
+                "query": f"""{{
+                    Get {{
+                        {self.class_name} (
+                            where: {{
+                                path: ["id_servicio"],
+                                operator: Equal,
+                                valueInt: {id_servicio}
+                            }}
+                            limit: 1
+                        ) {{
+                            id_servicio
+                            nombre
+                            descripcion
+                            precio
+                            categoria
+                            empresa
+                            ubicacion
+                            estado
+                        }}
+                    }}
+                }}"""
+            }
             
-            # Buscar por ID
-            result = collection.query.fetch_objects(
-                where=weaviate.classes.query.Filter.by_property("id_servicio").equal(id_servicio),
-                limit=1
-            )
+            url = f"{self.base_url}/v1/graphql"
+            headers = self._build_search_headers()
+            headers['Content-Type'] = 'application/json'
             
-            if result.objects:
-                obj = result.objects[0]
-                return {
-                    "id_servicio": obj.properties.get("id_servicio"),
-                    "nombre": obj.properties.get("nombre"),
-                    "descripcion": obj.properties.get("descripcion"),
-                    "precio": obj.properties.get("precio"),
-                    "categoria": obj.properties.get("categoria"),
-                    "empresa": obj.properties.get("empresa"),
-                    "ubicacion": obj.properties.get("ubicacion"),
-                    "estado": obj.properties.get("estado")
-                }
+            response = requests.post(url, json=graphql_query, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'errors' in data:
+                    logger.error(f"❌ Error en query GraphQL: {data['errors']}")
+                    return None
+                
+                # Extraer resultados
+                get_data = data.get('data', {}).get('Get', {}).get(self.class_name, [])
+                
+                if get_data and len(get_data) > 0:
+                    obj = get_data[0]
+                    return {
+                        "id_servicio": obj.get("id_servicio"),
+                        "nombre": obj.get("nombre", ""),
+                        "descripcion": obj.get("descripcion", ""),
+                        "precio": obj.get("precio", 0.0),
+                        "categoria": obj.get("categoria", ""),
+                        "empresa": obj.get("empresa", ""),
+                        "ubicacion": obj.get("ubicacion", ""),
+                        "estado": obj.get("estado", "activo")
+                    }
             
             return None
             
@@ -1073,26 +1084,69 @@ class WeaviateService:
             return None
     
     def delete_servicio(self, id_servicio: int) -> bool:
-        """Eliminar un servicio del índice de Weaviate"""
-        if not self.client:
+        """Eliminar un servicio del índice de Weaviate usando API REST"""
+        if not self.connected:
+            logger.error("❌ Conexión a Weaviate no disponible")
             return False
         
         try:
-            # Obtener la colección
-            collection = self.client.collections.get(self.class_name)
+            # Primero, obtener el UUID del objeto usando GraphQL
+            graphql_query = {
+                "query": f"""{{
+                    Get {{
+                        {self.class_name} (
+                            where: {{
+                                path: ["id_servicio"],
+                                operator: Equal,
+                                valueInt: {id_servicio}
+                            }}
+                            limit: 1
+                        ) {{
+                            _additional {{
+                                id
+                            }}
+                        }}
+                    }}
+                }}"""
+            }
             
-            # Buscar el objeto por ID
-            result = collection.query.fetch_objects(
-                where=weaviate.classes.query.Filter.by_property("id_servicio").equal(id_servicio),
-                limit=1
-            )
+            url = f"{self.base_url}/v1/graphql"
+            headers = self._build_search_headers()
+            headers['Content-Type'] = 'application/json'
             
-            if result.objects:
+            response = requests.post(url, json=graphql_query, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'errors' in data:
+                    logger.error(f"❌ Error en query GraphQL: {data['errors']}")
+                    return False
+                
+                # Extraer UUID
+                get_data = data.get('data', {}).get('Get', {}).get(self.class_name, [])
+                
+                if not get_data or len(get_data) == 0:
+                    logger.warning(f"⚠️ Servicio {id_servicio} no encontrado en el índice")
+                    return False
+                
+                obj_uuid = get_data[0].get('_additional', {}).get('id')
+                
+                if not obj_uuid:
+                    logger.error(f"❌ No se pudo obtener UUID del servicio {id_servicio}")
+                    return False
+                
                 # Eliminar el objeto usando su UUID
-                obj_uuid = result.objects[0].uuid
-                collection.data.delete_by_id(obj_uuid)
-                logger.info(f"✅ Servicio {id_servicio} eliminado del índice")
-                return True
+                delete_url = f"{self.base_url}/v1/objects/{obj_uuid}"
+                delete_headers = self._build_search_headers()
+                
+                delete_response = requests.delete(delete_url, headers=delete_headers, timeout=30)
+                
+                if delete_response.status_code == 204:
+                    logger.info(f"✅ Servicio {id_servicio} eliminado del índice")
+                    return True
+                else:
+                    logger.error(f"❌ Error al eliminar servicio {id_servicio}: HTTP {delete_response.status_code}")
+                    return False
             
             return False
             
