@@ -176,24 +176,26 @@ async def index_servicios_public(
 async def search_servicios(
     query: str = Query(..., description="Texto de búsqueda semántica"),
     limit: int = Query(10, ge=1, le=50),
+    min_relevance: float = Query(0.3, ge=0.0, le=1.0, description="Score mínimo de relevancia (0-1)"),
     current_user: SupabaseUser = Depends(get_current_user)
 ):
     """Buscar servicios usando búsqueda semántica con Weaviate"""
     try:
-        logger.info(f"🔍 Búsqueda semántica: '{query}' por usuario: {current_user.id}")
+        logger.info(f"🔍 Búsqueda semántica: '{query}' por usuario: {current_user.id} (relevancia mínima: {min_relevance})")
         
-        resultados = weaviate_service.search_servicios(query=query, limit=limit)
+        resultados = weaviate_service.search_servicios(query=query, limit=limit, min_relevance_score=min_relevance)
         
-        # Si Weaviate no devuelve resultados, usar fallback
+        # Si Weaviate no devuelve resultados con buena relevancia, usar fallback
         if not resultados or len(resultados) == 0:
-            logger.warning("⚠️ Weaviate no devolvió resultados, usando fallback a búsqueda normal")
+            logger.warning("⚠️ Weaviate no devolvió resultados con relevancia suficiente, usando fallback a búsqueda normal")
             resultados = await _fallback_search_normal(query, limit)
         
         return {
             "query": query,
             "results": resultados,
             "total": len(resultados),
-            "limit": limit
+            "limit": limit,
+            "min_relevance": min_relevance
         }
         
     except Exception as e:
@@ -281,17 +283,18 @@ async def delete_servicio_weaviate(
 )
 async def search_servicios_public(
     query: str = Query(..., description="Texto de búsqueda semántica"),
-    limit: int = Query(100, ge=1, le=200)  # Aumentado a 200 para permitir más resultados
+    limit: int = Query(100, ge=1, le=200),  # Aumentado a 200 para permitir más resultados
+    min_relevance: float = Query(0.3, ge=0.0, le=1.0, description="Score mínimo de relevancia (0-1)")
 ):
     """Buscar servicios usando búsqueda semántica con Weaviate (endpoint público)"""
     try:
-        logger.info(f"🔍 Búsqueda semántica pública: '{query}'")
+        logger.info(f"🔍 Búsqueda semántica pública: '{query}' (relevancia mínima: {min_relevance})")
         
-        resultados = weaviate_service.search_servicios(query=query, limit=limit)
+        resultados = weaviate_service.search_servicios(query=query, limit=limit, min_relevance_score=min_relevance)
         
-        # Si Weaviate no devuelve resultados o hay error, usar fallback a búsqueda normal
+        # Si Weaviate no devuelve resultados con buena relevancia, usar fallback a búsqueda normal
         if not resultados or len(resultados) == 0:
-            logger.warning("⚠️ Weaviate no devolvió resultados, usando fallback a búsqueda normal")
+            logger.warning("⚠️ Weaviate no devolvió resultados con relevancia suficiente, usando fallback a búsqueda normal")
             resultados = await _fallback_search_normal(query, limit)
         
         logger.info(f"✅ Búsqueda completada: {len(resultados)} resultados encontrados")
@@ -299,7 +302,8 @@ async def search_servicios_public(
             "query": query,
             "results": resultados,
             "total": len(resultados),
-            "limit": limit
+            "limit": limit,
+            "min_relevance": min_relevance
         }
         
     except Exception as e:

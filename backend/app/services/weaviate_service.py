@@ -604,53 +604,50 @@ class WeaviateService:
         pattern = r'\b' + query_escaped + r'\b'
         return bool(re.search(pattern, nombre, re.IGNORECASE)) or bool(re.search(pattern, descripcion, re.IGNORECASE))
     
-    def _check_semantic_match(self, palabras_relacionadas: List[str], nombre: str, descripcion: str) -> bool:
-        """Verifica si hay un match semántico con las palabras relacionadas (por palabras completas, no substrings)"""
-        import re
-        for palabra in palabras_relacionadas:
-            # Escapar caracteres especiales de regex
-            palabra_escaped = re.escape(palabra)
-            # Buscar palabra completa usando word boundaries
-            pattern = r'\b' + palabra_escaped + r'\b'
-            if re.search(pattern, nombre, re.IGNORECASE) or re.search(pattern, descripcion, re.IGNORECASE):
-                return True
-        return False
+    # NOTA: _check_semantic_match y _get_palabras_relacionadas fueron eliminadas
+    # porque confiamos en Weaviate para la semántica, no en diccionarios manuales.
+    # Si necesitas búsqueda semántica, usa la búsqueda vectorial de Weaviate.
     
     def _should_include_servicio(self, servicio: Dict[str, Any], query_lower: str, 
-                                  palabras_relacionadas: List[str], ids_vistos: set) -> Tuple[bool, str]:
-        """Determina si un servicio debe incluirse en los resultados y el tipo de match"""
+                                  ids_vistos: set) -> Tuple[bool, str]:
+        """
+        Determina si un servicio debe incluirse en los resultados.
+        SOLO busca coincidencias exactas por palabras completas - confiamos en Weaviate para la semántica.
+        """
         nombre = servicio.get('nombre', '').lower()
         descripcion = servicio.get('descripcion', '').lower()
         id_servicio = servicio.get('id_servicio')
         
+        # Solo buscar coincidencias exactas por palabras completas
+        # La semántica la maneja Weaviate, no necesitamos diccionario manual
         match_exacto = self._check_exact_match(query_lower, nombre, descripcion)
-        match_semantico = self._check_semantic_match(palabras_relacionadas, nombre, descripcion)
         
-        if not (match_exacto or match_semantico):
+        if not match_exacto:
             return False, ""
         
         if id_servicio in ids_vistos:
             return False, ""
         
-        tipo_match = "exacto" if match_exacto else "semántico"
-        return True, tipo_match
+        return True, "exacto"
     
     def _apply_hybrid_search_filter(self, servicios: List[Dict[str, Any]], 
                                      query: str, limit: int) -> List[Dict[str, Any]]:
-        """Aplica el filtro de búsqueda híbrida a los servicios"""
+        """
+        Aplica el filtro de búsqueda híbrida a los servicios.
+        SOLO busca coincidencias exactas - confiamos en Weaviate para la semántica.
+        """
         if not query or not query.strip():
             return servicios
         
         query_lower = query.lower().strip()
-        palabras_relacionadas = self._get_palabras_relacionadas(query_lower)
-        logger.info(f"🔍 Palabras relacionadas para '{query_lower}': {palabras_relacionadas}")
+        logger.info(f"🔍 Aplicando filtro híbrido (solo coincidencias exactas) para: '{query_lower}'")
         
         servicios_filtrados = []
         ids_vistos = set()
         
         for servicio in servicios:
             should_include, tipo_match = self._should_include_servicio(
-                servicio, query_lower, palabras_relacionadas, ids_vistos
+                servicio, query_lower, ids_vistos
             )
             
             if should_include:
@@ -866,10 +863,42 @@ class WeaviateService:
             logger.error(f"❌ Error en búsqueda híbrida nativa: {str(e)}")
             return None
     
-    def _process_graphql_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Procesa los resultados de GraphQL y los convierte en formato de servicio"""
+    def _process_graphql_results(self, results: List[Dict[str, Any]], min_relevance_score: float = 0.3) -> List[Dict[str, Any]]:
+        """
+        Procesa los resultados de GraphQL y los convierte en formato de servicio.
+        Filtra resultados por relevancia mínima.
+        
+        Args:
+            results: Resultados de GraphQL de Weaviate
+            min_relevance_score: Score mínimo de relevancia (0-1). Scores más altos = más relevante.
+                                Para distance, valores más bajos = más relevante.
+        """
         servicios = []
         for result in results:
+            # Obtener métricas de relevancia
+            additional = result.get("_additional", {})
+            distance = additional.get("distance")
+            score = additional.get("score")
+            
+            # Calcular score de relevancia normalizado
+            # Para distance: menor = mejor (0 = perfecto, 1+ = malo)
+            # Para score: mayor = mejor (0-1, donde 1 = perfecto)
+            relevance_score = None
+            
+            if score is not None:
+                # Score ya está normalizado (0-1)
+                relevance_score = float(score)
+            elif distance is not None:
+                # Convertir distance a score (distance menor = score mayor)
+                # Distance típicamente va de 0 a 2, donde 0 = perfecto
+                # Convertimos: score = 1 - (distance / 2), pero limitamos a 0-1
+                relevance_score = max(0.0, min(1.0, 1.0 - (float(distance) / 2.0)))
+            
+            # Filtrar por relevancia mínima
+            if relevance_score is not None and relevance_score < min_relevance_score:
+                logger.debug(f"⚠️ Servicio {result.get('id_servicio')} filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score}")
+                continue
+            
             servicio = {
                 "id_servicio": result.get("id_servicio"),
                 "nombre": result.get("nombre", ""),
@@ -878,12 +907,18 @@ class WeaviateService:
                 "categoria": result.get("categoria", ""),
                 "empresa": result.get("empresa", ""),
                 "ubicacion": result.get("ubicacion", ""),
-                "estado": result.get("estado", "activo")
+                "estado": result.get("estado", "activo"),
+                "_relevance_score": relevance_score  # Guardar para logging
             }
             servicios.append(servicio)
+        
+        # Ordenar por relevancia (mayor primero)
+        servicios.sort(key=lambda x: x.get("_relevance_score", 0.0), reverse=True)
+        
+        logger.info(f"📊 Resultados procesados: {len(servicios)} servicios con relevancia >= {min_relevance_score}")
         return servicios
     
-    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True) -> List[Dict[str, Any]]:
+    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.3) -> List[Dict[str, Any]]:
         """
         Buscar servicios usando búsqueda nativa de Weaviate (REST API v1)
         
@@ -891,6 +926,7 @@ class WeaviateService:
             query: Texto de búsqueda
             limit: Número máximo de resultados
             use_hybrid: Si True, usa búsqueda híbrida (BM25 + Vectorial). Si False, solo vectorial.
+            min_relevance_score: Score mínimo de relevancia (0-1). Resultados con score menor serán filtrados.
         """
         if not self.connected:
             logger.error("❌ Conexión a Weaviate no disponible")
@@ -913,21 +949,32 @@ class WeaviateService:
             # Escapar comillas en la query para GraphQL
             query_escaped = query.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
             
+            # Aumentar el límite de búsqueda para tener más opciones después del filtrado por relevancia
+            search_limit = limit * 3  # Buscar 3x más para tener opciones después del filtrado
+            
             if use_hybrid:
                 logger.info(f"🔍 Búsqueda híbrida nativa (BM25 + Vectorial) con query: '{query}'")
-                results = self._search_hibrida_nativa(query_escaped, limit)
+                results = self._search_hibrida_nativa(query_escaped, search_limit)
             else:
                 logger.info(f"🔍 Búsqueda vectorial nativa con query: '{query}'")
-                results = self._search_vectorial_nativa(query_escaped, limit)
+                results = self._search_vectorial_nativa(query_escaped, search_limit)
             
-            if results is None:
+            if results is None or len(results) == 0:
                 logger.warning("⚠️ No se obtuvieron resultados de Weaviate")
                 return []
             
-            # Procesar resultados
-            servicios = self._process_graphql_results(results)
+            # Procesar resultados y filtrar por relevancia
+            servicios = self._process_graphql_results(results, min_relevance_score)
             
-            logger.info(f"📊 Resultados encontrados: {len(servicios)}")
+            # Limitar a los resultados más relevantes
+            servicios = servicios[:limit]
+            
+            # Si no hay resultados con buena relevancia, retornar lista vacía
+            # (el fallback a búsqueda normal se manejará en el router)
+            if len(servicios) == 0:
+                logger.warning(f"⚠️ No se encontraron resultados con relevancia >= {min_relevance_score}")
+            
+            logger.info(f"📊 Resultados encontrados: {len(servicios)} servicios con relevancia >= {min_relevance_score}")
             return servicios
             
         except Exception as e:
@@ -958,26 +1005,10 @@ class WeaviateService:
             logger.error(f"❌ Error en búsqueda fallback: {str(e)}")
             return []
     
-    def _get_palabras_relacionadas(self, query: str) -> List[str]:
-        """Obtener palabras relacionadas semánticamente"""
-        # Diccionario de palabras relacionadas
-        relaciones = {
-            'desarrollo': ['programacion', 'codigo', 'software', 'aplicacion', 'web', 'sitio', 'pagina', 'tienda', 'ecommerce', 'e-commerce', 'online', 'digital', 'tecnologia', 'sistema', 'plataforma'],
-            'marketing': ['publicidad', 'promocion', 'ventas', 'comercial', 'campaña', 'redes', 'social', 'digital', 'online', 'seo', 'posicionamiento'],
-            'diseño': ['grafico', 'visual', 'creativo', 'logo', 'imagen', 'flyer', 'banner', 'publicitario'],
-            'seo': ['posicionamiento', 'google', 'buscadores', 'optimizacion', 'ranking', 'visibilidad'],
-            'email': ['correo', 'mailing', 'newsletter', 'campaña', 'marketing', 'promocional']
-        }
-        
-        # Buscar relaciones directas
-        palabras = relaciones.get(query, [])
-        
-        # Buscar relaciones inversas
-        for palabra_clave, palabras_relacionadas in relaciones.items():
-            if query in palabras_relacionadas:
-                palabras.append(palabra_clave)
-        
-        return list(set(palabras))  # Eliminar duplicados
+    # NOTA: Esta función fue eliminada porque usar diccionarios manuales de palabras relacionadas
+    # es una "trampa" que no escala. La búsqueda semántica debe manejarse con Weaviate,
+    # que usa modelos de embeddings para encontrar relaciones semánticas reales.
+    # Si necesitas búsqueda semántica, confía en la búsqueda vectorial de Weaviate.
     
     def get_servicio_by_id(self, id_servicio: int) -> Optional[Dict[str, Any]]:
         """Obtener un servicio específico por ID"""
