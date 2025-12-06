@@ -757,6 +757,18 @@ class WeaviateService:
         except Exception as e:
             logger.warning(f"⚠️ Error al verificar schema antes de búsqueda: {str(e)}")
         
+        # Verificar cuántos objetos hay indexados en Weaviate
+        try:
+            stats = self.get_stats()
+            total_objects = stats.get('total_objects', 0)
+            if total_objects == 0:
+                logger.warning(f"⚠️ Weaviate no tiene servicios indexados (total_objects: {total_objects})")
+                logger.warning(f"💡 Necesitas ejecutar el endpoint de indexación: POST /api/v1/weaviate/index-servicios")
+            else:
+                logger.info(f"📊 Servicios indexados en Weaviate: {total_objects}")
+        except Exception as e:
+            logger.warning(f"⚠️ Error al verificar estadísticas de Weaviate: {str(e)}")
+        
         try:
             # Escapar comillas y caracteres especiales para GraphQL
             query_escaped = query.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
@@ -873,6 +885,28 @@ class WeaviateService:
                 # Extraer resultados
                 get_data = data.get('data', {}).get('Get', {}).get(self.class_name, [])
                 logger.info(f"✅ Búsqueda híbrida nativa: {len(get_data)} resultados encontrados")
+                
+                # Log detallado si no hay resultados para debugging
+                if len(get_data) == 0:
+                    logger.warning(f"⚠️ Búsqueda híbrida devolvió 0 resultados para query: '{query}'")
+                    # Verificar cuántos objetos hay indexados
+                    try:
+                        stats = self.get_stats()
+                        total_objects = stats.get('total_objects', 0)
+                        if total_objects == 0:
+                            logger.error(f"❌ Weaviate no tiene servicios indexados (total_objects: {total_objects})")
+                            logger.error(f"💡 SOLUCIÓN: Ejecuta el endpoint de indexación:")
+                            logger.error(f"   POST /api/v1/weaviate/index-servicios?limit=1000")
+                            logger.error(f"   O desde el perfil de administrador: Botón 'Migrar Modelo de Embeddings'")
+                        else:
+                            logger.warning(f"⚠️ Hay {total_objects} servicios indexados, pero la búsqueda no encontró resultados")
+                            logger.warning(f"💡 Posibles causas:")
+                            logger.warning(f"   1. Los servicios no contienen términos relacionados con '{query}'")
+                            logger.warning(f"   2. El modelo de embeddings necesita ajuste")
+                            logger.warning(f"   3. La búsqueda híbrida no está funcionando correctamente")
+                    except Exception as stats_error:
+                        logger.warning(f"⚠️ No se pudo verificar estadísticas: {str(stats_error)}")
+                
                 return get_data
             else:
                 logger.error(f"❌ Error en búsqueda híbrida: HTTP {response.status_code} - {response.text}")
