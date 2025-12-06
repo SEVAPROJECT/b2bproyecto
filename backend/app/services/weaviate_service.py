@@ -6,6 +6,7 @@ import requests
 import logging
 import os
 import json
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from app.services.direct_db_service import direct_db_service
 
@@ -504,19 +505,56 @@ class WeaviateService:
             servicios_fallidos = 0
             
             for idx, servicio in enumerate(result, 1):
-                success = self._index_servicio(servicio)
-                if success:
-                    servicios_indexados += 1
-                else:
+                try:
+                    success = self._index_servicio(servicio)
+                    if success:
+                        servicios_indexados += 1
+                    else:
+                        servicios_fallidos += 1
+                except Exception as e:
+                    logger.error(f"❌ Error al indexar servicio {servicio.get('id_servicio', 'unknown')}: {str(e)}")
                     servicios_fallidos += 1
+                    # Continuar con el siguiente servicio en lugar de detener todo el proceso
+                    continue
+                
+                # Pequeño delay cada 10 servicios para evitar sobrecargar el contenedor
+                # Esto ayuda a prevenir que Railway reinicie el contenedor por uso excesivo de recursos
+                if idx % 10 == 0:
+                    time.sleep(0.1)  # 100ms de delay cada 10 servicios
                 
                 # Log de progreso cada 50 servicios o cada 10% del total
                 if idx % 50 == 0 or idx % max(1, total_servicios // 10) == 0:
                     porcentaje = (idx / total_servicios) * 100
                     logger.info(f"📊 Progreso: {idx}/{total_servicios} servicios indexados ({porcentaje:.1f}%) - Exitosos: {servicios_indexados}, Fallidos: {servicios_fallidos}")
+                    
+                    # Verificar conexión periódicamente para detectar si el contenedor se reinició
+                    if idx % 100 == 0:
+                        try:
+                            stats_check = self.get_stats()
+                            total_check = stats_check.get('total_objects', 0)
+                            if total_check < servicios_indexados * 0.5:  # Si hay menos del 50% de lo esperado
+                                logger.warning(f"⚠️ ADVERTENCIA: Solo {total_check} servicios en Weaviate, pero se han indexado {servicios_indexados}")
+                                logger.warning(f"⚠️ El contenedor de Weaviate puede haberse reiniciado. Continuando indexación...")
+                        except Exception as e:
+                            logger.warning(f"⚠️ No se pudo verificar el conteo durante la indexación: {str(e)}")
             
             await direct_db_service.pool.release(conn)
+            
+            # Verificar el conteo final después de la indexación
             logger.info(f"✅ Indexación de servicios completada: {servicios_indexados} exitosos, {servicios_fallidos} fallidos de {total_servicios} totales")
+            
+            # Verificar el conteo real en Weaviate después de indexar
+            try:
+                stats_final = self.get_stats()
+                total_objects_final = stats_final.get('total_objects', 0)
+                logger.info(f"📊 Verificación final: {total_objects_final} servicios indexados en Weaviate (esperados: {servicios_indexados})")
+                
+                if total_objects_final < servicios_indexados * 0.9:  # Si hay menos del 90% de lo esperado
+                    logger.warning(f"⚠️ ADVERTENCIA: Solo se encontraron {total_objects_final} servicios en Weaviate, pero se indexaron {servicios_indexados}")
+                    logger.warning(f"⚠️ Esto puede indicar que Weaviate no tiene persistencia configurada o el contenedor se reinició")
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo verificar el conteo final: {str(e)}")
+            
             return True
             
         except Exception as e:
@@ -1234,12 +1272,69 @@ class WeaviateService:
             return False
     
     def get_stats(self) -> Dict[str, Any]:
-        """Obtener estadísticas del índice de Weaviate usando HTTP"""
+        """Obtener estadísticas del índice de Weaviate usando GraphQL (más confiable)"""
         if not self.connected:
             return {"error": "Conexión no disponible"}
         
         try:
-            # Obtener información de la colección usando HTTP
+            # Usar GraphQL para obtener el conteo total (más confiable que REST API)
+            graphql_url = f"{self.base_url}/v1/graphql"
+            
+            # Query GraphQL para obtener el conteo total
+            query = {
+                "query": f"""
+                {{
+                    Aggregate {{
+                        {self.class_name} {{
+                            meta {{
+                                count
+                            }}
+                        }}
+                    }}
+                }}
+                """
+            }
+            
+            headers = {'Content-Type': 'application/json'}
+            if self.api_key:
+                headers['Authorization'] = f'Bearer {self.api_key}'
+            
+            response = requests.post(graphql_url, json=query, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Extraer el conteo de la respuesta GraphQL
+                total_objects = 0
+                if 'data' in data and 'Aggregate' in data['data']:
+                    aggregate_data = data['data']['Aggregate']
+                    if self.class_name in aggregate_data:
+                        class_data = aggregate_data[self.class_name]
+                        if class_data and len(class_data) > 0:
+                            total_objects = class_data[0].get('meta', {}).get('count', 0)
+                
+                logger.debug(f"📊 [get_stats] Conteo obtenido de GraphQL: {total_objects}")
+                
+                return {
+                    "collection_name": self.class_name,
+                    "total_objects": total_objects,
+                    "connection_type": "HTTP",
+                    "base_url": self.base_url,
+                    "status": "active"
+                }
+            else:
+                logger.warning(f"⚠️ [get_stats] Error HTTP {response.status_code}: {response.text}")
+                # Fallback: intentar con REST API
+                return self._get_stats_fallback()
+                
+        except Exception as e:
+            logger.error(f"❌ Error al obtener estadísticas con GraphQL: {str(e)}")
+            # Fallback: intentar con REST API
+            return self._get_stats_fallback()
+    
+    def _get_stats_fallback(self) -> Dict[str, Any]:
+        """Fallback: obtener estadísticas usando REST API"""
+        try:
             stats_url = f"{self.base_url}/v1/objects"
             params = {
                 'class': self.class_name,
@@ -1255,6 +1350,7 @@ class WeaviateService:
             if response.status_code == 200:
                 data = response.json()
                 total_objects = data.get('totalResults', 0)
+                logger.debug(f"📊 [get_stats_fallback] Conteo obtenido de REST API: {total_objects}")
                 
                 return {
                     "collection_name": self.class_name,
@@ -1267,7 +1363,7 @@ class WeaviateService:
                 return {"error": f"HTTP {response.status_code}"}
                 
         except Exception as e:
-            logger.error(f"❌ Error al obtener estadísticas: {str(e)}")
+            logger.error(f"❌ Error en fallback de estadísticas: {str(e)}")
             return {"error": str(e)}
 
 # Instancia global del servicio
