@@ -173,14 +173,44 @@ async def migrate_model(
                 detail="HUGGINGFACE_MODEL no está configurado. Configura la variable de entorno primero."
             )
         
-        # Si no hay cambio y no se fuerza, retornar
+        # Verificar si hay servicios indexados
+        stats = weaviate_service.get_stats()
+        total_objects = stats.get('total_objects', 0)
+        needs_reindex = total_objects == 0
+        
+        # Si no hay cambio y no se fuerza, pero no hay servicios indexados, reindexar
         if not model_changed and not force:
-            return {
-                "message": "No se detectó cambio de modelo. El schema ya está actualizado.",
-                "current_model": current_model,
-                "expected_model": expected_model,
-                "migration_skipped": True
-            }
+            if needs_reindex:
+                logger.warning(f"⚠️ El modelo está actualizado pero no hay servicios indexados (total_objects: {total_objects})")
+                logger.info(f"📦 Reindexando servicios (límite: {limit})...")
+                index_success = await weaviate_service.index_servicios(limit=limit)
+                
+                if not index_success:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Error al reindexar servicios"
+                    )
+                
+                logger.info("✅ Reindexación completada exitosamente")
+                
+                return {
+                    "message": "Servicios reindexados exitosamente (el modelo ya estaba actualizado)",
+                    "current_model": current_model,
+                    "expected_model": expected_model,
+                    "model_changed": False,
+                    "services_reindexed": True,
+                    "reindex_limit": limit,
+                    "total_objects_before": 0,
+                    "status": "success"
+                }
+            else:
+                return {
+                    "message": "No se detectó cambio de modelo. El schema ya está actualizado y hay servicios indexados.",
+                    "current_model": current_model,
+                    "expected_model": expected_model,
+                    "total_objects": total_objects,
+                    "migration_skipped": True
+                }
         
         # Paso 2: Eliminar schema (esto elimina todos los objetos automáticamente)
         if model_changed or force:
