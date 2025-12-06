@@ -863,17 +863,25 @@ class WeaviateService:
             logger.error(f"❌ Error en búsqueda híbrida nativa: {str(e)}")
             return None
     
-    def _process_graphql_results(self, results: List[Dict[str, Any]], min_relevance_score: float = 0.3) -> List[Dict[str, Any]]:
+    def _process_graphql_results(self, results: List[Dict[str, Any]], min_relevance_score: float = 0.5, query: str = "") -> List[Dict[str, Any]]:
         """
         Procesa los resultados de GraphQL y los convierte en formato de servicio.
-        Filtra resultados por relevancia mínima.
+        Filtra resultados por relevancia mínima y valida relación semántica con la búsqueda.
         
         Args:
             results: Resultados de GraphQL de Weaviate
             min_relevance_score: Score mínimo de relevancia (0-1). Scores más altos = más relevante.
                                 Para distance, valores más bajos = más relevante.
+            query: Query original para validación adicional
         """
+        import re
+        
         servicios = []
+        query_lower = query.lower().strip() if query else ""
+        # Extraer palabras clave significativas de la query (excluir palabras comunes)
+        palabras_comunes = {'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'en', 'con', 'por', 'para', 'mi', 'tu', 'su', 'quiero', 'necesito'}
+        palabras_clave = [p for p in query_lower.split() if p not in palabras_comunes and len(p) > 2]
+        
         for result in results:
             # Obtener métricas de relevancia
             additional = result.get("_additional", {})
@@ -896,8 +904,27 @@ class WeaviateService:
             
             # Filtrar por relevancia mínima
             if relevance_score is not None and relevance_score < min_relevance_score:
-                logger.debug(f"⚠️ Servicio {result.get('id_servicio')} filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score}")
+                logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{result.get('nombre', '')[:50]}' filtrado por baja relevancia: {relevance_score:.3f} < {min_relevance_score}")
                 continue
+            
+            # Validación adicional: verificar que al menos una palabra clave aparezca en nombre/descripción
+            # Esto ayuda a filtrar resultados que pasaron el umbral pero no son realmente relevantes
+            nombre = result.get("nombre", "").lower()
+            descripcion = result.get("descripcion", "").lower()
+            texto_completo = f"{nombre} {descripcion}"
+            
+            if palabras_clave:
+                tiene_palabra_clave = False
+                for palabra in palabras_clave:
+                    # Buscar palabra completa (no substring)
+                    pattern = r'\b' + re.escape(palabra) + r'\b'
+                    if re.search(pattern, texto_completo, re.IGNORECASE):
+                        tiene_palabra_clave = True
+                        break
+                
+                if not tiene_palabra_clave:
+                    logger.debug(f"⚠️ Servicio {result.get('id_servicio')} '{result.get('nombre', '')[:50]}' filtrado: no contiene palabras clave de la búsqueda (relevancia: {relevance_score:.3f})")
+                    continue
             
             servicio = {
                 "id_servicio": result.get("id_servicio"),
@@ -911,14 +938,15 @@ class WeaviateService:
                 "_relevance_score": relevance_score  # Guardar para logging
             }
             servicios.append(servicio)
+            logger.debug(f"✅ Servicio {result.get('id_servicio')} '{result.get('nombre', '')[:50]}' incluido (relevancia: {relevance_score:.3f})")
         
         # Ordenar por relevancia (mayor primero)
         servicios.sort(key=lambda x: x.get("_relevance_score", 0.0), reverse=True)
         
-        logger.info(f"📊 Resultados procesados: {len(servicios)} servicios con relevancia >= {min_relevance_score}")
+        logger.info(f"📊 Resultados procesados: {len(servicios)} servicios con relevancia >= {min_relevance_score} y palabras clave válidas")
         return servicios
     
-    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.3) -> List[Dict[str, Any]]:
+    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.5) -> List[Dict[str, Any]]:
         """
         Buscar servicios usando búsqueda nativa de Weaviate (REST API v1)
         
@@ -964,7 +992,7 @@ class WeaviateService:
                 return []
             
             # Procesar resultados y filtrar por relevancia
-            servicios = self._process_graphql_results(results, min_relevance_score)
+            servicios = self._process_graphql_results(results, min_relevance_score, query)
             
             # Limitar a los resultados más relevantes
             servicios = servicios[:limit]

@@ -176,7 +176,7 @@ async def index_servicios_public(
 async def search_servicios(
     query: str = Query(..., description="Texto de búsqueda semántica"),
     limit: int = Query(10, ge=1, le=50),
-    min_relevance: float = Query(0.3, ge=0.0, le=1.0, description="Score mínimo de relevancia (0-1)"),
+    min_relevance: float = Query(0.5, ge=0.0, le=1.0, description="Score mínimo de relevancia (0-1)"),
     current_user: SupabaseUser = Depends(get_current_user)
 ):
     """Buscar servicios usando búsqueda semántica con Weaviate"""
