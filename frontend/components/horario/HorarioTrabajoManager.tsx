@@ -38,12 +38,12 @@ const DIAS_SEMANA = [
 ];
 
 /**
- * Genera las opciones de hora de 09:00 a 17:00 en intervalos de 1 hora
+ * Genera las opciones de hora de 00:00 a 23:00 en intervalos de 1 hora
  * @returns Array de strings en formato HH:MM
  */
 const generarOpcionesHora = (): string[] => {
   const opciones: string[] = [];
-  for (let hora = 9; hora <= 17; hora++) {
+  for (let hora = 0; hora <= 23; hora++) {
     opciones.push(`${hora.toString().padStart(2, '0')}:00`);
   }
   return opciones;

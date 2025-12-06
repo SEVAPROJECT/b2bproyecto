@@ -1000,10 +1000,19 @@ const ProviderOnboardingPage: React.FC = () => {
     }, [providerStatus, user?.accessToken, dataLoaded]);
 
     // Resetear el flag de carga cuando cambia el estado del proveedor (nueva solicitud rechazada)
-    // Pero solo si no se está procesando una navegación desde "Corregir y reenviar"
+    // Esto permite recargar los datos cuando se rechaza una solicitud
     useEffect(() => {
-        if (providerStatus === 'rejected' && !shouldLoadPreviousDataRef.current && !hasProcessedNavigationRef.current) {
-            setDataLoaded(false);
+        if (providerStatus === 'rejected') {
+            // No resetear si estamos en medio de procesar una navegación activa desde "Corregir y reenviar"
+            // (el efecto principal ya maneja ese caso)
+            const isProcessingActiveNavigation = shouldLoadPreviousDataRef.current && !hasProcessedNavigationRef.current;
+            
+            if (!isProcessingActiveNavigation) {
+                console.log('🔄 Estado cambiado a rejected, reseteando dataLoaded para recargar datos');
+                setDataLoaded(false);
+                // Resetear hasProcessedNavigationRef para permitir futuras recargas después de un nuevo rechazo
+                hasProcessedNavigationRef.current = false;
+            }
         }
     }, [providerStatus]);
 
