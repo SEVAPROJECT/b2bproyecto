@@ -336,6 +336,11 @@ async def _fallback_search_normal(query: str, limit: int):
         try:
             # Búsqueda simple por nombre o descripción
             # Usar la misma estructura que en weaviate_service.py para indexar
+            # Escapar caracteres especiales de regex para PostgreSQL
+            query_escaped = query.replace("\\", "\\\\").replace("'", "''")
+            # Usar expresiones regulares con word boundaries (\y) para buscar palabras completas
+            search_pattern = rf"\y{query_escaped}\y"
+            
             search_query = """
                 SELECT DISTINCT
                     s.id_servicio,
@@ -355,16 +360,14 @@ async def _fallback_search_normal(query: str, limit: int):
                 LEFT JOIN ciudad ci ON dir.id_ciudad = ci.id_ciudad
                 WHERE s.estado = true
                     AND (
-                        s.nombre ILIKE $1 
-                        OR s.descripcion ILIKE $1
-                        OR cat.nombre ILIKE $1
-                        OR pe.nombre_fantasia ILIKE $1
+                        s.nombre ~* $1 
+                        OR s.descripcion ~* $1
+                        OR cat.nombre ~* $1
+                        OR pe.nombre_fantasia ~* $1
                     )
                 ORDER BY s.created_at DESC
                 LIMIT $2
             """
-            
-            search_pattern = f"%{query}%"
             rows = await conn.fetch(search_query, search_pattern, limit)
             
             resultados = []

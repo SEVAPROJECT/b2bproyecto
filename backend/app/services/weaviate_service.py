@@ -596,12 +596,25 @@ class WeaviateService:
         return servicios
     
     def _check_exact_match(self, query_lower: str, nombre: str, descripcion: str) -> bool:
-        """Verifica si hay un match exacto con la query"""
-        return query_lower in nombre or query_lower in descripcion
+        """Verifica si hay un match exacto con la query (por palabras completas, no substrings)"""
+        import re
+        # Escapar caracteres especiales de regex
+        query_escaped = re.escape(query_lower)
+        # Buscar palabra completa usando word boundaries
+        pattern = r'\b' + query_escaped + r'\b'
+        return bool(re.search(pattern, nombre, re.IGNORECASE)) or bool(re.search(pattern, descripcion, re.IGNORECASE))
     
     def _check_semantic_match(self, palabras_relacionadas: List[str], nombre: str, descripcion: str) -> bool:
-        """Verifica si hay un match semántico con las palabras relacionadas"""
-        return any(palabra in nombre or palabra in descripcion for palabra in palabras_relacionadas)
+        """Verifica si hay un match semántico con las palabras relacionadas (por palabras completas, no substrings)"""
+        import re
+        for palabra in palabras_relacionadas:
+            # Escapar caracteres especiales de regex
+            palabra_escaped = re.escape(palabra)
+            # Buscar palabra completa usando word boundaries
+            pattern = r'\b' + palabra_escaped + r'\b'
+            if re.search(pattern, nombre, re.IGNORECASE) or re.search(pattern, descripcion, re.IGNORECASE):
+                return True
+        return False
     
     def _should_include_servicio(self, servicio: Dict[str, Any], query_lower: str, 
                                   palabras_relacionadas: List[str], ids_vistos: set) -> Tuple[bool, str]:

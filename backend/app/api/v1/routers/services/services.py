@@ -122,11 +122,15 @@ def build_dynamic_filters(
         filters.append(f"LOWER(c.nombre) LIKE LOWER(${param_count})")
         params.append(f"%{city}%")
     
-    # Filtro por búsqueda
+    # Filtro por búsqueda (por palabras completas, no substrings)
     if search:
         param_count += 1
-        filters.append(f"(LOWER(s.nombre) LIKE LOWER(${param_count}) OR LOWER(s.descripcion) LIKE LOWER(${param_count}))")
-        params.append(f"%{search}%")
+        # Usar expresiones regulares con word boundaries (\y) para buscar palabras completas
+        # Escapar caracteres especiales de regex en el término de búsqueda
+        search_escaped = search.replace("\\", "\\\\").replace("'", "''")
+        filters.append(f"(s.nombre ~* ${param_count} OR s.descripcion ~* ${param_count})")
+        # Construir patrón regex con word boundaries: \y para inicio/fin de palabra en PostgreSQL
+        params.append(rf"\y{search_escaped}\y")
     
     # Filtro por calificación mínima
     if min_rating is not None and float(min_rating) > 0:
