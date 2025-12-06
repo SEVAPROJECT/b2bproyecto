@@ -76,6 +76,23 @@ const applyDateFilter = (filters: Record<string, any>, dateFilter: string, custo
     if (dateFilter === 'all') return;
 
     const dateFilters = getDateFilters(dateFilter, customDateRange);
+    
+    // Validar que para rango personalizado, ambas fechas estén presentes y válidas
+    if (dateFilter === 'custom') {
+        if (!customDateRange.start || !customDateRange.end) {
+            console.warn('⚠️ Rango personalizado incompleto, no se aplicará filtro de fecha');
+            return;
+        }
+        
+        // Validar que fecha "hasta" sea mayor que fecha "desde"
+        const startDate = new Date(customDateRange.start);
+        const endDate = new Date(customDateRange.end);
+        if (endDate <= startDate) {
+            console.warn('⚠️ Fecha "hasta" debe ser mayor que fecha "desde", no se aplicará filtro de fecha');
+            return;
+        }
+    }
+    
     if (dateFilters.dateFrom) {
         filters.date_from = dateFilters.dateFrom;
     }
@@ -121,6 +138,31 @@ const getDateFilters = (dateFilter: string, customDateRange: { start: string; en
     let dateTo: string | undefined;
 
     switch (dateFilter) {
+        case 'recent':
+            // Recientes: últimos 3 días
+            const threeDaysAgo = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000);
+            dateFrom = threeDaysAgo.toISOString().split('T')[0];
+            dateTo = today.toISOString().split('T')[0];
+            break;
+        case '7days':
+            // 7 días: últimos 7 días
+            const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+            dateFrom = weekAgo.toISOString().split('T')[0];
+            dateTo = today.toISOString().split('T')[0];
+            break;
+        case '30days':
+            // 30 días: últimos 30 días
+            const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+            dateFrom = monthAgo.toISOString().split('T')[0];
+            dateTo = today.toISOString().split('T')[0];
+            break;
+        case 'custom':
+            // Rango personalizado
+            if (customDateRange.start && customDateRange.end) {
+                dateFrom = customDateRange.start;
+                dateTo = customDateRange.end;
+            }
+            break;
         case 'today':
             dateFrom = today.toISOString().split('T')[0];
             dateTo = today.toISOString().split('T')[0];
@@ -137,12 +179,6 @@ const getDateFilters = (dateFilter: string, customDateRange: { start: string; en
             dateTo = today.toISOString().split('T')[0];
             break;
         }
-        case 'custom':
-            if (customDateRange.start && customDateRange.end) {
-                dateFrom = customDateRange.start;
-                dateTo = customDateRange.end;
-            }
-            break;
     }
 
     return { dateFrom, dateTo };
@@ -209,6 +245,8 @@ const matchesDateFilter = (service: BackendService, dateFilter: string, customDa
 
     switch (dateFilter) {
         case 'recent':
+            // Recientes: mostrar solo servicios de los últimos 3 días
+            return diffInDays <= 3;
         case 'oldest':
             return true;
         case '7days':

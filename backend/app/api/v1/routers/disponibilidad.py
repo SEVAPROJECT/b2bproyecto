@@ -11,7 +11,7 @@ from app.api.v1.dependencies.auth_user import get_current_user
 from app.schemas.auth_user import SupabaseUser
 import logging
 from typing import List, Optional, Dict, Any
-from datetime import datetime, date, timezone, timedelta
+from datetime import datetime, date, time, timezone, timedelta
 from app.services.direct_db_service import direct_db_service
 
 
@@ -343,15 +343,34 @@ async def _verificar_servicio(conn: Any, servicio_id: int) -> Dict[str, Any]:
 
 async def _obtener_horarios_trabajo(conn: Any, proveedor_id: int) -> Dict[int, Any]:
     """Obtiene todos los horarios de trabajo del proveedor."""
-    logger.info("🔍 [GET /disponibilidades] Obteniendo horarios de trabajo...")
+    logger.info(f"🔍 [GET /disponibilidades] Obteniendo horarios de trabajo para proveedor {proveedor_id}...")
     horarios_query = """
-        SELECT dia_semana, hora_inicio, hora_fin, activo
+        SELECT dia_semana, hora_inicio, hora_fin, activo, id_horario
         FROM horario_trabajo
         WHERE id_proveedor = $1 AND activo = true
+        ORDER BY dia_semana
     """
     horarios_result = await conn.fetch(horarios_query, proveedor_id)
-    horarios_map = {row['dia_semana']: row for row in horarios_result}
-    logger.info(f"✅ [GET /disponibilidades] Obtenidos {len(horarios_map)} horarios de trabajo")
+    
+    # Log detallado de los horarios obtenidos
+    dias_nombres = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+    for row in horarios_result:
+        dia_nombre = dias_nombres[row['dia_semana']] if 0 <= row['dia_semana'] <= 6 else f"Día {row['dia_semana']}"
+        logger.info(f"📅 [GET /disponibilidades] Horario encontrado: {dia_nombre} (dia_semana={row['dia_semana']}) - {row['hora_inicio']} a {row['hora_fin']} (id_horario={row['id_horario']})")
+    
+    # Si hay múltiples horarios para el mismo día, tomar el más reciente (mayor id_horario)
+    horarios_map: Dict[int, Any] = {}
+    for row in horarios_result:
+        dia_semana = row['dia_semana']
+        # Si ya existe un horario para este día, mantener el que tenga mayor id_horario (más reciente)
+        if dia_semana in horarios_map:
+            if row['id_horario'] > horarios_map[dia_semana].get('id_horario', 0):
+                logger.warning(f"⚠️ [GET /disponibilidades] Múltiples horarios para {dias_nombres[dia_semana]}, usando el más reciente (id_horario={row['id_horario']})")
+                horarios_map[dia_semana] = row
+        else:
+            horarios_map[dia_semana] = row
+    
+    logger.info(f"✅ [GET /disponibilidades] Obtenidos {len(horarios_map)} horarios de trabajo únicos")
     return horarios_map
 
 
@@ -420,22 +439,55 @@ def _generar_slots_fecha(
 ) -> List[Dict[str, Any]]:
     """Genera los slots de tiempo para una fecha específica."""
     slots = []
+    
+    # Normalizar las horas para asegurar que no tengan segundos ni microsegundos
+    # Esto evita problemas de comparación
+    if isinstance(hora_inicio, time):
+        hora_inicio = time(hora_inicio.hour, hora_inicio.minute, 0)
+    if isinstance(hora_fin, time):
+        hora_fin = time(hora_fin.hour, hora_fin.minute, 0)
+    
     hora_actual = datetime.combine(fecha_actual, hora_inicio)
     hora_final = datetime.combine(fecha_actual, hora_fin)
     
-    while hora_actual + timedelta(minutes=duracion_minutos) <= hora_final:
+    logger.debug(f"🔍 [GET /disponibilidades] Generando slots: fecha={fecha_actual}, desde={hora_inicio}, hasta={hora_fin}, duracion={duracion_minutos}min")
+    logger.debug(f"🔍 [GET /disponibilidades] hora_actual inicial: {hora_actual}, hora_final: {hora_final}")
+    
+    # Generar slots mientras la hora de inicio del slot sea menor que la hora_fin
+    # Incluir todos los slots que quepan completamente dentro del horario
+    # Ejemplo: si horario es 11:00-17:00 y duracion es 60min:
+    # - 11:00-12:00, 12:00-13:00, 13:00-14:00, 14:00-15:00, 15:00-16:00, 16:00-17:00
+    iteracion = 0
+    while hora_actual < hora_final:
+        iteracion += 1
         hora_fin_slot = hora_actual + timedelta(minutes=duracion_minutos)
-        slots.append({
-            "id_servicio": servicio_id,
-            "fecha_inicio": hora_actual,
-            "fecha_fin": hora_fin_slot,
-            "disponible": True,
-            "precio_adicional": 0,
-            "observaciones": None,
-            "created_at": datetime.now(),
-            "updated_at": datetime.now()
-        })
-        hora_actual += timedelta(minutes=duracion_minutos)
+        
+        logger.debug(f"🔍 [GET /disponibilidades] Iteración {iteracion}: hora_actual={hora_actual.time()}, hora_fin_slot={hora_fin_slot.time()}, hora_final={hora_final.time()}, hora_fin_slot <= hora_final: {hora_fin_slot <= hora_final}")
+        
+        # Solo agregar el slot si cabe completamente dentro del horario (hora_fin_slot <= hora_final)
+        if hora_fin_slot <= hora_final:
+            slots.append({
+                "id_servicio": servicio_id,
+                "fecha_inicio": hora_actual,
+                "fecha_fin": hora_fin_slot,
+                "disponible": True,
+                "precio_adicional": 0,
+                "observaciones": None,
+                "created_at": datetime.now(),
+                "updated_at": datetime.now()
+            })
+            hora_actual += timedelta(minutes=duracion_minutos)
+        else:
+            # Si el slot excede la hora_fin, no lo agregamos y terminamos
+            logger.debug(f"🔍 [GET /disponibilidades] Slot excede hora_final, terminando generación")
+            break
+    
+    logger.info(f"🔍 [GET /disponibilidades] Generados {len(slots)} slots para {fecha_actual} desde {hora_inicio} hasta {hora_fin}")
+    if slots:
+        logger.info(f"🔍 [GET /disponibilidades] Primer slot: {slots[0]['fecha_inicio'].time()} - {slots[0]['fecha_fin'].time()}")
+        logger.info(f"🔍 [GET /disponibilidades] Último slot: {slots[-1]['fecha_inicio'].time()} - {slots[-1]['fecha_fin'].time()}")
+    else:
+        logger.warning(f"⚠️ [GET /disponibilidades] No se generaron slots para {fecha_actual} desde {hora_inicio} hasta {hora_fin}")
     
     return slots
 
@@ -458,6 +510,39 @@ def _aplicar_reservas_a_slots(
                 slot["disponible"] = False
 
 
+def _obtener_siguiente_dia_habil(
+    fecha_actual: date,
+    horarios_map: Dict[int, Any],
+    max_dias_busqueda: int = 7
+) -> date:
+    """
+    Obtiene el siguiente día hábil a partir de la fecha actual.
+    Un día hábil es un día que tiene horario de trabajo configurado.
+    
+    Args:
+        fecha_actual: Fecha actual desde la cual buscar
+        horarios_map: Mapa de horarios por día de la semana (0=Lunes, 6=Domingo)
+        max_dias_busqueda: Máximo de días a buscar hacia adelante (default: 7)
+    
+    Returns:
+        date: Siguiente día hábil
+    """
+    fecha_busqueda = fecha_actual + timedelta(days=1)  # Empezar desde mañana
+    dias_buscados = 0
+    
+    while dias_buscados < max_dias_busqueda:
+        dia_semana = fecha_busqueda.weekday()
+        if dia_semana in horarios_map:
+            logger.info(f"🔍 [GET /disponibilidades] Siguiente día hábil encontrado: {fecha_busqueda} ({['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'][dia_semana]})")
+            return fecha_busqueda
+        fecha_busqueda += timedelta(days=1)
+        dias_buscados += 1
+    
+    # Si no se encuentra un día hábil en los próximos 7 días, retornar mañana
+    logger.warning(f"⚠️ [GET /disponibilidades] No se encontró día hábil en los próximos {max_dias_busqueda} días, retornando mañana")
+    return fecha_actual + timedelta(days=1)
+
+
 def _generar_horarios_disponibles(
     servicio_id: int,
     fecha_inicio: date,
@@ -472,23 +557,40 @@ def _generar_horarios_disponibles(
     todos_horarios = []
     fecha_actual = fecha_inicio
     
+    dias_nombres = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+    
     while fecha_actual <= fecha_fin:
-        dia_semana = fecha_actual.weekday()
+        dia_semana = fecha_actual.weekday()  # 0=Lunes, 6=Domingo
+        dia_nombre = dias_nombres[dia_semana]
         
         if dia_semana not in horarios_map:
+            logger.debug(f"🔍 [GET /disponibilidades] No hay horario configurado para {dia_nombre} ({fecha_actual})")
             fecha_actual += timedelta(days=1)
             continue
         
         horario_base = horarios_map[dia_semana]
+        logger.info(f"📅 [GET /disponibilidades] Procesando {dia_nombre} ({fecha_actual}): horario base {horario_base['hora_inicio']} - {horario_base['hora_fin']}")
+        
         excepcion = excepciones_map.get(fecha_actual)
+        if excepcion:
+            logger.info(f"⚠️ [GET /disponibilidades] Excepción encontrada para {fecha_actual}: {excepcion['tipo']}")
         
         horarios_efectivos = _obtener_horarios_efectivos(horario_base, excepcion)
         if not horarios_efectivos:
+            logger.debug(f"🔍 [GET /disponibilidades] No hay horarios efectivos para {dia_nombre} ({fecha_actual})")
             fecha_actual += timedelta(days=1)
             continue
         
         hora_inicio, hora_fin = horarios_efectivos
+        logger.info(f"⏰ [GET /disponibilidades] Horarios efectivos para {dia_nombre} ({fecha_actual}): {hora_inicio} - {hora_fin}")
+        logger.info(f"⏰ [GET /disponibilidades] Tipo de hora_inicio: {type(hora_inicio)}, Tipo de hora_fin: {type(hora_fin)}")
+        
         slots = _generar_slots_fecha(fecha_actual, hora_inicio, hora_fin, duracion_minutos, servicio_id)
+        logger.info(f"📊 [GET /disponibilidades] Generados {len(slots)} slots para {dia_nombre} ({fecha_actual})")
+        if slots:
+            logger.info(f"📊 [GET /disponibilidades] Primer slot: {slots[0]['fecha_inicio'].time()} - {slots[0]['fecha_fin'].time()}")
+            logger.info(f"📊 [GET /disponibilidades] Último slot: {slots[-1]['fecha_inicio'].time()} - {slots[-1]['fecha_fin'].time()}")
+        logger.info(f"📊 [GET /disponibilidades] Generados {len(slots)} slots para {dia_nombre} ({fecha_actual})")
         
         reservas_fecha = reservas_map.get(fecha_actual, [])
         _aplicar_reservas_a_slots(slots, reservas_fecha, fecha_actual)
@@ -497,7 +599,16 @@ def _generar_horarios_disponibles(
         fecha_actual += timedelta(days=1)
     
     horarios_disponibles = [h for h in todos_horarios if h["disponible"]]
-    logger.info(f"✅ [GET /disponibilidades] Generados {len(horarios_disponibles)} horarios disponibles para servicio {servicio_id}")
+    
+    # Filtrar para asegurar que solo se muestren disponibilidades a partir del día hábil siguiente
+    # Esto es una validación adicional por si acaso alguna disponibilidad se generó para hoy
+    fecha_hoy = date.today()
+    horarios_disponibles = [
+        h for h in horarios_disponibles 
+        if h["fecha_inicio"].date() > fecha_hoy
+    ]
+    
+    logger.info(f"✅ [GET /disponibilidades] Generados {len(horarios_disponibles)} horarios disponibles para servicio {servicio_id} (a partir del día hábil siguiente)")
     return horarios_disponibles
 
 
@@ -512,8 +623,8 @@ async def obtener_disponibilidades_disponibles_servicio(
 ):
     """
     Obtiene horarios disponibles para un servicio específico.
-    Primero consulta la tabla disponibilidad directamente.
-    Si no hay disponibilidades, usa la lógica de horario_trabajo + excepciones_horario.
+    Siempre usa la lógica de horario_trabajo + excepciones_horario del proveedor
+    para respetar el horario configurado en la agenda del proveedor.
     """
     logger.info(f"🔍 [GET /disponibilidades/servicio/{servicio_id}/disponibles] ========== INICIO OBTENER DISPONIBILIDADES ==========")
     logger.info(f"🔍 [GET /disponibilidades] Servicio ID: {servicio_id}")
@@ -524,68 +635,37 @@ async def obtener_disponibilidades_disponibles_servicio(
             # Verificar que el servicio existe
             servicio_info = await _verificar_servicio(conn, servicio_id)
             
-            # PRIMERO: Consultar disponibilidades directas de la tabla disponibilidad
-            logger.info(f"🔍 [GET /disponibilidades] Consultando tabla disponibilidad directamente...")
-            disponibilidades_query = """
-                SELECT 
-                    id_servicio,
-                    fecha_inicio,
-                    fecha_fin,
-                    disponible,
-                    precio_adicional,
-                    observaciones,
-                    created_at,
-                    updated_at
-                FROM disponibilidad
-                WHERE id_servicio = $1
-                AND disponible = true
-                AND fecha_inicio >= CURRENT_DATE
-                AND fecha_inicio <= CURRENT_DATE + INTERVAL '30 days'
-                ORDER BY fecha_inicio ASC
-                LIMIT 500
-            """
-            
-            disponibilidades_rows = await conn.fetch(disponibilidades_query, servicio_id)
-            
-            if disponibilidades_rows and len(disponibilidades_rows) > 0:
-                logger.info(f"✅ [GET /disponibilidades] Encontradas {len(disponibilidades_rows)} disponibilidades en tabla")
-                # Convertir a formato DisponibilidadOut
-                disponibilidades = []
-                for row in disponibilidades_rows:
-                    # Asegurar que las fechas se serialicen correctamente como ISO 8601
-                    fecha_inicio = row['fecha_inicio']
-                    fecha_fin = row['fecha_fin']
-                    
-                    # Si es datetime, convertir a ISO string
-                    if isinstance(fecha_inicio, datetime):
-                        fecha_inicio = fecha_inicio.isoformat()
-                    if isinstance(fecha_fin, datetime):
-                        fecha_fin = fecha_fin.isoformat()
-                    
-                    disponibilidades.append({
-                        "id_servicio": row['id_servicio'],
-                        "fecha_inicio": fecha_inicio,
-                        "fecha_fin": fecha_fin,
-                        "disponible": row['disponible'],
-                        "precio_adicional": float(row['precio_adicional']) if row['precio_adicional'] else 0.0,
-                        "observaciones": row['observaciones'],
-                        "created_at": row.get('created_at').isoformat() if row.get('created_at') and isinstance(row.get('created_at'), datetime) else row.get('created_at'),
-                        "updated_at": row.get('updated_at').isoformat() if row.get('updated_at') and isinstance(row.get('updated_at'), datetime) else row.get('updated_at')
-                    })
-                logger.info(f"✅ [GET /disponibilidades] Retornando {len(disponibilidades)} disponibilidades de tabla")
-                return disponibilidades
-            
-            # SEGUNDO: Si no hay disponibilidades directas, usar lógica de horario_trabajo
-            logger.info(f"ℹ️ [GET /disponibilidades] No hay disponibilidades directas, usando horario_trabajo...")
+            # SIEMPRE usar lógica de horario_trabajo para respetar el horario configurado por el proveedor
+            # Las disponibilidades directas de la tabla disponibilidad se ignoran para priorizar el horario de trabajo
+            logger.info(f"🔍 [GET /disponibilidades] Usando horario_trabajo del proveedor para generar disponibilidades...")
             proveedor_id = servicio_info['proveedor_id']
-            duracion_minutos = servicio_info['duracion_minutos']
             
-            fecha_inicio = date.today()
+            fecha_hoy = date.today()
+            logger.info(f"📅 [GET /disponibilidades] Fecha actual: {fecha_hoy}")
+            
+            # Obtener horarios de trabajo del proveedor
+            horarios_map = await _obtener_horarios_trabajo(conn, proveedor_id)
+            
+            if not horarios_map or len(horarios_map) == 0:
+                logger.warning(f"⚠️ [GET /disponibilidades] No hay horarios de trabajo configurados para proveedor {proveedor_id}")
+                return []
+            
+            # Calcular el siguiente día hábil (día con horario configurado)
+            # Las reservas solo pueden hacerse a partir del día hábil siguiente
+            fecha_inicio = _obtener_siguiente_dia_habil(fecha_hoy, horarios_map)
             fecha_fin = fecha_inicio + timedelta(days=30)
             
-            horarios_map = await _obtener_horarios_trabajo(conn, proveedor_id)
+            logger.info(f"📅 [GET /disponibilidades] Fecha inicio (siguiente día hábil): {fecha_inicio}")
+            logger.info(f"📅 [GET /disponibilidades] Fecha fin: {fecha_fin}")
+            
             excepciones_map = await _obtener_excepciones_horario(conn, proveedor_id, fecha_inicio, fecha_fin)
             reservas_map = await _obtener_reservas(conn, servicio_id, fecha_inicio, fecha_fin)
+            
+            # Forzar intervalos de 1 hora (60 minutos) para las disponibilidades
+            # independientemente de la duración del servicio
+            # Esto asegura que los horarios disponibles se muestren cada hora completa
+            duracion_slots_disponibilidad = 60
+            logger.info(f"🔍 [GET /disponibilidades] Usando duración de slots: {duracion_slots_disponibilidad} minutos (1 hora)")
             
             horarios_disponibles = _generar_horarios_disponibles(
                 servicio_id,
@@ -594,7 +674,7 @@ async def obtener_disponibilidades_disponibles_servicio(
                 horarios_map,
                 excepciones_map,
                 reservas_map,
-                duracion_minutos
+                duracion_slots_disponibilidad
             )
             
             logger.info(f"✅ [GET /disponibilidades] Retornando {len(horarios_disponibles)} horarios generados")

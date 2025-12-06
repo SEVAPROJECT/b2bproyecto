@@ -38,6 +38,20 @@ const DIAS_SEMANA = [
 ];
 
 /**
+ * Genera las opciones de hora de 09:00 a 17:00 en intervalos de 1 hora
+ * @returns Array de strings en formato HH:MM
+ */
+const generarOpcionesHora = (): string[] => {
+  const opciones: string[] = [];
+  for (let hora = 9; hora <= 17; hora++) {
+    opciones.push(`${hora.toString().padStart(2, '0')}:00`);
+  }
+  return opciones;
+};
+
+const OPCIONES_HORA = generarOpcionesHora();
+
+/**
  * Función helper para validar que la hora de inicio sea menor que la hora de fin
  * @param horaInicio - Hora de inicio en formato HH:MM
  * @param horaFin - Hora de fin en formato HH:MM
@@ -444,47 +458,53 @@ const HorarioTrabajoManager: React.FC = () => {
                 <label htmlFor="hora_inicio" className="block text-sm font-medium text-gray-700 mb-1">
                   Hora de Inicio
                 </label>
-                <input
+                <select
                   id="hora_inicio"
-                  type="time"
                   value={formData.hora_inicio}
                   onChange={(e) => {
                     const newHoraInicio = e.target.value;
                     setFormData({ ...formData, hora_inicio: newHoraInicio });
-                    // Validar en tiempo real
-                    if (formData.hora_fin) {
-                      const validation = validateHorarioTimes(newHoraInicio, formData.hora_fin);
-                      setErrorHorario(validation.isValid ? null : validation.errorMessage);
-                    }
+                    // Validar en tiempo real siempre
+                    const validation = validateHorarioTimes(newHoraInicio, formData.hora_fin);
+                    setErrorHorario(validation.isValid ? null : validation.errorMessage);
                   }}
                   className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                     errorHorario ? 'border-red-500' : 'border-gray-300'
                   }`}
                   required
-                />
+                >
+                  {OPCIONES_HORA.map((hora) => (
+                    <option key={hora} value={hora}>
+                      {hora}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label htmlFor="hora_fin" className="block text-sm font-medium text-gray-700 mb-1">
                   Hora de Fin
                 </label>
-                <input
+                <select
                   id="hora_fin"
-                  type="time"
                   value={formData.hora_fin}
                   onChange={(e) => {
                     const newHoraFin = e.target.value;
                     setFormData({ ...formData, hora_fin: newHoraFin });
-                    // Validar en tiempo real
-                    if (formData.hora_inicio) {
-                      const validation = validateHorarioTimes(formData.hora_inicio, newHoraFin);
-                      setErrorHorario(validation.isValid ? null : validation.errorMessage);
-                    }
+                    // Validar en tiempo real siempre
+                    const validation = validateHorarioTimes(formData.hora_inicio, newHoraFin);
+                    setErrorHorario(validation.isValid ? null : validation.errorMessage);
                   }}
                   className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                     errorHorario ? 'border-red-500' : 'border-gray-300'
                   }`}
                   required
-                />
+                >
+                  {OPCIONES_HORA.map((hora) => (
+                    <option key={hora} value={hora}>
+                      {hora}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             {errorHorario && (
@@ -635,47 +655,53 @@ const HorarioTrabajoManager: React.FC = () => {
                       <label htmlFor="excepcion_hora_inicio" className="block text-sm font-medium text-gray-700 mb-1">
                         Hora de Inicio <span className="text-red-500">*</span>
                       </label>
-                      <input
+                      <select
                         id="excepcion_hora_inicio"
-                        type="time"
                         value={excepcionData.hora_inicio}
                         onChange={(e) => {
                           const newHoraInicio = e.target.value;
                           setExcepcionData({ ...excepcionData, hora_inicio: newHoraInicio });
-                          // Validar en tiempo real
-                          if (excepcionData.hora_fin) {
-                            const validation = validateHorarioTimes(newHoraInicio, excepcionData.hora_fin);
-                            setErrorExcepcion(validation.isValid ? null : validation.errorMessage);
-                          }
+                          // Validar en tiempo real siempre
+                          const validation = validateHorarioTimes(newHoraInicio, excepcionData.hora_fin);
+                          setErrorExcepcion(validation.isValid ? null : validation.errorMessage);
                         }}
                         className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                           errorExcepcion ? 'border-red-500' : 'border-gray-300'
                         }`}
                         required
-                      />
+                      >
+                        {OPCIONES_HORA.map((hora) => (
+                          <option key={hora} value={hora}>
+                            {hora}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label htmlFor="excepcion_hora_fin" className="block text-sm font-medium text-gray-700 mb-1">
                         Hora de Fin <span className="text-red-500">*</span>
                       </label>
-                      <input
+                      <select
                         id="excepcion_hora_fin"
-                        type="time"
                         value={excepcionData.hora_fin}
                         onChange={(e) => {
                           const newHoraFin = e.target.value;
                           setExcepcionData({ ...excepcionData, hora_fin: newHoraFin });
-                          // Validar en tiempo real
-                          if (excepcionData.hora_inicio) {
-                            const validation = validateHorarioTimes(excepcionData.hora_inicio, newHoraFin);
-                            setErrorExcepcion(validation.isValid ? null : validation.errorMessage);
-                          }
+                          // Validar en tiempo real siempre
+                          const validation = validateHorarioTimes(excepcionData.hora_inicio, newHoraFin);
+                          setErrorExcepcion(validation.isValid ? null : validation.errorMessage);
                         }}
                         className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                           errorExcepcion ? 'border-red-500' : 'border-gray-300'
                         }`}
                         required
-                      />
+                      >
+                        {OPCIONES_HORA.map((hora) => (
+                          <option key={hora} value={hora}>
+                            {hora}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </>
                 )}
@@ -801,23 +827,47 @@ const HorarioTrabajoManager: React.FC = () => {
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Hora de Inicio
                         </label>
-                        <input
-                          type="time"
+                        <select
                           value={horario.hora_inicio}
-                          onChange={(e) => handleConfiguracionCompletaChange(index, 'hora_inicio', e.target.value)}
+                          onChange={(e) => {
+                            handleConfiguracionCompletaChange(index, 'hora_inicio', e.target.value);
+                            // Validar en tiempo real
+                            const validation = validateHorarioTimes(e.target.value, horario.hora_fin);
+                            if (!validation.isValid) {
+                              alert(`Error en ${horario.nombreDia}: ${validation.errorMessage}`);
+                            }
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
+                        >
+                          {OPCIONES_HORA.map((hora) => (
+                            <option key={hora} value={hora}>
+                              {hora}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Hora de Fin
                         </label>
-                        <input
-                          type="time"
+                        <select
                           value={horario.hora_fin}
-                          onChange={(e) => handleConfiguracionCompletaChange(index, 'hora_fin', e.target.value)}
+                          onChange={(e) => {
+                            handleConfiguracionCompletaChange(index, 'hora_fin', e.target.value);
+                            // Validar en tiempo real
+                            const validation = validateHorarioTimes(horario.hora_inicio, e.target.value);
+                            if (!validation.isValid) {
+                              alert(`Error en ${horario.nombreDia}: ${validation.errorMessage}`);
+                            }
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
+                        >
+                          {OPCIONES_HORA.map((hora) => (
+                            <option key={hora} value={hora}>
+                              {hora}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   )}
@@ -848,3 +898,4 @@ const HorarioTrabajoManager: React.FC = () => {
 };
 
 export default HorarioTrabajoManager;
+

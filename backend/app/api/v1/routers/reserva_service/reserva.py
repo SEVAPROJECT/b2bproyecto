@@ -225,6 +225,44 @@ async def verify_no_duplicate_reservation(
             detail=f"Ya tienes una reserva en el mismo horario (fecha: {fecha.strftime(FORMATO_FECHA_DD_MM_YYYY)}, hora: {hora_inicio.strftime('%H:%M')}). No puedes hacer dos reservas en el mismo horario."
         )
 
+
+async def verify_no_confirmed_reservation(
+    conn,
+    servicio_id: int,
+    fecha: date,
+    hora_inicio: time,
+    hora_fin: time
+) -> None:
+    """
+    Verifica que no exista una reserva confirmada en el mismo servicio, fecha y horario.
+    Una vez confirmada una reserva en una fecha y horario, no debe aparecer disponible para ningún cliente.
+    Dos intervalos [a1, b1] y [a2, b2] se solapan si: a1 < b2 AND b1 > a2
+    """
+    verificacion_query = """
+        SELECT id_reserva, fecha, hora_inicio, hora_fin, estado
+        FROM reserva
+        WHERE id_servicio = $1
+        AND fecha = $2
+        AND estado = $3
+        AND hora_inicio < $4
+        AND hora_fin > $5
+    """
+    
+    reserva_confirmada = await conn.fetchrow(
+        verificacion_query,
+        servicio_id,
+        fecha,
+        ESTADO_CONFIRMADA,  # Solo verificar reservas confirmadas
+        hora_fin,  # $4: hora_fin de la nueva reserva
+        hora_inicio  # $5: hora_inicio de la nueva reserva
+    )
+    
+    if reserva_confirmada:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El horario seleccionado (fecha: {fecha.strftime(FORMATO_FECHA_DD_MM_YYYY)}, hora: {hora_inicio.strftime('%H:%M')}) ya está reservado y confirmado por otro cliente. Por favor, selecciona otro horario disponible."
+        )
+
 def validate_and_convert_service_id(id_servicio) -> int:
     """Valida y convierte el ID de servicio a entero"""
     try:
@@ -387,6 +425,11 @@ async def crear_reserva(
             # Validar que el cliente no tenga otra reserva en el mismo horario
             await verify_no_duplicate_reservation(
                 conn, current_user.id, reserva.fecha, hora_inicio, hora_fin
+            )
+            
+            # Validar que no exista una reserva confirmada en el mismo servicio, fecha y horario
+            await verify_no_confirmed_reservation(
+                conn, servicio_id, reserva.fecha, hora_inicio, hora_fin
             )
             
             # Insertar reserva
@@ -1877,7 +1920,14 @@ async def cancelar_reserva(
 async def get_reserva_basic_info(conn, reserva_id: int) -> dict:
     """Obtiene la información básica de la reserva"""
     reserva_query = """
-        SELECT r.id_reserva, r.estado as estado_actual, r.user_id as cliente_user_id
+        SELECT 
+            r.id_reserva, 
+            r.estado as estado_actual, 
+            r.user_id as cliente_user_id,
+            r.id_servicio,
+            r.fecha,
+            r.hora_inicio,
+            r.hora_fin
         FROM reserva r
         WHERE r.id_reserva = $1
     """
@@ -2012,6 +2062,42 @@ async def confirmar_reserva(
             # Validar estado para confirmación
             estado_actual = reserva_result['estado_actual']
             validate_reserva_estado_for_confirmation(estado_actual)
+            
+            # Obtener información de la reserva para validar conflicto
+            servicio_id = reserva_result.get('id_servicio')
+            fecha_reserva = reserva_result.get('fecha')
+            hora_inicio = reserva_result.get('hora_inicio')
+            hora_fin = reserva_result.get('hora_fin')
+            
+            # Validar que no exista otra reserva confirmada en el mismo servicio, fecha y horario
+            # (excluyendo la reserva actual que se está confirmando)
+            if servicio_id and fecha_reserva and hora_inicio and hora_fin:
+                verificacion_query = """
+                    SELECT id_reserva, fecha, hora_inicio, hora_fin, estado
+                    FROM reserva
+                    WHERE id_servicio = $1
+                    AND fecha = $2
+                    AND estado = $3
+                    AND id_reserva != $4
+                    AND hora_inicio < $5
+                    AND hora_fin > $6
+                """
+                
+                reserva_confirmada = await conn.fetchrow(
+                    verificacion_query,
+                    servicio_id,
+                    fecha_reserva,
+                    ESTADO_CONFIRMADA,
+                    reserva_id,  # Excluir la reserva actual
+                    hora_fin,
+                    hora_inicio
+                )
+                
+                if reserva_confirmada:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"El horario seleccionado (fecha: {fecha_reserva.strftime(FORMATO_FECHA_DD_MM_YYYY)}, hora: {hora_inicio.strftime('%H:%M')}) ya está reservado y confirmado por otro cliente. No se puede confirmar esta reserva."
+                    )
             
             # Confirmar la reserva
             updated_reserva = await confirm_reserva_estado(conn, reserva_id)

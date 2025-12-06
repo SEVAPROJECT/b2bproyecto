@@ -290,6 +290,7 @@ const MarketplacePage: React.FC = () => {
     // Estados para rango personalizado de fechas
     const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
     const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
+    const [dateRangeError, setDateRangeError] = useState<string | null>(null);
     
     // Estados de paginación
     const [currentPage, setCurrentPage] = useState(1);
@@ -663,6 +664,20 @@ const MarketplacePage: React.FC = () => {
         });
     }, [reloadFilteredData]);
 
+    // Recargar datos cuando cambie el rango personalizado de fechas (si está completo y válido)
+    useEffect(() => {
+        if (dateFilter === 'custom' && customDateRange.start && customDateRange.end && !dateRangeError) {
+            // Validar que la fecha "hasta" sea mayor que la fecha "desde"
+            const startDate = new Date(customDateRange.start);
+            const endDate = new Date(customDateRange.end);
+            if (endDate > startDate) {
+                console.log('📅 Rango personalizado válido, recargando datos...', customDateRange);
+                reloadFilteredData(1, false);
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [customDateRange.start, customDateRange.end, dateFilter, dateRangeError]);
+
     // Asegurar que isAISearchMode se mantenga al cambiar de página
     useEffect(() => {
         if (isAISearchMode && services.length > 0) {
@@ -773,7 +788,22 @@ const MarketplacePage: React.FC = () => {
     }, [services, isAuthenticated]);
 
     // Función para formatear fechas
+    // Evita problemas de zona horaria parseando directamente el string YYYY-MM-DD
     const formatDateShortLocal = (dateString: string) => {
+        if (!dateString) return '';
+        
+        // Si el string ya está en formato YYYY-MM-DD, parsearlo directamente
+        // para evitar problemas de zona horaria
+        const parts = dateString.split('-');
+        if (parts.length === 3) {
+            const year = parts[0];
+            const month = parts[1];
+            const day = parts[2];
+            // Formatear como DD/MM/YYYY
+            return `${day}/${month}/${year}`;
+        }
+        
+        // Fallback: usar Date si el formato no es el esperado
         const date = new Date(dateString);
         return date.toLocaleDateString('es-PY', {
             day: '2-digit',
@@ -789,12 +819,37 @@ const MarketplacePage: React.FC = () => {
 
     // Función para manejar cambio de fecha de inicio
     const handleStartDateChange = (startDate: string) => {
-        setCustomDateRange(prev => ({ ...prev, start: startDate }));
+        setCustomDateRange(prev => {
+            const newRange = { ...prev, start: startDate };
+            
+            // Validar que fecha "hasta" sea mayor que fecha "desde"
+            if (newRange.end && startDate && newRange.end <= startDate) {
+                setDateRangeError('La fecha "Hasta" debe ser mayor que la fecha "Desde"');
+                // Ajustar automáticamente la fecha "hasta" si es menor o igual
+                // O simplemente limpiar la fecha "hasta" para que el usuario la seleccione nuevamente
+                newRange.end = '';
+            } else {
+                setDateRangeError(null);
+            }
+            
+            return newRange;
+        });
     };
 
     // Función para manejar cambio de fecha de fin
     const handleEndDateChange = (endDate: string) => {
-        setCustomDateRange(prev => ({ ...prev, end: endDate }));
+        setCustomDateRange(prev => {
+            const newRange = { ...prev, end: endDate };
+            
+            // Validar que fecha "hasta" sea mayor que fecha "desde"
+            if (newRange.start && endDate && endDate <= newRange.start) {
+                setDateRangeError('La fecha "Hasta" debe ser mayor que la fecha "Desde"');
+            } else {
+                setDateRangeError(null);
+            }
+            
+            return newRange;
+        });
     };
 
     // Función para manejar reserva
@@ -1134,6 +1189,7 @@ const MarketplacePage: React.FC = () => {
                                         } else {
                                             setShowCustomDatePicker(false);
                                             setCustomDateRange({ start: '', end: '' });
+                                            setDateRangeError(null);
                                         }
                                     }}
                                     className={`w-full px-2 py-1.5 border rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors text-xs ${
@@ -1174,7 +1230,8 @@ const MarketplacePage: React.FC = () => {
                             </div>
 
                             {/* Filtro de calificación - compacto */}
-                            <div className="space-y-1">
+                            {/* COMENTADO: Filtro de calificaciones deshabilitado temporalmente */}
+                            {/* <div className="space-y-1">
                                 <label htmlFor="filter-rating" className="block text-xs font-medium text-slate-700">Calificación</label>
                                 <select
                                     id="filter-rating"
@@ -1189,7 +1246,7 @@ const MarketplacePage: React.FC = () => {
                                         </option>
                                     ))}
                                 </select>
-                            </div>
+                            </div> */}
 
                             {/* Filtro de moneda - compacto */}
                             <div className="space-y-1">
@@ -1222,6 +1279,7 @@ const MarketplacePage: React.FC = () => {
                                             setDateFilter('all');
                                             setShowCustomDatePicker(false);
                                             setCustomDateRange({ start: '', end: '' });
+                                            setDateRangeError(null);
                                         }}
                                         className="text-slate-400 hover:text-slate-600 text-lg p-1"
                                         aria-label="Cerrar selector de rango personalizado"
@@ -1237,8 +1295,9 @@ const MarketplacePage: React.FC = () => {
                                             type="date"
                                             value={customDateRange.start}
                                             onChange={(e) => handleStartDateChange(e.target.value)}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 transition-colors"
-                                            max={getTodayDateString()}
+                                            className={`w-full px-3 py-2 border rounded-lg focus:ring-primary-500 focus:border-primary-500 transition-colors ${
+                                                dateRangeError ? 'border-red-500' : 'border-slate-300'
+                                            }`}
                                         />
                                     </div>
                                     <div className="space-y-2">
@@ -1248,10 +1307,14 @@ const MarketplacePage: React.FC = () => {
                                             type="date"
                                             value={customDateRange.end}
                                             onChange={(e) => handleEndDateChange(e.target.value)}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                                            className={`w-full px-3 py-2 border rounded-lg focus:ring-primary-500 focus:border-primary-500 transition-colors ${
+                                                dateRangeError ? 'border-red-500' : 'border-slate-300'
+                                            }`}
                                             min={customDateRange.start || undefined}
-                                            max={getTodayDateString()}
                                         />
+                                        {dateRangeError && (
+                                            <p className="text-xs text-red-600 mt-1">{dateRangeError}</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>

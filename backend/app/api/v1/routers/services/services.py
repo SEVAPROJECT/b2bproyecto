@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List, Optional
 from pydantic import BaseModel
+from datetime import date as date_type
 import logging
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,9 @@ def build_dynamic_filters(
     department: Optional[str],
     city: Optional[str],
     search: Optional[str],
-    min_rating: Optional[float]
+    min_rating: Optional[float],
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
 ) -> tuple[list[str], list]:
     """Construye los filtros dinámicos y sus parámetros"""
     filters = []
@@ -132,6 +135,31 @@ def build_dynamic_filters(
         filters.append(f"s.id_servicio IN {rating_subquery}")
         params.append(float(min_rating))
     
+    # Filtro por fechas (date_from y date_to)
+    # Filtrar por fecha de publicación del servicio (created_at)
+    if date_from or date_to:
+        if date_from and date_to:
+            # Rango completo: filtrar servicios publicados entre date_from y date_to
+            # Convertir strings a date para PostgreSQL
+            param_count += 1
+            param_count_to = param_count + 1
+            filters.append(f"s.created_at::date >= ${param_count} AND s.created_at::date <= ${param_count_to}")
+            # Convertir strings a objetos date para asyncpg
+            params.append(date_type.fromisoformat(date_from))
+            params.append(date_type.fromisoformat(date_to))
+        elif date_from:
+            # Solo fecha desde: filtrar servicios publicados desde date_from
+            param_count += 1
+            filters.append(f"s.created_at::date >= ${param_count}")
+            # Convertir string a objeto date para asyncpg
+            params.append(date_type.fromisoformat(date_from))
+        elif date_to:
+            # Solo fecha hasta: filtrar servicios publicados hasta date_to
+            param_count += 1
+            filters.append(f"s.created_at::date <= ${param_count}")
+            # Convertir string a objeto date para asyncpg
+            params.append(date_type.fromisoformat(date_to))
+    
     return filters, params
 
 def get_base_query() -> str:
@@ -159,6 +187,9 @@ def get_count_query() -> str:
         SELECT COUNT(*) as total
         FROM servicio s
         JOIN perfil_empresa pe ON s.id_perfil = pe.id_perfil
+        LEFT JOIN direccion dir ON pe.id_direccion = dir.id_direccion
+        LEFT JOIN departamento d ON dir.id_departamento = d.id_departamento
+        LEFT JOIN ciudad c ON dir.id_ciudad = c.id_ciudad
         WHERE s.estado = true AND pe.verificado = true AND s.precio > 0
     """
 
@@ -458,7 +489,7 @@ async def get_services_unified(
             # Construir filtros dinámicos usando función helper
             filters, params = build_dynamic_filters(
                 currency, min_price, max_price, category_id, 
-                department, city, search, min_rating
+                department, city, search, min_rating, date_from, date_to
             )
             
             # Log de filtros recibidos
@@ -650,7 +681,7 @@ async def get_filtered_services(
         try:
             # Construir filtros dinámicamente
             filters, params = build_dynamic_filters(
-                currency, min_price, max_price, category_id, department, city, search, min_rating
+                currency, min_price, max_price, category_id, department, city, search, min_rating, date_from, date_to
             )
             
             # Construir la consulta base

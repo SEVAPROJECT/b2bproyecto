@@ -94,45 +94,46 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
 
                     for (const disp of data) {
                         if (disp.disponible && disp.fecha_inicio) {
-                            // Parsear fecha - puede venir con timezone o sin él
-                            let fechaInicio: Date;
-                            const fechaStrRaw = disp.fecha_inicio;
+                            // Extraer fecha y hora directamente del string ISO sin conversión de zona horaria
+                            const fechaStrRaw = String(disp.fecha_inicio);
                             
-                            // Si ya tiene timezone (termina con +00:00, -05:00, Z, etc.), parsear directamente
-                            if (typeof fechaStrRaw === 'string') {
-                                // Si no termina con Z ni tiene timezone, agregar Z para UTC
-                                if (!fechaStrRaw.endsWith('Z') && !fechaStrRaw.includes('+') && !fechaStrRaw.includes('-', 10)) {
-                                    fechaInicio = new Date(fechaStrRaw + 'Z');
-                                } else {
-                                    fechaInicio = new Date(fechaStrRaw);
+                            // Extraer fecha (YYYY-MM-DD) y hora (HH:MM) directamente del string ISO
+                            // Formato esperado: "2025-12-22T11:00:00" o "2025-12-22T11:00:00Z" o "2025-12-22T11:00:00+00:00"
+                            let fechaStr: string;
+                            let horaStr: string;
+                            
+                            if (fechaStrRaw.includes('T')) {
+                                const [fechaPart, horaPart] = fechaStrRaw.split('T');
+                                fechaStr = fechaPart; // YYYY-MM-DD
+                                
+                                // Extraer hora (HH:MM) - puede venir como "11:00:00" o "11:00:00Z" o "11:00:00+00:00"
+                                const horaPartClean = horaPart.split('+')[0].split('-')[0].split('Z')[0]; // Remover timezone
+                                const [hora, minuto] = horaPartClean.split(':').map(Number);
+                                
+                                // Solo considerar horas completas (minutos = 0) para intervalos de 1 hora
+                                if (!isNaN(hora) && !isNaN(minuto) && minuto === 0) {
+                                    horaStr = `${String(hora).padStart(2, '0')}:00`;
+                                    
+                                    // Agregar fecha
+                                    dates.add(fechaStr);
+                                    
+                                    // Agregar hora
+                                    if (!timesMap.has(fechaStr)) {
+                                        timesMap.set(fechaStr, []);
+                                    }
+                                    const times = timesMap.get(fechaStr);
+                                    if (times && !times.includes(horaStr)) {
+                                        times.push(horaStr);
+                                    }
                                 }
                             } else {
-                                fechaInicio = new Date(fechaStrRaw);
-                            }
-                            
-                            // Validar que la fecha sea válida
-                            if (isNaN(fechaInicio.getTime())) {
-                                console.warn(`⚠️ Fecha inválida: ${fechaStrRaw}`);
-                                continue;
-                            }
-                            
-                            // Agregar fecha (usar función local sin conversión UTC)
-                            const fechaStr = formatDateToYYYYMMDD(fechaInicio);
-                            dates.add(fechaStr);
-                            
-                            // Agregar hora - usar hora local del datetime
-                            const horaStr = fechaInicio.toTimeString().split(' ')[0].substring(0, 5);
-                            if (!timesMap.has(fechaStr)) {
-                                timesMap.set(fechaStr, []);
-                            }
-                            const times = timesMap.get(fechaStr);
-                            if (times && !times.includes(horaStr)) {
-                                times.push(horaStr);
+                                console.warn(`⚠️ Formato de fecha inesperado: ${fechaStrRaw}`);
                             }
                         }
                     }
                     
                     console.log(`✅ Fechas disponibles: ${dates.size}`);
+                    console.log(`📊 Horas disponibles por fecha:`, Array.from(timesMap.entries()).map(([fecha, horas]) => ({ fecha, horas: horas.sort() })));
                     setAvailableDates(dates);
                     setAvailableTimes(timesMap);
                 }
@@ -269,14 +270,15 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
         const horaMinutos = horaH * 60 + horaM;
         
         // Verificar si la hora se solapa con alguna reserva confirmada
+        // El slot es de 1 hora (60 minutos)
         for (const reserva of reservasFecha) {
             const [inicioH, inicioM] = reserva.hora_inicio.split(':').map(Number);
             const [finH, finM] = reserva.hora_fin.split(':').map(Number);
             const inicioMinutos = inicioH * 60 + inicioM;
             const finMinutos = finH * 60 + finM;
             
-            // Verificar solapamiento (el slot de 30 min se solapa si empieza antes del fin de la reserva y termina después del inicio)
-            if (horaMinutos < finMinutos && horaMinutos + 30 > inicioMinutos) {
+            // Verificar solapamiento (el slot de 1 hora se solapa si empieza antes del fin de la reserva y termina después del inicio)
+            if (horaMinutos < finMinutos && horaMinutos + 60 > inicioMinutos) {
                 return true;
             }
         }
@@ -284,7 +286,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
         return false;
     };
 
-    // Generar opciones de hora para la fecha seleccionada
+    // Generar opciones de hora para la fecha seleccionada basándose en el horario de trabajo del servicio
     const generateTimeOptions = (date: string) => {
         const excepcion = excepciones.get(date);
         
@@ -293,7 +295,10 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
             return [];
         }
         
-        // Si hay horario especial, generar horarios dentro del rango especial
+        // Obtener las horas disponibles para esta fecha desde el backend (basadas en horario de trabajo)
+        const horasDisponiblesBackend = availableTimes.get(date) || [];
+        
+        // Si hay horario especial, usar ese rango en lugar del horario normal
         if (excepcion && excepcion.tipo === 'horario_especial' && excepcion.hora_inicio && excepcion.hora_fin) {
             const horariosEspeciales = [];
             const [horaInicioH, horaInicioM] = excepcion.hora_inicio.split(':').map(Number);
@@ -302,7 +307,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
             let horaActual = horaInicioH * 60 + horaInicioM; // En minutos
             const horaFinMinutos = horaFinH * 60 + horaFinM;
             
-            // Generar horarios cada 30 minutos dentro del rango especial
+            // Generar horarios cada 1 hora dentro del rango especial
             while (horaActual < horaFinMinutos) {
                 const horas = Math.floor(horaActual / 60);
                 const minutos = horaActual % 60;
@@ -315,37 +320,37 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({
                         label: horaStr
                     });
                 }
-                horaActual += 30; // Incrementar 30 minutos
+                horaActual += 60; // Incrementar 1 hora
             }
             
             return horariosEspeciales;
         }
         
-        // Si no hay excepción o es horario normal, mostrar rango completo de 09:00 a 16:00
-        // Filtrar horarios ocupados por reservas confirmadas
-        const horariosCompletos = [];
-        for (let hora = 9; hora < 16; hora++) {
-            for (let minuto = 0; minuto < 60; minuto += 30) {
-                const horaStr = `${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')}`;
-                
-                // Solo agregar si no está ocupado por una reserva confirmada
-                if (!isHorarioOcupado(date, horaStr)) {
-                    horariosCompletos.push({
-                        value: horaStr,
-                        label: horaStr
-                    });
+        // Si no hay excepción, usar las horas disponibles del backend (basadas en horario de trabajo)
+        // Filtrar y formatear las horas disponibles, asegurando intervalos de 1 hora
+        const horariosFiltrados: string[] = [];
+        const horasSet = new Set<string>();
+        
+        // Procesar horas del backend y agrupar por hora completa (sin minutos)
+        for (const horaBackend of horasDisponiblesBackend) {
+            const [hora, minuto] = horaBackend.split(':').map(Number);
+            // Solo considerar horas completas (minutos = 0) para intervalos de 1 hora
+            if (minuto === 0) {
+                const horaStr = `${String(hora).padStart(2, '0')}:00`;
+                if (!horasSet.has(horaStr) && !isHorarioOcupado(date, horaStr)) {
+                    horasSet.add(horaStr);
+                    horariosFiltrados.push(horaStr);
                 }
             }
         }
-        // Agregar 16:00 solo si no está ocupado
-        if (!isHorarioOcupado(date, '16:00')) {
-            horariosCompletos.push({
-                value: '16:00',
-                label: '16:00'
-            });
-        }
         
-        return horariosCompletos;
+        // Ordenar las horas
+        horariosFiltrados.sort();
+        
+        return horariosFiltrados.map(hora => ({
+            value: hora,
+            label: hora
+        }));
     };
 
     if (loading) {
