@@ -120,7 +120,7 @@ const ServiceReservationModal: React.FC<ServiceReservationModalProps> = ({ isOpe
     const handleSuccessResponse = async (response: Response) => {
         const result = await response.json();
         console.log('✅ [FRONTEND] Reserva creada exitosamente:', result);
-        alert('Reserva creada exitosamente. El proveedor se pondrá en contacto contigo.');
+        alert('Reserva creada exitosamente');
         onClose();
     };
 

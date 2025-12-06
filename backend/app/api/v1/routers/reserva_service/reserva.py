@@ -422,12 +422,11 @@ async def crear_reserva(
             hora_inicio = process_hora_inicio(reserva.hora_inicio)
             hora_fin = calculate_hora_fin(hora_inicio)
             
-            # Validar que el cliente no tenga otra reserva en el mismo horario
-            await verify_no_duplicate_reservation(
-                conn, current_user.id, reserva.fecha, hora_inicio, hora_fin
-            )
+            # NOTA: Se eliminó verify_no_duplicate_reservation para permitir que un cliente
+            # pueda reservar múltiples servicios en el mismo horario (diferentes servicios/proveedores)
             
             # Validar que no exista una reserva confirmada en el mismo servicio, fecha y horario
+            # Esta validación es importante: un servicio específico no puede tener dos reservas confirmadas en el mismo horario
             await verify_no_confirmed_reservation(
                 conn, servicio_id, reserva.fecha, hora_inicio, hora_fin
             )
