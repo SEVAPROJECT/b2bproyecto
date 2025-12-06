@@ -162,6 +162,16 @@ const Tabs: React.FC<TabsProps> = ({ userRole, activeTab, onTabChange }) => (
             {userRole === 'provider' && (
                 <>
                     <button
+                        onClick={() => onTabChange('mis-reservas-cliente')}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'mis-reservas-cliente'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        Mis Reservas como Cliente
+                    </button>
+                    <button
                         onClick={() => onTabChange('reservas-proveedor')}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                             activeTab === 'reservas-proveedor'
@@ -600,7 +610,7 @@ const ReservationCard: React.FC<ReservationCardProps> = ({
 }) => {
     const isLoading = accionLoading === reserva.id_reserva;
     const isProviderTab = activeTab === 'reservas-proveedor';
-    const isClientTab = activeTab === 'mis-reservas';
+    const isClientTab = activeTab === 'mis-reservas' || activeTab === 'mis-reservas-cliente';
 
     return (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">

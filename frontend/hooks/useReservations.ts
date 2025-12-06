@@ -55,7 +55,7 @@ interface ReservasResponse {
     pagination: PaginationInfo;
 }
 
-export type TabType = 'mis-reservas' | 'reservas-proveedor' | 'agenda';
+export type TabType = 'mis-reservas' | 'mis-reservas-cliente' | 'reservas-proveedor' | 'agenda';
 
 export const useReservations = () => {
     const { user } = useAuth();
@@ -101,12 +101,20 @@ export const useReservations = () => {
         
         // Solo cambiar el tab si es necesario y no está ya en el correcto
         if (user.role === 'provider' && activeTab === 'mis-reservas') {
-            console.log('🔍 [useReservations] Cambiando tab de mis-reservas a reservas-proveedor para proveedor');
-            setActiveTab('reservas-proveedor');
+            // Si un proveedor accede a 'mis-reservas', redirigir a 'mis-reservas-cliente'
+            console.log('🔍 [useReservations] Cambiando tab de mis-reservas a mis-reservas-cliente para proveedor');
+            setActiveTab('mis-reservas-cliente');
             // Limpiar reservas cuando cambiamos el tab para evitar mostrar datos incorrectos
             setReservas([]);
-        } else if (user.role !== 'provider' && activeTab !== 'mis-reservas') {
+        } else if (user.role !== 'provider' && activeTab !== 'mis-reservas' && activeTab !== 'mis-reservas-cliente') {
+            // Si un cliente accede a una pestaña que no es mis-reservas, redirigir a mis-reservas
             console.log('🔍 [useReservations] Cambiando tab a mis-reservas para cliente');
+            setActiveTab('mis-reservas');
+            // Limpiar reservas cuando cambiamos el tab para evitar mostrar datos incorrectos
+            setReservas([]);
+        } else if (user.role !== 'provider' && activeTab === 'mis-reservas-cliente') {
+            // Si un cliente accede a 'mis-reservas-cliente', redirigir a 'mis-reservas'
+            console.log('🔍 [useReservations] Cambiando tab de mis-reservas-cliente a mis-reservas para cliente');
             setActiveTab('mis-reservas');
             // Limpiar reservas cuando cambiamos el tab para evitar mostrar datos incorrectos
             setReservas([]);
@@ -147,8 +155,9 @@ export const useReservations = () => {
             if (nombreContacto.trim()) params.append('nombre_contacto', nombreContacto.trim());
 
             // Validar que el tab sea correcto para el rol del usuario
+            // Permitir 'mis-reservas-cliente' para proveedores (reservas que hicieron como clientes)
             if (user.role === 'provider' && activeTab === 'mis-reservas') {
-                console.log('🔍 [useReservations] ERROR: Proveedor intentando acceder a mis-reservas, cancelando carga');
+                console.log('🔍 [useReservations] ERROR: Proveedor intentando acceder a mis-reservas (debe usar mis-reservas-cliente), cancelando carga');
                 setReservas([]);
                 setLoading(false);
                 return;
@@ -161,9 +170,18 @@ export const useReservations = () => {
                 return;
             }
             
+            // Validar que clientes no usen 'mis-reservas-cliente' (solo para proveedores)
+            if (user.role !== 'provider' && activeTab === 'mis-reservas-cliente') {
+                console.log('🔍 [useReservations] ERROR: Cliente intentando acceder a mis-reservas-cliente (debe usar mis-reservas), cancelando carga');
+                setReservas([]);
+                setLoading(false);
+                return;
+            }
+            
             // Determinar qué endpoint usar según la pestaña activa
             let endpoint = '';
-            if (activeTab === 'mis-reservas') {
+            if (activeTab === 'mis-reservas' || activeTab === 'mis-reservas-cliente') {
+                // Ambas pestañas usan el mismo endpoint: reservas del usuario como cliente
                 endpoint = '/reservas/mis-reservas';
             } else if (activeTab === 'reservas-proveedor') {
                 endpoint = '/reservas/reservas-proveedor';
