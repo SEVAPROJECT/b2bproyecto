@@ -176,12 +176,38 @@ async def migrate_model(
         # Verificar si hay servicios indexados
         stats = weaviate_service.get_stats()
         total_objects = stats.get('total_objects', 0)
-        needs_reindex = total_objects == 0
         
-        # Si no hay cambio y no se fuerza, pero no hay servicios indexados, reindexar
+        # Contar servicios activos en la base de datos para comparar
+        from app.services.direct_db_service import direct_db_service
+        conn = None
+        total_servicios_db = 0
+        try:
+            conn = await direct_db_service.get_connection()
+            count_query = "SELECT COUNT(*) as total FROM servicio WHERE estado = true"
+            count_result = await conn.fetchrow(count_query)
+            total_servicios_db = count_result['total'] if count_result else 0
+            logger.info(f"📊 Servicios activos en BD: {total_servicios_db}, Servicios indexados en Weaviate: {total_objects}")
+        except Exception as e:
+            logger.warning(f"⚠️ Error al contar servicios en BD: {e}")
+        finally:
+            if conn:
+                await direct_db_service.pool.release(conn)
+        
+        # Determinar si necesita reindexación:
+        # 1. Si no hay servicios indexados (total_objects == 0)
+        # 2. Si hay muy pocos servicios indexados comparado con la BD (menos del 10% o menos de 50)
+        needs_reindex = total_objects == 0
+        if not needs_reindex and total_servicios_db > 0:
+            porcentaje_indexado = (total_objects / total_servicios_db) * 100
+            # Reindexar si hay menos del 10% indexado O menos de 50 servicios indexados
+            needs_reindex = porcentaje_indexado < 10.0 or total_objects < 50
+            if needs_reindex:
+                logger.warning(f"⚠️ Pocos servicios indexados: {total_objects}/{total_servicios_db} ({porcentaje_indexado:.1f}%)")
+        
+        # Si no hay cambio y no se fuerza, pero necesita reindexación, reindexar
         if not model_changed and not force:
             if needs_reindex:
-                logger.warning(f"⚠️ El modelo está actualizado pero no hay servicios indexados (total_objects: {total_objects})")
+                logger.warning(f"⚠️ El modelo está actualizado pero hay pocos servicios indexados (total_objects: {total_objects}, total_BD: {total_servicios_db})")
                 logger.info(f"📦 Reindexando servicios (límite: {limit})...")
                 index_success = await weaviate_service.index_servicios(limit=limit)
                 
@@ -200,15 +226,17 @@ async def migrate_model(
                     "model_changed": False,
                     "services_reindexed": True,
                     "reindex_limit": limit,
-                    "total_objects_before": 0,
+                    "total_objects_before": total_objects,
+                    "total_servicios_db": total_servicios_db,
                     "status": "success"
                 }
             else:
                 return {
-                    "message": "No se detectó cambio de modelo. El schema ya está actualizado y hay servicios indexados.",
+                    "message": "No se detectó cambio de modelo. El schema ya está actualizado y hay suficientes servicios indexados.",
                     "current_model": current_model,
                     "expected_model": expected_model,
                     "total_objects": total_objects,
+                    "total_servicios_db": total_servicios_db,
                     "migration_skipped": True
                 }
         
