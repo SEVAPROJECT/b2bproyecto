@@ -55,7 +55,7 @@ interface ReservasResponse {
     pagination: PaginationInfo;
 }
 
-export type TabType = 'mis-reservas' | 'mis-reservas-cliente' | 'reservas-proveedor' | 'agenda';
+export type TabType = 'mis-reservas' | 'mis-reservas-cliente' | 'reservas-proveedor';
 
 export const useReservations = () => {
     const { user } = useAuth();
@@ -186,7 +186,7 @@ export const useReservations = () => {
             } else if (activeTab === 'reservas-proveedor') {
                 endpoint = '/reservas/reservas-proveedor';
             } else {
-                // Para agenda, no cargar reservas
+                // Pestaña no reconocida, no cargar reservas
                 setReservas([]);
                 setLoading(false);
                 return;
@@ -274,9 +274,9 @@ export const useReservations = () => {
         // Solo cargar si el usuario está autenticado y el tab es válido para su rol
         if (!user?.accessToken) return;
         
-        // Para proveedores, solo cargar si el tab es 'reservas-proveedor' o 'agenda'
+        // Para proveedores, cargar si el tab es 'reservas-proveedor' o 'mis-reservas-cliente'
         if (user.role === 'provider' && activeTab === 'mis-reservas') {
-            console.log('🔍 [useReservations] Saltando carga: proveedor no debe ver mis-reservas');
+            console.log('🔍 [useReservations] Saltando carga: proveedor no debe ver mis-reservas (debe usar mis-reservas-cliente)');
             return;
         }
         
