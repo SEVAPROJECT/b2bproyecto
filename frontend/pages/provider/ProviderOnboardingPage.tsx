@@ -896,10 +896,27 @@ const ProviderOnboardingPage: React.FC = () => {
                 providerStatus,
                 hasAccessToken: !!user?.accessToken,
                 dataLoaded,
+                forceLoad,
                 condition1: providerStatus === 'rejected' || providerStatus === 'pending',
                 condition2: !!user?.accessToken,
-                condition3: !dataLoaded
+                condition3: !dataLoaded || forceLoad,
+                userObject: user ? {
+                    id: user.id,
+                    email: user.email,
+                    role: user.role
+                } : null
             });
+            
+            // Verificación adicional para producción: si forceLoad es true pero shouldLoad es false, 
+            // verificar si podemos forzar la carga
+            if (forceLoad && !shouldLoad) {
+                console.warn('⚠️ [loadRejectedData] forceLoad es true pero shouldLoad es false');
+                console.warn('⚠️ [loadRejectedData] Verificando si podemos forzar carga...', {
+                    providerStatus,
+                    hasAccessToken: !!user?.accessToken,
+                    dataLoaded
+                });
+            }
             
             if (shouldLoad) {
                 console.log('✅ [loadRejectedData] Condiciones cumplidas, iniciando carga de datos...');
@@ -918,7 +935,24 @@ const ProviderOnboardingPage: React.FC = () => {
                     console.log('⚠️ Error en debug sucursales:', debugError);
                 }
                 
-                const datosRechazados = await adminAPI.getVerificacionDatos(user.accessToken);
+                console.log('📡 [loadRejectedData] Llamando a getVerificacionDatos...');
+                let datosRechazados;
+                try {
+                    datosRechazados = await adminAPI.getVerificacionDatos(user.accessToken);
+                    console.log('✅ [loadRejectedData] Datos recibidos del endpoint:', datosRechazados);
+                } catch (error: any) {
+                    console.error('❌ [loadRejectedData] Error al obtener datos de verificación:', error);
+                    console.error('❌ [loadRejectedData] Detalles del error:', {
+                        message: error?.message,
+                        detail: error?.detail,
+                        response: error?.response,
+                        status: error?.status
+                    });
+                    // Marcar como cargado para evitar reintentos infinitos
+                    setDataLoaded(true);
+                    setLoadingPreviousData(false);
+                    return; // Salir si hay error
+                }
 
                     console.log('📋 Estructura completa de datosRechazados:', JSON.stringify(datosRechazados, null, 2));
                     console.log('🔍 Verificando success:', datosRechazados.success);

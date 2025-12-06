@@ -676,13 +676,25 @@ export const adminAPI = {
     // Obtener datos completos de la solicitud de verificación
     async getVerificacionDatos(accessToken: string): Promise<any> {
         try {
-            console.log(`📋 Obteniendo datos de verificación...`);
+            console.log(`📋 [getVerificacionDatos] Obteniendo datos de verificación...`);
+            console.log(`📋 [getVerificacionDatos] Endpoint: ${API_BASE_URL}/auth/verificacion-datos`);
+            console.log(`📋 [getVerificacionDatos] Token presente: ${!!accessToken}`);
             const endpoint = `${API_BASE_URL}/auth/verificacion-datos`;
             const result = await performGetRequest<any>(endpoint, accessToken, 'getVerificacionDatos');
-            console.log('✅ Datos de verificación obtenidos:', result);
+            console.log('✅ [getVerificacionDatos] Datos de verificación obtenidos:', result);
             return result;
-        } catch (error) {
+        } catch (error: any) {
+            console.error('❌ [getVerificacionDatos] Error capturado:', error);
+            console.error('❌ [getVerificacionDatos] Detalles:', {
+                message: error?.message,
+                detail: error?.detail,
+                response: error?.response,
+                status: error?.status,
+                stack: error?.stack
+            });
             handleCatchError(error, 'getVerificacionDatos');
+            // Re-lanzar el error para que el componente pueda manejarlo
+            throw error;
         }
     },
 
