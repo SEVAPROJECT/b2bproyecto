@@ -858,6 +858,14 @@ const ProviderOnboardingPage: React.FC = () => {
     // Cargar datos previos si es una solicitud rechazada - Mejorado para recargar automáticamente
     useEffect(() => {
         const loadRejectedData = async () => {
+            console.log('🔍 [loadRejectedData] Iniciando carga de datos rechazados', {
+                providerStatus,
+                hasAccessToken: !!user?.accessToken,
+                dataLoaded,
+                shouldLoadPreviousData: shouldLoadPreviousDataRef.current,
+                hasProcessedNavigation: hasProcessedNavigationRef.current
+            });
+            
             // Si se navegó desde "Corregir y reenviar" y aún no se ha procesado, resetear dataLoaded
             if (shouldLoadPreviousDataRef.current && !hasProcessedNavigationRef.current) {
                 console.log('🔄 Navegación desde "Corregir y reenviar" detectada, reseteando dataLoaded');
@@ -871,11 +879,23 @@ const ProviderOnboardingPage: React.FC = () => {
             // 1. El estado es 'rejected' o 'pending'
             // 2. Hay un token de acceso disponible
             // 3. Aún no se han cargado los datos
+            // NOTA: No importa si hasProcessedNavigationRef está en true, si dataLoaded es false, debemos cargar
             const shouldLoad = (providerStatus === 'rejected' || providerStatus === 'pending') && 
                               user?.accessToken && 
                               !dataLoaded;
             
+            console.log('🔍 [loadRejectedData] Evaluando shouldLoad:', {
+                shouldLoad,
+                providerStatus,
+                hasAccessToken: !!user?.accessToken,
+                dataLoaded,
+                condition1: providerStatus === 'rejected' || providerStatus === 'pending',
+                condition2: !!user?.accessToken,
+                condition3: !dataLoaded
+            });
+            
             if (shouldLoad) {
+                console.log('✅ [loadRejectedData] Condiciones cumplidas, iniciando carga de datos...');
                 try {
                     setLoadingPreviousData(true);
                     console.log('🔄 Cargando datos de solicitud previa...');
@@ -1007,14 +1027,24 @@ const ProviderOnboardingPage: React.FC = () => {
             // (el efecto principal ya maneja ese caso)
             const isProcessingActiveNavigation = shouldLoadPreviousDataRef.current && !hasProcessedNavigationRef.current;
             
+            console.log('🔍 [useEffect providerStatus] Estado es rejected', {
+                isProcessingActiveNavigation,
+                shouldLoadPreviousData: shouldLoadPreviousDataRef.current,
+                hasProcessedNavigation: hasProcessedNavigationRef.current,
+                dataLoaded
+            });
+            
             if (!isProcessingActiveNavigation) {
                 console.log('🔄 Estado cambiado a rejected, reseteando dataLoaded para recargar datos');
                 setDataLoaded(false);
                 // Resetear hasProcessedNavigationRef para permitir futuras recargas después de un nuevo rechazo
                 hasProcessedNavigationRef.current = false;
+            } else {
+                console.log('⚠️ No se resetea dataLoaded porque se está procesando una navegación activa');
             }
         }
     }, [providerStatus]);
+    
 
     const nextStep = () => setStep(s => Math.min(s + 1, 5));
     const prevStep = () => setStep(s => Math.max(s - 1, 1));
