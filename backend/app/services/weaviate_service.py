@@ -1042,7 +1042,7 @@ class WeaviateService:
         logger.info(f"📊 Resultados procesados: {len(servicios)} servicios con relevancia >= {min_relevance_score} y palabras clave válidas")
         return servicios
     
-    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = True, min_relevance_score: float = 0.5) -> List[Dict[str, Any]]:
+    def search_servicios(self, query: str, limit: int = 10, use_hybrid: bool = False, min_relevance_score: float = 0.65) -> List[Dict[str, Any]]:
         """
         Buscar servicios usando búsqueda nativa de Weaviate (REST API v1)
         
@@ -1076,9 +1076,13 @@ class WeaviateService:
             # Aumentar el límite de búsqueda para tener más opciones después del filtrado por relevancia
             search_limit = limit * 3  # Buscar 3x más para tener opciones después del filtrado
             
+            # Para búsquedas semánticas específicas, usar solo búsqueda vectorial (sin BM25)
+            # BM25 puede hacer coincidencias por palabras sueltas que no son semánticamente relevantes
+            # La búsqueda vectorial pura es mejor para capturar el significado semántico
             if use_hybrid:
-                logger.info(f"🔍 Búsqueda híbrida nativa (BM25 + Vectorial) con query: '{query}'")
-                results = self._search_hibrida_nativa(query_escaped, search_limit)
+                # Usar solo vectorial para búsquedas semánticas más precisas
+                logger.info(f"🔍 Búsqueda vectorial nativa (semántica pura) con query: '{query}'")
+                results = self._search_vectorial_nativa(query_escaped, search_limit)
             else:
                 logger.info(f"🔍 Búsqueda vectorial nativa con query: '{query}'")
                 results = self._search_vectorial_nativa(query_escaped, search_limit)
