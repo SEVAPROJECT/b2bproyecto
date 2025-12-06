@@ -157,7 +157,16 @@ class WeaviateService:
             logger.warning(f"⚠️ Schema '{self.class_name}' no tiene módulo text2vec-ollama ni text2vec-huggingface configurado")
             return False
         
-        logger.info(f"✅ Schema '{self.class_name}' tiene vectorizador '{vectorizer}' configurado")
+        # Log del modelo configurado para diagnóstico
+        if 'text2vec-huggingface' in module_config:
+            model_actual = module_config['text2vec-huggingface'].get('model', 'no especificado')
+            logger.info(f"✅ Schema '{self.class_name}' tiene vectorizador '{vectorizer}' configurado con modelo: {model_actual}")
+        elif 'text2vec-ollama' in module_config:
+            model_actual = module_config['text2vec-ollama'].get('model', 'no especificado')
+            logger.info(f"✅ Schema '{self.class_name}' tiene vectorizador '{vectorizer}' configurado con modelo: {model_actual}")
+        else:
+            logger.info(f"✅ Schema '{self.class_name}' tiene vectorizador '{vectorizer}' configurado")
+        
         return True
     
     def _delete_schema(self) -> bool:
@@ -720,21 +729,31 @@ class WeaviateService:
     
     def _search_hibrida_nativa(self, query: str, limit: int = 10) -> Optional[List[Dict[str, Any]]]:
         """Búsqueda híbrida nativa usando REST API v1 con GraphQL (hybrid search con BM25 + Vectorial)"""
-        # Verificar si el schema necesita ser recreado (token configurado pero no en schema)
+        # Verificar si el schema necesita ser recreado (modelo o token configurado pero no en schema)
         try:
             huggingface_model = os.getenv("HUGGINGFACE_MODEL")
-            if huggingface_model:
-                hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
-                if hf_token and self._check_schema_exists():
-                    schema_actual = self._get_schema_config()
-                    if schema_actual:
-                        config_hf = schema_actual.get('moduleConfig', {}).get('text2vec-huggingface', {})
-                        token_actual = config_hf.get('token', '')
-                        if not token_actual:
-                            logger.warning(f"⚠️ Token de HuggingFace configurado pero no está en el schema")
-                            logger.warning(f"🔄 Recreando schema con token antes de búsqueda...")
-                            self._delete_schema()
-                            self._setup_schema()
+            if huggingface_model and self._check_schema_exists():
+                schema_actual = self._get_schema_config()
+                if schema_actual:
+                    config_hf = schema_actual.get('moduleConfig', {}).get('text2vec-huggingface', {})
+                    model_actual = config_hf.get('model', '')
+                    token_actual = config_hf.get('token', '')
+                    hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
+                    
+                    # Verificar si el modelo coincide
+                    if model_actual != huggingface_model:
+                        logger.warning(f"⚠️ Modelo en schema ({model_actual}) no coincide con modelo esperado ({huggingface_model})")
+                        logger.warning(f"🔄 Recreando schema con modelo correcto antes de búsqueda...")
+                        self._delete_schema()
+                        self._setup_schema()
+                    # Verificar si el token está configurado pero no está en el schema
+                    elif hf_token and not token_actual:
+                        logger.warning(f"⚠️ Token de HuggingFace configurado pero no está en el schema")
+                        logger.warning(f"🔄 Recreando schema con token antes de búsqueda...")
+                        self._delete_schema()
+                        self._setup_schema()
+                    else:
+                        logger.debug(f"✅ Modelo verificado: {model_actual} (esperado: {huggingface_model})")
         except Exception as e:
             logger.warning(f"⚠️ Error al verificar schema antes de búsqueda: {str(e)}")
         

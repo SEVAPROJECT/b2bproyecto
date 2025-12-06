@@ -43,16 +43,41 @@ async def check_schema():
         schema_exists = weaviate_service._check_schema_exists()
         has_vectorizer = False
         schema_data = None
+        model_info = None
         
         if schema_exists:
             schema_data = weaviate_service._get_schema()
             has_vectorizer = weaviate_service._check_schema_has_vectorizer()
+            
+            # Extraer información del modelo configurado
+            if schema_data:
+                module_config = schema_data.get('moduleConfig', {})
+                if 'text2vec-huggingface' in module_config:
+                    hf_config = module_config['text2vec-huggingface']
+                    model_info = {
+                        "type": "huggingface",
+                        "model": hf_config.get('model', 'no especificado'),
+                        "has_token": bool(hf_config.get('token'))
+                    }
+                elif 'text2vec-ollama' in module_config:
+                    ollama_config = module_config['text2vec-ollama']
+                    model_info = {
+                        "type": "ollama",
+                        "model": ollama_config.get('model', 'no especificado'),
+                        "endpoint": ollama_config.get('apiEndpoint', 'no especificado')
+                    }
+        
+        # Modelo esperado desde variables de entorno
+        expected_model = os.getenv("HUGGINGFACE_MODEL", "no configurado")
         
         return {
             "schema_exists": schema_exists,
             "has_vectorizer": has_vectorizer,
             "schema": schema_data,
-            "class_name": weaviate_service.class_name
+            "class_name": weaviate_service.class_name,
+            "model_info": model_info,
+            "expected_model": expected_model,
+            "model_matches": model_info and model_info.get("model") == expected_model if model_info else False
         }
     except Exception as e:
         logger.error(f"❌ Error al verificar schema: {str(e)}")
