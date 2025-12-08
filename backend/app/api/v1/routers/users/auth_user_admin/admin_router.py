@@ -4300,25 +4300,27 @@ async def aprobar_verificacion_ruc(
             
             # Enviar email de aprobación usando el formato especificado
             if user_email and nombre_contacto:
-                try:
-                    import asyncio
-                    # 1. Enviar email de aprobación personalizado
-                    email_aprobacion_enviado = await asyncio.to_thread(
-                        RUCVerificationEmailService.enviar_email_aprobacion,
-                        to_email=user_email,
-                        nombre_contacto=nombre_contacto
-                    )
-                    if email_aprobacion_enviado:
-                        print(f"✅ Email de aprobación enviado a {user_email}")
-                    else:
-                        print(f"⚠️ No se pudo enviar email de aprobación a {user_email}")
-                except Exception as e:
-                    print(f"⚠️ Error enviando email de aprobación: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    # No fallar si el email no se puede enviar
+                # COMENTADO TEMPORALMENTE: Email de aprobación personalizado
+                # Solo se envía el correo de confirmación de Supabase por ahora
+                # try:
+                #     import asyncio
+                #     # 1. Enviar email de aprobación personalizado
+                #     email_aprobacion_enviado = await asyncio.to_thread(
+                #         RUCVerificationEmailService.enviar_email_aprobacion,
+                #         to_email=user_email,
+                #         nombre_contacto=nombre_contacto
+                #     )
+                #     if email_aprobacion_enviado:
+                #         print(f"✅ Email de aprobación enviado a {user_email}")
+                #     else:
+                #         print(f"⚠️ No se pudo enviar email de aprobación a {user_email}")
+                # except Exception as e:
+                #     print(f"⚠️ Error enviando email de aprobación: {e}")
+                #     import traceback
+                #     traceback.print_exc()
+                #     # No fallar si el email no se puede enviar
                 
-                # 2. Enviar correo de confirmación de Supabase
+                # Enviar correo de confirmación de Supabase
                 try:
                     if supabase_auth:
                         print(f"📧 Enviando correo de confirmación de Supabase a {user_email}...")
@@ -4347,10 +4349,10 @@ async def aprobar_verificacion_ruc(
         print(f"✅ Verificación de RUC {id_verificacion_ruc} aprobada exitosamente")
         
         return {
-            "message": "Verificación de RUC aprobada. Usuario activado y emails enviados.",
+            "message": "Verificación de RUC aprobada. Usuario activado y correo de confirmación de Supabase enviado.",
             "id_verificacion_ruc": id_verificacion_ruc,
             "user_id": user_id_str,
-            "email_aprobacion_enviado": email_aprobacion_enviado,
+            "email_aprobacion_enviado": False,  # Comentado temporalmente
             "email_confirmacion_supabase_enviado": email_confirmacion_supabase_enviado
         }
         
