@@ -4289,14 +4289,43 @@ async def aprobar_verificacion_ruc(
                 nombre_contacto = user_row['nombre_persona'] or "Usuario"
             
             # Obtener email desde Supabase Auth
+            print("=" * 80)
+            print("📧 OBTENIENDO EMAIL DESDE SUPABASE AUTH")
+            print("=" * 80)
+            print(f"📋 supabase_admin disponible: {'SÍ' if supabase_admin else 'NO'}")
+            print(f"📋 user_id_str: {user_id_str}")
+            
             if supabase_admin and user_id_str:
                 try:
+                    print(f"📋 Obteniendo usuario desde Supabase Auth con ID: {user_id_str}")
                     auth_user = supabase_admin.auth.admin.get_user_by_id(user_id_str)
-                    if auth_user and auth_user.user:
-                        user_email = auth_user.user.email
+                    print(f"📋 Resultado de get_user_by_id: {auth_user}")
+                    print(f"📋 Tipo de resultado: {type(auth_user)}")
+                    
+                    if auth_user:
+                        print(f"📋 auth_user.user disponible: {'SÍ' if auth_user.user else 'NO'}")
+                        if auth_user.user:
+                            user_email = auth_user.user.email
+                            print(f"✅ Email obtenido desde Supabase Auth: {user_email}")
+                        else:
+                            print("⚠️ auth_user.user es None")
+                    else:
+                        print("⚠️ auth_user es None")
                 except Exception as e:
-                    print(f"⚠️ Error obteniendo email desde Supabase: {e}")
+                    print(f"❌ Error obteniendo email desde Supabase: {e}")
+                    print(f"📋 Tipo de error: {type(e).__name__}")
+                    import traceback
+                    print(f"📋 Traceback: {traceback.format_exc()}")
                     # Continuar sin email, no fallar
+            else:
+                if not supabase_admin:
+                    print("⚠️ supabase_admin no está disponible")
+                if not user_id_str:
+                    print("⚠️ user_id_str es None o vacío")
+            
+            print(f"📋 Email final a usar: {user_email}")
+            print(f"📋 Nombre contacto: {nombre_contacto}")
+            print("=" * 80)
             
             # Enviar email de aprobación usando el formato especificado
             if user_email and nombre_contacto:
@@ -4321,24 +4350,55 @@ async def aprobar_verificacion_ruc(
                 #     # No fallar si el email no se puede enviar
                 
                 # Enviar correo de confirmación de Supabase
+                import asyncio
+                print("=" * 80)
+                print("📧 INICIANDO ENVÍO DE CORREO DE CONFIRMACIÓN DE SUPABASE")
+                print("=" * 80)
+                print(f"📋 Email del usuario: {user_email}")
+                print(f"📋 supabase_auth disponible: {'SÍ' if supabase_auth else 'NO'}")
+                
                 try:
                     if supabase_auth:
-                        print(f"📧 Enviando correo de confirmación de Supabase a {user_email}...")
-                        await asyncio.to_thread(
+                        print(f"📧 Preparando envío de correo de confirmación de Supabase a {user_email}...")
+                        print("📋 Tipo de correo: signup")
+                        print(f"📋 Datos a enviar: {{'type': 'signup', 'email': '{user_email}'}}")
+                        
+                        # Intentar enviar el correo
+                        print("⏳ Llamando a supabase_auth.auth.resend()...")
+                        resultado = await asyncio.to_thread(
                             supabase_auth.auth.resend,
                             {
                                 "type": "signup",
                                 "email": user_email
                             }
                         )
-                        email_confirmacion_supabase_enviado = True
-                        print(f"✅ Correo de confirmación de Supabase enviado a {user_email}")
+                        
+                        print(f"📋 Resultado de resend: {resultado}")
+                        print(f"📋 Tipo de resultado: {type(resultado)}")
+                        
+                        if resultado:
+                            email_confirmacion_supabase_enviado = True
+                            print(f"✅ Correo de confirmación de Supabase enviado exitosamente a {user_email}")
+                        else:
+                            print(f"⚠️ supabase_auth.auth.resend() retornó None o False para {user_email}")
+                            email_confirmacion_supabase_enviado = False
                     else:
-                        print(f"⚠️ supabase_auth no está configurado, no se puede enviar correo de confirmación")
+                        print(f"❌ ERROR: supabase_auth no está configurado, no se puede enviar correo de confirmación")
+                        print(f"📋 Verificar que SUPABASE_URL y SUPABASE_ANON_KEY estén configurados en las variables de entorno")
+                        email_confirmacion_supabase_enviado = False
+                        
                 except Exception as e:
-                    print(f"⚠️ Error enviando correo de confirmación de Supabase: {e}")
+                    print("=" * 80)
+                    print("❌ ERROR ENVIANDO CORREO DE CONFIRMACIÓN DE SUPABASE")
+                    print("=" * 80)
+                    print(f"📋 Tipo de error: {type(e).__name__}")
+                    print(f"📋 Mensaje de error: {str(e)}")
+                    print(f"📋 Error completo: {repr(e)}")
+                    print(f"📧 Email intentado: {user_email}")
                     import traceback
-                    traceback.print_exc()
+                    print(f"📋 Traceback completo:\n{traceback.format_exc()}")
+                    print("=" * 80)
+                    email_confirmacion_supabase_enviado = False
                     # No fallar si el email no se puede enviar
         except Exception as e:
             print(f"⚠️ Error obteniendo datos del usuario: {e}")
