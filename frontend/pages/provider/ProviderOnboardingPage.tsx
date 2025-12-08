@@ -129,7 +129,7 @@ const initialOnboardingData: ProviderOnboardingData = {
         useFiscalAddress: true,
     },
     documents: {
-        'ruc': { id: 'ruc', name: 'Constancia de RUC', status: 'pending', isOptional: false, description: 'Constancia de Registro Único de Contribuyentes (RUC)' },
+        // RUC ya fue verificado durante el registro, no se solicita aquí
         'cedula': { id: 'cedula', name: 'Cédula MiPymes', status: 'pending', isOptional: false, description: 'Cédula MiPymes' },
         'certificado': { id: 'tributario', name: 'Certificado de Cumplimiento Tributario', status: 'pending', isOptional: false, description: 'Certificado de Cumplimiento Tributario Emitido por la SET' },
         'certificados_rubro': { id: 'certificados_rubro', name: 'Certificados del Rubro', status: 'pending', isOptional: false, description: 'Título que certifica la profesión' },
@@ -722,9 +722,52 @@ const ProviderOnboardingPage: React.FC = () => {
     const [step, setStep] = useState(1);
     const [data, setData] = useState<ProviderOnboardingData>(initialOnboardingData);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [rucVerificationStatus, setRucVerificationStatus] = useState<{ estado: string; mensaje?: string } | null>(null);
+    const [checkingRuc, setCheckingRuc] = useState(true);
     const { user, providerStatus, submitProviderApplication, resubmitProviderApplication } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+
+    // Verificar estado de verificación de RUC al cargar
+    useEffect(() => {
+        const checkRucVerification = async () => {
+            if (!user?.accessToken) {
+                setCheckingRuc(false);
+                return;
+            }
+
+            try {
+                const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+                const response = await fetch(`${apiBaseUrl}/api/v1/auth/verificacion-ruc-estado`, {
+                    headers: {
+                        'Authorization': `Bearer ${user.accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const rucStatus = await response.json();
+                    setRucVerificationStatus(rucStatus);
+                    
+                    // Si el RUC no está aprobado, mostrar mensaje
+                    if (rucStatus.estado !== 'aprobado') {
+                        console.warn('⚠️ RUC no aprobado:', rucStatus);
+                    }
+                } else {
+                    // Si no hay verificación de RUC, asumir que el usuario es antiguo (sin verificación)
+                    setRucVerificationStatus({ estado: 'no_encontrado' });
+                }
+            } catch (error) {
+                console.error('Error verificando estado de RUC:', error);
+                // En caso de error, permitir continuar (usuarios antiguos pueden no tener verificación)
+                setRucVerificationStatus({ estado: 'no_encontrado' });
+            } finally {
+                setCheckingRuc(false);
+            }
+        };
+
+        checkRucVerification();
+    }, [user?.accessToken]);
 
     // Función helper para mapear documentos del backend
     const mapDocumentsFromBackend = (documentos: any[], documentosMapeados: any): any => {
@@ -741,11 +784,9 @@ const ProviderOnboardingPage: React.FC = () => {
         })));
         
         // Mapeo exacto según los nombres en la base de datos
+        // NOTA: 'ruc' ya no se solicita aquí, fue verificado durante el registro
         const tipoDocumentoMap: Record<string, string> = {
             // Nombres exactos de la base de datos (case-insensitive)
-            'constancia de ruc': 'ruc',
-            'constancia ruc': 'ruc',
-            'ruc': 'ruc',
             'cédula mipymes': 'cedula',
             'cedula mipymes': 'cedula',
             'cédula mipyme': 'cedula',
@@ -784,13 +825,10 @@ const ProviderOnboardingPage: React.FC = () => {
                 console.log(`✅ Mapeo exacto encontrado: "${doc.tipo_documento}" -> "${docKey}"`);
             } else {
                 // Estrategia 2: Búsqueda por palabras clave (fallback)
-                // Constancia de RUC
-                if (tipoDoc.includes('constancia') && tipoDoc.includes('ruc')) {
-                    docKey = 'ruc';
-                }
+                // NOTA: RUC ya no se solicita aquí, fue verificado durante el registro
                 // Cédula MiPymes
-                else if ((tipoDoc.includes('cédula') || tipoDoc.includes('cedula')) && 
-                         (tipoDoc.includes('mipymes') || tipoDoc.includes('mipyme'))) {
+                if ((tipoDoc.includes('cédula') || tipoDoc.includes('cedula')) && 
+                    (tipoDoc.includes('mipymes') || tipoDoc.includes('mipyme'))) {
                     docKey = 'cedula';
                 }
                 // Certificado de Cumplimiento Tributario
@@ -1093,11 +1131,25 @@ const ProviderOnboardingPage: React.FC = () => {
 
     const handleSubmit = async () => {
         console.log('🔘 handleSubmit llamado');
-        console.log('📊 Estado actual:', { isSubmitting, providerStatus });
+        console.log('📊 Estado actual:', { isSubmitting, providerStatus, rucVerificationStatus });
         
         if (isSubmitting) {
             console.log('⚠️ Ya se está enviando, ignorando clic');
             return; // Prevenir múltiples envíos
+        }
+        
+        // Validar que el RUC esté aprobado (solo para usuarios nuevos con verificación de RUC)
+        if (rucVerificationStatus && rucVerificationStatus.estado !== 'no_encontrado') {
+            if (rucVerificationStatus.estado !== 'aprobado') {
+                let mensaje = 'Tu constancia de RUC debe estar aprobada antes de poder solicitar ser proveedor. ';
+                if (rucVerificationStatus.estado === 'pendiente') {
+                    mensaje += 'Tu RUC está en proceso de verificación. Te notificaremos cuando sea aprobado.';
+                } else if (rucVerificationStatus.estado === 'rechazado') {
+                    mensaje += 'Tu RUC fue rechazado. Por favor, contacta al administrador para más información.';
+                }
+                alert(mensaje);
+                return;
+            }
         }
         
         try {
@@ -1202,6 +1254,72 @@ const ProviderOnboardingPage: React.FC = () => {
                     <Button variant="primary" onClick={() => navigate('/dashboard')}>
                         Ir al dashboard
                     </Button>
+                </div>
+            </div>
+        );
+    }
+
+    // Mostrar mensaje si el RUC no está aprobado (solo si existe verificación)
+    if (checkingRuc) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+                    <p className="mt-4 text-slate-600">Verificando estado de verificación...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Si el RUC no está aprobado y existe verificación, mostrar mensaje
+    if (rucVerificationStatus && rucVerificationStatus.estado !== 'no_encontrado' && rucVerificationStatus.estado !== 'aprobado') {
+        return (
+            <div className="min-h-screen flex items-center justify-center px-4">
+                <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
+                    <div className="mb-4">
+                        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-yellow-100">
+                            <svg className="h-8 w-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <h2 className="text-xl font-semibold text-slate-900 mb-2">
+                        Verificación de RUC Pendiente
+                    </h2>
+                    {rucVerificationStatus.estado === 'pendiente' && (
+                        <>
+                            <p className="text-slate-600 mb-4">
+                                Tu constancia de RUC está en proceso de verificación. 
+                                Debes esperar a que sea aprobada antes de poder solicitar ser proveedor.
+                            </p>
+                            {rucVerificationStatus.tiempo_restante_horas && (
+                                <p className="text-sm text-slate-500 mb-4">
+                                    Tiempo estimado de verificación: {rucVerificationStatus.tiempo_restante_horas} horas hábiles
+                                </p>
+                            )}
+                        </>
+                    )}
+                    {rucVerificationStatus.estado === 'rechazado' && (
+                        <>
+                            <p className="text-slate-600 mb-4">
+                                Tu constancia de RUC fue rechazada. 
+                                {rucVerificationStatus.comentario && (
+                                    <span className="block mt-2 text-sm text-slate-500">
+                                        Comentario: {rucVerificationStatus.comentario}
+                                    </span>
+                                )}
+                            </p>
+                            <p className="text-sm text-slate-500 mb-4">
+                                Por favor, contacta al administrador para más información o para corregir y reenviar tu documento.
+                            </p>
+                        </>
+                    )}
+                    <button
+                        onClick={() => navigate('/dashboard')}
+                        className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors duration-200"
+                    >
+                        Volver al Dashboard
+                    </button>
                 </div>
             </div>
         );

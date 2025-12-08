@@ -22,7 +22,7 @@ from app.models.perfil import UserModel
 import logging
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
-from fastapi import File, UploadFile
+from fastapi import File, UploadFile, Form, Query
 import os
 import uuid
 from datetime import datetime
@@ -44,6 +44,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.empresa.sucursal_empresa import SucursalEmpresa
 from app.services.supabase_storage_service import supabase_storage_service
+from app.services.ruc_verification_service import RUCVerificationService
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -102,11 +103,17 @@ def check_rate_limit(email: str) -> None:
             detail=f"Has alcanzado el límite de intentos de registro. Intentos restantes: {remaining_attempts}. Próximo intento disponible: {next_attempt_time.strftime('%H:%M') if next_attempt_time else 'N/A'}. Contacta a {EMAIL_ADMIN} para ayuda inmediata."
         )
 
-def build_signup_data(data: SignUpIn) -> dict:
-    """Construye los datos para el signup en Supabase Auth"""
-    return {
+def build_signup_data(data: SignUpIn, email_confirm: bool = False) -> dict:
+    """Construye los datos para el signup en Supabase Auth
+    
+    Args:
+        data: Datos del registro
+        email_confirm: Si True, envía email de confirmación. Por defecto False para verificación de RUC.
+    """
+    signup_data = {
         "email": data.email,
         "password": data.password,
+        "email_confirm": email_confirm,  # NO enviar email hasta que se apruebe RUC
         "options": {
             "data": {
                 "nombre_persona": data.nombre_persona,
@@ -115,29 +122,79 @@ def build_signup_data(data: SignUpIn) -> dict:
             }
         }
     }
+    return signup_data
 
 def create_user_in_supabase(signup_data: dict) -> tuple[Any, str, bool]:
-    """Crea el usuario en Supabase Auth y retorna la respuesta, id_user y si hubo error de email
+    """Crea el usuario en Supabase Auth usando Admin API para evitar envío automático de correos
     
-    Nota: Esta función es síncrona porque supabase_auth.auth.sign_up() es una llamada síncrona.
+    Nota: Usa supabase_admin.auth.admin.create_user() en lugar de sign_up() para evitar
+    que Supabase envíe el correo de confirmación automáticamente.
     """
     signup_response = None
     id_user = None
     email_sent_error = False
     
     try:
-        signup_response = supabase_auth.auth.sign_up(signup_data)
+        # Logging detallado de los datos que se envían
+        logger.info("=" * 80)
+        logger.info("📤 INICIANDO LLAMADA A SUPABASE AUTH (Admin API)")
+        logger.info("=" * 80)
+        logger.info(f"📧 Email: {signup_data.get('email', 'NO PROPORCIONADO')}")
+        logger.info(f"🔐 Password: {'***' if signup_data.get('password') else 'NO PROPORCIONADO'}")
+        logger.info(f"📋 User metadata: {signup_data.get('options', {}).get('data', {})}")
+        logger.info(f"🔗 Supabase Admin disponible: {'SÍ' if supabase_admin else 'NO'}")
+        logger.info("=" * 80)
+        logger.info("⏳ Llamando a supabase_admin.auth.admin.create_user()...")
+        logger.info("📧 NOTA: No se enviará correo de confirmación automático (usando Admin API)")
+        
+        if not supabase_admin:
+            logger.error("❌ supabase_admin no está configurado")
+            handle_supabase_auth_error("Supabase Admin no configurado")
+        
+        import time
+        start_time = time.time()
+        
+        # Usar Admin API para crear usuario sin enviar correo automático
+        # email_confirm=False previene el envío de correo de confirmación
+        create_user_data = {
+            "email": signup_data.get("email"),
+            "password": signup_data.get("password"),
+            "email_confirm": False,  # NO enviar correo de confirmación automático
+            "user_metadata": signup_data.get("options", {}).get("data", {})
+        }
+        
+        signup_response = supabase_admin.auth.admin.create_user(create_user_data)
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"✅ Respuesta recibida de Supabase Auth en {elapsed_time:.2f} segundos")
+        
+        if not signup_response:
+            logger.error("❌ signup_response es None")
+            handle_supabase_auth_error("Respuesta de Supabase es None")
         
         if not signup_response.user:
+            logger.error("❌ signup_response.user es None")
+            logger.error(f"📋 Respuesta completa: {signup_response}")
             handle_supabase_auth_error("Respuesta de Supabase incompleta (no hay user)")
         
         id_user = str(signup_response.user.id)
-        logger.info(f"Usuario creado en Supabase Auth con ID: {id_user}")
+        logger.info(f"✅ Usuario creado en Supabase Auth con ID: {id_user}")
+        logger.info(f"📧 Email del usuario: {signup_response.user.email}")
+        logger.info(f"📋 Metadata del usuario: {signup_response.user.user_metadata}")
+        logger.info("✅ Usuario creado SIN enviar correo de confirmación automático")
         
         return signup_response, id_user, email_sent_error
         
     except AuthApiError as e:
         error_message = str(e).lower()
+        logger.error("=" * 80)
+        logger.error("❌ ERROR AuthApiError en create_user_in_supabase")
+        logger.error("=" * 80)
+        logger.error(f"📋 Tipo de error: {type(e).__name__}")
+        logger.error(f"📋 Mensaje de error: {str(e)}")
+        logger.error(f"📋 Error completo: {repr(e)}")
+        logger.error(f"📧 Email intentado: {signup_data.get('email', 'NO PROPORCIONADO')}")
+        logger.error("=" * 80)
         
         # Si es error de envío de email, verificar si el usuario se creó
         if ERROR_SENDING_CONFIRMATION_EMAIL in error_message:
@@ -149,6 +206,19 @@ def create_user_in_supabase(signup_data: dict) -> tuple[Any, str, bool]:
         else:
             # Otro tipo de error de AuthApiError, re-lanzar para manejo general
             raise
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error("❌ ERROR INESPERADO en create_user_in_supabase")
+        logger.error("=" * 80)
+        logger.error(f"📋 Tipo de error: {type(e).__name__}")
+        logger.error(f"📋 Mensaje de error: {str(e)}")
+        logger.error(f"📋 Error completo: {repr(e)}")
+        logger.error(f"📧 Email intentado: {signup_data.get('email', 'NO PROPORCIONADO')}")
+        logger.error(f"📋 Datos enviados: {signup_data}")
+        import traceback
+        logger.error(f"📋 Traceback completo:\n{traceback.format_exc()}")
+        logger.error("=" * 80)
+        raise
 
 # Funciones helper para verify_user_created_despite_email_error
 def verify_supabase_admin_configured() -> bool:
@@ -322,23 +392,123 @@ def configure_refresh_token_cookie(response: JSONResponse, refresh_token: str) -
 
 @router.post(
     "/signup",
-    response_model=Union[TokenOut, SignUpSuccess],
+    response_model=SignUpSuccess,
     status_code=status.HTTP_201_CREATED,
-    description="Crea un usuario en Supabase Auth. El perfil y rol se crean automáticamente via trigger."
+    description="Crea un usuario en Supabase Auth. Requiere subir constancia de RUC para verificación. El usuario queda INACTIVO hasta que se apruebe el RUC."
 )
-async def sign_up(data: SignUpIn) -> Union[TokenOut, SignUpSuccess]:
+async def sign_up(
+    email: str = Form(...),
+    password: str = Form(...),
+    nombre_persona: str = Form(...),
+    nombre_empresa: str = Form(...),
+    ruc: Optional[str] = Form(None),
+    ruc_documento: UploadFile = File(...)
+) -> SignUpSuccess:
     try:
-        logger.info(f"Iniciando registro para usuario: {data.email}")
+        logger.info(f"Iniciando registro para usuario: {email}")
+        
+        # Validar datos usando el schema SignUpIn (incluye validación de email, password y RUC)
+        try:
+            data = SignUpIn(
+                email=email,
+                password=password,
+                nombre_persona=nombre_persona,
+                nombre_empresa=nombre_empresa,
+                ruc=ruc
+            )
+        except Exception as validation_error:
+            # Capturar errores de validación de Pydantic y convertirlos en HTTPException
+            from pydantic import ValidationError as PydanticValidationError
+            
+            error_message = str(validation_error)
+            # Si es un error de validación de Pydantic, extraer el mensaje
+            if isinstance(validation_error, PydanticValidationError):
+                errors = validation_error.errors()
+                if errors:
+                    # Obtener el primer error de validación
+                    first_error = errors[0]
+                    field = first_error.get('loc', ['campo'])[-1] if isinstance(first_error.get('loc'), (list, tuple)) else 'campo'
+                    msg = first_error.get('msg', 'Error de validación')
+                    error_message = f"{field}: {msg}"
+            elif hasattr(validation_error, 'args') and validation_error.args:
+                error_message = validation_error.args[0]
+            
+            logger.error(f"❌ Error de validación en signup: {error_message}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_message
+            )
         
         # Verificar rate limit antes de proceder
         check_rate_limit(data.email)
         
-        # Construir datos de signup
-        signup_data = build_signup_data(data)
-        logger.info(f"Enviando datos a Supabase Auth: {signup_data}")
+        # Construir datos de signup (NO enviar email de confirmación)
+        signup_data = build_signup_data(data, email_confirm=False)
+        logger.info("=" * 80)
+        logger.info("📦 DATOS PREPARADOS PARA SUPABASE AUTH")
+        logger.info("=" * 80)
+        logger.info(f"📧 Email: {signup_data.get('email', 'NO PROPORCIONADO')}")
+        logger.info(f"🔐 Password presente: {'SÍ' if signup_data.get('password') else 'NO'}")
+        logger.info(f"📧 Email confirm: {signup_data.get('email_confirm', 'NO PROPORCIONADO')}")
+        logger.info(f"📋 Options: {signup_data.get('options', {})}")
+        logger.info(f"🔗 Supabase Auth cliente disponible: {'SÍ' if supabase_auth else 'NO'}")
+        logger.info("=" * 80)
+        logger.info(f"Enviando datos a Supabase Auth (sin confirmación de email)")
         
-        # Crear usuario en Supabase Auth
-        signup_response, id_user, email_sent_error = create_user_in_supabase(signup_data)
+        # Crear usuario en Supabase Auth (ejecutar en thread separado con timeout)
+        # Timeout aumentado a 90s para dar más tiempo a Supabase (el timeout interno de httpx debería ser 60s)
+        try:
+            logger.info("⏳ Iniciando asyncio.wait_for con timeout de 90 segundos...")
+            import time
+            start_time = time.time()
+            
+            signup_response, id_user, email_sent_error = await asyncio.wait_for(
+                asyncio.to_thread(create_user_in_supabase, signup_data),
+                timeout=90.0  # 90 segundos de timeout (más que el timeout interno de httpx de 60s)
+            )
+            
+            elapsed_time = time.time() - start_time
+            logger.info(f"✅ Llamada completada exitosamente en {elapsed_time:.2f} segundos")
+            
+        except asyncio.TimeoutError:
+            elapsed_time = time.time() - start_time if 'start_time' in locals() else 60.0
+            logger.error("=" * 80)
+            logger.error("❌ TIMEOUT al crear usuario en Supabase Auth")
+            logger.error("=" * 80)
+            logger.error(f"⏱️ Tiempo transcurrido: {elapsed_time:.2f} segundos")
+            logger.error(f"📧 Email intentado: {signup_data.get('email', 'NO PROPORCIONADO')}")
+            logger.error(f"📋 Datos enviados: {signup_data}")
+            logger.error("=" * 80)
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="La operación tardó demasiado tiempo. Por favor, intenta nuevamente."
+            )
+        except AuthApiError as e:
+            logger.error("=" * 80)
+            logger.error("❌ AuthApiError capturado en sign_up")
+            logger.error("=" * 80)
+            logger.error(f"📋 Tipo: {type(e).__name__}")
+            logger.error(f"📋 Mensaje: {str(e)}")
+            logger.error(f"📧 Email: {signup_data.get('email', 'NO PROPORCIONADO')}")
+            logger.error("=" * 80)
+            # Re-lanzar AuthApiError para que sea manejado por el bloque except general más abajo
+            raise
+        except Exception as e:
+            logger.error("=" * 80)
+            logger.error("❌ ERROR INESPERADO en sign_up (antes de crear usuario)")
+            logger.error("=" * 80)
+            logger.error(f"📋 Tipo de error: {type(e).__name__}")
+            logger.error(f"📋 Mensaje de error: {str(e)}")
+            logger.error(f"📋 Error completo: {repr(e)}")
+            logger.error(f"📧 Email intentado: {signup_data.get('email', 'NO PROPORCIONADO')}")
+            logger.error(f"📋 Datos enviados: {signup_data}")
+            import traceback
+            logger.error(f"📋 Traceback completo:\n{traceback.format_exc()}")
+            logger.error("=" * 80)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error al crear usuario: {str(e)}"
+            )
         
         # Validar que id_user existe antes de continuar
         if not id_user:
@@ -348,34 +518,66 @@ async def sign_up(data: SignUpIn) -> Union[TokenOut, SignUpSuccess]:
                 detail=MSG_ERROR_CREAR_USUARIO
             )
         
-        # Registrar intento de envío de email (solo si no hubo error)
-        if not email_sent_error:
-            email_rate_limit_service.record_email_attempt(data.email)
-
         # Verificar perfil del usuario con reintentos
         user_profile = await verify_user_profile_with_retries(id_user)
         
-        # Si no se encontró el perfil, crear manualmente
+        # Si no se encontró el perfil, crear manualmente (estado=INACTIVO)
         if not user_profile:
             user_profile = await create_user_profile_manually(id_user, data)
         
+        # El trigger handle_new_auth_user ya crea el usuario con estado INACTIVO
+        # Solo actualizamos manualmente si el perfil fue creado manualmente (fallback)
+        if not user_profile or user_profile.get('estado') != 'INACTIVO':
+            logger.warning(f"⚠️ El trigger no estableció estado INACTIVO, actualizando manualmente...")
+            await RUCVerificationService.actualizar_estado_usuario(uuid.UUID(id_user), "INACTIVO")
+        
+        logger.info(f"✅ Usuario {id_user} creado con estado INACTIVO (por trigger o manualmente)")
+        
+        # Crear verificación de RUC
+        try:
+            id_verificacion_ruc = await RUCVerificationService.crear_verificacion_ruc(
+                user_id=uuid.UUID(id_user),
+                ruc_documento=ruc_documento,
+                nombre_empresa=nombre_empresa
+            )
+            logger.info(f"✅ Verificación de RUC creada: ID {id_verificacion_ruc}")
+        except Exception as e:
+            logger.error(f"❌ Error creando verificación de RUC: {str(e)}")
+            # No fallar el registro si falla la verificación, pero loguear el error
+            # El admin podrá crear la verificación manualmente si es necesario
+        
         # Confiar en el trigger para el rol
         logger.info("✅ Perfil verificado. El trigger asignará el rol automáticamente.")
-        logger.info("💡 No verificamos el rol para evitar bloquear el trigger.")
         logger.info(f"Registro completado exitosamente para usuario: {id_user}")
-
-        # Manejo de confirmación de email
-        if email_sent_error or not signup_response or not signup_response.session:
-            return build_signup_success_response(data, email_sent_error)
-
-        # Crear respuesta con token
-        token_data = build_token_response(signup_response)
-        response = JSONResponse(content=token_data)
+        logger.info("⚠️ Usuario INACTIVO hasta que se apruebe el RUC")
         
-        # Configurar cookie de refresh token
-        configure_refresh_token_cookie(response, signup_response.session.refresh_token)
+        # Enviar email informativo sobre el proceso de verificación de RUC
+        try:
+            from app.services.registration_info_email_service import RegistrationInfoEmailService
+            email_enviado = await RegistrationInfoEmailService.enviar_email_registro(
+                to_email=email,
+                nombre_contacto=nombre_persona,
+                nombre_empresa=nombre_empresa,
+                ruc=ruc
+            )
+            if email_enviado:
+                logger.info(f"✅ Email informativo de registro enviado a {email}")
+            else:
+                logger.warning(f"⚠️ No se pudo enviar email informativo a {email}")
+        except Exception as e:
+            logger.error(f"❌ Error enviando email informativo de registro: {str(e)}")
+            # No fallar el registro si falla el email
 
-        return response
+        # Retornar mensaje de éxito (NO token, usuario no puede iniciar sesión aún)
+        return SignUpSuccess(
+            message="¡Registro exitoso! Tu cuenta está en proceso de verificación. Hemos recibido tu constancia de RUC y será revisada por nuestro equipo en un plazo máximo de 72 horas hábiles. Te notificaremos por email una vez que tu cuenta sea activada.",
+            email=email,
+            nombre_persona=nombre_persona,
+            nombre_empresa=nombre_empresa,
+            ruc=ruc,
+            instructions="1. Tu cuenta está en proceso de verificación\n2. Revisaremos tu constancia de RUC en un plazo máximo de 72 horas hábiles\n3. Te notificaremos por email cuando tu cuenta sea activada\n4. Una vez activada, podrás iniciar sesión",
+            next_steps="Espera la notificación por email. Una vez que tu RUC sea verificado, podrás iniciar sesión en la plataforma."
+        )
 
     except AuthApiError as e:
         logger.error(f"Error de Supabase Auth: {e}")
@@ -778,6 +980,276 @@ async def forgot_password(data: EmailOnlyIn):
         )
 
 
+
+
+@router.get("/verificacion-ruc-estado",
+            status_code=status.HTTP_200_OK,
+            description="Obtiene el estado de la verificación de RUC del usuario autenticado.")
+async def get_verificacion_ruc_estado(current_user: SupabaseUser = Depends(get_current_user)):
+    """
+    Obtiene el estado de la verificación de RUC del usuario actual
+    """
+    try:
+        from app.models.empresa.verificacion_ruc import VerificacionRUC
+        from sqlalchemy.ext.asyncio import AsyncSession
+        from app.api.v1.dependencies.database_supabase import get_async_db
+        
+        from uuid import UUID
+        user_uuid = UUID(current_user.id)
+        conn = await direct_db_service.get_connection()
+        try:
+            # Buscar la verificación de RUC más reciente del usuario
+            verificacion_result = await conn.fetchrow("""
+                SELECT 
+                    id_verificacion_ruc,
+                    estado,
+                    fecha_creacion,
+                    fecha_verificacion,
+                    fecha_limite_verificacion,
+                    comentario
+                FROM verificacion_ruc 
+                WHERE user_id = $1
+                ORDER BY fecha_creacion DESC
+                LIMIT 1
+            """, user_uuid)
+            
+            if not verificacion_result:
+                return {
+                    "estado": "no_encontrado",
+                    "mensaje": "No se encontró verificación de RUC para este usuario"
+                }
+            
+            # Verificar si está vencido
+            esta_vencido = False
+            tiempo_restante = None
+            if verificacion_result['fecha_limite_verificacion']:
+                from app.services.business_days_service import BusinessDaysService
+                esta_vencido = BusinessDaysService.verificar_vencimiento(verificacion_result['fecha_limite_verificacion'])
+                tiempo_restante = BusinessDaysService.obtener_tiempo_restante(verificacion_result['fecha_limite_verificacion'])
+            
+            return {
+                "estado": verificacion_result['estado'],  # 'pendiente', 'aprobado', 'rechazado'
+                "fecha_creacion": verificacion_result['fecha_creacion'].isoformat() if verificacion_result['fecha_creacion'] else None,
+                "fecha_verificacion": verificacion_result['fecha_verificacion'].isoformat() if verificacion_result['fecha_verificacion'] else None,
+                "fecha_limite_verificacion": verificacion_result['fecha_limite_verificacion'].isoformat() if verificacion_result['fecha_limite_verificacion'] else None,
+                "esta_vencido": esta_vencido,
+                "tiempo_restante_horas": int(tiempo_restante.total_seconds() / 3600) if tiempo_restante else None,
+                "comentario": verificacion_result['comentario']
+            }
+        finally:
+            await direct_db_service.pool.release(conn)
+    except Exception as e:
+        logger.error(f"Error obteniendo estado de verificación de RUC: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error obteniendo estado de verificación de RUC: {str(e)}"
+        )
+
+
+@router.get("/verificacion-ruc-datos",
+            status_code=status.HTTP_200_OK,
+            description="Obtiene los datos del usuario para corrección de RUC rechazado usando token.")
+async def get_verificacion_ruc_datos(
+    token: str = Query(..., description="Token único para corrección de RUC rechazado")
+):
+    """
+    Obtiene los datos del usuario asociados a un token de corrección de RUC rechazado.
+    Permite pre-cargar el formulario de registro con los datos existentes.
+    """
+    try:
+        from datetime import datetime, timezone
+        conn = await direct_db_service.get_connection()
+        try:
+            # Buscar verificación de RUC con el token
+            verificacion_result = await conn.fetchrow("""
+                SELECT 
+                    vr.id_verificacion_ruc,
+                    vr.user_id,
+                    vr.estado,
+                    vr.comentario,
+                    vr.token_expiracion,
+                    u.nombre_persona,
+                    u.nombre_empresa,
+                    u.ruc
+                FROM verificacion_ruc vr
+                LEFT JOIN users u ON vr.user_id = u.id
+                WHERE vr.token_correccion = $1
+                    AND vr.estado = 'rechazada'
+                ORDER BY vr.fecha_creacion DESC
+                LIMIT 1
+            """, token)
+            
+            if not verificacion_result:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Token inválido o verificación no encontrada"
+                )
+            
+            # Verificar que el token no haya expirado
+            if verificacion_result['token_expiracion']:
+                ahora = datetime.now(timezone.utc) if verificacion_result['token_expiracion'].tzinfo else datetime.now()
+                if ahora > verificacion_result['token_expiracion']:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="El token de corrección ha expirado. Por favor, contacta al administrador."
+                    )
+            
+            # Obtener email desde Supabase Auth
+            user_email = None
+            if supabase_admin:
+                try:
+                    auth_user = supabase_admin.auth.admin.get_user_by_id(str(verificacion_result['user_id']))
+                    if auth_user and auth_user.user:
+                        user_email = auth_user.user.email
+                except Exception as e:
+                    logger.warning(f"⚠️ Error obteniendo email desde Supabase: {e}")
+            
+            return {
+                "nombre_persona": verificacion_result['nombre_persona'],
+                "nombre_empresa": verificacion_result['nombre_empresa'],
+                "ruc": verificacion_result['ruc'],
+                "email": user_email,
+                "comentario_rechazo": verificacion_result['comentario'],
+                "token_valido": True
+            }
+        finally:
+            await direct_db_service.pool.release(conn)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo datos de verificación RUC con token: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error obteniendo datos de verificación RUC: {str(e)}"
+        )
+
+
+@router.post("/verificacion-ruc-reenviar",
+            status_code=status.HTTP_201_CREATED,
+            description="Reenvía la verificación de RUC rechazado usando token. Crea una nueva verificación con el nuevo documento.")
+async def reenviar_verificacion_ruc(
+    token: str = Form(...),
+    email: str = Form(...),
+    nombre_persona: str = Form(...),
+    nombre_empresa: str = Form(...),
+    ruc: Optional[str] = Form(None),
+    ruc_documento: UploadFile = File(...)
+):
+    """
+    Reenvía la verificación de RUC rechazado.
+    Valida el token, actualiza los datos del usuario si es necesario, y crea una nueva verificación.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        from app.services.ruc_verification_service import RUCVerificationService
+        from app.services.business_days_service import BusinessDaysService
+        from uuid import UUID
+        
+        conn = await direct_db_service.get_connection()
+        try:
+            # Validar token y obtener verificación rechazada
+            verificacion_result = await conn.fetchrow("""
+                SELECT 
+                    vr.id_verificacion_ruc,
+                    vr.user_id,
+                    vr.estado,
+                    vr.token_expiracion,
+                    u.nombre_persona,
+                    u.nombre_empresa,
+                    u.ruc
+                FROM verificacion_ruc vr
+                LEFT JOIN users u ON vr.user_id = u.id
+                WHERE vr.token_correccion = $1
+                    AND vr.estado = 'rechazada'
+                ORDER BY vr.fecha_creacion DESC
+                LIMIT 1
+            """, token)
+            
+            if not verificacion_result:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Token inválido o verificación no encontrada"
+                )
+            
+            # Verificar que el token no haya expirado
+            if verificacion_result['token_expiracion']:
+                ahora = datetime.now(timezone.utc) if verificacion_result['token_expiracion'].tzinfo else datetime.now()
+                if ahora > verificacion_result['token_expiracion']:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="El token de corrección ha expirado. Por favor, contacta al administrador."
+                    )
+            
+            user_id = verificacion_result['user_id']
+            # asyncpg devuelve UUID como objeto, convertirlo a string de forma segura
+            user_id_str = str(user_id) if user_id else None
+            
+            if not user_id_str:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No se pudo obtener el ID del usuario"
+                )
+            
+            # Validar que el email coincida con el usuario original
+            if supabase_admin:
+                try:
+                    auth_user = supabase_admin.auth.admin.get_user_by_id(user_id_str)
+                    if auth_user and auth_user.user:
+                        email_original = auth_user.user.email
+                        if email.lower() != email_original.lower():
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="El email proporcionado no coincide con el email registrado. Debe usar el mismo email."
+                            )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning(f"⚠️ Error validando email: {e}")
+            
+            # Actualizar datos del usuario si cambiaron
+            await conn.execute("""
+                UPDATE users
+                SET nombre_persona = $1,
+                    nombre_empresa = $2,
+                    ruc = $3
+                WHERE id = $4
+            """, nombre_persona, nombre_empresa, ruc, user_id)
+            
+            # Crear nueva verificación de RUC
+            # Convertir user_id_str a UUID de Python
+            user_id_uuid = UUID(user_id_str)
+            id_verificacion_ruc = await RUCVerificationService.crear_verificacion_ruc(
+                user_id=user_id_uuid,
+                ruc_documento=ruc_documento,
+                nombre_empresa=nombre_empresa
+            )
+            
+            # Invalidar token (eliminar para que no se pueda usar de nuevo)
+            await conn.execute("""
+                UPDATE verificacion_ruc
+                SET token_correccion = NULL,
+                    token_expiracion = NULL
+                WHERE token_correccion = $1
+            """, token)
+            
+            logger.info(f"✅ Nueva verificación de RUC creada: {id_verificacion_ruc} para usuario {user_id}")
+            
+            return {
+                "message": "RUC reenviado exitosamente. Tu solicitud será revisada nuevamente.",
+                "id_verificacion_ruc": id_verificacion_ruc
+            }
+        finally:
+            await direct_db_service.pool.release(conn)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reenviando verificación de RUC: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error reenviando verificación de RUC: {str(e)}"
+        )
 
 
 @router.get("/verificacion-estado",

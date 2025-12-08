@@ -171,8 +171,8 @@ class DirectDBService:
             try:
                 await conn.execute("""
                     INSERT INTO users (id, nombre_persona, nombre_empresa, ruc, estado, created_at)
-                    VALUES ($1, $2, $3, $4, 'ACTIVO', NOW())
-                    ON CONFLICT (id) DO NOTHING
+                    VALUES ($1, $2, $3, $4, 'INACTIVO', NOW())
+                    ON CONFLICT (id) DO UPDATE SET estado = 'INACTIVO'
                 """, user_id, nombre_persona, nombre_empresa, ruc)
                 logger.info(f"✅ Perfil creado manualmente para usuario: {user_id}")
             finally:

@@ -458,3 +458,31 @@ class ProviderRepository:
             WHERE id_documento = $5
         """, url_archivo, estado_revision, fecha_verificacion, id_verificacion, id_documento)
 
+    @staticmethod
+    async def get_approved_ruc_for_user(
+        conn: asyncpg.Connection,
+        user_id: str
+    ) -> Optional[dict]:
+        """
+        Obtiene el RUC aprobado de un usuario desde verificacion_ruc.
+        Retorna None si no existe o no está aprobado.
+        Acceso a datos - SELECT.
+        """
+        ruc_row = await conn.fetchrow("""
+            SELECT 
+                vr.id_verificacion_ruc,
+                vr.url_documento,
+                vr.id_tip_documento,
+                td.tipo_documento AS tipo_documento_nombre
+            FROM verificacion_ruc vr
+            LEFT JOIN tipo_documento td ON vr.id_tip_documento = td.id_tip_documento
+            WHERE vr.user_id = $1 
+                AND vr.estado = 'aprobada'
+            ORDER BY vr.fecha_verificacion DESC
+            LIMIT 1
+        """, user_id)
+        
+        if ruc_row:
+            return dict(ruc_row)
+        return None
+

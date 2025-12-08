@@ -19,6 +19,10 @@ from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
 from app.models.empresa.perfil_empresa import PerfilEmpresa
 from app.models.empresa.documento import Documento
 from app.models.empresa.tipo_documento import TipoDocumento
+from app.models.empresa.verificacion_ruc import VerificacionRUC
+from app.services.ruc_verification_service import RUCVerificationService
+from app.services.business_days_service import BusinessDaysService
+from app.services.ruc_verification_email_service import RUCVerificationEmailService
 from app.models.perfil import UserModel
 from app.models.rol import RolModel
 from app.models.usuario_rol import UsuarioRolModel
@@ -3957,4 +3961,430 @@ async def get_user_details(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error obteniendo detalles del usuario: {str(e)}"
         )
+
+
+# ==================== ENDPOINTS PARA VERIFICACIÓN DE RUC ====================
+
+class AprobarRUCRequest(BaseModel):
+    comentario: Optional[str] = None
+
+class RechazarRUCRequest(BaseModel):
+    comentario: str
+
+@router.get(
+    "/verificaciones-ruc/pendientes",
+    description="Obtiene todas las verificaciones de RUC (pendientes, aprobadas y rechazadas) para revisión por administrador."
+)
+async def get_verificaciones_ruc_pendientes(
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Obtiene todas las verificaciones de RUC (pendientes, aprobadas y rechazadas) con información completa.
+    Usa direct_db_service para evitar problemas con PgBouncer y prepared statements.
+    """
+    conn = None
+    try:
+        conn = await direct_db_service.get_connection()
+        try:
+            # Query SQL directa para obtener todas las verificaciones de RUC (no solo pendientes)
+            # Esto permite que el frontend filtre por estado (pendiente, aprobada, rechazada)
+            query = """
+                SELECT 
+                    vr.id_verificacion_ruc,
+                    vr.user_id,
+                    vr.id_tip_documento,
+                    vr.url_documento,
+                    vr.estado,
+                    vr.fecha_creacion,
+                    vr.fecha_verificacion,
+                    vr.fecha_limite_verificacion,
+                    vr.comentario,
+                    u.nombre_persona,
+                    u.nombre_empresa,
+                    u.ruc,
+                    td.tipo_documento AS tipo_documento_nombre
+                FROM verificacion_ruc vr
+                LEFT JOIN users u ON vr.user_id = u.id
+                LEFT JOIN tipo_documento td ON vr.id_tip_documento = td.id_tip_documento
+                ORDER BY vr.fecha_creacion DESC
+            """
+            
+            verificaciones_rows = await conn.fetch(query)
+            
+            # Obtener todos los user_ids únicos para consultar Supabase Auth
+            user_ids = [str(row['user_id']) for row in verificaciones_rows if row['user_id']]
+            emails_dict = {}
+            
+            if user_ids:
+                try:
+                    for user_id in user_ids:
+                        if supabase_admin:
+                            auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
+                            if auth_user and auth_user.user:
+                                emails_dict[user_id] = auth_user.user.email
+                except Exception as e:
+                    print(f"⚠️ Error obteniendo emails de usuarios: {e}")
+            
+            verificaciones_data = []
+            for row in verificaciones_rows:
+                user_id_str = str(row['user_id']) if row['user_id'] else None
+                user_email = emails_dict.get(user_id_str) if user_id_str else None
+                
+                # Verificar si está vencido (pasaron 72 horas hábiles)
+                tiempo_restante = None
+                esta_vencido = False
+                fecha_limite = row['fecha_limite_verificacion']
+                if fecha_limite:
+                    tiempo_restante = BusinessDaysService.obtener_tiempo_restante(fecha_limite)
+                    esta_vencido = BusinessDaysService.verificar_vencimiento(fecha_limite)
+                
+                verificaciones_data.append({
+                    "id_verificacion_ruc": row['id_verificacion_ruc'],
+                    "user_id": user_id_str,
+                    "nombre_persona": row['nombre_persona'],
+                    "nombre_empresa": row['nombre_empresa'],
+                    "email": user_email,
+                    "ruc": row['ruc'],
+                    "url_documento": row['url_documento'],
+                    "tipo_documento": row['tipo_documento_nombre'],
+                    "estado": row['estado'],
+                    "fecha_creacion": row['fecha_creacion'].isoformat() if row['fecha_creacion'] else None,
+                    "fecha_limite_verificacion": fecha_limite.isoformat() if fecha_limite else None,
+                    "tiempo_restante_horas": int(tiempo_restante.total_seconds() / 3600) if tiempo_restante else None,
+                    "esta_vencido": esta_vencido,
+                    "comentario": row['comentario']
+                })
+            
+            return {
+                "verificaciones": verificaciones_data,
+                "total": len(verificaciones_data)
+            }
+            
+        finally:
+            if conn:
+                await direct_db_service.pool.release(conn)
+        
+    except Exception as e:
+        print(f"❌ Error obteniendo verificaciones de RUC pendientes: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error obteniendo verificaciones de RUC: {str(e)}"
+        )
+
+
+@router.post(
+    "/verificaciones-ruc/{id_verificacion_ruc}/aprobar",
+    status_code=status.HTTP_200_OK,
+    description="Aprueba una verificación de RUC, activa la cuenta del usuario y envía email de confirmación."
+)
+async def aprobar_verificacion_ruc(
+    id_verificacion_ruc: int,
+    decision: AprobarRUCRequest,
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Aprueba una verificación de RUC. Usa direct_db_service para evitar problemas con PgBouncer."""
+    print("=" * 80)
+    print("🚨 ENDPOINT aprobar_verificacion_ruc LLAMADO")
+    print("=" * 80)
+    conn = None
+    try:
+        print(f"🔄 Iniciando aprobación de verificación RUC {id_verificacion_ruc}")
+        print(f"📝 Comentario recibido: {decision.comentario}")
+        print(f"👤 Admin: {admin_user.id}")
+        
+        # Usar direct_db_service para evitar problemas con PgBouncer y prepared statements
+        conn = await direct_db_service.get_connection()
+        
+        # Obtener la verificación usando query SQL directa
+        verificacion_row = await conn.fetchrow("""
+            SELECT 
+                id_verificacion_ruc,
+                user_id,
+                estado,
+                fecha_creacion,
+                fecha_verificacion,
+                comentario,
+                id_admin_verificador
+            FROM verificacion_ruc
+            WHERE id_verificacion_ruc = $1
+        """, id_verificacion_ruc)
+        
+        if not verificacion_row:
+            print(f"❌ Verificación RUC {id_verificacion_ruc} no encontrada")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Verificación de RUC no encontrada"
+            )
+        
+        estado_actual = verificacion_row['estado']
+        user_id = verificacion_row['user_id']
+        # asyncpg devuelve UUID como objeto, convertirlo a string de forma segura
+        user_id_str = str(user_id) if user_id else None
+        
+        print(f"📋 Verificación encontrada - Estado actual: {estado_actual}, User ID: {user_id_str}")
+        
+        if estado_actual != "pendiente":
+            print(f"⚠️ Verificación ya procesada - Estado: {estado_actual}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"La verificación ya fue procesada (estado actual: {estado_actual})"
+            )
+        
+        # Actualizar verificación usando SQL directa
+        fecha_verificacion = DateService.now_for_database()
+        # admin_user.id puede ser un UUID de asyncpg, convertirlo a string primero
+        admin_id_str = str(admin_user.id) if admin_user.id else None
+        admin_id = uuid.UUID(admin_id_str) if admin_id_str else None
+        
+        await conn.execute("""
+            UPDATE verificacion_ruc
+            SET estado = $1,
+                fecha_verificacion = $2,
+                comentario = $3,
+                id_admin_verificador = $4
+            WHERE id_verificacion_ruc = $5
+        """, "aprobada", fecha_verificacion, decision.comentario, admin_id, id_verificacion_ruc)
+        
+        print(f"✅ Verificación actualizada en base de datos - Estado: aprobado")
+        
+        # Activar cuenta del usuario
+        user_id_uuid = uuid.UUID(user_id_str) if user_id_str else None
+        if user_id_uuid:
+            await RUCVerificationService.actualizar_estado_usuario(user_id_uuid, "ACTIVO")
+            print(f"✅ Usuario {user_id_str} activado")
+        
+        # Obtener datos del usuario para enviar email
+        user_email = None
+        nombre_contacto = None
+        try:
+            # Obtener datos del usuario desde la base de datos
+            user_row = await conn.fetchrow("""
+                SELECT nombre_persona, nombre_empresa
+                FROM users
+                WHERE id = $1
+            """, user_id)
+            
+            if user_row:
+                nombre_contacto = user_row['nombre_persona'] or "Usuario"
+            
+            # Obtener email desde Supabase Auth
+            if supabase_admin and user_id_str:
+                try:
+                    auth_user = supabase_admin.auth.admin.get_user_by_id(user_id_str)
+                    if auth_user and auth_user.user:
+                        user_email = auth_user.user.email
+                except Exception as e:
+                    print(f"⚠️ Error obteniendo email desde Supabase: {e}")
+                    # Continuar sin email, no fallar
+            
+            # Enviar email de aprobación usando el formato especificado
+            if user_email and nombre_contacto:
+                try:
+                    import asyncio
+                    email_enviado = await asyncio.to_thread(
+                        RUCVerificationEmailService.enviar_email_aprobacion,
+                        to_email=user_email,
+                        nombre_contacto=nombre_contacto
+                    )
+                    if email_enviado:
+                        print(f"✅ Email de aprobación enviado a {user_email}")
+                    else:
+                        print(f"⚠️ No se pudo enviar email de aprobación a {user_email}")
+                except Exception as e:
+                    print(f"⚠️ Error enviando email de aprobación: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # No fallar si el email no se puede enviar
+        except Exception as e:
+            print(f"⚠️ Error obteniendo datos del usuario: {e}")
+            import traceback
+            traceback.print_exc()
+            # No fallar si no se puede obtener el email, la aprobación ya se guardó
+        
+        print(f"✅ Verificación de RUC {id_verificacion_ruc} aprobada exitosamente")
+        
+        return {
+            "message": "Verificación de RUC aprobada. Usuario activado y email de confirmación enviado.",
+            "id_verificacion_ruc": id_verificacion_ruc,
+            "user_id": user_id_str,
+            "email_enviado": user_email is not None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error aprobando verificación de RUC: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error aprobando verificación de RUC: {str(e)}"
+        )
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
+
+
+@router.post(
+    "/verificaciones-ruc/{id_verificacion_ruc}/rechazar",
+    status_code=status.HTTP_200_OK,
+    description="Rechaza una verificación de RUC. El usuario puede corregir y reenviar."
+)
+async def rechazar_verificacion_ruc(
+    id_verificacion_ruc: int,
+    decision: RechazarRUCRequest,
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Rechaza una verificación de RUC. Usa direct_db_service para evitar problemas con PgBouncer."""
+    print("=" * 80)
+    print("🚨 ENDPOINT rechazar_verificacion_ruc LLAMADO")
+    print("=" * 80)
+    conn = None
+    try:
+        print(f"🔄 Iniciando rechazo de verificación RUC {id_verificacion_ruc}")
+        print(f"📝 Comentario recibido: {decision.comentario}")
+        print(f"👤 Admin: {admin_user.id}")
+        
+        # Usar direct_db_service para evitar problemas con PgBouncer y prepared statements
+        conn = await direct_db_service.get_connection()
+        
+        # Obtener la verificación usando query SQL directa
+        verificacion_row = await conn.fetchrow("""
+            SELECT 
+                id_verificacion_ruc,
+                user_id,
+                estado,
+                fecha_creacion,
+                fecha_verificacion,
+                comentario,
+                id_admin_verificador
+            FROM verificacion_ruc
+            WHERE id_verificacion_ruc = $1
+        """, id_verificacion_ruc)
+        
+        if not verificacion_row:
+            print(f"❌ Verificación RUC {id_verificacion_ruc} no encontrada")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Verificación de RUC no encontrada"
+            )
+        
+        estado_actual = verificacion_row['estado']
+        user_id = verificacion_row['user_id']
+        # asyncpg devuelve UUID como objeto, convertirlo a string de forma segura
+        user_id_str = str(user_id) if user_id else None
+        
+        print(f"📋 Verificación encontrada - Estado actual: {estado_actual}, User ID: {user_id_str}")
+        
+        if estado_actual != "pendiente":
+            print(f"⚠️ Verificación ya procesada - Estado: {estado_actual}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"La verificación ya fue procesada (estado actual: {estado_actual})"
+            )
+        
+        # Generar token único para corrección
+        import secrets
+        from datetime import timedelta
+        token_correccion = secrets.token_urlsafe(32)  # Token seguro de 32 bytes
+        token_expiracion = DateService.now_for_database() + timedelta(days=30)  # Expira en 30 días
+        
+        print(f"🔑 Token de corrección generado: {token_correccion[:20]}... (expira: {token_expiracion})")
+        
+        # Actualizar verificación usando SQL directa
+        fecha_verificacion = DateService.now_for_database()
+        # admin_user.id puede ser un UUID de asyncpg, convertirlo a string primero
+        admin_id_str = str(admin_user.id) if admin_user.id else None
+        admin_id = uuid.UUID(admin_id_str) if admin_id_str else None
+        
+        await conn.execute("""
+            UPDATE verificacion_ruc
+            SET estado = $1,
+                fecha_verificacion = $2,
+                comentario = $3,
+                id_admin_verificador = $4,
+                token_correccion = $5,
+                token_expiracion = $6
+            WHERE id_verificacion_ruc = $7
+        """, "rechazada", fecha_verificacion, decision.comentario, admin_id, token_correccion, token_expiracion, id_verificacion_ruc)
+        
+        print(f"✅ Verificación actualizada en base de datos - Estado: rechazado")
+        
+        # Obtener datos del usuario para enviar email
+        user_email = None
+        nombre_contacto = None
+        try:
+            # Obtener datos del usuario desde la base de datos
+            user_row = await conn.fetchrow("""
+                SELECT nombre_persona, nombre_empresa
+                FROM users
+                WHERE id = $1
+            """, user_id)
+            
+            if user_row:
+                nombre_contacto = user_row['nombre_persona'] or "Usuario"
+            
+            # Obtener email desde Supabase Auth
+            if supabase_admin and user_id_str:
+                try:
+                    auth_user = supabase_admin.auth.admin.get_user_by_id(user_id_str)
+                    if auth_user and auth_user.user:
+                        user_email = auth_user.user.email
+                except Exception as e:
+                    print(f"⚠️ Error obteniendo email desde Supabase: {e}")
+                    # Continuar sin email, no fallar
+            
+            # Enviar email de rechazo usando el formato especificado con token
+            if user_email and nombre_contacto:
+                try:
+                    import asyncio
+                    email_enviado = await asyncio.to_thread(
+                        RUCVerificationEmailService.enviar_email_rechazo,
+                        to_email=user_email,
+                        nombre_contacto=nombre_contacto,
+                        token_correccion=token_correccion
+                    )
+                    if email_enviado:
+                        print(f"✅ Email de rechazo enviado a {user_email} con token de corrección")
+                    else:
+                        print(f"⚠️ No se pudo enviar email de rechazo a {user_email}")
+                except Exception as e:
+                    print(f"⚠️ Error enviando email de rechazo: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # No fallar si el email no se puede enviar
+        except Exception as e:
+            print(f"⚠️ Error obteniendo datos del usuario: {e}")
+            import traceback
+            traceback.print_exc()
+            # No fallar si no se puede obtener el email, el rechazo ya se guardó
+        
+        # El usuario permanece INACTIVO, puede corregir y reenviar
+        
+        print(f"✅ Verificación de RUC {id_verificacion_ruc} rechazada exitosamente")
+        
+        return {
+            "message": "Verificación de RUC rechazada. El usuario puede corregir y reenviar su documento.",
+            "id_verificacion_ruc": id_verificacion_ruc,
+            "user_id": user_id_str
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error rechazando verificación de RUC: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error rechazando verificación de RUC: {str(e)}"
+        )
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 

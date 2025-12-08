@@ -8,3 +8,4 @@ from .empresa.ciudad import Ciudad
 from .empresa.barrio import Barrio
 from .empresa.direccion import Direccion
 from .empresa.verificacion_solicitud import VerificacionSolicitud
+from .empresa.verificacion_ruc import VerificacionRUC

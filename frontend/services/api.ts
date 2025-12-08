@@ -174,12 +174,39 @@ export const authAPI = {
     async signUp(data: SignUpData): Promise<SignUpResponse | TokenResponse> {
         try {
             console.log('🚀 Intentando registro en:', buildApiUrl(API_CONFIG.AUTH.REGISTER));
-            return await performPostRequest<SignUpResponse | TokenResponse>(
-                buildApiUrl(API_CONFIG.AUTH.REGISTER),
-                data,
-                undefined,
-                'signUp'
-            );
+            
+            // Si hay un archivo RUC, enviar como FormData
+            if (data.rucDocument) {
+                const formData = new FormData();
+                formData.append('email', data.email);
+                formData.append('password', data.password);
+                formData.append('nombre_persona', data.nombre_persona);
+                formData.append('nombre_empresa', data.nombre_empresa);
+                if (data.ruc) {
+                    formData.append('ruc', data.ruc);
+                }
+                formData.append('ruc_documento', data.rucDocument);
+                
+                const response = await fetch(buildApiUrl(API_CONFIG.AUTH.REGISTER), {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                if (!response.ok) {
+                    const error = await handleApiError(response);
+                    throw error;
+                }
+                
+                return await response.json();
+            } else {
+                // Si no hay archivo, enviar como JSON (compatibilidad hacia atrás)
+                return await performPostRequest<SignUpResponse | TokenResponse>(
+                    buildApiUrl(API_CONFIG.AUTH.REGISTER),
+                    data,
+                    undefined,
+                    'signUp'
+                );
+            }
         } catch (error) {
             handleCatchError(error, 'signUp');
         }
@@ -276,6 +303,70 @@ export const authAPI = {
             return result;
         } catch (error) {
             handleCatchError(error, 'getVerificacionEstado');
+        }
+    },
+
+    // Obtener datos de verificación RUC rechazado usando token
+    async getVerificacionRUCDatos(token: string): Promise<any> {
+        try {
+            console.log(`🔍 Obteniendo datos de verificación RUC con token...`);
+            const url = `${buildApiUrl(API_CONFIG.AUTH.VERIFICACION_RUC_DATOS)}?token=${encodeURIComponent(token)}`;
+            const response = await performFetchRequest(
+                url,
+                {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                },
+                'getVerificacionRUCDatos'
+            );
+            const result = await response.json();
+            console.log('✅ Datos de verificación RUC obtenidos:', result);
+            return result;
+        } catch (error) {
+            handleCatchError(error, 'getVerificacionRUCDatos');
+            throw error;
+        }
+    },
+
+    // Reenviar verificación de RUC rechazado usando token
+    async reenviarVerificacionRUC(
+        token: string,
+        email: string,
+        nombrePersona: string,
+        nombreEmpresa: string,
+        ruc: string | null,
+        rucDocument: File
+    ): Promise<any> {
+        try {
+            console.log(`🔄 Reenviando verificación de RUC con token...`);
+            const formData = new FormData();
+            formData.append('token', token);
+            formData.append('email', email);
+            formData.append('nombre_persona', nombrePersona);
+            formData.append('nombre_empresa', nombreEmpresa);
+            if (ruc) {
+                formData.append('ruc', ruc);
+            }
+            formData.append('ruc_documento', rucDocument);
+            
+            const response = await fetch(buildApiUrl(API_CONFIG.AUTH.VERIFICACION_RUC_REENVIAR), {
+                method: 'POST',
+                body: formData,
+            });
+            
+            if (!response.ok) {
+                const error = await handleApiError(response);
+                throw error;
+            }
+            
+            const result = await response.json();
+            console.log('✅ Verificación de RUC reenviada:', result);
+            return result;
+        } catch (error) {
+            handleCatchError(error, 'reenviarVerificacionRUC');
+            throw error;
         }
     }
 };
@@ -721,6 +812,52 @@ export const adminAPI = {
             return result;
         } catch (error) {
             handleCatchError(error, 'verDocumento');
+        }
+    },
+
+    // ==================== VERIFICACIONES DE RUC ====================
+    
+    // Obtener verificaciones de RUC pendientes
+    async getVerificacionesRUCPendientes(accessToken: string): Promise<any[]> {
+        try {
+            const endpoint = `${API_BASE_URL}/admin/verificaciones-ruc/pendientes`;
+            console.log('📋 Obteniendo verificaciones de RUC pendientes desde:', endpoint);
+            const result = await performGetRequest<any>(endpoint, accessToken, 'getVerificacionesRUCPendientes');
+            console.log('✅ Verificaciones de RUC obtenidas:', result);
+            // El backend devuelve { verificaciones: [...], total: N }
+            if (result && result.verificaciones && Array.isArray(result.verificaciones)) {
+                return result.verificaciones;
+            }
+            return [];
+        } catch (error) {
+            handleCatchError(error, 'getVerificacionesRUCPendientes');
+        }
+    },
+
+    // Aprobar verificación de RUC
+    async aprobarVerificacionRUC(idVerificacionRUC: number, comentario: string | null, accessToken: string): Promise<any> {
+        try {
+            console.log(`✅ Aprobando verificación de RUC ${idVerificacionRUC}...`);
+            const endpoint = `${API_BASE_URL}/admin/verificaciones-ruc/${idVerificacionRUC}/aprobar`;
+            const result = await performPostRequest<any>(endpoint, { comentario: comentario || null }, accessToken, 'aprobarVerificacionRUC');
+            console.log('✅ Verificación de RUC aprobada:', result);
+            return result;
+        } catch (error) {
+            handleCatchError(error, 'aprobarVerificacionRUC');
+        }
+    },
+
+    // Rechazar verificación de RUC
+    async rechazarVerificacionRUC(idVerificacionRUC: number, comentario: string, accessToken: string): Promise<any> {
+        try {
+            console.log(`❌ Rechazando verificación de RUC ${idVerificacionRUC}...`);
+            console.log(`📝 Comentario: ${comentario}`);
+            const endpoint = `${API_BASE_URL}/admin/verificaciones-ruc/${idVerificacionRUC}/rechazar`;
+            const result = await performPostRequest<any>(endpoint, { comentario }, accessToken, 'rechazarVerificacionRUC');
+            console.log('✅ Verificación de RUC rechazada:', result);
+            return result;
+        } catch (error) {
+            handleCatchError(error, 'rechazarVerificacionRUC');
         }
     },
 

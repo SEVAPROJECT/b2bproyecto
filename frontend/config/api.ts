@@ -26,6 +26,9 @@ export const API_CONFIG = {
         LOGOUT: '/auth/logout',
         RESET_PASSWORD: '/auth/reset-password', // NOSONAR
         VERIFICATION_STATUS: '/auth/verificacion-estado',
+        VERIFICACION_RUC_ESTADO: '/auth/verificacion-ruc-estado',
+        VERIFICACION_RUC_DATOS: '/auth/verificacion-ruc-datos',
+        VERIFICACION_RUC_REENVIAR: '/auth/verificacion-ruc-reenviar',
     },
     
     // Endpoints de administración

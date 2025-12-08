@@ -53,6 +53,7 @@ export interface RegisterData {
 }
 
 export interface SignUpData {
+    rucDocument?: File;
     nombre_empresa: string;
     nombre_persona: string;
     email: string;

@@ -294,7 +294,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
         }
     };
 
-    const register = async (data: { companyName: string; name: string; email: string; password: string; ruc?: string }) => {
+    const register = async (data: { companyName: string; name: string; email: string; password: string; ruc?: string; rucDocument?: File }) => {
         try {
             setIsLoading(true);
             setError(null);
@@ -331,6 +331,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                 nombre_persona: data.name,
                 nombre_empresa: data.companyName,
                 ruc: data.ruc,
+                rucDocument: data.rucDocument,
             });
             
             // Si la respuesta incluye tokens, el usuario se autenticó automáticamente

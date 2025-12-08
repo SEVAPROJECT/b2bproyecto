@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.models.empresa.documento import Documento
+    from app.models.empresa.verificacion_ruc import VerificacionRUC
 
 class TipoDocumento(Base):
     """
@@ -33,3 +34,6 @@ class TipoDocumento(Base):
 
     # Relación con la tabla 'documento'
     documento: Mapped[List["Documento"]] = relationship("Documento", back_populates='tipo_documento')
+    
+    # Relación con la tabla 'verificacion_ruc'
+    verificacion_ruc: Mapped[List["VerificacionRUC"]] = relationship("VerificacionRUC", back_populates='tipo_documento')

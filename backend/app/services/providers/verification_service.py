@@ -180,7 +180,34 @@ class VerificationService:
                 id_verificacion = nueva_solicitud['id_verificacion']
                 print(f"🔍 Nueva solicitud creada: {id_verificacion} para empresa: {razon_social}")
                 
-                # 12. Procesar documentos (lógica de negocio + acceso a datos)
+                # 12. Copiar RUC aprobado a documentos (si existe)
+                # El RUC ya fue verificado durante el registro, así que lo copiamos automáticamente
+                ruc_aprobado = await ProviderRepository.get_approved_ruc_for_user(conn, current_user_id)
+                if ruc_aprobado:
+                    print(f"📄 RUC aprobado encontrado, copiando a documentos de la solicitud...")
+                    # Verificar si ya existe un documento RUC en esta solicitud
+                    doc_ruc_existente = await conn.fetchrow("""
+                        SELECT d.id_documento 
+                        FROM documento d
+                        INNER JOIN tipo_documento td ON d.id_tip_documento = td.id_tip_documento
+                        WHERE d.id_verificacion = $1 
+                            AND td.tipo_documento = 'Constancia de RUC'
+                        LIMIT 1
+                    """, id_verificacion)
+                    
+                    if not doc_ruc_existente:
+                        # Crear documento RUC en la solicitud (ya está aprobado, así que estado = 'aprobado')
+                        await ProviderRepository.create_document(
+                            conn, id_verificacion, ruc_aprobado['id_tip_documento'],
+                            ruc_aprobado['url_documento'], 'aprobado'
+                        )
+                        print(f"✅ RUC copiado a documentos de la solicitud (estado: aprobado)")
+                    else:
+                        print(f"⚠️ RUC ya existe en los documentos de la solicitud, omitiendo copia")
+                else:
+                    print(f"ℹ️ No se encontró RUC aprobado para el usuario (puede ser usuario legacy)")
+                
+                # 13. Procesar documentos (lógica de negocio + acceso a datos)
                 id_perfil_para_docs = id_perfil_existente if empresa_existente and str(empresa_existente['user_id']) == current_user_id else None
                 await DocumentService.process_documents(
                     conn, documentos, nombres_tip_documento, razon_social, 

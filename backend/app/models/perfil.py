@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from app.models.empresa.perfil_empresa import PerfilEmpresa
     from app.models.usuario_rol import UsuarioRolModel
     from app.models.reserva_servicio.reserva import ReservaModel
+    from app.models.empresa.verificacion_ruc import VerificacionRUC
 
 class UserModel(Base):
     __tablename__ = "users"
@@ -43,5 +44,12 @@ class UserModel(Base):
         "ReservaModel", 
         back_populates="usuario",
         primaryjoin="ReservaModel.user_id == UserModel.id"
+    )
+    
+    # Relación con verificaciones de RUC
+    verificacion_ruc: Mapped[List["VerificacionRUC"]] = relationship(
+        "VerificacionRUC",
+        foreign_keys="VerificacionRUC.user_id",
+        back_populates="usuario"
     )
 

@@ -9,7 +9,16 @@ import { buildApiUrl } from '../../config/api';
 const AdminVerificationsPage: React.FC = () => {
     const { user } = React.useContext(AuthContext);
     const dateUtils = useDateUtils();
+    
+    // Estado para la pestaña activa
+    const [activeTab, setActiveTab] = useState<'ruc' | 'proveedores'>('ruc');
+    
+    // Estados para solicitudes de proveedores (existente)
     const [solicitudes, setSolicitudes] = useState<any[]>([]);
+    
+    // Estados para verificaciones de RUC (nuevo)
+    const [verificacionesRUC, setVerificacionesRUC] = useState<any[]>([]);
+    
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedSolicitud, setSelectedSolicitud] = useState<any>(null);
@@ -200,7 +209,13 @@ const AdminVerificationsPage: React.FC = () => {
     // Función para filtrar solicitudes
     const filterRequests = useCallback((requests: any[]) => {
         return requests.filter(request => {
-            const requestDate = new Date(request.created_at || request.fecha_solicitud);
+            // Manejar diferentes formatos de fecha según el tipo de solicitud
+            const requestDate = new Date(
+                request.created_at || 
+                request.fecha_solicitud || 
+                request.fecha_creacion || 
+                new Date()
+            );
             const matchesDate = matchesDateFilter(requestDate, filters.dateFilter, filters.customDate);
             const matchesCompany = matchesCompanyFilter(request.nombre_empresa || '', filters.companyFilter);
             // El backend devuelve 'estado', no 'estado_aprobacion'
@@ -216,7 +231,12 @@ const AdminVerificationsPage: React.FC = () => {
         return filterRequests(solicitudes);
     }, [solicitudes, filterRequests]);
 
-    // Empresas únicas para el filtro
+    // Verificaciones de RUC filtradas
+    const filteredVerificacionesRUC = useMemo(() => {
+        return filterRequests(verificacionesRUC);
+    }, [verificacionesRUC, filterRequests]);
+
+    // Empresas únicas para el filtro (proveedores)
     const uniqueCompanies = useMemo(() => {
         const companies = [...new Set(solicitudes.map(s => s.nombre_empresa).filter(Boolean))];
         return companies.sort((a, b) => {
@@ -224,6 +244,15 @@ const AdminVerificationsPage: React.FC = () => {
             return a.localeCompare(b, 'es', { sensitivity: 'base' });
         });
     }, [solicitudes]);
+
+    // Empresas únicas para el filtro (RUC)
+    const uniqueCompaniesRUC = useMemo(() => {
+        const companies = [...new Set(verificacionesRUC.map(v => v.nombre_empresa).filter(Boolean))];
+        return companies.sort((a, b) => {
+            if (!a || !b) return 0;
+            return a.localeCompare(b, 'es', { sensitivity: 'base' });
+        });
+    }, [verificacionesRUC]);
 
 
     // Cargar solicitudes pendientes con optimizaciones
@@ -282,9 +311,58 @@ const AdminVerificationsPage: React.FC = () => {
         }
     }, [user?.accessToken, user?.role]);
 
-    useEffect(() => {
-        loadSolicitudes();
+    // Cargar verificaciones de RUC pendientes
+    const loadVerificacionesRUC = useCallback(async () => {
+        if (!user?.accessToken) {
+            console.log('❌ No hay token de acceso, cancelando carga de RUC');
+            setIsLoading(false);
+            return;
+        }
+
+        if (user?.role !== 'admin') {
+            console.log('🚫 Usuario no es administrador, cancelando carga de RUC');
+            setError('Solo los administradores pueden ver las verificaciones de RUC');
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+            console.log('🚀 Iniciando carga de verificaciones de RUC pendientes...');
+            setIsLoading(true);
+            setError(null);
+            
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout de carga')), 10000)
+            );
+            
+            const dataPromise = adminAPI.getVerificacionesRUCPendientes(user.accessToken);
+            
+            const data = await Promise.race([dataPromise, timeoutPromise]) as any[];
+            
+            console.log('✅ Verificaciones de RUC cargadas:', data);
+            console.log('📊 Número de verificaciones de RUC:', data?.length || 0);
+            
+            setVerificacionesRUC(data || []);
+        } catch (err: any) {
+            console.error('❌ Error cargando verificaciones de RUC:', err);
+            if (err.message === 'Timeout de carga') {
+                setError('La carga está tardando demasiado. Por favor, recarga la página.');
+            } else {
+                setError(err.detail || 'Error al cargar las verificaciones de RUC');
+            }
+        } finally {
+            console.log('🏁 Finalizando carga de verificaciones de RUC');
+            setIsLoading(false);
+        }
     }, [user?.accessToken, user?.role]);
+
+    useEffect(() => {
+        if (activeTab === 'proveedores') {
+            loadSolicitudes();
+        } else if (activeTab === 'ruc') {
+            loadVerificacionesRUC();
+        }
+    }, [user?.accessToken, user?.role, activeTab, loadSolicitudes, loadVerificacionesRUC]);
 
     // Aprobar solicitud con actualización optimista
     const handleAprobar = useCallback(async (solicitud: any) => {
@@ -324,6 +402,97 @@ const AdminVerificationsPage: React.FC = () => {
             setProcessingAction(null);
         }
     }, [user?.accessToken, loadSolicitudes, showNotification]);
+
+    // Aprobar verificación de RUC
+    const handleAprobarRUC = useCallback(async (verificacion: any) => {
+        if (!user?.accessToken) return;
+
+        if (!verificacion.id_verificacion_ruc) {
+            showNotification('error', 'Error: No se pudo obtener el ID de la verificación. Por favor, recarga la página e intenta nuevamente.');
+            return;
+        }
+
+        try {
+            setProcessingAction(verificacion.id_verificacion_ruc);
+            
+            // Actualización optimista: actualizar el estado a "aprobada" inmediatamente
+            setVerificacionesRUC(prev => 
+                prev.map(v => 
+                    v.id_verificacion_ruc === verificacion.id_verificacion_ruc
+                        ? { ...v, estado: 'aprobada' }
+                        : v
+                )
+            );
+
+            // Cerrar modal de detalles si está abierto
+            closeDetailModal();
+
+            // Mostrar mensaje de éxito inmediatamente
+            showNotification('success', 'Verificación de RUC aprobada exitosamente. El usuario ahora puede iniciar sesión.');
+
+            // Llamar a la API en segundo plano
+            await adminAPI.aprobarVerificacionRUC(verificacion.id_verificacion_ruc, null, user.accessToken);
+
+        } catch (err: any) {
+            console.error('Error aprobando verificación de RUC:', err);
+            
+            // Revertir la actualización optimista en caso de error
+            await loadVerificacionesRUC();
+            
+            showNotification('error', err.detail || 'Error al aprobar la verificación de RUC');
+        } finally {
+            setProcessingAction(null);
+        }
+    }, [user?.accessToken, loadVerificacionesRUC, showNotification]);
+
+    // Rechazar verificación de RUC
+    const handleRechazarRUC = useCallback(async (verificacion: any) => {
+        if (!user?.accessToken) return;
+
+        if (!verificacion.id_verificacion_ruc) {
+            showNotification('error', 'Error: No se pudo obtener el ID de la verificación. Por favor, recarga la página e intenta nuevamente.');
+            return;
+        }
+
+        if (!rejectComment.trim()) {
+            showNotification('error', 'Por favor, proporciona un comentario explicando el motivo del rechazo.');
+            return;
+        }
+
+        try {
+            setProcessingAction(verificacion.id_verificacion_ruc);
+            
+            // Actualización optimista: actualizar el estado a "rechazada" inmediatamente
+            setVerificacionesRUC(prev => 
+                prev.map(v => 
+                    v.id_verificacion_ruc === verificacion.id_verificacion_ruc
+                        ? { ...v, estado: 'rechazada' }
+                        : v
+                )
+            );
+
+            // Cerrar modales
+            closeRejectModal();
+            closeDetailModal();
+
+            // Mostrar mensaje de éxito inmediatamente
+            showNotification('success', 'Verificación de RUC rechazada. El usuario puede corregir y reenviar su documento.');
+
+            // Llamar a la API en segundo plano
+            await adminAPI.rechazarVerificacionRUC(verificacion.id_verificacion_ruc, rejectComment, user.accessToken);
+
+        } catch (err: any) {
+            console.error('Error rechazando verificación de RUC:', err);
+            
+            // Revertir la actualización optimista en caso de error
+            await loadVerificacionesRUC();
+            
+            showNotification('error', err.detail || 'Error al rechazar la verificación de RUC');
+        } finally {
+            setProcessingAction(null);
+            setRejectComment('');
+        }
+    }, [user?.accessToken, rejectComment, loadVerificacionesRUC, showNotification]);
 
     // Rechazar solicitud con actualización optimista
     const handleRechazar = useCallback(async (solicitud: any) => {
@@ -442,15 +611,59 @@ const AdminVerificationsPage: React.FC = () => {
             {/* Notificaciones */}
             {NotificationComponent}
 
-            {/* Header */}
+            {/* Header con pestañas */}
             <div className="bg-white shadow">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="py-6">
                         <div>
                             <h1 className="text-3xl font-bold text-gray-900">Solicitudes de Verificación</h1>
                             <p className="mt-1 text-sm text-gray-500">
-                                Revisa y administra las solicitudes de verificación de proveedores
+                                Revisa y administra las solicitudes de verificación
                             </p>
+                        </div>
+                        
+                        {/* Pestañas */}
+                        <div className="mt-6 border-b border-gray-200">
+                            <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                                <button
+                                    onClick={() => setActiveTab('ruc')}
+                                    className={`
+                                        ${activeTab === 'ruc'
+                                            ? 'border-blue-500 text-blue-600'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                        }
+                                        whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                                    `}
+                                >
+                                    Verificación de RUC
+                                    {verificacionesRUC.length > 0 && (
+                                        <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                                            activeTab === 'ruc' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                                        }`}>
+                                            {verificacionesRUC.length}
+                                        </span>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('proveedores')}
+                                    className={`
+                                        ${activeTab === 'proveedores'
+                                            ? 'border-blue-500 text-blue-600'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                        }
+                                        whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                                    `}
+                                >
+                                    Verificación de Proveedores
+                                    {solicitudes.length > 0 && (
+                                        <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                                            activeTab === 'proveedores' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                                        }`}>
+                                            {solicitudes.length}
+                                        </span>
+                                    )}
+                                </button>
+                            </nav>
                         </div>
                     </div>
                 </div>
@@ -509,7 +722,7 @@ const AdminVerificationsPage: React.FC = () => {
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
                                 <option value="all">Todas las empresas</option>
-                                {uniqueCompanies.map(company => (
+                                {(activeTab === 'ruc' ? uniqueCompaniesRUC : uniqueCompanies).map(company => (
                                     <option key={company} value={company}>
                                         {company}
                                     </option>
@@ -549,29 +762,147 @@ const AdminVerificationsPage: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Contador de resultados */}
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h3 className="text-lg font-medium text-gray-900">
-                                Total: {filteredRequests.length} solicitudes
-                            </h3>
-                        </div>
-                        <div className="text-right">
-                            <div className="text-sm text-gray-500">
-                                {filteredRequests.length > 0 && (
-                                    <span className="text-gray-600">
-                                        Mostrando {filteredRequests.length} de {solicitudes.length} resultados
-                                    </span>
-                                )}
+                {/* Contenido según pestaña activa */}
+                {activeTab === 'ruc' ? (
+                    <>
+                        {/* Contador de verificaciones de RUC */}
+                        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-lg font-medium text-gray-900">
+                                        Total: {filteredVerificacionesRUC.length} verificaciones de RUC
+                                    </h3>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-sm text-gray-500">
+                                        {filteredVerificacionesRUC.length > 0 && (
+                                            <span className="text-gray-600">
+                                                Mostrando {filteredVerificacionesRUC.length} de {verificacionesRUC.length} resultados
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                {/* Requests Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredRequests.map((solicitud) => (
+                        {/* Grid de verificaciones de RUC */}
+                        {filteredVerificacionesRUC.length === 0 ? (
+                            <div className="bg-white p-8 rounded-lg shadow border border-gray-200 text-center">
+                                <p className="text-gray-500">No hay verificaciones de RUC que coincidan con los filtros</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {filteredVerificacionesRUC.map((verificacion) => (
+                                    <div key={verificacion.id_verificacion_ruc} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
+                                        <div className="p-6">
+                                            <div className="flex items-center">
+                                                <div className="flex-shrink-0">
+                                                    <CheckCircleIcon className="h-8 w-8 text-gray-400" />
+                                                </div>
+                                                <div className="ml-4 flex-1">
+                                                    <h3 className="text-lg font-medium text-gray-900">
+                                                        {verificacion.nombre_empresa || verificacion.nombre_persona || 'Usuario sin nombre'}
+                                                    </h3>
+                                                    <p className="text-sm text-gray-500">
+                                                        Contacto: {verificacion.nombre_persona || 'Sin especificar'}
+                                                    </p>
+                                                    <p className="text-xs text-gray-400 mt-1">
+                                                        Solicitado: {formatDate(verificacion.fecha_creacion)}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-4 space-y-2">
+                                                <div className="text-xs text-gray-500">
+                                                    <span className="font-medium">Email:</span> {verificacion.email || 'No disponible'}
+                                                </div>
+                                                {verificacion.ruc && (
+                                                    <div className="text-xs text-gray-500">
+                                                        <span className="font-medium">RUC:</span> {verificacion.ruc}
+                                                    </div>
+                                                )}
+                                                {verificacion.fecha_limite_verificacion && (
+                                                    <div className="text-xs text-gray-500">
+                                                        <span className="font-medium">Fecha límite:</span> {formatDate(verificacion.fecha_limite_verificacion)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="mt-4 flex items-center justify-between">
+                                                {(() => {
+                                                    const estado = verificacion.estado || 'pendiente';
+                                                    return (
+                                                        <>
+                                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEstadoClasses(estado)}`}>
+                                                                {getEstadoText(estado)}
+                                                            </span>
+                                                            <div className="flex items-center space-x-3">
+                                                                {estado === 'pendiente' && (
+                                                                    <>
+                                                                        <button
+                                                                            onClick={() => handleAprobarRUC(verificacion)}
+                                                                            disabled={processingAction === verificacion.id_verificacion_ruc}
+                                                                            className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
+                                                                        >
+                                                                            <CheckCircleIcon className="h-4 w-4 mr-1" />
+                                                                            Aprobar
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setSelectedSolicitud(verificacion);
+                                                                                setShowRejectModal(true);
+                                                                            }}
+                                                                            disabled={processingAction === verificacion.id_verificacion_ruc}
+                                                                            className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400"
+                                                                        >
+                                                                            <ExclamationCircleIcon className="h-4 w-4 mr-1" />
+                                                                            Rechazar
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setSelectedSolicitud(verificacion);
+                                                                        setShowDetailModal(true);
+                                                                    }}
+                                                                    className="text-blue-600 hover:text-blue-500 text-sm font-medium"
+                                                                >
+                                                                    Ver detalles →
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    );
+                                                })()}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <>
+                        {/* Contador de resultados para proveedores */}
+                        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-lg font-medium text-gray-900">
+                                        Total: {filteredRequests.length} solicitudes
+                                    </h3>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-sm text-gray-500">
+                                        {filteredRequests.length > 0 && (
+                                            <span className="text-gray-600">
+                                                Mostrando {filteredRequests.length} de {solicitudes.length} resultados
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Requests Grid para proveedores */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {filteredRequests.map((solicitud) => (
                         <div key={solicitud.id_verificacion} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
                             <div className="p-6">
                                 <div className="flex items-center">
@@ -637,22 +968,24 @@ const AdminVerificationsPage: React.FC = () => {
                             </div>
                         </div>
                     ))}
-                </div>
+                        </div>
 
-                {filteredRequests.length === 0 && solicitudes.length > 0 && (
-                    <div className="text-center py-12">
-                        <CheckCircleIcon className="mx-auto h-12 w-12 text-gray-400" />
-                        <h3 className="mt-2 text-sm font-medium text-gray-900">No hay solicitudes que coincidan con los filtros</h3>
-                        <p className="mt-1 text-sm text-gray-500">Intenta ajustar los filtros para ver más resultados.</p>
-                    </div>
-                )}
+                        {filteredRequests.length === 0 && solicitudes.length > 0 && (
+                            <div className="text-center py-12">
+                                <CheckCircleIcon className="mx-auto h-12 w-12 text-gray-400" />
+                                <h3 className="mt-2 text-sm font-medium text-gray-900">No hay solicitudes que coincidan con los filtros</h3>
+                                <p className="mt-1 text-sm text-gray-500">Intenta ajustar los filtros para ver más resultados.</p>
+                            </div>
+                        )}
 
-                {solicitudes.length === 0 && (
-                    <div className="text-center py-12">
-                        <CheckCircleIcon className="mx-auto h-12 w-12 text-gray-400" />
-                        <h3 className="mt-2 text-sm font-medium text-gray-900">No hay solicitudes pendientes</h3>
-                        <p className="mt-1 text-sm text-gray-500">Todas las solicitudes han sido procesadas.</p>
-                    </div>
+                        {solicitudes.length === 0 && (
+                            <div className="text-center py-12">
+                                <CheckCircleIcon className="mx-auto h-12 w-12 text-gray-400" />
+                                <h3 className="mt-2 text-sm font-medium text-gray-900">No hay solicitudes pendientes</h3>
+                                <p className="mt-1 text-sm text-gray-500">Todas las solicitudes han sido procesadas.</p>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
@@ -662,7 +995,10 @@ const AdminVerificationsPage: React.FC = () => {
                     <div className="bg-white rounded-xl p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-semibold text-slate-800">
-                                Detalles de Solicitud #{selectedSolicitud.id_verificacion}
+                                {activeTab === 'ruc' 
+                                    ? `Detalles de Verificación de RUC #${selectedSolicitud.id_verificacion_ruc || 'N/A'}`
+                                    : `Detalles de Solicitud #${selectedSolicitud.id_verificacion || 'N/A'}`
+                                }
                             </h3>
                             <button
                                 onClick={closeDetailModal}
@@ -696,9 +1032,14 @@ const AdminVerificationsPage: React.FC = () => {
                                     <div>
                                         <span className="text-sm font-medium text-slate-600">Verificado:</span>
                                         <span className={`px-2 py-1 font-semibold text-xs rounded-full ${
-                                            getVerificadoClasses(selectedSolicitud.verificado || false)
+                                            activeTab === 'ruc' 
+                                                ? getVerificadoClasses(selectedSolicitud.estado === 'aprobada' || selectedSolicitud.estado === 'rechazada')
+                                                : getVerificadoClasses(selectedSolicitud.verificado || false)
                                         }`}>
-                                            {getVerificadoText(selectedSolicitud.verificado || false)}
+                                            {activeTab === 'ruc'
+                                                ? getVerificadoText(selectedSolicitud.estado === 'aprobada' || selectedSolicitud.estado === 'rechazada')
+                                                : getVerificadoText(selectedSolicitud.verificado || false)
+                                            }
                                         </span>
                                     </div>
                                 </div>
@@ -710,16 +1051,34 @@ const AdminVerificationsPage: React.FC = () => {
                                 <div className="space-y-2">
                                     <div>
                                         <span className="text-sm font-medium text-slate-600">Persona de Contacto:</span>
-                                        <p className="text-slate-800 font-medium">{selectedSolicitud.nombre_contacto || 'No disponible'}</p>
+                                        <p className="text-slate-800 font-medium">
+                                            {activeTab === 'ruc' 
+                                                ? (selectedSolicitud.nombre_persona || 'No disponible')
+                                                : (selectedSolicitud.nombre_contacto || 'No disponible')
+                                            }
+                                        </p>
                                     </div>
                                     <div>
                                         <span className="text-sm font-medium text-slate-600">Email de Contacto:</span>
-                                        <p className="text-slate-800">{selectedSolicitud.email_contacto || 'No disponible'}</p>
+                                        <p className="text-slate-800">
+                                            {activeTab === 'ruc' 
+                                                ? (selectedSolicitud.email || 'No disponible')
+                                                : (selectedSolicitud.email_contacto || 'No disponible')
+                                            }
+                                        </p>
                                     </div>
-                                    <div>
-                                        <span className="text-sm font-medium text-slate-600">ID de Perfil:</span>
-                                        <p className="text-slate-800">#{selectedSolicitud.id_perfil || 'No disponible'}</p>
-                                    </div>
+                                    {activeTab === 'proveedores' && (
+                                        <div>
+                                            <span className="text-sm font-medium text-slate-600">ID de Perfil:</span>
+                                            <p className="text-slate-800">#{selectedSolicitud.id_perfil || 'No disponible'}</p>
+                                        </div>
+                                    )}
+                                    {activeTab === 'ruc' && selectedSolicitud.ruc && (
+                                        <div>
+                                            <span className="text-sm font-medium text-slate-600">RUC:</span>
+                                            <p className="text-slate-800">{selectedSolicitud.ruc}</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -728,13 +1087,20 @@ const AdminVerificationsPage: React.FC = () => {
                                 <h4 className="font-semibold text-slate-800 mb-3">📝 Información de la Solicitud</h4>
                                 <div className="space-y-2">
                                     <div>
-                                        <span className="text-sm font-medium text-slate-600">ID de Solicitud:</span>
-                                        <p className="text-slate-800 font-medium">#{selectedSolicitud.id_verificacion}</p>
+                                        <span className="text-sm font-medium text-slate-600">
+                                            {activeTab === 'ruc' ? 'ID de Verificación de RUC:' : 'ID de Solicitud:'}
+                                        </span>
+                                        <p className="text-slate-800 font-medium">
+                                            #{activeTab === 'ruc' ? selectedSolicitud.id_verificacion_ruc : selectedSolicitud.id_verificacion}
+                                        </p>
                                     </div>
                                     <div>
                                         <span className="text-sm font-medium text-slate-600">Fecha de Solicitud:</span>
                                         <p className="text-slate-800">
-                                            {formatDate(selectedSolicitud.fecha_solicitud || selectedSolicitud.created_at, 'fullDateTime')}
+                                            {activeTab === 'ruc' 
+                                                ? formatDate(selectedSolicitud.fecha_creacion, 'fullDateTime')
+                                                : formatDate(selectedSolicitud.fecha_solicitud || selectedSolicitud.created_at, 'fullDateTime')
+                                            }
                                         </p>
                                     </div>
                                     <div>
@@ -748,7 +1114,15 @@ const AdminVerificationsPage: React.FC = () => {
                                             );
                                         })()}
                                     </div>
-                                    {selectedSolicitud.fecha_inicio && (
+                                    {activeTab === 'ruc' && selectedSolicitud.fecha_limite_verificacion && (
+                                        <div>
+                                            <span className="text-sm font-medium text-slate-600">Fecha Límite de Verificación:</span>
+                                            <p className="text-slate-800">
+                                                {formatDate(selectedSolicitud.fecha_limite_verificacion, 'fullDateTime')}
+                                            </p>
+                                        </div>
+                                    )}
+                                    {activeTab === 'proveedores' && selectedSolicitud.fecha_inicio && (
                                         <div>
                                             <span className="text-sm font-medium text-slate-600">Fecha de Inicio:</span>
                                             <p className="text-slate-800">
@@ -756,12 +1130,27 @@ const AdminVerificationsPage: React.FC = () => {
                                             </p>
                                         </div>
                                     )}
+                                    {activeTab === 'ruc' && selectedSolicitud.url_documento && (
+                                        <div className="mt-4">
+                                            <span className="text-sm font-medium text-slate-600">Documento RUC:</span>
+                                            <div className="mt-2">
+                                                <a 
+                                                    href={selectedSolicitud.url_documento} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                                >
+                                                    Ver documento RUC →
+                                                </a>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
 
-                        {/* Documentos de la solicitud */}
-                        {selectedSolicitud.documentos && selectedSolicitud.documentos.length > 0 && (
+                        {/* Documentos de la solicitud (solo para proveedores) */}
+                        {activeTab === 'proveedores' && selectedSolicitud.documentos && selectedSolicitud.documentos.length > 0 && (
                             <div className="mt-6 bg-blue-50 rounded-lg p-4">
                                 <h4 className="font-semibold text-blue-800 mb-4">📄 Documentos Presentados</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -913,17 +1302,23 @@ const AdminVerificationsPage: React.FC = () => {
                             <button
                                 onClick={() => {
                                     closeDetailModal();
-                                    handleAprobar(selectedSolicitud);
+                                    if (activeTab === 'ruc') {
+                                        handleAprobarRUC(selectedSolicitud);
+                                    } else {
+                                        handleAprobar(selectedSolicitud);
+                                    }
                                 }}
-                                disabled={processingAction === selectedSolicitud.id_verificacion}
+                                disabled={processingAction === (activeTab === 'ruc' ? selectedSolicitud.id_verificacion_ruc : selectedSolicitud.id_verificacion)}
                                 className="flex items-center justify-center px-3 py-2 sm:px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
                             >
-                                {processingAction === selectedSolicitud.id_verificacion ? (
+                                {processingAction === (activeTab === 'ruc' ? selectedSolicitud.id_verificacion_ruc : selectedSolicitud.id_verificacion) ? (
                                     <div className="animate-spin rounded-full h-4 w-4 border-b border-white mr-2"></div>
                                 ) : (
                                     <CheckCircleIcon className="w-4 h-4 mr-2" />
                                 )}
-                                <span className="hidden sm:inline">Aprobar Solicitud</span>
+                                <span className="hidden sm:inline">
+                                    {activeTab === 'ruc' ? 'Aprobar Verificación de RUC' : 'Aprobar Solicitud'}
+                                </span>
                                 <span className="sm:hidden">Aprobar</span>
                             </button>
                             <button
@@ -931,15 +1326,17 @@ const AdminVerificationsPage: React.FC = () => {
                                     closeDetailModal();
                                     openRejectModal(selectedSolicitud);
                                 }}
-                                disabled={processingAction === selectedSolicitud.id_verificacion}
+                                disabled={processingAction === (activeTab === 'ruc' ? selectedSolicitud.id_verificacion_ruc : selectedSolicitud.id_verificacion)}
                                 className="flex items-center justify-center px-3 py-2 sm:px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
                             >
-                                {processingAction === selectedSolicitud.id_verificacion ? (
+                                {processingAction === (activeTab === 'ruc' ? selectedSolicitud.id_verificacion_ruc : selectedSolicitud.id_verificacion) ? (
                                     <div className="animate-spin rounded-full h-4 w-4 border-b border-white mr-2"></div>
                                 ) : (
                                     <ExclamationCircleIcon className="w-4 h-4 mr-2" />
                                 )}
-                                <span className="hidden sm:inline">Rechazar Solicitud</span>
+                                <span className="hidden sm:inline">
+                                    {activeTab === 'ruc' ? 'Rechazar Verificación de RUC' : 'Rechazar Solicitud'}
+                                </span>
                                 <span className="sm:hidden">Rechazar</span>
                             </button>
                             <button
@@ -990,11 +1387,20 @@ const AdminVerificationsPage: React.FC = () => {
                                 Cancelar
                             </button>
                             <button
-                                onClick={() => handleRechazar(selectedSolicitud)}
-                                disabled={processingAction === selectedSolicitud.id_verificacion || !rejectComment.trim()}
+                                onClick={() => {
+                                    if (activeTab === 'ruc') {
+                                        handleRechazarRUC(selectedSolicitud);
+                                    } else {
+                                        handleRechazar(selectedSolicitud);
+                                    }
+                                }}
+                                disabled={processingAction === (activeTab === 'ruc' ? selectedSolicitud.id_verificacion_ruc : selectedSolicitud.id_verificacion) || !rejectComment.trim()}
                                 className="px-3 py-2 sm:px-4 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 rounded-md"
                             >
-                                {processingAction === selectedSolicitud.id_verificacion ? 'Procesando...' : 'Rechazar Solicitud'}
+                                {processingAction === (activeTab === 'ruc' ? selectedSolicitud.id_verificacion_ruc : selectedSolicitud.id_verificacion) 
+                                    ? 'Procesando...' 
+                                    : (activeTab === 'ruc' ? 'Rechazar Verificación de RUC' : 'Rechazar Solicitud')
+                                }
                             </button>
                         </div>
                     </div>
