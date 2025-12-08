@@ -19,17 +19,21 @@ def get_frontend_url() -> str:
     """
     Detecta automáticamente la URL del frontend según el entorno.
     
+    IMPORTANTE: NO usa RAILWAY_PUBLIC_DOMAIN porque puede ser del backend.
+    Siempre prioriza FRONTEND_URL si está configurada.
+    
     Returns:
         str: URL del frontend (local o producción)
     """
-    # Si hay variable de entorno, usarla
-    if os.getenv("FRONTEND_URL"):
-        return os.getenv("FRONTEND_URL")
+    # SIEMPRE priorizar FRONTEND_URL si está configurada
+    frontend_url_env = os.getenv("FRONTEND_URL")
+    if frontend_url_env:
+        logger.info(f"🌐 Usando FRONTEND_URL de variable de entorno: {frontend_url_env}")
+        return frontend_url_env
     
     # Detectar si estamos en producción (Railway, etc.)
     is_production = (
         os.getenv("RAILWAY_ENVIRONMENT") is not None or
-        os.getenv("RAILWAY_PUBLIC_DOMAIN") is not None or
         os.getenv("VERCEL") is not None or
         os.getenv("RENDER") is not None or
         os.getenv("ENVIRONMENT") == "production" or
@@ -37,17 +41,17 @@ def get_frontend_url() -> str:
     )
     
     if is_production:
-        # En producción, intentar obtener la URL de Railway o usar una por defecto
-        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
-        if railway_domain:
-            # Railway proporciona el dominio público
-            return f"https://{railway_domain}"
-        else:
-            # Si no hay dominio específico, usar la variable de entorno o un valor por defecto
-            return os.getenv("FRONTEND_URL", "https://seva-empresas.railway.app")
+        # En producción, usar un valor por defecto
+        # NO usar RAILWAY_PUBLIC_DOMAIN porque puede ser del backend
+        default_prod_url = "https://seva-empresas.railway.app"
+        logger.warning(f"⚠️ FRONTEND_URL no configurada. Usando URL por defecto: {default_prod_url}")
+        logger.warning(f"⚠️ IMPORTANTE: Configura FRONTEND_URL en las variables de entorno para usar la URL correcta del frontend")
+        return default_prod_url
     else:
         # En local, usar localhost
-        return "http://localhost:5173"
+        local_url = "http://localhost:5173"
+        logger.info(f"🌐 Entorno local detectado. Usando: {local_url}")
+        return local_url
 
 
 class RUCVerificationEmailService:
@@ -92,6 +96,13 @@ class RUCVerificationEmailService:
         # Si se proporciona una URL de login personalizada, usarla
         if url_login != LOGIN_URL:
             url_login_actual = url_login
+        
+        # Log para debugging
+        logger.info(f"📧 Generando email - Frontend URL: {frontend_url}")
+        logger.info(f"📧 URL de login: {url_login_actual}")
+        if token_correccion:
+            token_url = f"{frontend_url}/#/register?token={token_correccion}"
+            logger.info(f"📧 URL de corrección con token: {token_url}")
         
         html_content = f"""
         <!DOCTYPE html>
