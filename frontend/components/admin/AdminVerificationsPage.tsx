@@ -1133,15 +1133,144 @@ const AdminVerificationsPage: React.FC = () => {
                                     {activeTab === 'ruc' && selectedSolicitud.url_documento && (
                                         <div className="mt-4">
                                             <span className="text-sm font-medium text-slate-600">Documento RUC:</span>
-                                            <div className="mt-2">
-                                                <a 
-                                                    href={selectedSolicitud.url_documento} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer"
-                                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                            <div className="mt-2 flex items-center space-x-3">
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        try {
+                                                            if (user?.accessToken) {
+                                                                const authUrl = buildApiUrl(`/admin/verificaciones-ruc/${selectedSolicitud.id_verificacion_ruc}/documento/servir?token=${encodeURIComponent(user.accessToken)}`);
+                                                                
+                                                                // Mostrar indicador de carga
+                                                                const button = e.currentTarget;
+                                                                const originalText = button.textContent;
+                                                                button.textContent = '⏳ Cargando...';
+                                                                button.disabled = true;
+                                                                
+                                                                // Hacer fetch del archivo con autenticación
+                                                                const response = await fetch(authUrl, {
+                                                                    method: 'GET',
+                                                                    headers: {
+                                                                        'Authorization': `Bearer ${user.accessToken}`
+                                                                    }
+                                                                });
+                                                                
+                                                                if (!response.ok) {
+                                                                    throw new Error(`Error al abrir: ${response.status} ${response.statusText}`);
+                                                                }
+                                                                
+                                                                // Convertir respuesta a blob
+                                                                const blob = await response.blob();
+                                                                
+                                                                // Crear URL del blob
+                                                                const blobUrl = window.URL.createObjectURL(blob);
+                                                                
+                                                                // Abrir en nueva ventana
+                                                                const newWindow = window.open(blobUrl, '_blank');
+                                                                if (!newWindow) {
+                                                                    showNotification('error', 'Por favor, permite popups para ver el documento');
+                                                                }
+                                                                
+                                                                // Limpiar después de un delay
+                                                                setTimeout(() => {
+                                                                    window.URL.revokeObjectURL(blobUrl);
+                                                                    button.textContent = originalText;
+                                                                    button.disabled = false;
+                                                                }, 1000);
+                                                                
+                                                                console.log('✅ Documento RUC abierto desde backend');
+                                                            }
+                                                        } catch (error: any) {
+                                                            console.error('❌ Error abriendo documento RUC:', error);
+                                                            showNotification('error', 'Error al abrir el documento RUC');
+                                                            
+                                                            // Restaurar botón en caso de error
+                                                            const button = e.currentTarget;
+                                                            button.textContent = '👁️ Ver documento RUC';
+                                                            button.disabled = false;
+                                                        }
+                                                    }}
+                                                    className="text-blue-600 hover:text-blue-800 text-xs underline disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
-                                                    Ver documento RUC →
-                                                </a>
+                                                    👁️ Ver documento RUC
+                                                </button>
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        try {
+                                                            if (user?.accessToken) {
+                                                                const authUrl = buildApiUrl(`/admin/verificaciones-ruc/${selectedSolicitud.id_verificacion_ruc}/documento/servir?token=${encodeURIComponent(user.accessToken)}`);
+                                                                
+                                                                // Mostrar indicador de carga
+                                                                const button = e.currentTarget;
+                                                                const originalText = button.textContent;
+                                                                button.textContent = '⏳ Descargando...';
+                                                                button.disabled = true;
+                                                                
+                                                                // Hacer fetch del archivo con autenticación
+                                                                const response = await fetch(authUrl, {
+                                                                    method: 'GET',
+                                                                    headers: {
+                                                                        'Authorization': `Bearer ${user.accessToken}`
+                                                                    }
+                                                                });
+                                                                
+                                                                if (!response.ok) {
+                                                                    throw new Error(`Error al descargar: ${response.status} ${response.statusText}`);
+                                                                }
+                                                                
+                                                                // Obtener el nombre del archivo del header Content-Disposition o usar uno por defecto
+                                                                const contentDisposition = response.headers.get('Content-Disposition');
+                                                                let filename = `RUC_${selectedSolicitud.id_verificacion_ruc}.pdf`;
+                                                                if (contentDisposition) {
+                                                                    const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                                                                    if (filenameMatch && filenameMatch[1]) {
+                                                                        filename = filenameMatch[1].replace(/['"]/g, '');
+                                                                    }
+                                                                }
+                                                                
+                                                                // Convertir respuesta a blob
+                                                                const blob = await response.blob();
+                                                                
+                                                                // Crear URL del blob
+                                                                const blobUrl = window.URL.createObjectURL(blob);
+                                                                
+                                                                // Crear enlace de descarga
+                                                                const link = document.createElement('a');
+                                                                link.href = blobUrl;
+                                                                link.download = filename;
+                                                                link.style.display = 'none';
+                                                                
+                                                                // Agregar al DOM temporalmente
+                                                                document.body.appendChild(link);
+                                                                link.click();
+                                                                
+                                                                // Limpiar después de un delay
+                                                                setTimeout(() => {
+                                                                    link.remove();
+                                                                    window.URL.revokeObjectURL(blobUrl);
+                                                                    button.textContent = originalText;
+                                                                    button.disabled = false;
+                                                                }, 100);
+                                                                
+                                                                console.log('✅ Documento RUC descargado exitosamente');
+                                                            }
+                                                        } catch (error: any) {
+                                                            console.error('❌ Error descargando documento RUC:', error);
+                                                            showNotification('error', 'Error al descargar el documento RUC');
+                                                            
+                                                            // Restaurar botón en caso de error
+                                                            const button = e.currentTarget;
+                                                            button.textContent = '📥 Descargar';
+                                                            button.disabled = false;
+                                                        }
+                                                    }}
+                                                    className="text-green-600 hover:text-green-800 text-xs underline disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    📥 Descargar
+                                                </button>
                                             </div>
                                         </div>
                                     )}

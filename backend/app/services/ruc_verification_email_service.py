@@ -15,6 +15,40 @@ logger = logging.getLogger(__name__)
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 LOGIN_URL = f"{FRONTEND_URL}/#/login"
 
+def get_frontend_url() -> str:
+    """
+    Detecta automáticamente la URL del frontend según el entorno.
+    
+    Returns:
+        str: URL del frontend (local o producción)
+    """
+    # Si hay variable de entorno, usarla
+    if os.getenv("FRONTEND_URL"):
+        return os.getenv("FRONTEND_URL")
+    
+    # Detectar si estamos en producción (Railway, etc.)
+    is_production = (
+        os.getenv("RAILWAY_ENVIRONMENT") is not None or
+        os.getenv("RAILWAY_PUBLIC_DOMAIN") is not None or
+        os.getenv("VERCEL") is not None or
+        os.getenv("RENDER") is not None or
+        os.getenv("ENVIRONMENT") == "production" or
+        os.getenv("NODE_ENV") == "production"
+    )
+    
+    if is_production:
+        # En producción, intentar obtener la URL de Railway o usar una por defecto
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        if railway_domain:
+            # Railway proporciona el dominio público
+            return f"https://{railway_domain}"
+        else:
+            # Si no hay dominio específico, usar la variable de entorno o un valor por defecto
+            return os.getenv("FRONTEND_URL", "https://seva-empresas.railway.app")
+    else:
+        # En local, usar localhost
+        return "http://localhost:5173"
+
 
 class RUCVerificationEmailService:
     """Servicio para envío de emails de verificación de RUC"""
@@ -50,6 +84,14 @@ class RUCVerificationEmailService:
             emoji_estado = "❌"
             bg_color = "#fee2e2"
             border_color = "#ef4444"
+        
+        # Obtener la URL del frontend según el entorno
+        frontend_url = get_frontend_url()
+        url_login_actual = f"{frontend_url}/#/login"
+        
+        # Si se proporciona una URL de login personalizada, usarla
+        if url_login != LOGIN_URL:
+            url_login_actual = url_login
         
         html_content = f"""
         <!DOCTYPE html>
@@ -119,6 +161,29 @@ class RUCVerificationEmailService:
                 .boton-login:hover {{
                     background-color: #1d4ed8;
                 }}
+                .url-info {{
+                    background-color: #eff6ff;
+                    border: 1px solid #bfdbfe;
+                    border-radius: 6px;
+                    padding: 15px;
+                    margin: 20px 0;
+                    text-align: center;
+                }}
+                .url-info strong {{
+                    color: #1e40af;
+                    display: block;
+                    margin-bottom: 8px;
+                    font-size: 14px;
+                }}
+                .url-info a {{
+                    color: #2563eb;
+                    word-break: break-all;
+                    text-decoration: none;
+                    font-size: 14px;
+                }}
+                .url-info a:hover {{
+                    text-decoration: underline;
+                }}
                 .footer {{
                     margin-top: 30px;
                     padding-top: 20px;
@@ -149,12 +214,17 @@ class RUCVerificationEmailService:
                     {mensaje_detalle}
                 </div>
                 
+                <div class="url-info">
+                    <strong>🌐 Accede a la plataforma:</strong>
+                    <a href="{frontend_url}">{frontend_url}</a>
+                </div>
+                
                 <div style="text-align: center; margin: 30px 0;">
-                    {f'<a href="{FRONTEND_URL}/#/register?token={token_correccion}" class="boton-login">Corregir y reenviar RUC</a>' if estado_registro == "rechazada" and token_correccion else f'<a href="{url_login}" class="boton-login">Acceder a la plataforma</a>'}
+                    {f'<a href="{frontend_url}/#/register?token={token_correccion}" class="boton-login">Corregir y reenviar RUC</a>' if estado_registro == "rechazada" and token_correccion else f'<a href="{url_login_actual}" class="boton-login">Acceder a la plataforma</a>'}
                 </div>
                 
                 <p style="text-align: center; color: #6b7280; font-size: 14px;">
-                    {f'O copiá y pegá este enlace en tu navegador:<br><a href="{FRONTEND_URL}/#/register?token={token_correccion}" style="color: #2563eb; word-break: break-all;">{FRONTEND_URL}/#/register?token={token_correccion}</a>' if estado_registro == "rechazada" and token_correccion else f'O copiá y pegá este enlace en tu navegador:<br><a href="{url_login}" style="color: #2563eb; word-break: break-all;">{url_login}</a>'}
+                    {f'O copiá y pegá este enlace en tu navegador:<br><a href="{frontend_url}/#/register?token={token_correccion}" style="color: #2563eb; word-break: break-all;">{frontend_url}/#/register?token={token_correccion}</a>' if estado_registro == "rechazada" and token_correccion else f'O copiá y pegá este enlace en tu navegador:<br><a href="{url_login_actual}" style="color: #2563eb; word-break: break-all;">{url_login_actual}</a>'}
                 </p>
                 
                 <div class="footer">
@@ -169,6 +239,12 @@ class RUCVerificationEmailService:
         </html>
         """
         
+        # Obtener la URL del frontend según el entorno para el texto plano
+        frontend_url_text = get_frontend_url()
+        url_login_text = f"{frontend_url_text}/#/login"
+        if url_login != LOGIN_URL:
+            url_login_text = url_login
+        
         text_content = f"""
         Estado de tu registro en SeVa Empresas
         
@@ -178,7 +254,9 @@ class RUCVerificationEmailService:
         
         {mensaje_detalle}
         
-        {f'Corregir y reenviar: {FRONTEND_URL}/#/register?token={token_correccion}' if estado_registro == "rechazada" and token_correccion else f'Acceso: {url_login}'}
+        🌐 Accede a la plataforma: {frontend_url_text}
+        
+        {f'Corregir y reenviar: {frontend_url_text}/#/register?token={token_correccion}' if estado_registro == "rechazada" and token_correccion else f'Acceso: {url_login_text}'}
         
         Saludos,
         Equipo de SeVa Empresas

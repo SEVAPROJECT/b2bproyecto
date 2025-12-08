@@ -966,21 +966,34 @@ def serve_local_document(url_archivo: str, nombre_archivo: str) -> StreamingResp
     )
 
 def extract_file_key_from_idrive_url(url_archivo: str) -> str:
-    """Extrae la clave del archivo desde una URL de iDrive"""
+    """Extrae la clave del archivo desde una URL de iDrive
+    
+    Ejemplo:
+    URL: https://t7g5.la1.idrivee2-92.com/documentos/Otar%20EAS/Constancia%20de%20RUC/file.pdf
+    Key: Otar EAS/Constancia de RUC/file.pdf
+    """
+    from urllib.parse import unquote
+    
     url_parts = url_archivo.split('/')
     key_parts = []
     found_bucket = False
     
     for part in url_parts:
+        # Decodificar URL encoding (%20 -> espacio, etc.)
+        part_decoded = unquote(part)
+        
         if found_bucket:
-            key_parts.append(part)
+            key_parts.append(part_decoded)
         elif part in ['documentos', 'files', 'uploads'] or (IDRIVE_BUCKET_NAME and IDRIVE_BUCKET_NAME in part):
             found_bucket = True
     
     if not key_parts:
-        raise Exception("No se pudo extraer la clave de la URL")
+        raise Exception(f"No se pudo extraer la clave de la URL: {url_archivo}")
     
-    return '/'.join(key_parts)
+    key = '/'.join(key_parts)
+    print(f"🔍 URL original: {url_archivo}")
+    print(f"🔑 Key extraída: {key}")
+    return key
 
 async def download_from_idrive_direct(url_archivo: str) -> bytes:
     """Intenta descargar desde iDrive usando HTTP directo"""
@@ -992,12 +1005,21 @@ async def download_from_idrive_direct(url_archivo: str) -> bytes:
 def download_from_idrive_s3(url_archivo: str) -> bytes:
     """Intenta descargar desde iDrive usando el cliente S3
     
-    Nota: Esta función es síncrona porque boto3 (idrive_s3_client) es síncrono.
+    Nota: Esta función es síncrona porque boto3 (idrive_s3_client) es síncrona.
     Se ejecutará en un thread pool cuando se llame desde una función asíncrona.
     """
-    key = extract_file_key_from_idrive_url(url_archivo)
-    response = idrive_s3_client.get_object(Bucket=IDRIVE_BUCKET_NAME, Key=key)
-    return response['Body'].read()
+    try:
+        key = extract_file_key_from_idrive_url(url_archivo)
+        print(f"🔑 Clave extraída de URL: {key}")
+        print(f"📦 Bucket: {IDRIVE_BUCKET_NAME}")
+        response = idrive_s3_client.get_object(Bucket=IDRIVE_BUCKET_NAME, Key=key)
+        content = response['Body'].read()
+        print(f"✅ Documento descargado exitosamente desde S3 ({len(content)} bytes)")
+        return content
+    except Exception as e:
+        print(f"❌ Error en download_from_idrive_s3: {str(e)}")
+        print(f"   URL original: {url_archivo}")
+        raise
 
 async def download_from_idrive_with_headers(url_archivo: str) -> bytes:
     """Intenta descargar desde iDrive usando headers específicos"""
@@ -1015,16 +1037,31 @@ async def download_from_idrive_with_headers(url_archivo: str) -> bytes:
         return response.content
 
 async def download_idrive_document(url_archivo: str) -> bytes:
-    """Descarga un documento desde iDrive usando múltiples estrategias"""
+    """Descarga un documento desde iDrive usando múltiples estrategias
+    
+    Prioridad:
+    1. Cliente S3 (más confiable, usa credenciales)
+    2. HTTP directo con headers
+    3. HTTP directo simple
+    """
     import asyncio
+    # Intentar primero con S3 (más confiable porque usa credenciales)
     try:
-        return await download_from_idrive_direct(url_archivo)
-    except Exception:
+        return await asyncio.to_thread(download_from_idrive_s3, url_archivo)
+    except Exception as e1:
+        print(f"⚠️ Error descargando con S3: {str(e1)}")
+        # Intentar con headers (puede funcionar para algunos casos)
         try:
-            # Ejecutar función síncrona en thread pool para no bloquear el event loop
-            return await asyncio.to_thread(download_from_idrive_s3, url_archivo)
-        except Exception:
             return await download_from_idrive_with_headers(url_archivo)
+        except Exception as e2:
+            print(f"⚠️ Error descargando con headers: {str(e2)}")
+            # Último intento: HTTP directo
+            try:
+                return await download_from_idrive_direct(url_archivo)
+            except Exception as e3:
+                print(f"❌ Error descargando con HTTP directo: {str(e3)}")
+                # Si todos fallan, relanzar el último error
+                raise e3
 
 async def serve_idrive_document(url_archivo: str, nombre_archivo: str, extension: str) -> StreamingResponse:
     """Sirve un documento desde iDrive"""
@@ -1097,6 +1134,84 @@ async def servir_documento(
         extension = '.' + nombre_archivo.split('.')[-1]
     
     return await serve_document_by_storage_type(documento, nombre_archivo, extension)
+
+@router.get(
+    "/verificaciones-ruc/{id_verificacion_ruc}/documento/servir",
+    description="Sirve directamente el documento RUC desde el backend con autenticación."
+)
+async def servir_documento_ruc(
+    id_verificacion_ruc: int,
+    token: Optional[str] = Query(None, description="Token de autenticación del administrador (opcional, también se valida con Bearer token)"),
+    admin_user: UserProfileAndRolesOut = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Sirve directamente el documento RUC desde el backend con autenticación"""
+    conn = None
+    try:
+        # Obtener la verificación RUC usando direct_db_service
+        conn = await direct_db_service.get_connection()
+        
+        verificacion_row = await conn.fetchrow("""
+            SELECT 
+                vr.id_verificacion_ruc,
+                vr.url_documento,
+                vr.user_id,
+                td.tipo_documento
+            FROM verificacion_ruc vr
+            LEFT JOIN tipo_documento td ON vr.id_tip_documento = td.id_tip_documento
+            WHERE vr.id_verificacion_ruc = $1
+        """, id_verificacion_ruc)
+        
+        if not verificacion_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Verificación de RUC no encontrada"
+            )
+        
+        url_documento = verificacion_row['url_documento']
+        tipo_documento = verificacion_row['tipo_documento'] or 'Constancia de RUC'
+        
+        if not url_documento or url_documento == 'temp://pending':
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Documento RUC no disponible."
+            )
+        
+        # Generar nombre de archivo
+        # Extraer extensión de la URL
+        extension = '.pdf'  # Por defecto
+        if '.' in url_documento:
+            last_part = url_documento.split('/')[-1]
+            if '.' in last_part:
+                extension = '.' + last_part.split('.')[-1].lower()
+        
+        nombre_archivo = f"{tipo_documento}_{id_verificacion_ruc}{extension}"
+        
+        # Crear un objeto similar a Documento para usar la función existente
+        # Usamos una clase simple o un diccionario
+        class DocumentoRUC:
+            def __init__(self, url_archivo: str):
+                self.url_archivo = url_archivo
+        
+        documento_ruc = DocumentoRUC(url_documento)
+        
+        # Usar la misma lógica de servir documento
+        # La función serve_document_by_storage_type espera un objeto con atributo url_archivo
+        return await serve_document_by_storage_type(documento_ruc, nombre_archivo, extension)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error sirviendo documento RUC: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al servir documento RUC: {str(e)}"
+        )
+    finally:
+        if conn:
+            await direct_db_service.pool.release(conn)
 
 # ========================================
 # GESTIÓN DE USUARIOS
@@ -4160,6 +4275,8 @@ async def aprobar_verificacion_ruc(
         # Obtener datos del usuario para enviar email
         user_email = None
         nombre_contacto = None
+        email_aprobacion_enviado = False
+        email_confirmacion_supabase_enviado = False
         try:
             # Obtener datos del usuario desde la base de datos
             user_row = await conn.fetchrow("""
@@ -4185,17 +4302,39 @@ async def aprobar_verificacion_ruc(
             if user_email and nombre_contacto:
                 try:
                     import asyncio
-                    email_enviado = await asyncio.to_thread(
+                    # 1. Enviar email de aprobación personalizado
+                    email_aprobacion_enviado = await asyncio.to_thread(
                         RUCVerificationEmailService.enviar_email_aprobacion,
                         to_email=user_email,
                         nombre_contacto=nombre_contacto
                     )
-                    if email_enviado:
+                    if email_aprobacion_enviado:
                         print(f"✅ Email de aprobación enviado a {user_email}")
                     else:
                         print(f"⚠️ No se pudo enviar email de aprobación a {user_email}")
                 except Exception as e:
                     print(f"⚠️ Error enviando email de aprobación: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # No fallar si el email no se puede enviar
+                
+                # 2. Enviar correo de confirmación de Supabase
+                try:
+                    if supabase_auth:
+                        print(f"📧 Enviando correo de confirmación de Supabase a {user_email}...")
+                        await asyncio.to_thread(
+                            supabase_auth.auth.resend,
+                            {
+                                "type": "signup",
+                                "email": user_email
+                            }
+                        )
+                        email_confirmacion_supabase_enviado = True
+                        print(f"✅ Correo de confirmación de Supabase enviado a {user_email}")
+                    else:
+                        print(f"⚠️ supabase_auth no está configurado, no se puede enviar correo de confirmación")
+                except Exception as e:
+                    print(f"⚠️ Error enviando correo de confirmación de Supabase: {e}")
                     import traceback
                     traceback.print_exc()
                     # No fallar si el email no se puede enviar
@@ -4208,10 +4347,11 @@ async def aprobar_verificacion_ruc(
         print(f"✅ Verificación de RUC {id_verificacion_ruc} aprobada exitosamente")
         
         return {
-            "message": "Verificación de RUC aprobada. Usuario activado y email de confirmación enviado.",
+            "message": "Verificación de RUC aprobada. Usuario activado y emails enviados.",
             "id_verificacion_ruc": id_verificacion_ruc,
             "user_id": user_id_str,
-            "email_enviado": user_email is not None
+            "email_aprobacion_enviado": email_aprobacion_enviado,
+            "email_confirmacion_supabase_enviado": email_confirmacion_supabase_enviado
         }
         
     except HTTPException:

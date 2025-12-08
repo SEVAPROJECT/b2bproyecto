@@ -38,6 +38,14 @@ const RegisterPage: React.FC = () => {
             return;
         }
         
+        // Validar tamaño del archivo antes de enviar (validación adicional)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (rucDocument.size > maxSize) {
+            const fileSizeMB = (rucDocument.size / 1024 / 1024).toFixed(2);
+            alert(`El archivo no debe superar los 10MB. El archivo seleccionado tiene ${fileSizeMB}MB`);
+            return;
+        }
+        
         setIsProcessing(true);
         setProcessingMessage(isCorrigiendoRUC ? 'Reenviando verificación de RUC...' : 'Creando tu cuenta...');
         
@@ -156,8 +164,10 @@ const RegisterPage: React.FC = () => {
             // Validar tamaño (10MB máximo)
             const maxSize = 10 * 1024 * 1024; // 10MB
             if (file.size > maxSize) {
-                alert('El archivo no debe superar los 10MB');
+                const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+                alert(`El archivo no debe superar los 10MB. El archivo seleccionado tiene ${fileSizeMB}MB`);
                 e.target.value = '';
+                setRucDocument(null);
                 return;
             }
             setRucDocument(file);
@@ -268,6 +278,7 @@ const RegisterPage: React.FC = () => {
                             )}
                             <p className="text-sm text-slate-500 bg-blue-50 p-3 rounded-lg border border-blue-200">
                                 <strong>Importante:</strong> Debes subir la constancia de RUC de tu empresa (PDF o imagen). 
+                                El archivo no debe superar los <strong>10MB</strong>. 
                                 Tu cuenta será activada en un plazo máximo de 72 horas hábiles después de que nuestro equipo verifique tu documento.
                             </p>
                         </div>
