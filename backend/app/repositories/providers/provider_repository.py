@@ -299,12 +299,20 @@ class ProviderRepository:
         """
         Crea una solicitud de verificación en la base de datos.
         Acceso a datos - INSERT.
+        
+        IMPORTANTE: Usa DateService.now_for_database() para mantener consistencia
+        con las fechas de actualización (fecha_revision) y evitar problemas de zona horaria.
         """
+        from app.services.date_service import DateService
+        
+        # Usar DateService para obtener fecha en UTC de forma consistente
+        fecha_solicitud = DateService.now_for_database()
+        
         nueva_solicitud_row = await conn.fetchrow("""
-            INSERT INTO verificacion_solicitud (id_perfil, estado, comentario)
-            VALUES ($1, $2, $3)
+            INSERT INTO verificacion_solicitud (id_perfil, estado, comentario, fecha_solicitud)
+            VALUES ($1, $2, $3, $4)
             RETURNING id_verificacion, id_perfil, estado, comentario, fecha_solicitud, created_at
-        """, id_perfil, estado, comentario_solicitud)
+        """, id_perfil, estado, comentario_solicitud, fecha_solicitud)
         
         return dict(nueva_solicitud_row)
 

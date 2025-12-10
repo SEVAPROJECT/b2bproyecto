@@ -29,12 +29,19 @@ class DateService:
         Obtiene la fecha y hora actual en UTC para insertar en la base de datos
         La base de datos está configurada en UTC, por lo que enviamos fechas UTC
         
+        IMPORTANTE: Para mantener consistencia con PostgreSQL now(), usamos datetime.utcnow()
+        que devuelve la hora actual en UTC sin conversión de zona horaria.
+        Esto evita problemas donde las fechas se guardan un día adelantado.
+        
         Returns:
-            datetime: Fecha y hora actual en UTC
+            datetime: Fecha y hora actual en UTC (sin timezone info para compatibilidad con PostgreSQL)
         """
-        # Obtener fecha en GMT-3 y convertir a UTC para la base de datos
-        paraguay_time = datetime.now(cls.PARAGUAY_TIMEZONE)
-        return paraguay_time.astimezone(timezone.utc)
+        # Usar utcnow() directamente para obtener UTC sin conversión
+        # Esto es consistente con PostgreSQL now() que también devuelve UTC
+        utc_now = datetime.now(timezone.utc)
+        # Retornar sin timezone info para compatibilidad con SQLAlchemy/PostgreSQL
+        # PostgreSQL almacena fechas sin timezone, así que removemos el tzinfo
+        return utc_now.replace(tzinfo=None)
     
     @classmethod
     def utcnow(cls) -> datetime:

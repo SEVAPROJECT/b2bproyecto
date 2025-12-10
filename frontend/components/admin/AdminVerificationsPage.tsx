@@ -88,9 +88,58 @@ const AdminVerificationsPage: React.FC = () => {
         
         let result;
         if (format === 'fullDateTime') {
-            result = dateUtils.convertUTCToParaguay(date);
+            // Para fullDateTime, extraer fecha y hora del string ISO sin conversión UTC
+            if (typeof date === 'string') {
+                // Extraer solo la parte de fecha (YYYY-MM-DD) del string ISO
+                // Esto evita problemas de zona horaria al no crear objetos Date
+                const dateOnly = date.split('T')[0].split(' ')[0]; // Maneja tanto ISO como otros formatos
+                
+                if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+                    // Formatear fecha directamente desde el string sin conversión UTC
+                    const [year, month, day] = dateOnly.split('-');
+                    const formattedDate = `${day}/${month}/${year}`;
+                    
+                    // Extraer hora del string ISO (puede estar después de T o espacio)
+                    let formattedTime = '00:00';
+                    const timeMatch = date.match(/[T ](\d{2}:\d{2}):\d{2}/);
+                    if (timeMatch) {
+                        formattedTime = timeMatch[1];
+                    } else {
+                        // Intentar formato más simple
+                        const simpleTimeMatch = date.match(/[T ](\d{2}:\d{2})/);
+                        if (simpleTimeMatch) {
+                            formattedTime = simpleTimeMatch[1];
+                        }
+                    }
+                    
+                    result = `${formattedDate} ${formattedTime}`;
+                } else {
+                    // Fallback: usar la función de utilidad
+                    result = dateUtils.formatParaguayDateTime(date);
+                }
+            } else {
+                // Si es Date object, usar la función de utilidad
+                result = dateUtils.formatParaguayDateTime(date);
+            }
         } else {
-            result = dateUtils.convertUTCToParaguayDate(date);
+            // Para dateOnly, extraer solo la parte de fecha sin conversión UTC
+            // Esto evita el problema de que las fechas se adelanten un día
+            if (typeof date === 'string') {
+                // Si es string ISO, extraer solo la parte de fecha (YYYY-MM-DD) antes de formatear
+                // Esto evita problemas de zona horaria al no crear un objeto Date
+                const dateOnly = date.split('T')[0].split(' ')[0]; // Maneja tanto ISO como otros formatos
+                if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+                    // Formatear directamente desde el string YYYY-MM-DD sin conversión UTC
+                    const [year, month, day] = dateOnly.split('-');
+                    result = `${day}/${month}/${year}`;
+                } else {
+                    // Fallback: usar la función de utilidad
+                    result = dateUtils.convertUTCToParaguayDate(dateOnly || date);
+                }
+            } else {
+                // Si es Date object, formatear directamente sin conversión UTC
+                result = dateUtils.formatParaguayDate(date);
+            }
         }
         
         return result;
@@ -1103,6 +1152,14 @@ const AdminVerificationsPage: React.FC = () => {
                                             }
                                         </p>
                                     </div>
+                                    {activeTab === 'proveedores' && selectedSolicitud.fecha_revision && (
+                                        <div>
+                                            <span className="text-sm font-medium text-slate-600">Fecha de Revisión:</span>
+                                            <p className="text-slate-800">
+                                                {formatDate(selectedSolicitud.fecha_revision, 'fullDateTime')}
+                                            </p>
+                                        </div>
+                                    )}
                                     <div>
                                         <span className="text-sm font-medium text-slate-600">Estado:</span>
                                         {(() => {

@@ -90,7 +90,9 @@ class RUCVerificationService:
             logger.info(f"✅ Documento RUC subido: {url_documento}")
             
             # 5. Calcular fecha límite (72 horas hábiles desde ahora)
-            fecha_creacion = datetime.now()
+            # Usar DateService para mantener consistencia con otras fechas del sistema
+            from app.services.date_service import DateService
+            fecha_creacion = DateService.now_for_database()
             fecha_limite = BusinessDaysService.calcular_72_horas_habiles(fecha_creacion)
             logger.info(f"📅 Fecha límite de verificación: {fecha_limite}")
             
