@@ -23,6 +23,7 @@ from app.models.empresa.verificacion_ruc import VerificacionRUC
 from app.services.ruc_verification_service import RUCVerificationService
 from app.services.business_days_service import BusinessDaysService
 from app.services.ruc_verification_email_service import RUCVerificationEmailService
+from app.services.provider_verification_email_service import ProviderVerificationEmailService
 from app.models.perfil import UserModel
 from app.models.rol import RolModel
 from app.models.usuario_rol import UsuarioRolModel
@@ -595,6 +596,56 @@ async def aprobar_solicitud(
 
         print(f"✅ Solicitud {solicitud_id} aprobada exitosamente")
         print(f"✅ Usuario {perfil_empresa.user_id} ahora es proveedor")
+        
+        # Enviar email de notificación al proveedor (no debe fallar la aprobación)
+        try:
+            print(f"📧 Preparando envío de email de aprobación...")
+            
+            # Obtener datos del usuario para el email
+            nombre_contacto = "Usuario"
+            nombre_empresa = perfil_empresa.nombre_fantasia or perfil_empresa.razon_social or "Tu empresa"
+            user_email = None
+            
+            # Obtener nombre del contacto desde la base de datos
+            try:
+                user_query = select(UserModel).where(UserModel.id == perfil_empresa.user_id)
+                user_result = await db.execute(user_query)
+                user = user_result.scalars().first()
+                if user and user.nombre_persona:
+                    nombre_contacto = user.nombre_persona
+            except Exception as e:
+                print(f"⚠️ Error obteniendo nombre del usuario: {e}")
+            
+            # Obtener email desde Supabase Auth
+            try:
+                if supabase_admin and perfil_empresa.user_id:
+                    auth_user = supabase_admin.auth.admin.get_user_by_id(str(perfil_empresa.user_id))
+                    if auth_user and auth_user.user and auth_user.user.email:
+                        user_email = auth_user.user.email
+                        print(f"✅ Email obtenido: {user_email}")
+            except Exception as e:
+                print(f"⚠️ Error obteniendo email desde Supabase: {e}")
+            
+            # Enviar email si tenemos el email
+            if user_email:
+                email_enviado = ProviderVerificationEmailService.enviar_email_aprobacion(
+                    to_email=user_email,
+                    nombre_contacto=nombre_contacto,
+                    nombre_empresa=nombre_empresa,
+                    comentario=decision.comentario if decision.comentario else None
+                )
+                if email_enviado:
+                    print(f"✅ Email de aprobación enviado exitosamente a {user_email}")
+                else:
+                    print(f"⚠️ No se pudo enviar el email de aprobación a {user_email}")
+            else:
+                print(f"⚠️ No se pudo obtener el email del usuario, no se enviará notificación")
+        except Exception as e:
+            # No fallar la aprobación si el email falla
+            print(f"⚠️ Error enviando email de aprobación (no crítico): {e}")
+            import traceback
+            print(f"📋 Traceback: {traceback.format_exc()}")
+        
         return {"message": "Solicitud aprobada, perfil verificado y usuario promovido a proveedor."}
         
     except Exception as e:
@@ -653,6 +704,64 @@ async def rechazar_solicitud(
         await db.commit()
 
         print(f"✅ Solicitud {solicitud_id} rechazada exitosamente")
+        
+        # Enviar email de notificación al proveedor (no debe fallar el rechazo)
+        try:
+            print(f"📧 Preparando envío de email de rechazo...")
+            
+            # Obtener perfil de empresa para obtener datos del usuario
+            perfil_empresa_query = select(PerfilEmpresa).where(PerfilEmpresa.id_perfil == solicitud.id_perfil)
+            perfil_empresa_result = await db.execute(perfil_empresa_query)
+            perfil_empresa = perfil_empresa_result.scalars().first()
+            
+            if perfil_empresa:
+                # Obtener datos del usuario para el email
+                nombre_contacto = "Usuario"
+                nombre_empresa = perfil_empresa.nombre_fantasia or perfil_empresa.razon_social or "Tu empresa"
+                user_email = None
+                
+                # Obtener nombre del contacto desde la base de datos
+                try:
+                    user_query = select(UserModel).where(UserModel.id == perfil_empresa.user_id)
+                    user_result = await db.execute(user_query)
+                    user = user_result.scalars().first()
+                    if user and user.nombre_persona:
+                        nombre_contacto = user.nombre_persona
+                except Exception as e:
+                    print(f"⚠️ Error obteniendo nombre del usuario: {e}")
+                
+                # Obtener email desde Supabase Auth
+                try:
+                    if supabase_admin and perfil_empresa.user_id:
+                        auth_user = supabase_admin.auth.admin.get_user_by_id(str(perfil_empresa.user_id))
+                        if auth_user and auth_user.user and auth_user.user.email:
+                            user_email = auth_user.user.email
+                            print(f"✅ Email obtenido: {user_email}")
+                except Exception as e:
+                    print(f"⚠️ Error obteniendo email desde Supabase: {e}")
+                
+                # Enviar email si tenemos el email
+                if user_email:
+                    email_enviado = ProviderVerificationEmailService.enviar_email_rechazo(
+                        to_email=user_email,
+                        nombre_contacto=nombre_contacto,
+                        nombre_empresa=nombre_empresa,
+                        comentario=decision.comentario
+                    )
+                    if email_enviado:
+                        print(f"✅ Email de rechazo enviado exitosamente a {user_email}")
+                    else:
+                        print(f"⚠️ No se pudo enviar el email de rechazo a {user_email}")
+                else:
+                    print(f"⚠️ No se pudo obtener el email del usuario, no se enviará notificación")
+            else:
+                print(f"⚠️ No se encontró perfil de empresa, no se enviará email")
+        except Exception as e:
+            # No fallar el rechazo si el email falla
+            print(f"⚠️ Error enviando email de rechazo (no crítico): {e}")
+            import traceback
+            print(f"📋 Traceback: {traceback.format_exc()}")
+        
         return {"message": "Solicitud rechazada."}
         
     except Exception as e:

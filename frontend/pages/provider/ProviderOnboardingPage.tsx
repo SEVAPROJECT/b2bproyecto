@@ -750,7 +750,8 @@ const ProviderOnboardingPage: React.FC = () => {
                     setRucVerificationStatus(rucStatus);
                     
                     // Si el RUC no está aprobado, mostrar mensaje
-                    if (rucStatus.estado !== 'aprobado') {
+                    // Nota: El backend puede devolver 'aprobado' o 'aprobada' (inconsistencia de género)
+                    if (rucStatus.estado !== 'aprobado' && rucStatus.estado !== 'aprobada') {
                         console.warn('⚠️ RUC no aprobado:', rucStatus);
                     }
                 } else {
@@ -1139,12 +1140,14 @@ const ProviderOnboardingPage: React.FC = () => {
         }
         
         // Validar que el RUC esté aprobado (solo para usuarios nuevos con verificación de RUC)
+        // Nota: El backend puede devolver 'aprobado' o 'aprobada' (inconsistencia de género)
         if (rucVerificationStatus && rucVerificationStatus.estado !== 'no_encontrado') {
-            if (rucVerificationStatus.estado !== 'aprobado') {
+            const estadoAprobado = rucVerificationStatus.estado === 'aprobado' || rucVerificationStatus.estado === 'aprobada';
+            if (!estadoAprobado) {
                 let mensaje = 'Tu constancia de RUC debe estar aprobada antes de poder solicitar ser proveedor. ';
                 if (rucVerificationStatus.estado === 'pendiente') {
                     mensaje += 'Tu RUC está en proceso de verificación. Te notificaremos cuando sea aprobado.';
-                } else if (rucVerificationStatus.estado === 'rechazado') {
+                } else if (rucVerificationStatus.estado === 'rechazado' || rucVerificationStatus.estado === 'rechazada') {
                     mensaje += 'Tu RUC fue rechazado. Por favor, contacta al administrador para más información.';
                 }
                 alert(mensaje);
@@ -1272,7 +1275,9 @@ const ProviderOnboardingPage: React.FC = () => {
     }
 
     // Si el RUC no está aprobado y existe verificación, mostrar mensaje
-    if (rucVerificationStatus && rucVerificationStatus.estado !== 'no_encontrado' && rucVerificationStatus.estado !== 'aprobado') {
+    // Nota: El backend puede devolver 'aprobado' o 'aprobada' (inconsistencia de género)
+    const estadoAprobado = rucVerificationStatus?.estado === 'aprobado' || rucVerificationStatus?.estado === 'aprobada';
+    if (rucVerificationStatus && rucVerificationStatus.estado !== 'no_encontrado' && !estadoAprobado) {
         return (
             <div className="min-h-screen flex items-center justify-center px-4">
                 <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
@@ -1286,20 +1291,26 @@ const ProviderOnboardingPage: React.FC = () => {
                     <h2 className="text-xl font-semibold text-slate-900 mb-2">
                         Verificación de RUC Pendiente
                     </h2>
-                    {rucVerificationStatus.estado === 'pendiente' && (
+                    {(rucVerificationStatus.estado === 'pendiente' || 
+                      (rucVerificationStatus.estado !== 'aprobado' && 
+                       rucVerificationStatus.estado !== 'aprobada' && 
+                       rucVerificationStatus.estado !== 'no_encontrado')) && (
                         <>
                             <p className="text-slate-600 mb-4">
-                                Tu constancia de RUC está en proceso de verificación. 
-                                Debes esperar a que sea aprobada antes de poder solicitar ser proveedor.
+                                {rucVerificationStatus.estado === 'pendiente' 
+                                    ? 'Tu constancia de RUC está en proceso de verificación. Debes esperar a que sea aprobada antes de poder solicitar ser proveedor.'
+                                    : rucVerificationStatus.estado === 'rechazado' || rucVerificationStatus.estado === 'rechazada'
+                                    ? 'Tu constancia de RUC fue rechazada. Por favor, contacta al administrador para más información.'
+                                    : 'Tu constancia de RUC debe estar aprobada antes de poder solicitar ser proveedor.'}
                             </p>
-                            {rucVerificationStatus.tiempo_restante_horas && (
+                            {rucVerificationStatus.estado === 'pendiente' && rucVerificationStatus.tiempo_restante_horas && (
                                 <p className="text-sm text-slate-500 mb-4">
                                     Tiempo estimado de verificación: {rucVerificationStatus.tiempo_restante_horas} horas hábiles
                                 </p>
                             )}
                         </>
                     )}
-                    {rucVerificationStatus.estado === 'rechazado' && (
+                    {(rucVerificationStatus.estado === 'rechazado' || rucVerificationStatus.estado === 'rechazada') && (
                         <>
                             <p className="text-slate-600 mb-4">
                                 Tu constancia de RUC fue rechazada. 
