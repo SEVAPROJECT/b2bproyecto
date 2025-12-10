@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 import uuid
 from app.api.v1.dependencies.database_supabase import get_async_db
 from app.models.empresa.verificacion_solicitud import VerificacionSolicitud
@@ -3156,19 +3156,38 @@ def get_user_email_from_supabase_auth(user_id: uuid.UUID) -> str:
         pass
     return VALOR_DEFAULT_NO_DISPONIBLE
 
-async def get_user_contact_info_for_report(conn, empresa: Optional[dict]) -> tuple[str, str]:
-    """Obtiene el nombre y email del usuario de contacto usando direct_db_service"""
+async def get_user_contact_info_for_report(conn, empresa: Optional[dict], emails_dict: Dict[str, Dict[str, Any]] = None) -> tuple[str, str]:
+    """Obtiene el nombre y email del usuario de contacto usando direct_db_service
+    
+    Args:
+        conn: Conexión a la base de datos
+        empresa: Diccionario con información de la empresa (debe tener 'user_id')
+        emails_dict: Diccionario de emails pre-cargados en batch (opcional, si no se proporciona se obtiene individualmente)
+    
+    Returns:
+        tuple: (nombre_contacto, email_contacto)
+    """
     user_nombre = VALOR_DEFAULT_NO_DISPONIBLE
     user_email = VALOR_DEFAULT_NO_DISPONIBLE
     
     if not empresa or not empresa.get('user_id'):
         return user_nombre, user_email
     
-    user = await get_user_by_id_from_db(conn, empresa['user_id'])
+    user_id = empresa['user_id']
+    user_id_str = str(user_id)
+    
+    # Obtener nombre del usuario desde la BD
+    user = await get_user_by_id_from_db(conn, user_id)
     
     if user:
         user_nombre = user.get('nombre_persona') or VALOR_DEFAULT_NO_DISPONIBLE
-        user_email = get_user_email_from_supabase_auth(empresa['user_id'])
+        
+        # Obtener email: usar diccionario batch si está disponible, sino hacer llamada individual
+        if emails_dict and user_id_str in emails_dict:
+            user_email = emails_dict[user_id_str].get('email', VALOR_DEFAULT_NO_DISPONIBLE)
+        else:
+            # Fallback: llamada individual (solo si no se proporcionó el diccionario)
+            user_email = get_user_email_from_supabase_auth(user_id)
     
     return user_nombre, user_email
 
@@ -3199,10 +3218,19 @@ def format_solicitud_date(date_value) -> Optional[str]:
     # Fallback: usar format_date_dd_mm_yyyy
     return format_date_dd_mm_yyyy(date_value)
 
-async def process_solicitud_data_for_report(conn, solicitud: dict) -> dict:
-    """Procesa una solicitud y retorna su diccionario para el reporte usando direct_db_service"""
+async def process_solicitud_data_for_report(conn, solicitud: dict, emails_dict: Dict[str, Dict[str, Any]] = None) -> dict:
+    """Procesa una solicitud y retorna su diccionario para el reporte usando direct_db_service
+    
+    Args:
+        conn: Conexión a la base de datos
+        solicitud: Diccionario con datos de la solicitud
+        emails_dict: Diccionario de emails pre-cargados en batch (opcional)
+    
+    Returns:
+        dict: Diccionario con datos procesados de la solicitud
+    """
     empresa = await get_empresa_by_perfil_id_for_report(conn, solicitud['id_perfil'])
-    user_nombre, user_email = await get_user_contact_info_for_report(conn, empresa)
+    user_nombre, user_email = await get_user_contact_info_for_report(conn, empresa, emails_dict)
     
     return {
         "razon_social": empresa.get('razon_social') if empresa else VALOR_DEFAULT_NO_DISPONIBLE,
@@ -3216,11 +3244,115 @@ async def process_solicitud_data_for_report(conn, solicitud: dict) -> dict:
     }
 
 async def process_all_solicitudes(conn, solicitudes: list[dict]) -> list[dict]:
-    """Procesa todas las solicitudes y retorna la lista completa usando direct_db_service"""
+    """
+    Procesa todas las solicitudes y retorna la lista completa usando direct_db_service.
+    Optimizado con batch para obtener emails en una sola query (evita N+1 problem).
+    
+    Args:
+        conn: Conexión a la base de datos
+        solicitudes: Lista de diccionarios con datos de solicitudes
+    
+    Returns:
+        list: Lista de diccionarios con datos procesados de todas las solicitudes
+    """
+    if not solicitudes:
+        return []
+    
+    print(f"🔍 [process_all_solicitudes] Procesando {len(solicitudes)} solicitudes...")
+    
+    # Paso 1: Obtener todos los id_perfil únicos para obtener empresas
+    perfil_ids = list(set(solicitud['id_perfil'] for solicitud in solicitudes if solicitud.get('id_perfil')))
+    print(f"🔍 [process_all_solicitudes] Obteniendo {len(perfil_ids)} empresas únicas...")
+    
+    # Paso 2: Obtener todas las empresas en batch (una sola query)
+    empresas_dict = {}
+    if perfil_ids:
+        # Crear placeholders para la query IN
+        placeholders = ','.join([f'${i+1}' for i in range(len(perfil_ids))])
+        empresas_query = f"""
+            SELECT 
+                id_perfil,
+                user_id,
+                razon_social,
+                nombre_fantasia,
+                estado,
+                verificado
+            FROM perfil_empresa
+            WHERE id_perfil IN ({placeholders})
+        """
+        empresas_rows = await conn.fetch(empresas_query, *perfil_ids)
+        empresas_dict = {row['id_perfil']: dict(row) for row in empresas_rows}
+        print(f"✅ [process_all_solicitudes] Empresas obtenidas: {len(empresas_dict)} de {len(perfil_ids)}")
+    
+    # Paso 3: Obtener todos los user_ids únicos de las empresas
+    user_ids = list(set(
+        empresa['user_id'] for empresa in empresas_dict.values() 
+        if empresa.get('user_id')
+    ))
+    print(f"🔍 [process_all_solicitudes] Obteniendo emails para {len(user_ids)} usuarios únicos...")
+    
+    # Paso 4: Obtener todos los emails en una sola query batch (OPTIMIZACIÓN CRÍTICA)
+    emails_dict = {}
+    if user_ids:
+        user_ids_str = [str(uid) for uid in user_ids]
+        emails_dict = await get_emails_batch_from_auth(conn, user_ids_str)
+        print(f"✅ [process_all_solicitudes] Emails obtenidos: {len(emails_dict)} de {len(user_ids)} usuarios")
+    
+    # Paso 5: Obtener todos los usuarios en batch (una sola query)
+    usuarios_dict = {}
+    if user_ids:
+        # Crear placeholders para la query IN
+        placeholders = ','.join([f'${i+1}' for i in range(len(user_ids))])
+        usuarios_query = f"""
+            SELECT 
+                id,
+                nombre_persona,
+                nombre_empresa,
+                ruc,
+                estado,
+                foto_perfil
+            FROM users
+            WHERE id IN ({placeholders})
+        """
+        usuarios_rows = await conn.fetch(usuarios_query, *user_ids)
+        usuarios_dict = {str(row['id']): dict(row) for row in usuarios_rows}
+        print(f"✅ [process_all_solicitudes] Usuarios obtenidos: {len(usuarios_dict)} de {len(user_ids)}")
+    
+    # Paso 6: Procesar todas las solicitudes usando los diccionarios pre-cargados (sin queries adicionales)
     solicitudes_detalladas = []
     for solicitud in solicitudes:
-        solicitud_data = await process_solicitud_data_for_report(conn, solicitud)
+        id_perfil = solicitud.get('id_perfil')
+        empresa = empresas_dict.get(id_perfil) if id_perfil else None
+        
+        # Obtener información del usuario usando los diccionarios pre-cargados
+        user_nombre = VALOR_DEFAULT_NO_DISPONIBLE
+        user_email = VALOR_DEFAULT_NO_DISPONIBLE
+        
+        if empresa and empresa.get('user_id'):
+            user_id_str = str(empresa['user_id'])
+            usuario = usuarios_dict.get(user_id_str)
+            
+            if usuario:
+                user_nombre = usuario.get('nombre_persona') or VALOR_DEFAULT_NO_DISPONIBLE
+            
+            # Obtener email del diccionario batch
+            if user_id_str in emails_dict:
+                user_email = emails_dict[user_id_str].get('email', VALOR_DEFAULT_NO_DISPONIBLE)
+        
+        # Construir respuesta usando datos pre-cargados
+        solicitud_data = {
+            "razon_social": empresa.get('razon_social') if empresa else VALOR_DEFAULT_NO_DISPONIBLE,
+            "nombre_fantasia": empresa.get('nombre_fantasia') if empresa else VALOR_DEFAULT_NO_DISPONIBLE,
+            "nombre_contacto": user_nombre,
+            "email_contacto": user_email,
+            "estado": solicitud.get('estado'),
+            "fecha_solicitud": format_solicitud_date(solicitud.get('created_at')),
+            "fecha_revision": format_solicitud_date(solicitud.get('fecha_revision')),
+            "comentario": solicitud.get('comentario')
+        }
         solicitudes_detalladas.append(solicitud_data)
+    
+    print(f"✅ [process_all_solicitudes] Procesamiento completado: {len(solicitudes_detalladas)} solicitudes")
     return solicitudes_detalladas
 
 def build_solicitudes_report_response(solicitudes_detalladas: list[dict]) -> dict:
