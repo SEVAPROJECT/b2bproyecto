@@ -94,6 +94,9 @@ class RUCVerificationService:
             from app.services.date_service import DateService
             fecha_creacion = DateService.now_for_database()
             fecha_limite = BusinessDaysService.calcular_72_horas_habiles(fecha_creacion)
+            
+            # Log para depuración: verificar la fecha antes de insertar
+            logger.info(f"📅 Fecha creación (UTC): {fecha_creacion} (timezone: {fecha_creacion.tzinfo})")
             logger.info(f"📅 Fecha límite de verificación: {fecha_limite}")
             
             # 6. Crear registro en verificacion_ruc
@@ -101,6 +104,8 @@ class RUCVerificationService:
                 # asyncpg acepta objetos UUID directamente, pasarlo sin conversión
                 # El tipo de columna en PostgreSQL ya es UUID, así que asyncpg lo maneja automáticamente
                 logger.info(f"🔍 Intentando insertar verificación RUC para user_id: {user_id} (tipo: {type(user_id)})")
+                logger.info(f"🔍 Fecha creación a insertar: {fecha_creacion} (tipo: {type(fecha_creacion)}, tzinfo: {fecha_creacion.tzinfo})")
+                
                 verificacion_row = await conn.fetchrow("""
                     INSERT INTO verificacion_ruc (
                         user_id,
@@ -111,8 +116,12 @@ class RUCVerificationService:
                         fecha_limite_verificacion
                     )
                     VALUES ($1, $2, $3, 'pendiente', $4, $5)
-                    RETURNING id_verificacion_ruc
+                    RETURNING id_verificacion_ruc, fecha_creacion
                 """, user_id, id_tip_documento, url_documento, fecha_creacion, fecha_limite)
+                
+                # Log para verificar qué se guardó realmente
+                fecha_guardada = verificacion_row.get('fecha_creacion')
+                logger.info(f"✅ Fecha guardada en BD: {fecha_guardada} (tipo: {type(fecha_guardada)})")
                 
                 id_verificacion_ruc = verificacion_row['id_verificacion_ruc']
                 logger.info(f"✅ Verificación de RUC creada: ID {id_verificacion_ruc}")

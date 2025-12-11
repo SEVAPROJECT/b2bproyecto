@@ -88,57 +88,100 @@ const AdminVerificationsPage: React.FC = () => {
         
         let result;
         if (format === 'fullDateTime') {
-            // Para fullDateTime, extraer fecha y hora del string ISO sin conversión UTC
+            // Para fullDateTime, necesitamos convertir tanto la fecha como la hora de UTC a hora local
+            // IMPORTANTE: La fecha también puede cambiar cuando se convierte a hora local
+            // (ej: 2025-12-11 02:29 UTC = 2025-12-10 23:29 hora local)
             if (typeof date === 'string') {
-                // Extraer solo la parte de fecha (YYYY-MM-DD) del string ISO
-                // Esto evita problemas de zona horaria al no crear objetos Date
-                const dateOnly = date.split('T')[0].split(' ')[0]; // Maneja tanto ISO como otros formatos
-                
-                if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
-                    // Formatear fecha directamente desde el string sin conversión UTC
-                    const [year, month, day] = dateOnly.split('-');
-                    const formattedDate = `${day}/${month}/${year}`;
+                try {
+                    // Parsear el string ISO completo (incluye zona horaria) para obtener fecha y hora local
+                    const dateObj = new Date(date);
                     
-                    // Extraer hora del string ISO (puede estar después de T o espacio)
-                    let formattedTime = '00:00';
-                    const timeMatch = date.match(/[T ](\d{2}:\d{2}):\d{2}/);
-                    if (timeMatch) {
-                        formattedTime = timeMatch[1];
+                    // Verificar que la fecha sea válida
+                    if (!isNaN(dateObj.getTime())) {
+                        // Obtener fecha en hora local (puede ser diferente al día UTC)
+                        const day = String(dateObj.getDate()).padStart(2, '0');
+                        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                        const year = dateObj.getFullYear();
+                        const formattedDate = `${day}/${month}/${year}`;
+                        
+                        // Obtener hora y minutos en hora local
+                        const hours = String(dateObj.getHours()).padStart(2, '0');
+                        const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+                        const formattedTime = `${hours}:${minutes}`;
+                        
+                        result = `${formattedDate} ${formattedTime}`;
                     } else {
-                        // Intentar formato más simple
-                        const simpleTimeMatch = date.match(/[T ](\d{2}:\d{2})/);
-                        if (simpleTimeMatch) {
-                            formattedTime = simpleTimeMatch[1];
+                        // Si no se puede parsear, intentar extraer fecha y hora del string
+                        const dateOnly = date.split('T')[0].split(' ')[0];
+                        if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+                            const [year, month, day] = dateOnly.split('-');
+                            const formattedDate = `${day}/${month}/${year}`;
+                            const timeMatch = date.match(/[T ](\d{2}:\d{2}):\d{2}/);
+                            const formattedTime = timeMatch ? timeMatch[1] : '00:00';
+                            result = `${formattedDate} ${formattedTime}`;
+                        } else {
+                            result = dateUtils.formatParaguayDateTime(date);
                         }
                     }
-                    
-                    result = `${formattedDate} ${formattedTime}`;
-                } else {
-                    // Fallback: usar la función de utilidad
-                    result = dateUtils.formatParaguayDateTime(date);
+                } catch (e) {
+                    // Fallback: extraer fecha y hora directamente del string
+                    const dateOnly = date.split('T')[0].split(' ')[0];
+                    if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+                        const [year, month, day] = dateOnly.split('-');
+                        const formattedDate = `${day}/${month}/${year}`;
+                        const timeMatch = date.match(/[T ](\d{2}:\d{2}):\d{2}/);
+                        const formattedTime = timeMatch ? timeMatch[1] : '00:00';
+                        result = `${formattedDate} ${formattedTime}`;
+                    } else {
+                        result = dateUtils.formatParaguayDateTime(date);
+                    }
                 }
             } else {
-                // Si es Date object, usar la función de utilidad
+                // Si es Date object, usar la función de utilidad que maneja la conversión
                 result = dateUtils.formatParaguayDateTime(date);
             }
         } else {
-            // Para dateOnly, extraer solo la parte de fecha sin conversión UTC
-            // Esto evita el problema de que las fechas se adelanten un día
+            // Para dateOnly, necesitamos calcular la fecha correcta basándose en la hora local
+            // IMPORTANTE: La fecha puede cambiar cuando se convierte de UTC a hora local
+            // (ej: 2025-12-11 02:29 UTC = 2025-12-10 23:29 hora local, fecha = 10/12/2025)
             if (typeof date === 'string') {
-                // Si es string ISO, extraer solo la parte de fecha (YYYY-MM-DD) antes de formatear
-                // Esto evita problemas de zona horaria al no crear un objeto Date
-                const dateOnly = date.split('T')[0].split(' ')[0]; // Maneja tanto ISO como otros formatos
-                if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
-                    // Formatear directamente desde el string YYYY-MM-DD sin conversión UTC
-                    const [year, month, day] = dateOnly.split('-');
-                    result = `${day}/${month}/${year}`;
-                } else {
-                    // Fallback: usar la función de utilidad
-                    result = dateUtils.convertUTCToParaguayDate(dateOnly || date);
+                try {
+                    // Parsear el string ISO completo para obtener la fecha en hora local
+                    const dateObj = new Date(date);
+                    
+                    // Verificar que la fecha sea válida
+                    if (!isNaN(dateObj.getTime())) {
+                        // Obtener fecha en hora local (puede ser diferente al día UTC)
+                        const day = String(dateObj.getDate()).padStart(2, '0');
+                        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                        const year = dateObj.getFullYear();
+                        result = `${day}/${month}/${year}`;
+                    } else {
+                        // Si no se puede parsear, extraer fecha directamente del string
+                        const dateOnly = date.split('T')[0].split(' ')[0];
+                        if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+                            const [year, month, day] = dateOnly.split('-');
+                            result = `${day}/${month}/${year}`;
+                        } else {
+                            result = dateUtils.convertUTCToParaguayDate(date);
+                        }
+                    }
+                } catch (e) {
+                    // Fallback: extraer fecha directamente del string
+                    const dateOnly = date.split('T')[0].split(' ')[0];
+                    if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+                        const [year, month, day] = dateOnly.split('-');
+                        result = `${day}/${month}/${year}`;
+                    } else {
+                        result = dateUtils.convertUTCToParaguayDate(date);
+                    }
                 }
             } else {
-                // Si es Date object, formatear directamente sin conversión UTC
-                result = dateUtils.formatParaguayDate(date);
+                // Si es Date object, formatear usando la fecha en hora local
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                result = `${day}/${month}/${year}`;
             }
         }
         

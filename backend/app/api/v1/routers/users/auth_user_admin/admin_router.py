@@ -1625,10 +1625,58 @@ def build_user_list_query(where_clause: str, param_count: int, has_role_filter: 
 
 # Función unificada para formatear fechas a DD/MM/YYYY
 def format_date_dd_mm_yyyy(date_value) -> Optional[str]:
-    """Formatea una fecha a DD/MM/YYYY (función unificada para todas las fechas)"""
-    if date_value:
-        return date_value.strftime("%d/%m/%Y")
-    return None
+    """
+    Formatea una fecha a DD/MM/YYYY (función unificada para todas las fechas)
+    
+    IMPORTANTE: Las fechas vienen de PostgreSQL en UTC (aunque sean naive datetime).
+    Necesitamos convertir a hora local de Paraguay (GMT-3) antes de formatear
+    para evitar que se muestren fechas adelantadas un día.
+    """
+    if not date_value:
+        return None
+    
+    try:
+        # Si es un datetime naive (sin timezone), asumir que está en UTC
+        # (PostgreSQL devuelve fechas UTC aunque sean naive)
+        if isinstance(date_value, datetime):
+            # Si no tiene timezone, asumir UTC
+            if date_value.tzinfo is None:
+                # Convertir de UTC a hora local de Paraguay
+                date_paraguay = DateService.to_paraguay_timezone(date_value)
+            else:
+                # Si ya tiene timezone, convertir a Paraguay
+                date_paraguay = DateService.to_paraguay_timezone(date_value)
+            
+            # Formatear la fecha en hora local
+            return date_paraguay.strftime("%d/%m/%Y")
+        
+        # Si es string, intentar parsear
+        if isinstance(date_value, str):
+            # Si ya está en formato DD/MM/YYYY, retornar tal cual
+            import re
+            if re.match(r'^\d{2}/\d{2}/\d{4}$', date_value):
+                return date_value
+            
+            # Si es formato ISO, parsear y convertir
+            if 'T' in date_value or '+' in date_value or date_value.endswith('Z'):
+                try:
+                    date_str = date_value.replace('Z', '+00:00')
+                    date_obj = datetime.fromisoformat(date_str)
+                    date_paraguay = DateService.to_paraguay_timezone(date_obj)
+                    return date_paraguay.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+        
+        # Fallback: convertir a string y formatear
+        return str(date_value)
+    except Exception as e:
+        # Si hay error, intentar formatear directamente
+        try:
+            if isinstance(date_value, datetime):
+                return date_value.strftime("%d/%m/%Y")
+        except Exception:
+            pass
+        return None
 
 def get_emails_from_supabase_auth() -> dict:
     """Obtiene los emails de usuarios desde Supabase Auth"""
@@ -3192,30 +3240,16 @@ async def get_user_contact_info_for_report(conn, empresa: Optional[dict], emails
     return user_nombre, user_email
 
 def format_solicitud_date(date_value) -> Optional[str]:
-    """Formatea una fecha de solicitud a DD/MM/YYYY (igual que format_date_dd_mm_yyyy para consistencia)"""
+    """
+    Formatea una fecha de solicitud a DD/MM/YYYY (igual que format_date_dd_mm_yyyy para consistencia)
+    
+    IMPORTANTE: Usa format_date_dd_mm_yyyy que ahora convierte correctamente de UTC a hora local
+    para evitar que se muestren fechas adelantadas un día.
+    """
     if not date_value:
         return None
     
-    # Usar el mismo formato que el reporte de usuarios para consistencia
-    # Las fechas de asyncpg vienen como naive datetime, simplemente formatearlas sin conversión
-    # ya que el reporte de usuarios funciona correctamente así
-    if isinstance(date_value, datetime):
-        # Formatear solo la fecha (sin hora) - igual que format_date_dd_mm_yyyy
-        return date_value.strftime("%d/%m/%Y")
-    
-    # Si es string, intentar convertir primero
-    if isinstance(date_value, str):
-        try:
-            if date_value.endswith('Z'):
-                date_value = date_value.replace('Z', '+00:00')
-            elif '+' not in date_value and 'T' in date_value:
-                date_value = date_value + '+00:00'
-            date_obj = datetime.fromisoformat(date_value)
-            return date_obj.strftime("%d/%m/%Y")
-        except Exception:
-            pass
-    
-    # Fallback: usar format_date_dd_mm_yyyy
+    # Usar format_date_dd_mm_yyyy que ya maneja correctamente la conversión de UTC a hora local
     return format_date_dd_mm_yyyy(date_value)
 
 async def process_solicitud_data_for_report(conn, solicitud: dict, emails_dict: Dict[str, Dict[str, Any]] = None) -> dict:

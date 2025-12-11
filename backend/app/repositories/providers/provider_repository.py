@@ -306,13 +306,16 @@ class ProviderRepository:
         from app.services.date_service import DateService
         
         # Usar DateService para obtener fecha en UTC de forma consistente
+        # IMPORTANTE: Establecer tanto fecha_solicitud como created_at explícitamente
+        # para evitar problemas de zona horaria con server_default
         fecha_solicitud = DateService.now_for_database()
+        created_at = DateService.now_for_database()
         
         nueva_solicitud_row = await conn.fetchrow("""
-            INSERT INTO verificacion_solicitud (id_perfil, estado, comentario, fecha_solicitud)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO verificacion_solicitud (id_perfil, estado, comentario, fecha_solicitud, created_at)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id_verificacion, id_perfil, estado, comentario, fecha_solicitud, created_at
-        """, id_perfil, estado, comentario_solicitud, fecha_solicitud)
+        """, id_perfil, estado, comentario_solicitud, fecha_solicitud, created_at)
         
         return dict(nueva_solicitud_row)
 

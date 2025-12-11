@@ -36,12 +36,14 @@ class DateService:
         Returns:
             datetime: Fecha y hora actual en UTC (sin timezone info para compatibilidad con PostgreSQL)
         """
-        # Usar utcnow() directamente para obtener UTC sin conversión
-        # Esto es consistente con PostgreSQL now() que también devuelve UTC
+        # Obtener hora UTC actual con timezone info explícito
+        # Esto asegura que asyncpg/PostgreSQL interprete correctamente la zona horaria
+        # cuando se inserta en columnas TIMESTAMP WITH TIME ZONE
         utc_now = datetime.now(timezone.utc)
-        # Retornar sin timezone info para compatibilidad con SQLAlchemy/PostgreSQL
-        # PostgreSQL almacena fechas sin timezone, así que removemos el tzinfo
-        return utc_now.replace(tzinfo=None)
+        # IMPORTANTE: Retornar CON timezone info para que PostgreSQL lo interprete como UTC
+        # asyncpg maneja correctamente datetime con timezone cuando se inserta en TIMESTAMP WITH TIME ZONE
+        # Si la columna es TIMESTAMP sin timezone, asyncpg convertirá automáticamente
+        return utc_now
     
     @classmethod
     def utcnow(cls) -> datetime:
