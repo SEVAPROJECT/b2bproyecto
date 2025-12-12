@@ -5,7 +5,7 @@
 ![Node](https://img.shields.io/badge/node-18+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 
-Plataforma B2B de reservas de servicios para empresas medianas en Paraguay. Conecta empresas con proveedores verificados, busca servicios con búsqueda semántica impulsada por IA y gestiona las necesidades de tu negocio de manera eficiente.
+Plataforma B2B de reservas de servicios para Mipymes en Paraguay. Conecta empresas con proveedores verificados, busca servicios con búsqueda semántica impulsada por IA y gestiona las necesidades de tu negocio de manera eficiente.
 
 ## 📋 Tabla de Contenidos
 
